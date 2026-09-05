@@ -688,10 +688,16 @@ export default function AdminEducationMarketplace() {
                 {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Povraćaj za onlajn kurs (dani)", "onlineRefundDays"], ["Žalba nakon događaja uživo (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, string][]).map(([label, key]) => (
                   <div key={key as string} className="space-y-2 text-sm font-medium">
                     <div className="flex items-center gap-1">
-                      <Label>{label}</Label>
+                      {/* Sibling Label/Input pairs are not associated, which
+                          leaves the field with no accessible name: the only
+                          thing carrying this label text is the help button's
+                          aria-label, so assistive technology announces the
+                          number field as unlabelled. Pair htmlFor with id, as
+                          the bank-account select below already does. */}
+                      <Label htmlFor={`marketplace-setting-${key}`}>{label}</Label>
                       <EducationFieldHelp id={`marketplace-setting-help-${key}`} label={label} text={`Ova vrednost određuje globalno pravilo „${label}” koje se primenjuje kada centar nema posebno podešavanje.`} />
                     </div>
-                    <Input type="number" min="0" value={settingsRaw[key]} onChange={(e) => setSettingsRaw({ ...settingsRaw, [key]: e.target.value })} aria-describedby={`marketplace-setting-help-${key}`} />
+                    <Input id={`marketplace-setting-${key}`} type="number" min="0" value={settingsRaw[key]} onChange={(e) => setSettingsRaw({ ...settingsRaw, [key]: e.target.value })} aria-describedby={`marketplace-setting-help-${key}`} />
                   </div>
                 ))}
               </div>

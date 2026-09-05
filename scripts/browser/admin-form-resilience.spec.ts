@@ -320,6 +320,45 @@ async function mockAdminApi(page: Page): Promise<void> {
         });
         return;
       }
+      // The Education grace/audit cards render these as `data.items`, so the
+      // catch-all `json: []` below reaches them as a truthy value with an
+      // undefined `items` and crashes the page into its error boundary before
+      // the settings form under test ever mounts.
+      if (path === "/api/admin/education/grace-centers" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/grace-centers",
+            apiSchemas.ListAdminEducationGraceCentersResponse,
+            { items: [], generatedAt: new Date().toISOString(), truncated: false },
+          ),
+        });
+        return;
+      }
+      if (path === "/api/admin/education/financial-audit" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/education/financial-audit",
+            apiSchemas.ListAdminEducationFinancialAuditResponse,
+            { items: [], nextCursor: null },
+          ),
+        });
+        return;
+      }
+      // The admin Education page renders this list as `placementsPage.items`,
+      // so the catch-all `json: []` below would hand it a truthy value whose
+      // `items` is undefined and crash the page into its error boundary before
+      // the form under test ever mounts. Paginated endpoints have to be modelled
+      // with their real envelope, like the gift-voucher list above.
+      if (path === "/api/admin/featured-placements" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture(
+            "/api/admin/featured-placements",
+            apiSchemas.ListAdminFeaturedPlacementsResponse,
+            { items: [], page: 1, pageSize: 20, total: 0 },
+          ),
+        });
+        return;
+      }
       if (path === "/api/admin/education/centers" && method === "GET") {
         await route.fulfill({
           json: checkedApiFixture("/api/admin/education/centers", apiSchemas.ListAdminEducationCentersResponse, []),
@@ -802,9 +841,9 @@ test("loyalty tier form rejects invalid percent and threshold", async ({ page })
 test("subscription plan form rejects invalid price and trial period", async ({ page }) => {
   await openAdmin(page, "/admin/pretplate");
   await page.getByTestId(`btn-edit-${planId}`).click();
-  await expect(page.getByLabel("Cena (RSD mesečno)")).toBeVisible();
+  await expect(page.getByLabel("Cena (RSD/mes)")).toBeVisible();
 
-  const price = page.getByLabel("Cena (RSD mesečno)");
+  const price = page.getByLabel("Cena (RSD/mes)");
   const trial = page.getByLabel("Probni period (dana)");
   const save = page.getByRole("button", { name: "Sačuvaj" });
 
@@ -902,8 +941,11 @@ test("education settings form rejects non-integer / invalid percent", async ({ p
   await openAdmin(page, "/admin/edukacije");
   await expect(page.getByRole("heading", { name: "Zaštita kupovina i obračun" })).toBeVisible();
 
-  const commission = page.getByLabel("Provizija %");
-  const refundDays = page.getByLabel("Online povraćaj (dani)");
+  // Exact matching matters here: each field is followed by a help button whose
+  // aria-label ("Pomoć za polje „Provizija %”") contains the field label, and a
+  // substring match would resolve to that button instead of the input.
+  const commission = page.getByLabel("Provizija %", { exact: true });
+  const refundDays = page.getByLabel("Povraćaj za onlajn kurs (dani)", { exact: true });
   const save = page.getByRole("button", { name: "Sačuvaj" });
 
   // Invalid percent (comma is not a valid number).
