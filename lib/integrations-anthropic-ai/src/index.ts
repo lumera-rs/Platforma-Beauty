@@ -1,1 +1,1 @@
-export { anthropic } from "./client";
+export { assertAnthropicIntegrationConfigured, getAnthropicClient } from "./client";

@@ -17,4 +17,6 @@ export interface Employee {
   serviceNames: string[];
   /** Owner-controlled B2B purchasing permission. */
   canOrderIndependently: boolean;
+  /** Whether this employee's assignment at the caller's active salon is currently active. Always true unless the request set includeInactive=true. */
+  active: boolean;
 }

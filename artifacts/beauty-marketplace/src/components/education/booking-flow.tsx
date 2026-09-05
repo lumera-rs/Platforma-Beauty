@@ -14,25 +14,27 @@ import { getApiErrorDetails, useGetEducationOperationalInstallmentIpsQr } from "
 import { EducationFieldHelp } from "@/components/education/education-field-help";
 
 // Use proper types from API when available
-export function EducationOperationalBookingFlow({ 
-  course, 
-  availability, 
+export function EducationOperationalBookingFlow({
+  course,
+  availability,
   availabilityLoading,
   availabilityError,
   currentUser,
   onCancel,
   createBookingMut,
   refetchAvail,
+  idempotencyKey,
   resetIdempotencyKey
-}: { 
-  course: any, 
-  availability: any, 
+}: {
+  course: any,
+  availability: any,
   availabilityLoading?: boolean,
   availabilityError?: boolean,
   currentUser: any,
   onCancel: () => void,
   createBookingMut: any,
   refetchAvail: () => void,
+  idempotencyKey: string,
   resetIdempotencyKey: () => void
 }) {
   const [step, setStep] = useState<"session" | "participants" | "confirm" | "success">("session");
@@ -116,7 +118,8 @@ export function EducationOperationalBookingFlow({
           phone: p.phone || undefined,
           userId: p.userId,
         }))
-      }
+      },
+      headers: { "Idempotency-Key": idempotencyKey },
     }, {
       onSuccess: (res: any) => {
         resetIdempotencyKey();

@@ -326,7 +326,7 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
   const { toast } = useToast();
   
   const [guestBookingKey, setGuestBookingKey] = useState(() => crypto.randomUUID());
-  const addGuestMut = useCreateEducationOperationalBooking({ request: { headers: { "Idempotency-Key": guestBookingKey } } });
+  const addGuestMut = useCreateEducationOperationalBooking();
   const cancelSessionMut = useCancelEducationOperationalSession();
   const substituteMut = useSubstituteEducationSessionEducator();
   const { data: staff } = useListEducationCenterOperationalStaff(centerId, { query: { enabled: !!centerId, queryKey: getListEducationCenterOperationalStaffQueryKey(centerId) } });
@@ -343,7 +343,8 @@ function SessionDetailDialog({ session, centerId, permissions, onClose }: { sess
         courseId: session.courseId,
         sessionId: session.id,
         participants: [{ fullName, email }]
-      }
+      },
+      headers: { "Idempotency-Key": guestBookingKey },
     }, {
       onSuccess: () => {
         setGuestBookingKey(crypto.randomUUID());
@@ -465,7 +466,12 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
   const [weekdays, setWeekdays] = useState<number[]>([]);
   
   const previewMut = usePreviewEducationCourseRecurrence();
-  const commitMut = useCommitEducationCourseRecurrence({ request: { headers: { "Idempotency-Key": crypto.randomUUID() } } });
+  // Stable for the lifetime of this logical commit attempt: a retry (network
+  // failure, manual re-click) reuses it, so the request is a safe replay
+  // rather than a second command. Only rotates once a commit actually
+  // succeeds (see handleCommit's onSuccess below), starting a new one.
+  const [commitIdempotencyKey, setCommitIdempotencyKey] = useState(() => crypto.randomUUID());
+  const commitMut = useCommitEducationCourseRecurrence();
 
   const toggleWeekday = (day: number) => {
     setWeekdays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
@@ -486,10 +492,17 @@ function RecurrenceManager({ centerId }: { centerId: string }) {
 
   const handleCommit = () => {
     if (!previewMut.data?.candidates) return;
-    commitMut.mutate({ courseId, data: { educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate } }, {
+    commitMut.mutate({
+      courseId,
+      data: { educatorStaffId, weekdays, startTime, endTime, durationMinutes, startDate, endDate },
+      headers: { "Idempotency-Key": commitIdempotencyKey },
+    }, {
       onSuccess: () => {
         toast.success("Termini su uspešno generisani.");
         previewMut.reset();
+        // This logical commit is done; the next one (even with identical
+        // parameters) is a new intentional action and must get its own key.
+        setCommitIdempotencyKey(crypto.randomUUID());
       },
       onError: (e: any) => toast.error("Greška", { description: e.message })
     });

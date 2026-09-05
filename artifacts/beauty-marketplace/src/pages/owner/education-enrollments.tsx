@@ -31,7 +31,7 @@ function TransferDialog({ enrollment, open, onOpenChange }: { enrollment: any; o
   const { toast } = useToast();
   const [targetEmployeeId, setTargetEmployeeId] = useState<string>("");
 
-  const { data: employees } = useListSalonEmployees({
+  const { data: employees } = useListSalonEmployees(undefined, {
     query: { enabled: open, queryKey: getListSalonEmployeesQueryKey() }
   });
 

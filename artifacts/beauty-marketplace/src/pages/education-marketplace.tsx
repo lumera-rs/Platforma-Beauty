@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, ReactNode } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import {
   Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight,
@@ -40,12 +40,15 @@ import {
   getGetPublicEducationRankingsQueryKey,
   getListPublicEducationPlacementsQueryKey,
   getListPublicEducationCoursesQueryKey,
+  createTargetedIdempotencyKeys,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SalonGallery } from "@/components/salon-gallery";
+import { SafeExternalLink } from "@/components/safe-external-link";
+import { safeExternalHref } from "@/lib/safe-external-url";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -902,6 +905,12 @@ export function EducationBundleDetail() {
   const [pending, setPending] = useState(false);
   const [purchase, setPurchase] = useState<any>(null);
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
+  // Rotates when navigating to a different bundle (bundleId changes -- this
+  // page component is not remounted by the router on param-only navigation)
+  // or after a confirmed purchase; stable across a retry of the same
+  // logical purchase attempt in between.
+  const [purchaseAttempt, setPurchaseAttempt] = useState(0);
+  const bundlePurchaseIdempotencyKey = useMemo(() => crypto.randomUUID(), [bundleId, purchaseAttempt]);
   useEffect(() => { void fetch(`/api/education/bundles/${bundleId}`).then(r => r.ok ? r.json() : Promise.reject()).then(setBundle).catch(() => setBundle(false)); }, [bundleId]);
   useEffect(() => { if (current?.user?.role === "SALON_OWNER") void fetch("/api/education/bundle-purchases/eligible-employees", { credentials: "include" }).then(r => r.json()).then(setEmployees); }, [current?.user?.role]);
   useEffect(() => { setDigitalContentConsent(false); }, [bundleId]);
@@ -918,10 +927,11 @@ export function EducationBundleDetail() {
       const body = employee
         ? { targetType: "salon_employee", salonId: employee.salonId, employeeId: employee.id, ...(hasOnlineCourse ? { digitalContentConsent } : {}) }
         : { targetType: "individual", ...(hasOnlineCourse ? { digitalContentConsent } : {}) };
-      const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
+      const response = await fetch(`/api/education/bundles/${bundleId}/purchases`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "Idempotency-Key": bundlePurchaseIdempotencyKey }, body: JSON.stringify(body) });
       const result = await response.json(); if (!response.ok) throw new Error(result.error);
       setPurchase(result);
       setDigitalContentConsent(false);
+      setPurchaseAttempt((n) => n + 1);
       toast.success("Zahtev za paket je evidentiran");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Kupovina nije uspela"); } finally { setPending(false); }
   };
@@ -1008,6 +1018,10 @@ function useEducationPurchase() {
   const [buying, setBuying] = useState<string | null>(null);
   const [consentCourse, setConsentCourse] = useState<any | null>(null);
   const [digitalContentConsent, setDigitalContentConsent] = useState(false);
+  // Per-course, so retrying the same course's enrollment reuses its key
+  // while a different course started in between never collides with it.
+  // Cleared once that course's enrollment is confirmed.
+  const enrollIdempotencyKeys = useRef(createTargetedIdempotencyKeys());
 
   const purchase = async (course: any, consent: boolean) => {
     setBuying(course.id);
@@ -1022,7 +1036,7 @@ function useEducationPurchase() {
       }
       const response = await fetch(`/api/education/courses/${course.id}/enrollments`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        headers: { "content-type": "application/json", "idempotency-key": enrollIdempotencyKeys.current.keyFor(course.id) },
         body: JSON.stringify({
           ...(session ? { sessionId: session.id } : {}),
           ...(course.format === "online" ? { digitalContentConsent: consent } : {}),
@@ -1030,6 +1044,7 @@ function useEducationPurchase() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Zahtev za kupovinu nije uspeo.");
+      enrollIdempotencyKeys.current.clear(course.id);
       toast.success("Zahtev je poslat", { description: "Administrator potvrđuje uplatu. Pristup se aktivira nakon potvrde." });
       setLocation(currentUser!.user!.role === "STUDENT" ? "/student/edukacije" : currentUser!.user!.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : "/biznis/edukacije");
       return true;
@@ -1113,10 +1128,14 @@ function useEducationPurchase() {
 }
 
 function SafeVideoEmbed({ url }: { url: string }) {
-  if (!url) return null;
-  let embedUrl = url;
+  // Reject anything other than a safe http(s) URL up front -- a legacy or
+  // otherwise-unvalidated trailerUrl (javascript:, data:, ...) must never
+  // reach the <a href> fallback branch below.
+  const safeUrl = safeExternalHref(url);
+  if (!safeUrl) return null;
+  let embedUrl = safeUrl;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(safeUrl);
     if (parsed.hostname.includes('youtube.com') || parsed.hostname.includes('youtu.be')) {
       const videoId = parsed.hostname.includes('youtu.be') ? parsed.pathname.slice(1) : parsed.searchParams.get('v');
       if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}`;
@@ -1125,10 +1144,10 @@ function SafeVideoEmbed({ url }: { url: string }) {
       if (videoId) embedUrl = `https://player.vimeo.com/video/${videoId}?dnt=1`;
     } else {
       return (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors mt-8">
+        <SafeExternalLink href={safeUrl} className="flex items-center gap-2 p-4 bg-muted/30 rounded-xl border border-border/50 hover:bg-muted/50 transition-colors mt-8">
           <div className="bg-primary/10 p-3 rounded-full"><Sparkles className="w-5 h-5 text-primary" /></div>
           <div><p className="font-medium text-foreground">Pogledaj video prezentaciju</p><p className="text-sm text-muted-foreground">Otvori spoljni link</p></div>
-        </a>
+        </SafeExternalLink>
       );
     }
 
@@ -1179,7 +1198,7 @@ export function EducationPublicCourseDetail() {
     query: { enabled: Boolean(courseId), queryKey: ["educationOperationalAvailability", courseId] },
   });
   const [operationalBookingKey, setOperationalBookingKey] = useState(() => crypto.randomUUID());
-  const createOperationalBookingMut = useCreateEducationOperationalBooking({ request: { headers: { "Idempotency-Key": operationalBookingKey } } });
+  const createOperationalBookingMut = useCreateEducationOperationalBooking();
   const viewerPublishesCourse = Boolean(course?.center?.id && viewerCenters?.some((center) => center.id === course.center!.id));
   const showOperationalBookingCta = educationBookingCtaVisible({
     hasFutureSession: Boolean(operationalSession),
@@ -1334,7 +1353,7 @@ export function EducationPublicCourseDetail() {
           <Dialog open={operationalBookingOpen} onOpenChange={setOperationalBookingOpen}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader><DialogTitle>Rezervacija edukacije</DialogTitle><DialogDescription>Izaberite raspoloživ termin i unesite učesnike.</DialogDescription></DialogHeader>
-              <EducationOperationalBookingFlow course={course} availability={operationalAvailability} availabilityLoading={operationalAvailabilityLoading} availabilityError={operationalAvailabilityError} currentUser={currentUser} onCancel={() => setOperationalBookingOpen(false)} createBookingMut={createOperationalBookingMut} refetchAvail={refetchOperationalAvailability} resetIdempotencyKey={() => setOperationalBookingKey(crypto.randomUUID())} />
+              <EducationOperationalBookingFlow course={course} availability={operationalAvailability} availabilityLoading={operationalAvailabilityLoading} availabilityError={operationalAvailabilityError} currentUser={currentUser} onCancel={() => setOperationalBookingOpen(false)} createBookingMut={createOperationalBookingMut} refetchAvail={refetchOperationalAvailability} idempotencyKey={operationalBookingKey} resetIdempotencyKey={() => setOperationalBookingKey(crypto.randomUUID())} />
             </DialogContent>
           </Dialog>
 
@@ -1404,9 +1423,7 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
   const [purchasedCode, setPurchasedCode] = useState<string | null>(null);
   const [paymentReference, setPaymentReference] = useState<string | null>(null);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const mut = usePurchaseEducationGiftVoucher({
-    request: { headers: { "Idempotency-Key": idempotencyKey } },
-  });
+  const mut = usePurchaseEducationGiftVoucher();
   const { toast } = useToast();
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -1423,7 +1440,8 @@ function VoucherPurchaseForm({ courseId }: { courseId: string }) {
         recipientName: recipientName || undefined,
         recipientEmail: recipientEmail,
         giftMessage: giftMessage || undefined
-      }
+      },
+      headers: { "Idempotency-Key": idempotencyKey },
     }, {
       onSuccess: (data: any) => {
         setPurchasedCode(data.redemptionCode || "N/A");
@@ -1497,13 +1515,31 @@ export function EducationPublicCenterPage() {
   const centerId = params?.centerId ?? "";
   const { data: center, isLoading, isError } = useGetPublicEducationCenter(centerId);
   const { buy, buying, purchaseConsentDialog } = useEducationPurchase();
+  // Every hook the component uses must run on every render, regardless of
+  // the loading/error/not-found early returns below -- so the review page
+  // state and the reviews query are declared here, unconditionally, rather
+  // than after those returns. The query itself still only fires once
+  // `center` has actually loaded (via `enabled`), matching the original
+  // behavior of not requesting reviews for a still-loading or nonexistent
+  // center.
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    // Reset pagination when navigating (via SPA route, not a full reload)
+    // from one center's page directly to another's -- this component
+    // instance is reused across that transition, so `page` would otherwise
+    // carry over from the previous center.
+    setPage(1);
+  }, [centerId]);
+  const { data: reviewsPage } = useListPublicEducationCenterReviews(centerId, { page, pageSize: 10 }, {
+    query: {
+      enabled: Boolean(center),
+      queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page, pageSize: 10 }),
+    },
+  });
+
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
   if (isError || !center) return <Layout><div className="container mx-auto px-4 py-20 text-center"><h1 className="font-serif text-3xl font-bold">Centar nije dostupan</h1><Button className="mt-6" asChild><Link href="/edukacije">Nazad na katalog</Link></Button></div></Layout>;
   const gallery = [{ type: "image" as const, url: center.imageUrl }, ...center.gallery.map((media) => ({ type: "image" as const, url: media.url }))];
-  const [page, setPage] = useState(1);
-  const { data: reviewsPage } = useListPublicEducationCenterReviews(centerId, { page, pageSize: 10 }, {
-    query: { queryKey: getListPublicEducationCenterReviewsQueryKey(centerId, { page, pageSize: 10 }) }
-  });
 
   return <Layout><main className="container mx-auto max-w-6xl px-4 py-8 sm:py-12">
     <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground"><Link href="/edukacije" className="hover:text-foreground">Edukacije</Link><ChevronRight className="h-4 w-4" /><span>Centar</span></div>
@@ -1523,8 +1559,8 @@ export function EducationPublicCenterPage() {
         <CardContent className="space-y-3 p-5 text-sm">
           <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{center.city}</p>
           <p className="flex gap-2"><Star className="h-4 w-4 fill-amber-500 text-amber-500" />{center.rating ? `${center.rating.toFixed(1)} · ${center.reviewCount} utisaka` : "Novi centar"}</p>
-          {center.websiteUrl ? <a className="block text-primary underline" href={center.websiteUrl} target="_blank" rel="noreferrer">Sajt centra</a> : null}
-          {center.instagramUrl ? <a className="block text-primary underline" href={center.instagramUrl} target="_blank" rel="noreferrer">Instagram</a> : null}
+          <SafeExternalLink className="block text-primary underline" href={center.websiteUrl}>Sajt centra</SafeExternalLink>
+          <SafeExternalLink className="block text-primary underline" href={center.instagramUrl}>Instagram</SafeExternalLink>
         </CardContent>
       </Card>
     </section>

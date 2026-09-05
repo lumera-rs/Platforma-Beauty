@@ -59,7 +59,10 @@ export default function JobseekerSettings() {
 
   const handleLogout = () => {
     logout.mutate(undefined, {
-      onSuccess: () => setLocation("/")
+      onSuccess: () => {
+        queryClient.clear();
+        setLocation("/");
+      },
     });
   };
 

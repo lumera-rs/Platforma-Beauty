@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   coursesTable,

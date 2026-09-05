@@ -37,6 +37,12 @@ import
 ;
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import { safeIsoTimestamp } from "../lib/date-serialization";
+import { isSafeExternalHttpUrl } from "../lib/safe-external-url";
+import {
+  batchPublicFeaturedEducationCourseState,
+  isPubliclyFeaturedEducationCourse,
+  publicFeaturedEducationCourseSql,
+} from "../lib/education-featured-eligibility";
 import {
   allocateReferralCreditInTx,
   bindLegalEntityBusinessInTx,
@@ -983,6 +989,98 @@ function customerSetupRequestIdentity(req: Request) {
   return req.ip || req.socket.remoteAddress || "unknown";
 }
 
+const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT = 10;
+const LOGIN_RATE_LIMIT_MAX_PER_IP = 30;
+
+type RateLimitAdmission = { allowed: true } | { allowed: false; retryAfterSeconds: number };
+
+/**
+ * Generic fixed-window admission check, keyed by an advisory-locked
+ * (action, identity) pair in the same durable table admitCustomerSetupRequest
+ * uses -- reimplemented standalone here (rather than widening that
+ * function's 3-value action union) so /auth/login gets its own limiter
+ * without touching the password-setup flow at all. The window is fixed
+ * (not extended by further attempts once blocked), so a block always
+ * self-clears windowMs after it started -- this can never become a
+ * permanent lock, only a bounded, temporary throttle.
+ */
+async function admitRateLimitedAction(
+  action: string,
+  identity: string,
+  limit: number,
+  windowMs: number,
+): Promise<RateLimitAdmission> {
+  const keyHash = customerSetupDigest(`${action}:${identity}`);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - windowMs);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${keyHash}))`);
+    const [existing] = await tx.select()
+      .from(customerPasswordSetupRateLimitsTable)
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ))
+      .limit(1);
+    if (!existing) {
+      await tx.insert(customerPasswordSetupRateLimitsTable).values({
+        keyHash,
+        action,
+        windowStartedAt: now,
+        requestCount: 1,
+        updatedAt: now,
+      });
+      return { allowed: true };
+    }
+    if (existing.windowStartedAt <= windowStart) {
+      await tx.update(customerPasswordSetupRateLimitsTable)
+        .set({ windowStartedAt: now, requestCount: 1, updatedAt: now })
+        .where(and(
+          eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+          eq(customerPasswordSetupRateLimitsTable.action, action),
+        ));
+      return { allowed: true };
+    }
+    if (existing.requestCount >= limit) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((existing.windowStartedAt.getTime() + windowMs - now.getTime()) / 1000),
+      );
+      return { allowed: false, retryAfterSeconds };
+    }
+    await tx.update(customerPasswordSetupRateLimitsTable)
+      .set({ requestCount: existing.requestCount + 1, updatedAt: now })
+      .where(and(
+        eq(customerPasswordSetupRateLimitsTable.keyHash, keyHash),
+        eq(customerPasswordSetupRateLimitsTable.action, action),
+      ));
+    return { allowed: true };
+  });
+}
+
+/**
+ * Brute-force throttle for /auth/login: both a per-account and a per-IP
+ * fixed window must admit for an attempt to proceed. Per-account blocks a
+ * targeted credential-stuffing run regardless of how many source IPs the
+ * attacker rotates through; per-IP blocks a broad password-spray run
+ * against many different accounts from one source. Neither check depends
+ * on whether the account exists (nor on its role), so admission behavior
+ * itself cannot be used to enumerate valid emails, and every account --
+ * including ADMIN/SUPER_ADMIN -- gets identical protection. Every attempt
+ * (successful or not) consumes one unit from both budgets, so a
+ * successful login never resets or bypasses the counters for later
+ * attempts from the same account or source.
+ */
+async function admitLoginAttempt(req: Request, email: string): Promise<RateLimitAdmission> {
+  const ip = customerSetupRequestIdentity(req);
+  const perAccount = await admitRateLimitedAction(
+    "login-account", email.toLowerCase(), LOGIN_RATE_LIMIT_MAX_PER_ACCOUNT, LOGIN_RATE_LIMIT_WINDOW_MS,
+  );
+  if (!perAccount.allowed) return perAccount;
+  return admitRateLimitedAction("login-ip", ip, LOGIN_RATE_LIMIT_MAX_PER_IP, LOGIN_RATE_LIMIT_WINDOW_MS);
+}
+
 function activeCustomerSetupToken(setup: typeof customerPasswordSetupTokensTable.$inferSelect, now: Date) {
   return !setup.consumedAt && !setup.invalidatedAt && setup.expiresAt > now && setup.failedAttempts < setup.maxAttempts;
 }
@@ -1272,16 +1370,6 @@ function calendarDateCourseResponse<T extends { startDate?: Date | null }>(cours
     ...course,
     startDate: course.startDate ? calendarDate(course.startDate) : null,
   };
-}
-
-function isHttpVideoUrl(value: string | null): boolean {
-  if (value === null) return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
 }
 
 async function current(req: Request, res: Response) {
@@ -2719,8 +2807,12 @@ function isCourseOwner(access: EducationAccess, course: typeof coursesTable.$inf
  * publisher, and salon owners remain learners/purchasers rather than course
  * authors.
  */
-async function canManageEducationCourses(access: EducationAccess, centerId?: string | null) {
-  if (access.admin) return true;
+async function canManageEducationCourses(
+  access: EducationAccess,
+  centerId?: string | null,
+  options: { allowAdmin?: boolean } = {},
+) {
+  if (access.admin && options.allowAdmin !== false) return true;
   const scopedCenters = centerId
     ? access.centers.filter((center) => center.id === centerId)
     : access.centers;
@@ -2785,18 +2877,6 @@ async function isPublicEducationCourse(course: typeof coursesTable.$inferSelect)
   // education centers can sell through the protected public marketplace.
   if (!course.centerId) return false;
   return (await educationCenterEligibility(course.centerId)).eligible;
-}
-
-// A course is only *publicly* featured once its featured placement has actually
-// been paid for. Activating featured placement flips `isFeatured` immediately and
-// records a charge, but a non-zero charge stays "pending" until an administrator
-// confirms the manual payment. Until then the placement must not surface publicly.
-// A zero-fee charge is recorded as "paid" on activation, so this stays sensible.
-async function isPubliclyFeaturedEducationCourse(course: typeof coursesTable.$inferSelect) {
-  if (!course.isFeatured) return false;
-  if (course.featuredUntil && course.featuredUntil <= new Date()) return false;
-  const charge = await latestFeaturedCharge(course.id);
-  return charge?.status === "paid";
 }
 
 async function releaseAtForEducationCourse(
@@ -3343,15 +3423,35 @@ async function centerPublicView(
   };
 }
 
-async function educationCourseEnrichment(courseIds: string[]) {
+async function educationCourseEnrichment(
+  courseIds: string[],
+  /**
+   * Callers that already hold the course rows pass them here. Only the five
+   * taxonomy columns below are needed, so re-reading the very same rows is a
+   * wasted round trip on a hot public listing; batchEducationCourseViews()
+   * loads them immediately beforehand.
+   */
+  preloadedCourses?: readonly Pick<
+    typeof coursesTable.$inferSelect,
+    "id" | "category" | "categoryId" | "subcategoryId" | "courseTypeId"
+  >[],
+) {
   if (!courseIds.length) return new Map<string, Record<string, unknown>>();
-  const courses = await db.select({
-    id: coursesTable.id,
-    legacyCategory: coursesTable.category,
-    categoryId: coursesTable.categoryId,
-    subcategoryId: coursesTable.subcategoryId,
-    courseTypeId: coursesTable.courseTypeId,
-  }).from(coursesTable).where(inArray(coursesTable.id, courseIds));
+  const courses = preloadedCourses
+    ? preloadedCourses.map((row) => ({
+        id: row.id,
+        legacyCategory: row.category,
+        categoryId: row.categoryId,
+        subcategoryId: row.subcategoryId,
+        courseTypeId: row.courseTypeId,
+      }))
+    : await db.select({
+      id: coursesTable.id,
+      legacyCategory: coursesTable.category,
+      categoryId: coursesTable.categoryId,
+      subcategoryId: coursesTable.subcategoryId,
+      courseTypeId: coursesTable.courseTypeId,
+    }).from(coursesTable).where(inArray(coursesTable.id, courseIds));
   const categoryIds = [...new Set(courses.flatMap((row) => row.categoryId ? [row.categoryId] : []))];
   const subcategoryIds = [...new Set(courses.flatMap((row) => row.subcategoryId ? [row.subcategoryId] : []))];
   const courseTypeIds = [...new Set(courses.flatMap((row) => row.courseTypeId ? [row.courseTypeId] : []))];
@@ -4671,8 +4771,35 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
         }
       }
       const [existingByEmail] = await tx.select().from(usersTable).where(eq(usersTable.email, profile.email)).limit(1);
+      if (existingByEmail) {
+        // Task #7A originally scoped this rejection to Facebook only,
+        // reasoned around Facebook's Graph API /me response carrying no
+        // verified-email signal this application can check (unlike Google's
+        // OIDC userinfo response, which resolveOAuthProfile above already
+        // requires email_verified === true from). That distinction protects
+        // against email *spoofing*, but Task #11B closes a second, separate
+        // gap it left open for Google: a mailbox can change real-world
+        // ownership -- recycled, reassigned, or reclaimed through the
+        // provider's own account-recovery flow, no application vulnerability
+        // required -- and Google's per-request "yes, this really is the
+        // current controller of this address" guarantee says nothing about
+        // whether that controller is still the same person who created the
+        // local LUMERA account. For a platform whose accounts include
+        // salon-owner and education-center business identities, a brand-new,
+        // never-before-linked identity from EITHER provider must never be
+        // allowed to silently authenticate as -- or permanently attach
+        // itself to -- an existing account merely by presenting that
+        // account's current email. Ownership continuity can only be
+        // established by proving control of the LOCAL account itself
+        // (password, or an already-linked provider identity) -- require the
+        // account owner to sign in through an already-trusted method first
+        // and link the new provider from account settings (the existing
+        // authenticated "link" flow above), exactly like a normal
+        // email/password registration already rejects a duplicate email.
+        throw new Error("oauth_email_collision");
+      }
       const created = !existingByEmail;
-      const user = existingByEmail ?? (await tx.insert(usersTable).values({
+      const user: typeof usersTable.$inferSelect = existingByEmail ?? (await tx.insert(usersTable).values({
         firstName: profile.firstName,
         lastName: profile.lastName,
         email: profile.email,
@@ -4702,6 +4829,18 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
         // the rejected browser-bound attempt cannot be replayed.
         await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
         res.status(400).json({ error: error.message, code: error.code });
+        return;
+      }
+      if (error instanceof Error && error.message === "oauth_email_collision") {
+        // Same message an ordinary email/password registration already gives
+        // for a duplicate email -- this is not a new account-enumeration
+        // surface, just the existing convention applied to every OAuth
+        // provider now (Task #11B extended this from Facebook-only to also
+        // cover Google -- see the throw site above for why).
+        await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+        const providerLabel = provider === "google" ? "Google" : "Facebook";
+        res.redirect(oauthFailurePath(loginState.flow,
+          `Nalog sa ovom e-mail adresom već postoji. Prijavite se lozinkom ili prethodno povezanim nalogom, pa dodajte ${providerLabel} prijavu iz podešavanja naloga.`));
         return;
       }
       const errorCode = typeof error === "object" && error !== null && "cause" in error
@@ -5716,7 +5855,8 @@ router.post("/admin/integrations/brevo/cleanup-webhooks", async (req, res): Prom
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
   const expected = process.env["SMS_REMINDER_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   const date = typeof req.body?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : undefined;
   const result = await sendDailyAppointmentReminders(date);
   req.log.info(result, "SMS reminder batch finished");
@@ -5725,14 +5865,16 @@ router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
 
 router.post("/internal/jobs/rescheduled-confirmation-retries", async (req, res): Promise<void> => {
   const expected = process.env["CONFIRMATION_RETRY_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   const result = await runRescheduledConfirmationRetries();
   res.json(result);
 });
 
 router.post("/internal/jobs/education-gallery-cleanup", async (req, res): Promise<void> => {
   const expected = process.env["EDUCATION_GALLERY_CLEANUP_JOB_SECRET"];
-  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const provided = req.get("x-lumera-job-key");
+  if (!expected || !provided || !webhookTokenMatches(expected, provided)) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   try {
     res.json(await runEducationGalleryCleanup());
   } catch (error) {
@@ -5756,6 +5898,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
   }
   if (input.businessType === "EDUCATION_CENTER" && (!input.registrationNumber?.trim() || !input.bankAccount?.trim())) {
     res.status(400).json({ error: "Matični broj i poslovni račun edukativnog centra su obavezni." });
+    return;
+  }
+  if (!isSafeExternalHttpUrl(input.websiteUrl) || !isSafeExternalHttpUrl(input.instagramUrl)) {
+    res.status(400).json({ error: "Sajt i Instagram link moraju biti validni http:// ili https:// linkovi." });
     return;
   }
   const [educationPlan] = input.businessType === "EDUCATION_CENTER"
@@ -5929,6 +6075,12 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const admission = await admitLoginAttempt(req, parsed.data.email);
+  if (!admission.allowed) {
+    res.setHeader("Retry-After", String(admission.retryAfterSeconds));
+    res.status(429).json({ error: "Previše pokušaja prijave. Pokušajte ponovo za nekoliko minuta." });
+    return;
+  }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
   if (user?.role === "SALON_EMPLOYEE" && !user.active) {
     res.status(403).json({ error: "Nalog zaposlenog je deaktiviran. Obratite se vlasniku salona." }); return;
@@ -6057,6 +6209,10 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
 router.get("/auth/me", async (req, res): Promise<void> => {
   await ensureDemoData();
   const user = await getCurrentUser(req);
+  // Task #8: session-bound identity response -- must never be served from a
+  // shared/intermediary cache to a different visitor, or reused after logout
+  // on a shared machine.
+  res.set("Cache-Control", "private, no-store");
   res.json(GetCurrentUserResponse.parse({ user: user ? publicUser(user) : null }));
 });
 
@@ -6094,13 +6250,32 @@ router.post("/auth/change-password", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Trenutna lozinka nije ispravna." });
     return;
   }
-  const [updated] = await db.update(usersTable).set({
-    passwordHash: await hashPassword(newPassword),
-    passwordSetAt: new Date(),
-    mustChangePassword: false,
-    updatedAt: new Date(),
-  }).where(eq(usersTable.id, user.id)).returning();
-  res.json({ user: publicUser(updated!) });
+  // Every session for this user -- including the one that authenticated
+  // this very request -- is invalidated and replaced by a brand-new one,
+  // all inside the same transaction as the password update. Preserving the
+  // bearer token that submitted the request would also preserve an exact
+  // copy of that token an attacker had captured before the change; rotating
+  // it is the only way to guarantee no pre-change token remains usable.
+  const passwordHash = await hashPassword(newPassword);
+  const now = new Date();
+  const { updatedUser, newSessionToken } = await db.transaction(async (tx) => {
+    const [updatedUser] = await tx.update(usersTable).set({
+      passwordHash,
+      passwordSetAt: now,
+      mustChangePassword: false,
+      updatedAt: now,
+    }).where(eq(usersTable.id, user.id)).returning();
+    await tx.delete(sessionsTable).where(eq(sessionsTable.userId, user.id));
+    const newSessionToken = await createSession(user.id, tx);
+    return { updatedUser, newSessionToken };
+  });
+  // The old cookie is only ever replaced after the transaction above has
+  // committed -- old sessions are already gone in the database by this
+  // point, so if setting this cookie were to fail, the client would simply
+  // be signed out (forced to log in again with the new password), never
+  // left holding a still-valid pre-change token.
+  res.cookie(sessionCookieName, newSessionToken, cookieOptions());
+  res.json({ user: publicUser(updatedUser!) });
 });
 
 router.get("/auth/sign-in-methods", async (req, res): Promise<void> => {
@@ -6812,6 +6987,13 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
         serviceIds,
         serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name),
         canOrderIndependently: item.canOrderIndependently,
+        // The staff query above inner-joins employee_location_assignments on
+        // active = true and filters employees.active = true, so everyone
+        // reachable here is by construction active at this salon. The field is
+        // required by the shared staff contract (added with the per-assignment
+        // deactivation work); omitting it made this public profile fail its own
+        // response validation and return 500 for any salon that has staff.
+        active: true,
       };
     }),
     services: services.map((item) => ({
@@ -8964,7 +9146,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   }
   const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (parsed.data.videoUrl !== undefined && !isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  if (parsed.data.videoUrl !== undefined && !isSafeExternalHttpUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
@@ -10775,12 +10957,21 @@ router.post("/salon/locations", async (req, res, next): Promise<void> => {
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
+  // Default response is unchanged (active staff only) for existing consumers
+  // like the booking/scheduling employee pickers. includeInactive=true is an
+  // owner-management-only extension (see owner/employees.tsx's inactive
+  // section) that also surfaces employees whose assignment at THIS salon was
+  // deactivated (Task #5), so the owner can find and reactivate them --
+  // scoped by the same salon-id join, never widening which owner's
+  // employees are reachable.
+  const includeInactive = req.query.includeInactive === "true";
   // Employee counts are plan-bounded, but all related reads must still be scoped:
   // links, service names, and user accounts are restricted with inArray to the
   // returned employee/service/user IDs instead of scanning full global tables.
   const [employeeRows, services] = await Promise.all([
     db.select({
       employee: employeesTable,
+      assignmentActive: employeeLocationAssignmentsTable.active,
       account: {
         active: usersTable.active,
         email: usersTable.email,
@@ -10792,9 +10983,9 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
       .innerJoin(employeeLocationAssignmentsTable, and(
         eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
         eq(employeeLocationAssignmentsTable.salonId, salon.id),
-        eq(employeeLocationAssignmentsTable.active, true),
+        ...(includeInactive ? [] : [eq(employeeLocationAssignmentsTable.active, true)]),
       ))
-      .where(eq(employeesTable.active, true))
+      .where(includeInactive ? undefined : eq(employeesTable.active, true))
       .orderBy(asc(employeesTable.name), asc(employeesTable.id))
       .limit(500),
     db.select().from(servicesTable)
@@ -10811,6 +11002,7 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
       inArray(employeeServicesTable.serviceId, salonServiceIds),
     ) : sql`false`);
   const accountByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.account]));
+  const assignmentActiveByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.assignmentActive]));
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
   const serviceIdsByEmployeeId = new Map<string, string[]>();
   for (const link of links) {
@@ -10821,9 +11013,10 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
   res.json(employees.map((item) => {
     const serviceIds = serviceIdsByEmployeeId.get(item.id) ?? [];
     const account = item.userId ? accountByEmployeeId.get(item.id) : null;
+    const active = assignmentActiveByEmployeeId.get(item.id) ?? true;
     return {
        id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
-       canOrderIndependently: item.canOrderIndependently,
+       canOrderIndependently: item.canOrderIndependently, active,
       specialties: item.specialties, serviceIds, serviceNames: serviceIds.flatMap((id) => {
         const name = serviceNameById.get(id);
         return name ? [name] : [];
@@ -10834,11 +11027,14 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
 });
 
 async function employeeAndOwnedLocation(ownerId: string, employeeId: string, salonId: string) {
+  // Deliberately not filtered to active=true: an employee whose only
+  // remaining assignment was just deactivated must still be reachable here
+  // so the owner can reactivate that very assignment. The employee row is
+  // still only reachable through an assignment (active or not) at a salon
+  // this owner actually owns, so this cannot reach an employee with no
+  // relationship to this owner at all.
   const [employee] = await db.select({ employee: employeesTable }).from(employeesTable)
-    .innerJoin(employeeLocationAssignmentsTable, and(
-      eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
-      eq(employeeLocationAssignmentsTable.active, true),
-    ))
+    .innerJoin(employeeLocationAssignmentsTable, eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id))
     .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
     .where(and(eq(employeesTable.id, employeeId), eq(salonsTable.ownerId, ownerId))).limit(1);
   const [salon] = await db.select().from(salonsTable)
@@ -10891,6 +11087,11 @@ router.put("/salon/employees/:employeeId/locations/:salonId", async (req, res): 
       set: { ...(typeof body.active === "boolean" ? { active: body.active } : {}),
         ...(typeof body.isDefault === "boolean" ? { isDefault: body.isDefault } : {}), updatedAt: new Date() },
     }).returning();
+    // Keep the derived employee/account "active" state (see
+    // syncEmployeeAccountState) in sync whenever this could have changed
+    // whether the employee has any active assignment left -- both toggling
+    // this one off and adding/toggling a new one back on qualify.
+    if (typeof body.active === "boolean") await syncEmployeeAccountState(tx, target.employee.id);
     return saved!;
   });
   res.json({ employeeId: assignment.employeeId, salonId: assignment.salonId, locationId: assignment.salonId,
@@ -11006,86 +11207,155 @@ router.put("/salon/employees/:employeeId/locations/:salonId/schedule", async (re
   res.json(windows.map((window) => ({ ...window, breakStart: window.breakStart ?? null, breakEnd: window.breakEnd ?? null })));
 });
 
-async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect, ownerId: string, store: any = db) {
+/**
+ * Scoped to exactly one location: an employee can hold several active
+ * employeeLocationAssignmentsTable rows (one salon each, all under the same
+ * owner -- see the table's doc comment), so "deactivating" must only ever
+ * be evaluated, and later applied, against the ONE assignment the caller is
+ * actually managing. `willDeactivateLogin` tells the caller whether this
+ * specific action would also be the one that takes down the employee's
+ * login (true only when no OTHER active assignment exists anywhere).
+ */
+async function employeeDeactivationPreview(
+  employee: typeof employeesTable.$inferSelect, salonId: string, store: any = db,
+) {
   const [future] = await store.select({ count: count() }).from(appointmentsTable).where(and(
     eq(appointmentsTable.employeeId, employee.id),
+    eq(appointmentsTable.salonId, salonId),
     gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
     ne(appointmentsTable.status, "cancelled"),
-    exists(store.select({ id: employeeLocationAssignmentsTable.id })
-      .from(employeeLocationAssignmentsTable)
-      .innerJoin(salonsTable, eq(salonsTable.id, employeeLocationAssignmentsTable.salonId))
-      .where(and(
-        eq(employeeLocationAssignmentsTable.employeeId, employee.id),
-        eq(employeeLocationAssignmentsTable.salonId, appointmentsTable.salonId),
-        eq(employeeLocationAssignmentsTable.active, true),
-        eq(salonsTable.ownerId, ownerId),
-      ))),
   ));
+  const [otherActiveAssignment] = await store.select({ id: employeeLocationAssignmentsTable.id })
+    .from(employeeLocationAssignmentsTable)
+    .where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee.id),
+      eq(employeeLocationAssignmentsTable.active, true),
+      ne(employeeLocationAssignmentsTable.salonId, salonId),
+    )).limit(1);
   return {
     employeeId: employee.id,
     employeeName: employee.name,
     futureAppointmentCount: Number(future?.count ?? 0),
     hasLoginAccount: Boolean(employee.userId),
+    willDeactivateLogin: Boolean(employee.userId) && !otherActiveAssignment,
   };
+}
+
+/**
+ * The single source of truth that derives employeesTable.active -- and, for
+ * a linked login account, usersTable.active/session validity -- from the
+ * authoritative per-location assignment rows, so the two never disagree.
+ * Called after ANY write to employeeLocationAssignmentsTable.active for this
+ * employee (deactivate, reactivate, or a brand-new assignment), it is
+ * idempotent: recomputing from the current rows always yields the same
+ * result regardless of how many times, or in what order, it runs.
+ *
+ * Locked per employee so two concurrent assignment changes for the SAME
+ * employee (e.g. deactivating their last two locations at once) cannot each
+ * read the other's not-yet-committed row as still active and both leave the
+ * account enabled with zero active assignments left.
+ */
+async function syncEmployeeAccountState(
+  tx: Pick<typeof db, "select" | "update" | "delete" | "execute">, employeeId: string,
+): Promise<{ hasActiveAssignment: boolean }> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`employee-active-sync:${employeeId}`}))`);
+  const [remaining] = await tx.select({ id: employeeLocationAssignmentsTable.id })
+    .from(employeeLocationAssignmentsTable)
+    .where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employeeId),
+      eq(employeeLocationAssignmentsTable.active, true),
+    )).limit(1);
+  const hasActiveAssignment = Boolean(remaining);
+  const [employee] = await tx.update(employeesTable).set({ active: hasActiveAssignment })
+    .where(eq(employeesTable.id, employeeId)).returning({ userId: employeesTable.userId });
+  if (employee?.userId) {
+    if (hasActiveAssignment) {
+      await tx.update(usersTable).set({ active: true, updatedAt: new Date() }).where(and(
+        eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"),
+      ));
+    } else {
+      await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
+        eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"),
+      ));
+      await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+    }
+  }
+  return { hasActiveAssignment };
 }
 
 router.get("/salon/employees/:employeeId/deactivation-preview", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
-  res.json(await employeeDeactivationPreview(employee, access.user.id));
+  res.json(await employeeDeactivationPreview(employee, access.salon.id));
 });
 
 router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
-  if (!employee.active) { res.status(409).json({ error: "Zaposleni je već deaktiviran." }); return; }
-  const preview = await employeeDeactivationPreview(employee, access.user.id);
+  const preview = await employeeDeactivationPreview(employee, access.salon.id);
   if (preview.futureAppointmentCount > 0) {
-    res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama.", futureAppointmentCount: preview.futureAppointmentCount });
+    res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na ovoj lokaciji.", futureAppointmentCount: preview.futureAppointmentCount });
     return;
   }
-  const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
-  if (revokedAvatarIds.length) {
-    try {
-      await requireMediaCachePurgeForVisibilityRevocation();
-      await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
-    } catch (error) {
-      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
-      return;
+  // Only pre-flight (and abort on failure) the cache purge when this action
+  // will actually take the employee's public profile fully private; if
+  // another location's assignment stays active, the avatar remains a valid
+  // public reference there and nothing needs to be purged.
+  if (preview.willDeactivateLogin || !employee.userId) {
+    const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
+    if (revokedAvatarIds.length) {
+      try {
+        await requireMediaCachePurgeForVisibilityRevocation();
+        await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
+      } catch (error) {
+        res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
+        return;
+      }
     }
   }
+  let loginAccountDeactivated = false;
   try {
     await db.transaction(async (tx) => {
-      // Recheck inside the write transaction so a sibling-location appointment
-      // cannot be created between preview and global deactivation.
-      const currentPreview = await employeeDeactivationPreview(employee, access.user.id, tx);
-      if (currentPreview.futureAppointmentCount > 0) throw new Error("EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS");
-      await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
-      await tx.update(employeeLocationAssignmentsTable).set({ active: false, isDefault: false, updatedAt: new Date() })
-        .where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
-      await releaseMediaReferenceClaims({
-        urls: [employee.avatarUrl],
-        resourceId: employee.id,
-        visibility: "private",
-      }, tx);
-      if (employee.userId) {
-        await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
-          eq(usersTable.id, employee.userId),
-          eq(usersTable.role, "SALON_EMPLOYEE"),
-        ));
-        await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+      // Recheck inside the write transaction so a concurrent appointment at
+      // this specific location cannot be created between preview and write.
+      const [future] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+        eq(appointmentsTable.employeeId, employee.id), eq(appointmentsTable.salonId, access.salon.id),
+        gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)), ne(appointmentsTable.status, "cancelled"),
+      )).limit(1);
+      if (future) throw new Error("EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS");
+      // Scoped to this one (employeeId, salonId) assignment row -- every
+      // other location this employee works remains completely untouched.
+      const [deactivated] = await tx.update(employeeLocationAssignmentsTable)
+        .set({ active: false, isDefault: false, updatedAt: new Date() })
+        .where(and(
+          eq(employeeLocationAssignmentsTable.employeeId, employee.id),
+          eq(employeeLocationAssignmentsTable.salonId, access.salon.id),
+        )).returning({ id: employeeLocationAssignmentsTable.id });
+      if (!deactivated) throw new Error("EMPLOYEE_DEACTIVATION_NOT_ASSIGNED");
+      const { hasActiveAssignment } = await syncEmployeeAccountState(tx, employee.id);
+      loginAccountDeactivated = Boolean(employee.userId) && !hasActiveAssignment;
+      if (!hasActiveAssignment) {
+        await releaseMediaReferenceClaims({
+          urls: [employee.avatarUrl],
+          resourceId: employee.id,
+          visibility: "private",
+        }, tx);
       }
     });
   } catch (error) {
     if (error instanceof Error && error.message === "EMPLOYEE_DEACTIVATION_FUTURE_APPOINTMENTS") {
-      res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na aktivnim lokacijama." });
+      res.status(409).json({ error: "Deaktivacija nije moguća dok zaposleni ima buduće termine na ovoj lokaciji." });
+      return;
+    }
+    if (error instanceof Error && error.message === "EMPLOYEE_DEACTIVATION_NOT_ASSIGNED") {
+      res.status(409).json({ error: "Zaposleni više nije dodeljen ovoj lokaciji." });
       return;
     }
     throw error;
   }
-  res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: preview.futureAppointmentCount, loginAccountDeactivated: Boolean(employee.userId) });
+  res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: 0, loginAccountDeactivated });
 });
 
 router.post("/salon/employees", async (req, res): Promise<void> => {
@@ -13292,16 +13562,6 @@ const fulfillmentTransitions: Record<string, readonly string[]> = {
   CANCELLED: [],
 };
 
-function validProviderUrl(value: string | null | undefined) {
-  if (value == null || value === "") return true;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "https:" || url.protocol === "http:") && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
 function legacyStatusForFulfillment(status: string): typeof retailOrdersTable.$inferInsert.status {
   return status === "CANCELLED" ? "cancelled"
     : status === "COMPLETED" ? "delivered"
@@ -14725,7 +14985,7 @@ router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<v
   const trackingUrl = req.body?.trackingUrl === null ? null
     : typeof req.body?.trackingUrl === "string" ? req.body.trackingUrl.trim() || null : undefined;
   if (typeof next !== "string" || !Object.hasOwn(fulfillmentTransitions, next)
-    || (trackingUrl !== undefined && !validProviderUrl(trackingUrl))) {
+    || (trackingUrl !== undefined && !isSafeExternalHttpUrl(trackingUrl))) {
     res.status(400).json({ error: "Neispravan status ili URL za praćenje." }); return;
   }
   let transitionError = false;
@@ -18044,7 +18304,7 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Status i tok isporuke su međusobno protivrečni." }); return;
   }
   const fulfillmentUpdate = body.data.fulfillmentStatus ?? legacyCanonical;
-  if (body.data.trackingUrl !== undefined && !validProviderUrl(body.data.trackingUrl)) {
+  if (body.data.trackingUrl !== undefined && !isSafeExternalHttpUrl(body.data.trackingUrl)) {
     res.status(400).json({ error: "URL za praćenje mora biti validan http/https URL." }); return;
   }
   let selectedCourier: typeof courierServicesTable.$inferSelect | null | undefined;
@@ -18286,6 +18546,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     return;
   }
   const data = parsed.data;
+  if (!isSafeExternalHttpUrl(data.trailerUrl)) {
+    res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
+    return;
+  }
   const commercialPolicyError = await educationCommercialPolicyError({
     price: data.price, earlyBirdPrice: data.earlyBirdPrice ?? null,
     earlyBirdCutoff: data.earlyBirdCutoff ?? null,
@@ -18410,6 +18674,10 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const data = body.data;
+  if (data.trailerUrl !== undefined && !isSafeExternalHttpUrl(data.trailerUrl)) {
+    res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
+    return;
+  }
   const { cancellationCutoffHours: _cancellationCutoffHours, ...courseUpdate } = data;
   const commercialPolicyFields = ["price", "paymentMode", "depositAmount", "refundPolicy", "schedulingMode", "cancellationCutoffHours", "depositDisposition", "minimumEnrollmentRiskDeadline", "earlyBirdPrice", "earlyBirdCutoff", "installmentCount"];
   if (course.centerId && commercialPolicyFields.some((field) => Object.prototype.hasOwnProperty.call(data, field))) {
@@ -18954,6 +19222,22 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
   const access = await requireEducationAccess(req, res); if (!access) return;
   const courseId = String(req.params.courseId ?? "");
   const course = await requireOwnedCourse(access, courseId, res); if (!course) return;
+  // Unlike requireOwnedCourse's general content-moderation bypass (admin can
+  // fix a title, unpublish, delete a lesson -- an established, intentional
+  // capability, see requireOwnedCourse's own comment and
+  // lockCourseForDestructiveContentMutation), toggling featured placement is a
+  // commercial/billing action: activating it immediately records an auditable
+  // education_featured_charges row -- a NEW financial obligation for the
+  // center, not a configuration edit. The platform's sibling paid-placement
+  // system (POST /education/placements/purchase) already excludes admin from
+  // *initiating* a purchase on a center's behalf for exactly this reason,
+  // while a dedicated admin route (POST /admin/education/featured-charges/:chargeId/settle)
+  // remains the intended admin touchpoint for this lifecycle: confirming a
+  // payment the center itself already requested. This must match that rule.
+  if (!(await canManageEducationCourses(access, course.centerId, { allowAdmin: false }))) {
+    res.status(403).json({ error: "Isticanjem kursa upravlja samo vlasnik ili ovlašćeni menadžer edukativnog centra." });
+    return;
+  }
   const active = req.body?.active;
   if (typeof active !== "boolean") { res.status(400).json({ error: "Pošaljite active: true ili false." }); return; }
   const paymentReference = typeof req.body?.paymentReference === "string" && req.body.paymentReference.trim().length > 0
@@ -20288,6 +20572,7 @@ function publicEducationCoursePredicate(extraPredicates: Parameters<typeof and>[
 export async function batchEducationCourseViews(
   courses: (typeof coursesTable.$inferSelect)[],
   access?: EducationAccess,
+  referenceTime: Date = new Date(),
 ) {
   _hookAssembler("batchEducationCourseViews");
   if (!courses.length) return [];
@@ -20297,7 +20582,7 @@ export async function batchEducationCourseViews(
   const salonIds = [...new Set(courses.flatMap((c) => (c.salonId ? [c.salonId] : [])))];
 
   // One query per cross-cutting resource; all parallelised.
-  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, paidFeaturedCharges, enrichments] = await Promise.all([
+  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, featuredStateByCourseId, enrichments] = await Promise.all([
     centerIds.length ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)) : Promise.resolve([] as (typeof educationCentersTable.$inferSelect)[]),
     salonIds.length ? db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)) : Promise.resolve([] as (typeof salonsTable.$inferSelect)[]),
     db.select().from(courseSessionsTable).where(inArray(courseSessionsTable.courseId, courseIds)).orderBy(asc(courseSessionsTable.startsAt)),
@@ -20306,14 +20591,10 @@ export async function batchEducationCourseViews(
     db.select().from(educationMediaTable).where(inArray(educationMediaTable.courseId, courseIds)).orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt)),
     db.select().from(courseReviewsTable).where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published"))).orderBy(desc(courseReviewsTable.createdAt)),
     centerIds.length ? db.select().from(educationInstructorsTable).where(inArray(educationInstructorsTable.centerId, centerIds)) : Promise.resolve([] as (typeof educationInstructorsTable.$inferSelect)[]),
-    // Only fetch featured charges for isFeatured courses that haven't expired.
-    db.select().from(educationFeaturedChargesTable)
-      .where(and(
-        inArray(educationFeaturedChargesTable.courseId, courseIds),
-        eq(educationFeaturedChargesTable.status, "paid"),
-      ))
-      .orderBy(desc(educationFeaturedChargesTable.createdAt)),
-    educationCourseEnrichment(courseIds),
+    // Canonical public-featured eligibility (see education-featured-eligibility.ts) --
+    // the same rule /education/public/popular and /education/public/featured use.
+    batchPublicFeaturedEducationCourseState(courses, referenceTime),
+    educationCourseEnrichment(courseIds, courses),
   ]);
 
   // Batch-fetch lessons for the collected modules.
@@ -20368,12 +20649,6 @@ export async function batchEducationCourseViews(
   for (const i of allInstructors) {
     if (i.userId) instructorByUserIdAndCenter.set(`${i.centerId}:${i.userId}`, i);
   }
-  // Latest paid featured charge per course.
-  const paidFeaturedByCourseId = new Map<string, typeof educationFeaturedChargesTable.$inferSelect>();
-  for (const ch of paidFeaturedCharges) {
-    if (!paidFeaturedByCourseId.has(ch.courseId)) paidFeaturedByCourseId.set(ch.courseId, ch);
-  }
-
   // Optionally resolve per-user enrollment status in one batch query.
   const enrollmentByCourseId = new Map<string, typeof courseEnrollmentsTable.$inferSelect>();
   if (access?.user) {
@@ -20381,8 +20656,6 @@ export async function batchEducationCourseViews(
       .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), eq(courseEnrollmentsTable.purchaserId, access.user.id)));
     for (const e of enrollments) enrollmentByCourseId.set(e.courseId, e);
   }
-
-  const now = new Date();
 
   return courses.map((course) => {
     const center = course.centerId ? centerById.get(course.centerId) : undefined;
@@ -20471,9 +20744,7 @@ export async function batchEducationCourseViews(
       createdAt: safeIsoTimestamp(r.createdAt),
     }));
 
-    // Featured: isFeatured flag + not expired + latest charge is "paid".
-    const isFeaturedActive = course.isFeatured && (!course.featuredUntil || course.featuredUntil > now);
-    const featured = isFeaturedActive && Boolean(paidFeaturedByCourseId.get(course.id));
+    const featured = featuredStateByCourseId.get(course.id) ?? false;
 
     const enrollment = enrollmentByCourseId.get(course.id);
 
@@ -21327,11 +21598,19 @@ router.get("/education/public/popular", async (req, res): Promise<void> => {
   const parsed = ListPopularEducationCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const limit = parsed.data.limit ?? 6;
+  const now = new Date();
+  // Rank by the canonical public-featured eligibility rule (see
+  // education-featured-eligibility.ts) -- the SAME rule batchEducationCourseViews
+  // uses for this response's own `featured` field below, so ranking and display
+  // can never disagree. A course can flip isFeatured=true immediately on
+  // activation while its charge is still "pending" (see PATCH
+  // /education/courses/:courseId/featured), so the raw column alone must never
+  // grant ranking priority over organic results.
   const courses = await db.select().from(coursesTable)
     .where(publicEducationCoursePredicate())
-    .orderBy(desc(coursesTable.rating), desc(coursesTable.isFeatured), desc(coursesTable.createdAt), desc(coursesTable.id))
+    .orderBy(desc(coursesTable.rating), desc(publicFeaturedEducationCourseSql(now)), desc(coursesTable.createdAt), desc(coursesTable.id))
     .limit(limit);
-  const views = await batchEducationCourseViews(courses);
+  const views = await batchEducationCourseViews(courses, undefined, now);
   res.json(ListPopularEducationCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
@@ -21858,28 +22137,23 @@ router.post("/admin/education/gift-vouchers/:voucherId/refund", async (req, res)
 });
 
 router.get("/education/public/featured", async (_req, res): Promise<void> => {
+  const now = new Date();
+  // WHERE now bakes in the full canonical public-featured rule (see
+  // education-featured-eligibility.ts) directly -- isFeatured, not expired,
+  // AND the latest education_featured_charges row is paid -- so only center
+  // eligibility (a separate, unrelated tenant concern) needs a JS filter pass.
   const courses = await db.select().from(coursesTable)
     .where(and(
       eq(coursesTable.published, true), eq(coursesTable.archived, false), isNotNull(coursesTable.centerId),
-      eq(coursesTable.isFeatured, true), or(sql`${coursesTable.featuredUntil} is null`, gte(coursesTable.featuredUntil, new Date())),
+      publicFeaturedEducationCourseSql(now),
     ))
     .orderBy(desc(coursesTable.featuredActivatedAt));
   if (!courses.length) { res.json([]); return; }
   // Batch eligibility check — replaces N×2 per-course queries.
   const centerIds = [...new Set(courses.map((c) => c.centerId) as string[])];
   const eligibilityMap = await batchCenterEligibility(centerIds);
-  // Batch paid-charge check — one query for all candidates.
-  const paidCharges = await db.select().from(educationFeaturedChargesTable)
-    .where(and(
-      inArray(educationFeaturedChargesTable.courseId, courses.map((c) => c.id)),
-      eq(educationFeaturedChargesTable.status, "paid"),
-    ))
-    .orderBy(desc(educationFeaturedChargesTable.createdAt));
-  const paidCourseIds = new Set(paidCharges.map((ch) => ch.courseId));
-  const visible = courses.filter((course) =>
-    course.centerId && eligibilityMap.get(course.centerId) === true && paidCourseIds.has(course.id),
-  );
-  res.json((await batchEducationCourseViews(visible)).map(publicEducationCourseView));
+  const visible = courses.filter((course) => course.centerId && eligibilityMap.get(course.centerId) === true);
+  res.json((await batchEducationCourseViews(visible, undefined, now)).map(publicEducationCourseView));
 });
 
 router.get("/education/instructors", async (req, res): Promise<void> => {
@@ -24045,7 +24319,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { active, featured, isVerified, topSalon, videoUrl, pib } = parsed.data;
-  if (videoUrl !== undefined && !isHttpVideoUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  if (videoUrl !== undefined && !isSafeExternalHttpUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }

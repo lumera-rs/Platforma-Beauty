@@ -4963,6 +4963,25 @@ export async function runBusinessGrowthSchemaDdl(
   try {
     // Constrain unqualified name resolution inside DO blocks to the target schema.
     await client.query(`SET search_path TO ${quoted}`);
+    // education_salon_cleanup_reports is written by the one-time v99 historical
+    // DATA migration further below (version-gated, on purpose -- it must run at
+    // most once), but its TABLE SHAPE is a structural dependency of the
+    // unconditional reporting SELECT at the end of ensureBusinessGrowthSchema(),
+    // which runs on every single boot regardless of which branch below is
+    // taken. A database whose rollout tracker already reads as "current" (for
+    // example, one whose rollout table was created empty by `drizzle-kit push`
+    // and only later had its version column populated, rather than having
+    // actually executed the historical DDL array) would otherwise take the
+    // fast path below, never create this table, and then fail that
+    // unconditional SELECT on every subsequent boot. Creating the (possibly
+    // still-empty) table here, before either branch, closes that gap without
+    // touching the historical migration's DATA logic, which stays exactly as
+    // version-gated as before.
+    await client.query(`CREATE TABLE IF NOT EXISTS ${quoted}.education_salon_cleanup_reports (
+       version integer PRIMARY KEY, candidates integer NOT NULL,
+       detached_users integer NOT NULL, deleted_salons integer NOT NULL,
+       retired_salons integer NOT NULL, completed_at timestamptz NOT NULL DEFAULT now()
+     )`);
     const rolloutTable = `${schemaName}.business_growth_schema_rollout`;
     const existingRollout = await client.query<{ relation: string | null }>(
       "SELECT to_regclass($1)::text AS relation", [rolloutTable],
@@ -5007,19 +5026,26 @@ export async function runBusinessGrowthSchemaDdl(
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_text_snapshot text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.course_enrollments ADD COLUMN IF NOT EXISTS digital_content_consent_version_snapshot text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_installments ADD COLUMN IF NOT EXISTS payment_instructions_snapshot jsonb`);
-        await client.query(`DO $$ BEGIN
-          IF EXISTS (
-            SELECT 1 FROM pg_constraint
-            WHERE conrelid = '${quoted}.education_bundle_purchases'::regclass
-              AND conname = 'education_bundle_purchases_target_check'
-              AND NOT convalidated
-          ) THEN
-            ALTER TABLE ${quoted}.education_bundle_purchases
-              VALIDATE CONSTRAINT education_bundle_purchases_target_check;
-          END IF;
-        END $$`);
         for (const statement of paymentInstructionSnapshotBackfillStatements(quoted)) await client.query(statement);
+        // Sibling of the education_salon_cleanup_reports gap (Task #11A):
+        // `'...'::regclass` throws outright if education_bundle_purchases
+        // doesn't exist, unlike the guarded to_regclass() check already used
+        // just below for the same table. Both the constraint-validation
+        // block and the payment_reference backfill now share that one
+        // existence check, so neither runs against a database where this
+        // fast path is reached before that table exists.
         if ((await client.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${schemaName}.education_bundle_purchases`])).rows[0]?.exists) {
+          await client.query(`DO $$ BEGIN
+            IF EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conrelid = '${quoted}.education_bundle_purchases'::regclass
+                AND conname = 'education_bundle_purchases_target_check'
+                AND NOT convalidated
+            ) THEN
+              ALTER TABLE ${quoted}.education_bundle_purchases
+                VALIDATE CONSTRAINT education_bundle_purchases_target_check;
+            END IF;
+          END $$`);
           await client.query(`ALTER TABLE ${quoted}.education_bundle_purchases ADD COLUMN IF NOT EXISTS payment_reference text`);
           await client.query(`DROP TRIGGER IF EXISTS education_bundle_purchases_payment_reference_immutable ON ${quoted}.education_bundle_purchases`);
           await client.query(`UPDATE ${quoted}.education_bundle_purchases

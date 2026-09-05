@@ -57,6 +57,14 @@ router.use("/widget", (req: Request, res: Response, next: NextFunction) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Idempotency-Key");
   res.setHeader("Access-Control-Max-Age", "86400");
+  // Task #8: Helmet's app-wide default (Cross-Origin-Resource-Policy:
+  // same-origin, set in app.ts) would otherwise let a browser block these
+  // routes' own responses from being read by the cross-origin salon
+  // websites this CORS policy exists to serve. Override it back to
+  // cross-origin here, scoped to exactly the routes that already opt into
+  // cross-origin reads above -- every other route keeps Helmet's stricter
+  // default.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   next();
 });

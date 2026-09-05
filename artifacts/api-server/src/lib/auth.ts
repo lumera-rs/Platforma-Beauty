@@ -23,10 +23,16 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   return expectedBuffer.length === actual.length && timingSafeEqual(expectedBuffer, actual);
 }
 
-export async function createSession(userId: string): Promise<string> {
+/**
+ * `executor` defaults to the module-level `db` but accepts a transaction
+ * handle too, so callers that must invalidate old sessions and mint a
+ * replacement in one atomic unit (e.g. password change) can pass their own
+ * `tx` instead of issuing a second, separate connection/transaction.
+ */
+export async function createSession(userId: string, executor: Pick<typeof db, "insert"> = db): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  await db.insert(sessionsTable).values({
+  await executor.insert(sessionsTable).values({
     userId,
     tokenHash,
     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),

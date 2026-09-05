@@ -9,9 +9,56 @@ const requiredIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
   "test:education-dispute-browser",
+  // Each of these ships an isolated runner but was wired into no release
+  // phase, so the suite existed and never ran. Guarded here for the same
+  // reason as the backend gate below: a suite that stops running is a
+  // regression in its own right.
+  "test:safe-external-url-rendering-browser",
+  "test:education-public-center-hook-order-browser",
+  "test:logout-login-cache-residue-browser",
+  "test:infobip-registration-browser",
+  "test:retention-preview",
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
+
+/**
+ * Security/boot regressions that must never silently fall out of CI again.
+ * Each one is the dedicated guard for a finding that was launch-blocking when
+ * it was found, so a suite that stops running is a regression in its own
+ * right -- the Task #11 audit found all three present in the repository but
+ * wired into no script, workflow, or release phase at all.
+ */
+const requiredBackendSecurityGateScripts = [
+  // Guards #11-F2: an unlinked Google identity must not claim an existing
+  // local account by presenting its email.
+  "test:social-oauth-google-account-linking-safety",
+  // Guards #11-F1: ensureBusinessGrowthSchema() must repair a database whose
+  // rollout version already reads current but whose cleanup-reports table is
+  // absent, rather than crashing the API at boot.
+  "test:business-growth-schema-cleanup-reports",
+  "test:business-growth-schema-boot-regression",
+  // Guards the CI break where importing the Express app required the
+  // Replit-provisioned Anthropic integration variables, failing unrelated
+  // database/monitoring suites in GitHub Actions.
+  "test:anthropic-integration-lazy-init",
+] as const;
+
+const requiredBackendSecurityGatePhase = "validate:release:2-backend";
+
+/**
+ * These share the single mutable integration_settings rows for both OAuth
+ * providers (each deletes and restores them), so they must stay in one
+ * sequential "&&" chain inside the same phase. Running them concurrently
+ * makes them corrupt each other's fixtures.
+ */
+const sequentialSocialOauthScripts = [
+  "test:social-oauth-domain-change",
+  "test:social-oauth-return-to",
+  "test:social-oauth-referral-context",
+  "test:social-oauth-facebook-account-linking-safety",
+  "test:social-oauth-google-account-linking-safety",
+] as const;
 const branchCiPath = path.join(workspaceRoot, ".github", "workflows", "ci.yml");
 const workflowLintPath = path.join(
   workspaceRoot,
@@ -120,7 +167,7 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
+    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
     "The build CI command must preserve every genuinely database-free phase-one publish check.",
   );
   assert.equal(
@@ -353,5 +400,64 @@ test("required isolated browser checks remain wired into the release gate", asyn
       new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
       `${requiredIsolatedBrowserGatePhase} must invoke ${scriptName}.`,
     );
+  }
+});
+
+test("required backend security and boot regressions remain wired into the release gate and CI", async () => {
+  const rootScripts =
+    (JSON.parse(
+      await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> }).scripts ?? {};
+  const backendPhaseCommand = rootScripts[requiredBackendSecurityGatePhase];
+  const releaseCommand = rootScripts["validate:release"];
+  const ciDatabaseCommand = rootScripts["validate:ci:database"];
+
+  assert.ok(backendPhaseCommand, `${requiredBackendSecurityGatePhase} must be defined.`);
+  assert.ok(releaseCommand, "validate:release must be defined.");
+  assert.ok(ciDatabaseCommand, "validate:ci:database must be defined.");
+
+  // The phase has to stay reachable from BOTH entry points, otherwise a
+  // suite can be "wired" into a phase that nothing actually runs.
+  assert.match(
+    releaseCommand,
+    new RegExp(`(?:^| && )pnpm run ${requiredBackendSecurityGatePhase}(?: && |$)`),
+    `validate:release must invoke ${requiredBackendSecurityGatePhase}.`,
+  );
+  assert.match(
+    ciDatabaseCommand,
+    new RegExp(`(?:^| && )pnpm run ${requiredBackendSecurityGatePhase}(?: && |$)`),
+    `validate:ci:database must invoke ${requiredBackendSecurityGatePhase} so branch CI runs these guards.`,
+  );
+
+  for (const scriptName of requiredBackendSecurityGateScripts) {
+    assert.ok(
+      rootScripts[scriptName],
+      `Root script ${scriptName} must be defined -- its regression suite exists and must stay runnable.`,
+    );
+    assert.match(
+      backendPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredBackendSecurityGatePhase} must invoke ${scriptName}.`,
+    );
+  }
+
+  // Every social OAuth suite mutates the same integration_settings rows, so
+  // they must all remain in this one sequential chain -- never split across
+  // phases and never run concurrently.
+  let previousIndex = -1;
+  for (const scriptName of sequentialSocialOauthScripts) {
+    const stepIndex = backendPhaseCommand
+      .split(" && ")
+      .findIndex((step) => step.trim() === `pnpm run ${scriptName}`);
+    assert.notEqual(
+      stepIndex,
+      -1,
+      `${requiredBackendSecurityGatePhase} must invoke ${scriptName} as its own sequential step.`,
+    );
+    assert.ok(
+      stepIndex > previousIndex,
+      `${scriptName} must keep its sequential position among the social OAuth suites; they share mutable integration_settings rows and corrupt each other if reordered into a different chain or parallelized.`,
+    );
+    previousIndex = stepIndex;
   }
 });

@@ -35,6 +35,7 @@ import { ensureReferralSchema } from "./lib/referral-schema";
 import { ensureWebPushSchema } from "./lib/web-push-schema";
 import { ensureBookingCommandSchema } from "./lib/booking-command-schema";
 import { ensureEducationBundlePurchaseSchema } from "./lib/education-bundle-purchase-schema";
+import { assertAnthropicIntegrationConfigured } from "@workspace/integrations-anthropic-ai";
 import { runSystemPushWorker } from "./lib/web-push";
 import { drainSmsOutbox } from "./lib/sms";
 import { runProductWaitlistNotificationWorker } from "./lib/product-waitlist-worker";
@@ -62,6 +63,17 @@ const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+// The Anthropic client is now resolved lazily, on the AI growth-advisor
+// request path, so that importing this app does not require a Replit-only
+// integration variable in CI. Real deployments must still discover a missing
+// integration when they start, not when a salon owner first asks the advisor
+// a question, so the boot-time check the old import-time throw provided is
+// kept here -- deliberately production-only, matching how this file already
+// gates other production-only startup work below.
+if (process.env.NODE_ENV === "production") {
+  assertAnthropicIntegrationConfigured();
 }
 
 // Production does not run drizzle-kit push. Roll out additive schema changes

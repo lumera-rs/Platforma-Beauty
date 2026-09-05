@@ -20,7 +20,6 @@ export function CustomerRetailOrders() {
   });
 
   const repeatOrder = useRepeatLastRetailOrder({
-    request: { headers: { "Idempotency-Key": repeatIdempotencyKey } },
     mutation: {
       onSuccess: (data) => {
         setRepeatIdempotencyKey(crypto.randomUUID());
@@ -90,7 +89,7 @@ export function CustomerRetailOrders() {
                 <Badge variant={order.status === 'DELIVERED' ? 'outline' : 'secondary'}>{order.status}</Badge>
                 <span className="font-semibold text-primary">{order.total.toLocaleString("sr-RS")} RSD</span>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate()} disabled={repeatOrder.isPending}>
+              <Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate({ headers: { "Idempotency-Key": repeatIdempotencyKey } })} disabled={repeatOrder.isPending}>
                 Ponovi porudžbinu
               </Button>
             </div>

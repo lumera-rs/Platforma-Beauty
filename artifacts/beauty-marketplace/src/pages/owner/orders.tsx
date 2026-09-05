@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Package, ArrowLeft, ExternalLink, Truck, Repeat, Download, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { safeExternalHref } from "@/lib/safe-external-url";
 
 const money = (n: number) => `${n.toLocaleString("sr-RS")} RSD`;
 const date = (d: string | null) => d
@@ -18,10 +19,11 @@ function DeliveryTracking({ order, compact = false }: { order: { deliveryMethod:
   const personalDelivery = order.deliveryMethod === "personal_belgrade" || order.courierService === "Lična dostava";
   if (personalDelivery) return <p className="flex items-center gap-1 text-sm text-muted-foreground"><Truck className="h-4 w-4" />Lična dostava — kontaktiraćemo vas</p>;
   if (!order.courierService && !order.trackingNumber) return null;
+  const safeTrackingUrl = safeExternalHref(order.trackingUrl);
   return <div className={compact ? "mt-1 text-xs text-muted-foreground" : "rounded-lg border bg-muted/30 p-3 text-sm"}>
     <p><span className="font-medium">Kurir:</span> {order.courierService ?? "Nije izabran"}</p>
     {order.trackingNumber && <p><span className="font-medium">Broj za praćenje:</span> {order.trackingNumber}</p>}
-    {order.trackingUrl && <Button asChild variant="link" size="sm" className="mt-1 h-auto px-0 text-primary"><a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" data-testid="btn-track-shipment">Prati pošiljku <ExternalLink className="ml-1 h-3.5 w-3.5" /></a></Button>}
+    {safeTrackingUrl && <Button asChild variant="link" size="sm" className="mt-1 h-auto px-0 text-primary"><a href={safeTrackingUrl} target="_blank" rel="noopener noreferrer" data-testid="btn-track-shipment">Prati pošiljku <ExternalLink className="ml-1 h-3.5 w-3.5" /></a></Button>}
   </div>;
 }
 
@@ -93,7 +95,6 @@ export default function OwnerOrders() {
   const [repeatIdempotencyKey, setRepeatIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const repeatOrder = useRepeatLastShopOrder({
-    request: { headers: { "Idempotency-Key": repeatIdempotencyKey } },
     mutation: {
       onSuccess: (data) => {
         setRepeatIdempotencyKey(crypto.randomUUID());
@@ -106,6 +107,6 @@ export default function OwnerOrders() {
 
   return <BusinessLayout><div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8"><OwnerSidebar current="/vlasnik/porudzbine"/><main className="flex-1 min-w-0">{params?.orderId ? <OrderDetail id={params.orderId}/> : <><div className="mb-6"><h1 className="text-3xl font-serif font-bold">B2B porudžbine</h1><p className="text-muted-foreground">Pregledajte istoriju, dostavu i račune.</p></div>{isLoading ? <Loader2 className="animate-spin"/> : orders.length === 0 ? <Card><CardContent className="p-10 text-center text-muted-foreground"><Package className="mx-auto mb-3 opacity-30"/>{page > 1 ? "Nema više porudžbina." : "Još nemate porudžbina."}</CardContent></Card> : <div className="space-y-3">{orders.map((order) => {
   const invoice = (order as any).invoice as { number: string; issuedAt: string } | undefined;
-  return <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><div className="flex gap-2">{invoice && <Button asChild variant="outline" size="sm" className="bg-primary/5 text-primary hover:bg-primary/10"><a href={`/api/shop/orders/${order.id}/invoice.pdf`} target="_blank" rel="noopener noreferrer"><Download className="w-4 h-4 mr-1"/> PDF Faktura</a></Button>}<Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate()} disabled={repeatOrder.isPending}><Repeat className="w-4 h-4 mr-1"/> Ponovi porudžbinu</Button><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></div></CardContent></Card>
+  return <Card key={order.id}><CardContent className="p-4 flex flex-wrap gap-3 items-center justify-between"><div><b>#{order.id.slice(0, 8)}</b><p className="text-sm text-muted-foreground">{date(order.createdAt)} · {order.itemCount} stavki</p><DeliveryTracking order={order} compact /></div><Badge>{order.status}</Badge><b>{money(order.total)}</b><div className="flex gap-2">{invoice && <Button asChild variant="outline" size="sm" className="bg-primary/5 text-primary hover:bg-primary/10"><a href={`/api/shop/orders/${order.id}/invoice.pdf`} target="_blank" rel="noopener noreferrer"><Download className="w-4 h-4 mr-1"/> PDF Faktura</a></Button>}<Button size="sm" variant="secondary" onClick={() => repeatOrder.mutate({ headers: { "Idempotency-Key": repeatIdempotencyKey } })} disabled={repeatOrder.isPending}><Repeat className="w-4 h-4 mr-1"/> Ponovi porudžbinu</Button><Button asChild variant="outline" size="sm"><Link href={`/vlasnik/porudzbine/${order.id}`}>Detalji</Link></Button></div></CardContent></Card>
 })}</div>}{!params?.orderId && !isLoading && (page > 1 || hasNextPage) && <div className="flex items-center justify-between gap-3 pt-4"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button><span className="text-sm text-muted-foreground">Strana {page}</span><Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button></div>}</>}</main></div></BusinessLayout>;
 }

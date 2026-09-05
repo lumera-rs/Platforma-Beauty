@@ -196,7 +196,7 @@ function SalonPlansTab({ canManagePlans }: { canManagePlans: boolean }) {
                 </div>
               </div>
               <div className="flex gap-2 mt-auto">
-                <Button variant="outline" className="flex-1 bg-background" onClick={() => handleOpenEdit(plan)} disabled={!canManagePlans}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
+                <Button variant="outline" className="flex-1 bg-background" onClick={() => handleOpenEdit(plan)} disabled={!canManagePlans} data-testid={`btn-edit-${plan.id}`}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
                 <Button variant="outline" size="icon" className="shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground border-border" onClick={() => handleDelete(plan.id)} disabled={!canManagePlans || actionGuard.isActive(`delete:${plan.id}`)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             </div>
@@ -210,8 +210,8 @@ function SalonPlansTab({ canManagePlans }: { canManagePlans: boolean }) {
           <div className="grid gap-6 py-4">
             <div className="space-y-2"><Label>Naziv</Label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Cena (RSD/mes)</Label><Input type="number" value={rawNums.price} onChange={e => setRawNums({ ...rawNums, price: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Probni period (dana)</Label><Input type="number" value={rawNums.trialDays} onChange={e => setRawNums({ ...rawNums, trialDays: e.target.value })} /></div>
+              <div className="space-y-2"><Label htmlFor="salon-plan-price">Cena (RSD/mes)</Label><Input id="salon-plan-price" type="number" value={rawNums.price} onChange={e => setRawNums({ ...rawNums, price: e.target.value })} /></div>
+              <div className="space-y-2"><Label htmlFor="salon-plan-trial-days">Probni period (dana)</Label><Input id="salon-plan-trial-days" type="number" value={rawNums.trialDays} onChange={e => setRawNums({ ...rawNums, trialDays: e.target.value })} /></div>
             </div>
             <div className="space-y-4 border p-4 bg-muted/10 rounded-xl">
               <h4 className="text-sm font-medium">Ograničenja (-1 za neograničeno)</h4>

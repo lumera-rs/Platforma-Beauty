@@ -28,7 +28,9 @@ import {
   getApiErrorDetails,
   getApiErrorMessage,
   type FirstAvailableServiceSlot,
-  type GroupedTreatmentRequest
+  type GroupedTreatmentRequest,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone, BriefcaseBusiness } from "lucide-react";
@@ -36,6 +38,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { SalonGallery, MediaItem } from "@/components/salon-gallery";
+import { safeExternalHref } from "@/lib/safe-external-url";
 import { AvatarImage as OptimizedAvatarImage, OptimizedImage } from "@/components/optimized-image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
@@ -444,21 +447,24 @@ export default function SalonProfile() {
 
     if (!salonData || !selectedService || !selectedSlot) return;
 
+    const appointmentData = {
+      salonId: salonData.id,
+      serviceId: selectedService,
+      date: dateStr,
+      startTime: selectedSlot.start,
+      employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined,
+      treatmentLocation: locationType,
+      treatmentAddress: locationType === "home"
+        ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
+        : undefined,
+      packagePurchaseId: packagePurchaseId,
+    };
     createAppointment.mutate({
-      data: {
-        salonId: salonData.id,
-        serviceId: selectedService,
-        date: dateStr,
-        startTime: selectedSlot.start,
-        employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined,
-        treatmentLocation: locationType,
-        treatmentAddress: locationType === "home"
-          ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
-          : undefined,
-        packagePurchaseId: packagePurchaseId,
-      }
+      data: appointmentData,
+      headers: { "Idempotency-Key": bookingCommandKey("/api/appointments", appointmentData) },
     }, {
       onSuccess: (response) => {
+        clearBookingCommandKey("/api/appointments", appointmentData);
         queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         if (packagePurchaseId) {
@@ -640,8 +646,9 @@ export default function SalonProfile() {
   const mediaItems: MediaItem[] = useMemo(() => {
     if (!salonData) return [];
     const items: MediaItem[] = [];
-    if (salonData.videoUrl) {
-      items.push({ type: 'video', url: salonData.videoUrl });
+    const safeVideoUrl = safeExternalHref(salonData.videoUrl);
+    if (safeVideoUrl) {
+      items.push({ type: 'video', url: safeVideoUrl });
     }
     if (salonData.imageUrl) {
       items.push({ type: 'image', url: salonData.imageUrl });
