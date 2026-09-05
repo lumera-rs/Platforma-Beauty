@@ -3423,15 +3423,35 @@ async function centerPublicView(
   };
 }
 
-async function educationCourseEnrichment(courseIds: string[]) {
+async function educationCourseEnrichment(
+  courseIds: string[],
+  /**
+   * Callers that already hold the course rows pass them here. Only the five
+   * taxonomy columns below are needed, so re-reading the very same rows is a
+   * wasted round trip on a hot public listing; batchEducationCourseViews()
+   * loads them immediately beforehand.
+   */
+  preloadedCourses?: readonly Pick<
+    typeof coursesTable.$inferSelect,
+    "id" | "category" | "categoryId" | "subcategoryId" | "courseTypeId"
+  >[],
+) {
   if (!courseIds.length) return new Map<string, Record<string, unknown>>();
-  const courses = await db.select({
-    id: coursesTable.id,
-    legacyCategory: coursesTable.category,
-    categoryId: coursesTable.categoryId,
-    subcategoryId: coursesTable.subcategoryId,
-    courseTypeId: coursesTable.courseTypeId,
-  }).from(coursesTable).where(inArray(coursesTable.id, courseIds));
+  const courses = preloadedCourses
+    ? preloadedCourses.map((row) => ({
+        id: row.id,
+        legacyCategory: row.category,
+        categoryId: row.categoryId,
+        subcategoryId: row.subcategoryId,
+        courseTypeId: row.courseTypeId,
+      }))
+    : await db.select({
+      id: coursesTable.id,
+      legacyCategory: coursesTable.category,
+      categoryId: coursesTable.categoryId,
+      subcategoryId: coursesTable.subcategoryId,
+      courseTypeId: coursesTable.courseTypeId,
+    }).from(coursesTable).where(inArray(coursesTable.id, courseIds));
   const categoryIds = [...new Set(courses.flatMap((row) => row.categoryId ? [row.categoryId] : []))];
   const subcategoryIds = [...new Set(courses.flatMap((row) => row.subcategoryId ? [row.subcategoryId] : []))];
   const courseTypeIds = [...new Set(courses.flatMap((row) => row.courseTypeId ? [row.courseTypeId] : []))];
@@ -6967,6 +6987,13 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
         serviceIds,
         serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name),
         canOrderIndependently: item.canOrderIndependently,
+        // The staff query above inner-joins employee_location_assignments on
+        // active = true and filters employees.active = true, so everyone
+        // reachable here is by construction active at this salon. The field is
+        // required by the shared staff contract (added with the per-assignment
+        // deactivation work); omitting it made this public profile fail its own
+        // response validation and return 500 for any salon that has staff.
+        active: true,
       };
     }),
     services: services.map((item) => ({
@@ -20567,7 +20594,7 @@ export async function batchEducationCourseViews(
     // Canonical public-featured eligibility (see education-featured-eligibility.ts) --
     // the same rule /education/public/popular and /education/public/featured use.
     batchPublicFeaturedEducationCourseState(courses, referenceTime),
-    educationCourseEnrichment(courseIds),
+    educationCourseEnrichment(courseIds, courses),
   ]);
 
   // Batch-fetch lessons for the collected modules.

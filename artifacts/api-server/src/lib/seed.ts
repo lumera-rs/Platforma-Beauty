@@ -451,14 +451,32 @@ async function seed(): Promise<void> {
   const owner = demoUsers[1]!;
   const customer = demoUsers[3]!;
   const employeeLearner = demoUsers[4]!;
-  const categoryRows = await db.insert(serviceCategoriesTable).values(
+  // Shared reference taxonomy, not demo-owned data. seedMarketplaceTaxonomy()
+  // inserts these same rows idempotently from the already-seeded branch above,
+  // so the taxonomy legitimately outlives the demo accounts: any caller that
+  // creates a user of its own takes that branch, and removing only the
+  // accounts it created leaves the taxonomy behind. This path is then reached
+  // again with no users but a populated taxonomy, so it has to converge on the
+  // existing rows instead of colliding with them.
+  await db.insert(serviceCategoriesTable).values(
     categories.map(([name, slug]) => ({
       name,
       slug,
       description: `Pažljivo izabrane ${name.toLowerCase()} usluge za svakodnevnu negu.`,
       fallbackImageUrl: categoryFallbackImages[name],
     })),
-  ).returning();
+  ).onConflictDoNothing();
+  // Read back in the declared `categories` order. The previous .returning()
+  // yielded insert order, and the demo services below pick a category by
+  // index, so an arbitrary select order would silently reshuffle which
+  // service belongs to which category.
+  const categoriesByName = new Map(
+    (await db.select().from(serviceCategoriesTable)).map((row) => [row.name, row]),
+  );
+  const categoryRows = categories.flatMap(([name]) => {
+    const row = categoriesByName.get(name);
+    return row ? [row] : [];
+  });
 
   const salons = await db.insert(salonsTable).values(
     salonNames.map(([name, slug, city, municipality], index) => ({
