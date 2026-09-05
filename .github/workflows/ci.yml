@@ -61,6 +61,16 @@ jobs:
       CI: "true"
       NODE_ENV: test
       DATABASE_URL: postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+      # Several suites in this job genuinely exercise encrypted integration
+      # metadata -- automation-provider-events, webhook-secret-reconfirmation,
+      # sms-webhook-registration and social-oauth-domain-change all reach
+      # lib/integrations.ts, which derives its AES-256-GCM key from
+      # SESSION_SECRET and correctly refuses to encrypt without one. This is a
+      # throwaway value that only ever protects data inside this job's
+      # disposable database; it is not a secret and must never be reused. Real
+      # deployments still supply their own, and production still fails fast if
+      # it is missing. Mirrors the browser job below.
+      SESSION_SECRET: lumera-ci-database-only-session-secret
     services:
       postgres:
         image: postgres:16
