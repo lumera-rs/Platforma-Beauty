@@ -9,6 +9,15 @@ const requiredIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
   "test:education-dispute-browser",
+  // Each of these ships an isolated runner but was wired into no release
+  // phase, so the suite existed and never ran. Guarded here for the same
+  // reason as the backend gate below: a suite that stops running is a
+  // regression in its own right.
+  "test:safe-external-url-rendering-browser",
+  "test:education-public-center-hook-order-browser",
+  "test:logout-login-cache-residue-browser",
+  "test:infobip-registration-browser",
+  "test:retention-preview",
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
