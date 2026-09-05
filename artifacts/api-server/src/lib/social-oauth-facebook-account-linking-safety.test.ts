@@ -24,15 +24,23 @@
  * linking the attacker's Facebook id to the victim's account for future
  * logins too.
  *
- * The fix is scoped to Facebook only (see marketplace.ts,
- * "oauth_facebook_email_collision"): an unlinked Facebook identity whose
- * email matches an existing local account is now rejected with the same
- * "account already exists" message ordinary email/password registration
- * already gives, instructing the user to sign in normally and link
- * Facebook from account settings (the existing authenticated "link" flow,
- * unchanged). Google's flow is intentionally left untouched -- its
- * email_verified check is exactly the kind of provider-authoritative
- * guarantee item 5 of the task allows to keep the existing linking rule.
+ * The fix was originally scoped to Facebook only: an unlinked Facebook
+ * identity whose email matches an existing local account is rejected with
+ * the same "account already exists" message ordinary email/password
+ * registration already gives, instructing the user to sign in normally and
+ * link Facebook from account settings (the existing authenticated "link"
+ * flow, unchanged). Google's flow was originally left untouched here --
+ * its email_verified check protects against email *spoofing*, which was
+ * this task's threat model.
+ *
+ * UPDATE (Task #11B): that same silent-link-by-email gap was later closed
+ * for Google too, for a different reason -- a verified-email guarantee
+ * says nothing about whether a mailbox has changed real-world owners since
+ * the local account was created. The internal error code this file
+ * originally documented as "oauth_facebook_email_collision" was renamed to
+ * the provider-generic "oauth_email_collision" as part of that change (see
+ * marketplace.ts and social-oauth-google-account-linking-safety.test.ts).
+ * Every assertion below still holds exactly as written.
  *
  * Already-linked Facebook identities are unaffected: resolution there was
  * already, and remains, by (provider, providerAccountId) alone, never by
