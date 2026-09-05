@@ -179,10 +179,12 @@ async function provisionDisposableApiServer(
       cwd: workspaceRoot,
       env: {
         ...process.env,
-        // The app requires an Anthropic integration to be configured at
-        // import time (lib/integrations-anthropic-ai). No test request here
-        // ever reaches that code path, so unreachable placeholder values are
-        // sufficient to let the server boot; the real production deployment
+        // The Anthropic integration is resolved lazily now, so importing the
+        // app no longer needs these. They are still supplied because this
+        // helper boots servers with NODE_ENV=production, and production boots
+        // assert the integration up front (artifacts/api-server/src/index.ts).
+        // No test request here ever reaches the provider, so unreachable
+        // placeholder values are sufficient; the real production deployment
         // configures its own real credentials independently of this test.
         AI_INTEGRATIONS_ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
         AI_INTEGRATIONS_ANTHROPIC_API_KEY: "unused-in-this-regression-test",

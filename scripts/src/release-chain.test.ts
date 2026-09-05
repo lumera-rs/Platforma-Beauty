@@ -29,6 +29,10 @@ const requiredBackendSecurityGateScripts = [
   // absent, rather than crashing the API at boot.
   "test:business-growth-schema-cleanup-reports",
   "test:business-growth-schema-boot-regression",
+  // Guards the CI break where importing the Express app required the
+  // Replit-provisioned Anthropic integration variables, failing unrelated
+  // database/monitoring suites in GitHub Actions.
+  "test:anthropic-integration-lazy-init",
 ] as const;
 
 const requiredBackendSecurityGatePhase = "validate:release:2-backend";
