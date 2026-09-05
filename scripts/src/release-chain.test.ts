@@ -158,7 +158,7 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
+    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
     "The build CI command must preserve every genuinely database-free phase-one publish check.",
   );
   assert.equal(

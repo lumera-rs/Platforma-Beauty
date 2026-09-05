@@ -9,6 +9,7 @@
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:browser": "tsc -p tsconfig.browser.json",
     "test:generated-api": "tsx ./src/generated-api-check.ts",
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
