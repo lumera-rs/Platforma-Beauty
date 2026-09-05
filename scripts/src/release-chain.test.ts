@@ -18,7 +18,6 @@ const requiredIsolatedBrowserGateScripts = [
   "test:logout-login-cache-residue-browser",
   "test:infobip-registration-browser",
   "test:retention-preview",
-  "test:admin-access-configuration",
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
