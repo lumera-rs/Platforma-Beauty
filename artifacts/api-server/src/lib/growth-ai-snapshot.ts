@@ -15,7 +15,7 @@ import {
   salonsTable,
   salonCustomersTable,
 } from "@workspace/db";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { getAnthropicClient } from "@workspace/integrations-anthropic-ai";
 import { logger } from "./logger";
 import { classifyRetention } from "./retention-classification";
 import { getActiveRetentionSettings } from "./retention-settings";
@@ -216,8 +216,11 @@ SALON DATA SNAPSHOT (use ONLY these numbers in your response):
 ${snapshotText}
 \`\`\``;
 
-  // Provider call — explicit failure, no fabricated fallback
-  const message = await anthropic.messages.create({
+  // Provider call — explicit failure, no fabricated fallback. The client is
+  // resolved here rather than at import time so that unrelated modules
+  // sharing this import graph do not require the Anthropic integration; an
+  // unprovisioned integration still throws the same error, on this path.
+  const message = await getAnthropicClient().messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
     system: systemPrompt,

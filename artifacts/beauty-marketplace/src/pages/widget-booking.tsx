@@ -10,7 +10,9 @@ import {
   getApiErrorDetails,
   type GroupedTreatmentRequest,
   type GroupedAvailabilityCandidate,
-  type Appointment
+  type Appointment,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { addDays } from "date-fns";
 import { Loader2, Calendar, Clock, ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Plus, Trash2, Scissors } from "lucide-react";
@@ -87,7 +89,8 @@ export default function WidgetBooking() {
 
   const createMutation = useCreateWidgetBookingGroup({
     mutation: {
-      onSuccess: (data) => {
+      onSuccess: (data, variables) => {
+        clearBookingCommandKey(`/api/widget/salons/${variables.slug}/booking-groups`, variables.data);
         setCompletedAppointments(data.appointments);
         setStep("SUCCESS");
         trackEvent("grouped_booking_completed", analyticsDimensions());
@@ -209,21 +212,24 @@ export default function WidgetBooking() {
     e.preventDefault();
     if (!salon || !selectedCandidate || cart.length === 0) return;
 
+    const widgetBookingPath = `/api/widget/salons/${salon.slug}/booking-groups`;
+    const widgetBookingData = {
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      phone: contact.phone,
+      email: contact.email || null,
+      note: contact.note || null,
+      treatments: selectedCandidate.treatments.map((t, i) => ({
+        serviceId: t.serviceId,
+        employeeId: t.employeeId,
+        date: t.date,
+        startTime: t.startTime
+      }))
+    };
     createMutation.mutate({
       slug: salon.slug,
-      data: {
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        phone: contact.phone,
-        email: contact.email || null,
-        note: contact.note || null,
-        treatments: selectedCandidate.treatments.map((t, i) => ({
-          serviceId: t.serviceId,
-          employeeId: t.employeeId,
-          date: t.date,
-          startTime: t.startTime
-        }))
-      }
+      data: widgetBookingData,
+      headers: { "Idempotency-Key": bookingCommandKey(widgetBookingPath, widgetBookingData) },
     });
   };
 

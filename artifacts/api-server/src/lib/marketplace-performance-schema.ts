@@ -21,6 +21,20 @@ export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
     await client.query(
       "create index concurrently if not exists appointments_employee_date_status_idx on appointments (employee_id, appointment_date, status)",
     );
+    // Supplier-agnostic catalog indexes. The schema's other catalog indexes
+    // lead with supplier_id and so cannot serve supplier-unscoped lookups.
+    // parent_id and category_id additionally each carry a foreign key, which
+    // Postgres does not index automatically, so without these the referential
+    // checks fall back to sequential scans of the catalog.
+    await client.query(
+      "create index concurrently if not exists product_categories_parent_sort_idx on product_categories (parent_id, sort_order)",
+    );
+    await client.query(
+      "create index concurrently if not exists product_categories_active_sort_idx on product_categories (active, sort_order)",
+    );
+    await client.query(
+      "create index concurrently if not exists products_category_active_idx on products (category_id, active)",
+    );
     logger.info("Marketplace performance indexes are ready");
   } finally {
     if (locked) {

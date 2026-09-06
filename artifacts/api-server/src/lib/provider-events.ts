@@ -112,7 +112,13 @@ export async function resolveInfobipNotifyUrl(): Promise<string | undefined> {
   return `${origin}/api/webhooks/infobip/${encodeURIComponent(secret)}`;
 }
 
-/** Timing-safe token comparison (hash both sides to equalize lengths). */
+/**
+ * Timing-safe opaque-secret comparison (hash both sides to a fixed-length
+ * digest first, so crypto.timingSafeEqual never sees mismatched buffer
+ * lengths). Despite the name, this is the general shared-secret comparison
+ * used across the codebase -- also by the /internal/jobs/* worker
+ * endpoints, not only provider webhook tokens.
+ */
 export function webhookTokenMatches(expected: string, provided: string): boolean {
   const a = createHash("sha256").update(expected).digest();
   const b = createHash("sha256").update(provided).digest();

@@ -1878,6 +1878,12 @@ paths:
       operationId: listSalonEmployees
       tags: [salon-management]
       summary: List salon employees
+      parameters:
+        - name: includeInactive
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: When true, also include employees whose assignment at the caller's active salon is inactive (owner-management use only -- booking/scheduling pickers must omit this so inactive employees never appear there).
       responses:
         "200":
           description: Employees
@@ -2001,7 +2007,7 @@ paths:
     post:
       operationId: deactivateSalonEmployee
       tags: [salon-management]
-      summary: Soft-deactivate an employee and their login account
+      summary: Deactivate an employee's assignment at the caller's active salon only; their login account is disabled only once no active assignment remains anywhere
       parameters:
         - name: employeeId
           in: path
@@ -2649,10 +2655,14 @@ paths:
       operationId: checkoutEducationB2bOrder
       tags: [education]
       summary: Finalize a center B2B order and persist immutable benefit evidence
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bCheckoutInput" } } } }
       responses:
-        "201": { description: Persisted order, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
-        "409": { description: Quote changed }
+        "201": { description: Order created by this request, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
+        "200": { description: Idempotent replay — an exact Idempotency-Key + payload repeat returns the original order unchanged, content: { application/json: { schema: { $ref: "#/components/schemas/EducationB2bOrder" } } } }
+        "400": { description: "Invalid request, or Idempotency-Key header missing/malformed" }
+        "409": { description: "Quote/stock changed since the price was checked, or Idempotency-Key reused with a different payload" }
   /admin/education/b2b-discount-tiers:
     get:
       operationId: adminGetEducationB2bDiscountTiers
@@ -10665,7 +10675,10 @@ components:
           type: array
           items: { type: string }
         canOrderIndependently: { type: boolean, description: Owner-controlled B2B purchasing permission. }
-      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames, canOrderIndependently]
+        active:
+          type: boolean
+          description: Whether this employee's assignment at the caller's active salon is currently active. Always true unless the request set includeInactive=true.
+      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames, canOrderIndependently, active]
     EmployeeDeactivationPreview:
       type: object
       properties:
@@ -10674,9 +10687,15 @@ components:
         locationName:
           type: ["string", "null"]
           description: Exact salon location that owns this request; present for owner queue reads.
-        futureAppointmentCount: { type: number, minimum: 0 }
+        futureAppointmentCount:
+          type: number
+          minimum: 0
+          description: Future appointments at the caller's active salon only -- other locations this employee works are unaffected by this action.
         hasLoginAccount: { type: boolean }
-      required: [employeeId, employeeName, futureAppointmentCount, hasLoginAccount]
+        willDeactivateLogin:
+          type: boolean
+          description: True only if this employee has no other active location assignment, so this action would also disable their login (and this salon's assignment is the last one).
+      required: [employeeId, employeeName, futureAppointmentCount, hasLoginAccount, willDeactivateLogin]
     EmployeeDeactivationResult:
       type: object
       properties:

@@ -58,6 +58,8 @@ import {
   useSearchEmployeeAvailability,
   getSearchEmployeeAvailabilityQueryKey,
   type SearchEmployeeAvailabilityParams,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
 import { AppointmentGeneralNote, AppointmentLifecyclePanel, AppointmentTimingNotice, NoShowNotice } from "@/components/appointment-lifecycle-panel";
@@ -736,18 +738,21 @@ export default function EmployeePortal() {
           toast.error("Unesite ime i telefon klijenta.");
           return;
         }
-        const group = await createBookingGroup.mutateAsync({
-          data: {
-            salonCustomerId: booking.salonCustomerId || undefined,
-            guest: booking.salonCustomerId ? undefined : {
-              firstName: booking.firstName.trim(),
-              lastName: booking.lastName.trim() || undefined,
-              phone: booking.phone.trim(),
-              email: booking.email.trim() || undefined,
-            },
-            treatments: groupTreatments.map(({ serviceId, date, startTime }) => ({ serviceId, date, startTime })),
+        const groupBookingData = {
+          salonCustomerId: booking.salonCustomerId || undefined,
+          guest: booking.salonCustomerId ? undefined : {
+            firstName: booking.firstName.trim(),
+            lastName: booking.lastName.trim() || undefined,
+            phone: booking.phone.trim(),
+            email: booking.email.trim() || undefined,
           },
+          treatments: groupTreatments.map(({ serviceId, date, startTime }) => ({ serviceId, date, startTime })),
+        };
+        const group = await createBookingGroup.mutateAsync({
+          data: groupBookingData,
+          headers: { "Idempotency-Key": bookingCommandKey("/api/employee/booking-groups", groupBookingData) },
         });
+        clearBookingCommandKey("/api/employee/booking-groups", groupBookingData);
         setCreatedBookingGroup({
           appointments: group.appointments.map(({ id, serviceName, date, startTime, endTime, employeeName }) => ({ id, serviceName, date, startTime, endTime, employeeName })),
         });

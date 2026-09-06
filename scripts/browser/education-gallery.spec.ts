@@ -323,7 +323,7 @@ test("education center owner uploads, manages, and removes a course gallery imag
 
     const ownerCourse = await page.request.get(`/api/education/courses/${fixture.courseId}`);
     expect(ownerCourse).toBeOK();
-    const ownerCourseJson = await ownerCourse.json() as { gallery: Array<{ url: string; altText: string }> };
+    const ownerCourseJson = await ownerCourse.json() as { gallery: Array<{ id: string; url: string; altText: string }> };
     expect(ownerCourseJson.gallery).toHaveLength(2);
     expect(ownerCourseJson.gallery[0]?.url).toMatch(/^\/api\/media\//);
     expect(JSON.stringify(ownerCourseJson)).not.toContain("objectPath");
@@ -698,6 +698,7 @@ test("concurrent gallery attach, cleanup, and deletion preserve a referenced fin
     );
     await waitForGalleryLockWaiters(fixture.courseId, 3);
 
+    if (!releaseGalleryLock) throw new Error("Gallery lock was never armed, so the waiters could not be released.");
     releaseGalleryLock();
     releaseGalleryLock = undefined;
 

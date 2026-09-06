@@ -14,7 +14,12 @@ export interface EmployeeDeactivationPreview {
      * @nullable
      */
   locationName?: string | null;
-  /** @minimum 0 */
+  /**
+     * Future appointments at the caller's active salon only -- other locations this employee works are unaffected by this action.
+     * @minimum 0
+     */
   futureAppointmentCount: number;
   hasLoginAccount: boolean;
+  /** True only if this employee has no other active location assignment, so this action would also disable their login (and this salon's assignment is the last one). */
+  willDeactivateLogin: boolean;
 }

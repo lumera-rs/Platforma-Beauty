@@ -27,6 +27,7 @@ delete from beauty_job_application_actions
 where listing_id in (select id from beauty_job_listings where description = :'marker');
 delete from beauty_job_listings where description = :'marker';
 delete from beauty_job_categories where slug = :'slug';
+delete from users where email = :'marker' || '@lumera.test';
 SQL
   rm -f "$body" "$cookie"
   if [[ "$cleanup_failed" == true ]]; then
@@ -40,6 +41,19 @@ read -r damaged_id valid_id damaged_slot_id valid_slot_id damaged_request_id val
   psql "$DATABASE_URL" -AtF ' ' -v ON_ERROR_STOP=1 -v marker="$fixture_marker" -v slug="$fixture_slug" <<'SQL'
 with fixture_user as (
   select id from users where email = 'admin@lumera.local'
+),
+-- Beauty Poslovi is a JOBSEEKER / SALON_OWNER / EDUKATIVNI_CENTAR module, so a
+-- CUSTOMER can neither file a rental request nor apply to a listing: the API
+-- rejects them at the guard. Borrowing kupac@lumera.local as the applicant
+-- therefore fabricated a row the application itself could never produce, and
+-- the history assertions below then asked for 200 where production correctly
+-- answers 403. Create a disposable JOBSEEKER instead (cleanup removes it), and
+-- copy the demo customer's password hash so $demo_password still logs in.
+fixture_applicant as (
+  insert into users (first_name, last_name, email, password_hash, password_set_at, role)
+  select 'Damaged', 'Timestamp', :'marker' || '@lumera.test', password_hash, now(), 'JOBSEEKER'::user_role
+  from users where email = 'kupac@lumera.local'
+  returning id
 ),
 fixture_category as (
   insert into beauty_job_categories (slug, name)
@@ -111,14 +125,14 @@ fixture_requests as (
     'pending'::beauty_job_rental_request_status, '-infinity'::timestamptz, now()
   from fixture_listings listing
   join fixture_slots slot on slot.starts_at = '-infinity'::timestamptz
-  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  cross join fixture_applicant applicant
   where listing.title = :'marker' || '-damaged'
   union all
   select listing.id, slot.id, applicant.id, :'marker' || '-valid-request',
     'pending'::beauty_job_rental_request_status, now(), now()
   from fixture_listings listing
   join fixture_slots slot on slot.starts_at <> '-infinity'::timestamptz
-  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  cross join fixture_applicant applicant
   where listing.title = :'marker' || '-damaged'
   returning id, message
 ),
@@ -131,7 +145,7 @@ fixture_contact as (
     'pending'::beauty_job_contact_status, 'replied'::beauty_job_contact_status,
     :'marker' || '-damaged-reply', now(), now(), '-infinity'::timestamptz, now()
   from fixture_listings listing
-  cross join lateral (select id from users where email = 'kupac@lumera.local') applicant
+  cross join fixture_applicant applicant
   where listing.title = :'marker' || '-applicants'
   union all
   select listing.id, applicant.id, :'marker' || '-valid-application',
@@ -190,10 +204,10 @@ request_and_expect_200() {
 
 status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
   -H "Content-Type: application/json" \
-  --data "{\"email\":\"kupac@lumera.local\",\"password\":\"$demo_password\"}" \
+  --data "{\"email\":\"$fixture_marker@lumera.test\",\"password\":\"$demo_password\"}" \
   "$BASE_URL/auth/login")"
 if [[ "$status" != "200" ]]; then
-  echo "FAIL: customer login expected 200, got $status: $(cat "$body")" >&2
+  echo "FAIL: jobseeker login expected 200, got $status: $(cat "$body")" >&2
   exit 1
 fi
 

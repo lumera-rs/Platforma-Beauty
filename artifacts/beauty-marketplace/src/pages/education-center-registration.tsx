@@ -4,7 +4,8 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GraduationCap, Loader2, CheckCircle2, ChevronRight } from "lucide-react";
-import { getApiErrorMessage, useListEducationSubscriptionPlans, useRegisterBusiness } from "@workspace/api-client-react";
+import { getApiErrorMessage, getGetCurrentUserQueryKey, useListEducationSubscriptionPlans, useRegisterBusiness } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -44,6 +45,7 @@ type EduRegistrationValues = z.infer<typeof eduRegistrationSchema>;
 
 export default function EducationCenterRegistration() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2>(1);
   const registerBusiness = useRegisterBusiness();
@@ -92,6 +94,8 @@ export default function EducationCenterRegistration() {
     }, {
       onSuccess: (data) => {
         clearStoredReferralCode();
+        queryClient.clear();
+        queryClient.setQueryData(getGetCurrentUserQueryKey(), data);
         toast.success("Edukativni centar je kreiran", { description: "Dobrodošli u LUMERA Edukativnu mrežu." });
         setLocation(homeForRole(data.user.role));
       },

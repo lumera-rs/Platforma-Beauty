@@ -1,0 +1,22 @@
+{
+  // Playwright specs are not part of the buildable `src` program: they run
+  // through the Playwright runner, so tsconfig.json (rootDir/outDir "src")
+  // never saw them and a missing import survived until the statement ran.
+  //
+  // They need the DOM lib because page.evaluate callbacks execute in the
+  // browser and reference window/document. That is also why
+  // education-gallery.spec.ts is excluded: it imports api-server route
+  // source, and checking server code under the DOM lib reports conflicts
+  // that are not real (Node accepts a Buffer as a fetch body and returns a
+  // Node ReadableStream; the DOM types do not). That file is still kept
+  // free of its own type errors, so the exclusion can be lifted once the
+  // api-server is consumable through declaration output.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["es2022", "dom", "dom.iterable"]
+  },
+  "include": ["browser"],
+  "exclude": ["browser/education-gallery.spec.ts"]
+}

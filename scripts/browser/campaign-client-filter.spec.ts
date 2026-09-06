@@ -483,12 +483,15 @@ test("stale campaign links stay safe when restored through browser history", asy
 
 test("deleted combined campaign links fall back safely through browser history", async ({ page }) => {
   const fixture = await createFixture();
-  const window = {
+  // Not named `window`: this is a date range, and shadowing the browser global
+  // makes `window.history` inside page.evaluate below read as a property of
+  // this object.
+  const statsWindow = {
     from: "2026-03-01",
     to: "2026-04-30",
   };
   const overviewUrl = "/vlasnik/automatizacije?utm_source=history-stale-combined&ref=overview";
-  const combinedUrl = `/vlasnik/automatizacije?utm_source=history-stale-combined&ref=deleted&from=${window.from}&to=${window.to}&rule=${fixture.ruleId}&clients=returning`;
+  const combinedUrl = `/vlasnik/automatizacije?utm_source=history-stale-combined&ref=deleted&from=${statsWindow.from}&to=${statsWindow.to}&rule=${fixture.ruleId}&clients=returning`;
 
   try {
     await signInAsFixtureOwner(page, fixture);
@@ -523,7 +526,7 @@ test("deleted combined campaign links fall back safely through browser history",
         clients: params.get("clients"),
       };
     }).toEqual({
-      ...window,
+      ...statsWindow,
       tracking: "history-stale-combined",
       ref: "deleted",
       rule: null,

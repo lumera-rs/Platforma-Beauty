@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -9,6 +10,36 @@ const app: Express = express();
 // Replit deployments have one controlled edge proxy. Local/test processes are
 // directly reachable, so forwarded headers must not influence req.ip there.
 app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
+
+// Task #8: baseline HTTP security headers. This process is a pure JSON API --
+// it never serves HTML, so Content-Security-Policy/X-Frame-Options/frame-
+// ancestors have no practical target here and are harmless to leave at
+// Helmet's defaults (SAMEORIGIN / frame-ancestors 'self'). Crucially, this
+// does NOT affect the embeddable booking widget: the widget's actual iframed
+// HTML page is served by the frontend app on a different process/deployment,
+// not by this API -- these headers only ever govern whether a URL from THIS
+// process can be the target of an <iframe src>, which nothing does. Per-route
+// CORS (see routes/widget.ts) remains the real, separate mechanism that lets
+// the widget's own script make cross-origin fetch() calls into this API.
+// HSTS is gated on the same "are we in the real HTTPS production topology"
+// signal already used for secure cookies and the OAuth HTTPS redirect check
+// (NODE_ENV==="production"), so local/dev/test HTTP traffic is unaffected.
+// includeSubDomains is left off deliberately: this process only knows its
+// own origin's HTTPS guarantee, not that of every subdomain under the same
+// registered domain.
+app.use(helmet({
+  strictTransportSecurity: process.env.NODE_ENV === "production"
+    ? { maxAge: 15552000, includeSubDomains: false }
+    : false,
+}));
+// Helmet 8 dropped Permissions-Policy (the spec churned too much to keep a
+// default). This API never legitimately needs camera/microphone/geolocation,
+// so disabling them is a safe, narrow addition rather than a hand-rolled
+// header set.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 
 app.use(
   pinoHttp({

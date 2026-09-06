@@ -1,8 +1,9 @@
 import { Link, useLocation, useRoute } from "wouter";
-import { 
-  LayoutDashboard, Briefcase, GraduationCap, 
+import {
+  LayoutDashboard, Briefcase, GraduationCap,
   UserCircle, Settings, LogOut, Loader2, Bell, Gift, Box
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useGetCurrentUser, useGetJobseekerDashboard, useLogout } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export default function JobseekerDashboard() {
   const [, params] = useRoute("/poslovi/nalog/:tab?");
   const activeTab = params?.tab || "pregled";
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { data: userResp, isLoading: userLoading } = useGetCurrentUser();
   const logout = useLogout();
   
@@ -37,7 +39,10 @@ export default function JobseekerDashboard() {
 
   const handleLogout = () => {
     logout.mutate(undefined, {
-      onSuccess: () => setLocation("/")
+      onSuccess: () => {
+        queryClient.clear();
+        setLocation("/");
+      },
     });
   };
 

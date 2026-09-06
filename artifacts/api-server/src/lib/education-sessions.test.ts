@@ -47,6 +47,7 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
 import {
+  VALID_TEST_IPS_SETTINGS,
   buildValidOnlineEducationCourse,
   buildValidOnlineEducationEnrollmentRequest,
 } from "./education-test-fixtures";
@@ -118,7 +119,16 @@ async function run(): Promise<void> {
     [settingsSnapshot] = await db.select().from(educationPlatformSettingsTable)
       .orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
     assert.ok(settingsSnapshot, "Global Education platform settings are required.");
-    await db.update(educationPlatformSettingsTable).set({ ipsAccountEnvironment: "test" })
+    // Enrolling in a paid course renders IPS payment instructions from these
+    // platform settings, and educationIpsQrPayload() refuses to render them
+    // without a recipient name, account and purpose (the route answers 503).
+    // seed() leaves all three null, so a database seeded from scratch - which
+    // is what CI builds - had no recipient at all; setting only the account
+    // environment was not enough. VALID_TEST_IPS_SETTINGS is the shared test
+    // recipient the sibling Education suites already install, and it carries
+    // ipsAccountEnvironment: "test", so it subsumes the previous update. The
+    // snapshot taken above is restored in the finally block.
+    await db.update(educationPlatformSettingsTable).set({ ...VALID_TEST_IPS_SETTINGS })
       .where(eq(educationPlatformSettingsTable.id, settingsSnapshot.id));
     // ── Fixture users ────────────────────────────────────────────────────────
     const passwordHash = await hashPassword(password);

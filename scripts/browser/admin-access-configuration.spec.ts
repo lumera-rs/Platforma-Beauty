@@ -42,9 +42,15 @@ const admin = {
   firstName: "Test",
   lastName: "Administrator",
   email: "admin-regression@example.test",
+  // GetCurrentUserResponse requires dateOfBirth (nullable, but not optional)
+  // and marketingEmailsEnabled. This fixture predates both, so every test that
+  // mounts an admin screen failed its schema check the moment the suite was
+  // first run.
+  dateOfBirth: null,
   role: "ADMIN" as const,
   active: true,
   mustChangePassword: false,
+  marketingEmailsEnabled: true,
 };
 
 const superAdmin = { ...admin, role: "SUPER_ADMIN" as const };
@@ -84,6 +90,8 @@ function adminUser() {
     phone: null,
     role: "SALON_OWNER",
     active: true,
+    // Required by AdminListUsersResponseItem: nullable, but not optional.
+    passwordSetAt: null,
     createdAt: "2026-08-21T09:00:00.000Z",
   };
 }

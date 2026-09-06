@@ -1338,6 +1338,8 @@ export interface Employee {
   serviceNames: string[];
   /** Owner-controlled B2B purchasing permission. */
   canOrderIndependently: boolean;
+  /** Whether this employee's assignment at the caller's active salon is currently active. Always true unless the request set includeInactive=true. */
+  active: boolean;
 }
 
 export interface ServiceResourceRequirement {
@@ -1536,9 +1538,14 @@ export interface EmployeeDeactivationPreview {
      * @nullable
      */
   locationName?: string | null;
-  /** @minimum 0 */
+  /**
+     * Future appointments at the caller's active salon only -- other locations this employee works are unaffected by this action.
+     * @minimum 0
+     */
   futureAppointmentCount: number;
   hasLoginAccount: boolean;
+  /** True only if this employee has no other active location assignment, so this action would also disable their login (and this salon's assignment is the last one). */
+  willDeactivateLogin: boolean;
 }
 
 export interface EmployeeDeactivationResult {
@@ -14634,6 +14641,33 @@ date: string;
 granularityMinutes?: number;
 };
 
+export type CreateBookingGroupHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CreateSalonBookingGroupHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CreateEmployeeBookingGroupHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type GetBookingCommandReceiptParams = {
 salonId: string;
 };
@@ -14673,6 +14707,15 @@ export const ListMyAppointmentsScope = {
   past: 'past',
   all: 'all',
 } as const;
+
+export type CreateAppointmentHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
 
 export type ListCustomerNotificationsParams = {
 unreadOnly?: boolean;
@@ -14741,6 +14784,24 @@ page?: number;
 pageSize?: number;
 };
 
+export type CreateSalonAppointmentHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CreateSalonPackageAppointmentsHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type ListSalonTimeBlocksParams = {
 /**
  * @pattern ^\d{4}-\d{2}-\d{2}$
@@ -14776,6 +14837,15 @@ export type GetSalonCalendarDayParams = {
 date: string;
 };
 
+export type CreateSalonAppointmentSeriesHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type ListSalonCustomersParams = {
 /**
  * 1-based page number for stable pagination (lastName asc, firstName asc, id asc).
@@ -14804,6 +14874,24 @@ startDate: string;
 granularityMinutes?: number;
 };
 
+export type CreateEmployeeAppointmentSeriesHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CreateEmployeeAppointmentsHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type DeleteSalonResource409 = {
   error: string;
 };
@@ -14825,6 +14913,13 @@ subcategory?: string;
 
 export type DeleteSalonService409 = {
   error: string;
+};
+
+export type ListSalonEmployeesParams = {
+/**
+ * When true, also include employees whose assignment at the caller's active salon is inactive (owner-management use only -- booking/scheduling pickers must omit this so inactive employees never appear there).
+ */
+includeInactive?: boolean;
 };
 
 export type ListPublicProductsParams = {
@@ -14865,6 +14960,23 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type RepeatLastShopOrderHeaders = {
+/**
+ * @minLength 8
+ * @maxLength 200
+ */
+'Idempotency-Key': string;
+};
+
+export type CheckoutEducationB2bOrderHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
 };
 
 export type ListShopApprovalRequestsParams = {
@@ -15098,6 +15210,10 @@ export type ListEducationBundles200Item = { [key: string]: unknown };
 
 export type GetEducationBundle200 = { [key: string]: unknown };
 
+export type PurchaseEducationBundleHeaders = {
+'Idempotency-Key': string;
+};
+
 export type PurchaseEducationBundleBodyTargetType = typeof PurchaseEducationBundleBodyTargetType[keyof typeof PurchaseEducationBundleBodyTargetType];
 
 
@@ -15266,6 +15382,24 @@ date?: string;
 educatorStaffId?: string;
 };
 
+export type CreateEducationOperationalBookingHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type SettleAdminEducationInstallmentHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type ListAdminEducationInstallmentsParams = {
 status?: ListAdminEducationInstallmentsStatus;
 reference?: string;
@@ -15281,6 +15415,24 @@ export const ListAdminEducationInstallmentsStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type RescheduleEducationOperationalBookingHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CommitEducationCourseRecurrenceHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type GetEducationCenterOperationsCalendarParams = {
 /**
  * @pattern ^\d{4}-\d{2}-\d{2}$
@@ -15291,6 +15443,24 @@ startDate: string;
  */
 endDate: string;
 educatorStaffId?: string;
+};
+
+export type EnrollInEducationCourseHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
+export type CreateEducationGroupEnrollmentsHeaders = {
+/**
+ * Optional client-generated command identifier recorded on each created enrollment.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key'?: string;
 };
 
 export type TransferEducationOnlineEnrollmentBody = {
@@ -15541,6 +15711,15 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type PurchaseEducationGiftVoucherHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
 };
 
 export type AdminListEducationGiftVouchersParams = {
@@ -16046,8 +16225,26 @@ date: string;
 employeeId?: string;
 };
 
+export type CreateWidgetAppointmentHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
+};
+
 export type CreateWidgetAppointment429 = BookingCapacityError | {
   error: string;
+};
+
+export type CreateWidgetBookingGroupHeaders = {
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
 };
 
 export type CreateWidgetBookingGroup429 = BookingCapacityError | {
@@ -16056,6 +16253,14 @@ export type CreateWidgetBookingGroup429 = BookingCapacityError | {
 
 export type RemoveProductWishlistItemParams = {
 variantValue?: string;
+};
+
+export type RepeatLastRetailOrderHeaders = {
+/**
+ * @minLength 8
+ * @maxLength 200
+ */
+'Idempotency-Key': string;
 };
 
 export type PreviewRetailCheckoutParams = {

@@ -6,7 +6,16 @@ import type { AddressInfo } from "node:net";
 import app from "../app";
 import { observeDatabaseQueries, pool, type DatabaseQueryObservation } from "@workspace/db";
 import { createSession, sessionCookieName } from "../lib/auth";
-import { selectPopularPublicCourses } from "../lib/education-public-course-order";
+
+// Regression coverage for the intended paid-featured-only popular-course
+// ordering (this file's own former `selectPopularPublicCourses` unit test)
+// now lives as a real end-to-end HTTP test against the actual production
+// route in education-popular-featured-ranking.test.ts and
+// education-featured-eligibility-consistency.test.ts (Task #6/#6B) --
+// `selectPopularPublicCourses` was a pure-function reimplementation of the
+// same ordering that production never called, which is exactly how the
+// original ranking bypass went undetected by a "passing" test. It has been
+// removed rather than kept as a second, driftable source of truth.
 
 async function countedRequest(url: string, init?: RequestInit) {
   const queries: DatabaseQueryObservation[] = [];
@@ -19,27 +28,6 @@ async function countedRequest(url: string, init?: RequestInit) {
     stopObserving();
   }
 }
-
-test("popular education ordering uses only paid featured placements before slicing", () => {
-  const courses = [
-    { id: "highest-rating", rating: 50, createdAt: new Date("2026-01-01T00:00:00.000Z") },
-    { id: "paid-featured", rating: 40, createdAt: new Date("2026-01-01T00:00:00.000Z") },
-    { id: "unpaid-newest", rating: 40, createdAt: new Date("2026-03-01T00:00:00.000Z") },
-    { id: "ordinary-older", rating: 40, createdAt: new Date("2026-02-01T00:00:00.000Z") },
-  ];
-  const ordered = selectPopularPublicCourses(
-    courses,
-    new Map([
-      ["paid-featured", true],
-      ["unpaid-newest", false],
-    ]),
-    3,
-  );
-  assert.deepEqual(
-    ordered.map((course) => course.id),
-    ["highest-rating", "paid-featured", "unpaid-newest"],
-  );
-});
 
 test("optimized marketplace lists stay within fixed SQL query budgets", async () => {
   const server = app.listen(0, "127.0.0.1");

@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { MarketingEmailPreferences } from "@/components/marketing-email-preferences";
+import { SafeExternalLink } from "@/components/safe-external-link";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
 import { trackEvent } from "@/lib/analytics";
 import { QRCodeSVG } from "qrcode.react";
@@ -369,11 +370,9 @@ export default function OwnerSalonProfile() {
                       onChange={(event) => setVideoUrl(event.target.value)}
                     />
                   </div>
-                  {salon.videoUrl ? (
-                    <a href={salon.videoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
-                      Pogledajte trenutno postavljeni video <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ) : null}
+                  <SafeExternalLink href={salon.videoUrl} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+                    Pogledajte trenutno postavljeni video <ExternalLink className="h-3.5 w-3.5" />
+                  </SafeExternalLink>
                   <Button type="submit" disabled={updateProfile.isPending}>
                     {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Sačuvaj podešavanja

@@ -55,7 +55,7 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
   };
 
   const holdNextMutation = () => {
-    let release = () => undefined;
+    let release: () => void = () => undefined;
     nextMutationHold = new Promise<void>((resolve) => { release = resolve; });
     return release;
   };

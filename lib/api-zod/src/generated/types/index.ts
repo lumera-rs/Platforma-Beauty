@@ -993,6 +993,7 @@ export * from './listRelatedEducationCoursesParams';
 export * from './listSalonAppointmentsParams';
 export * from './listSalonClockEntriesParams';
 export * from './listSalonCustomersParams';
+export * from './listSalonEmployeesParams';
 export * from './listSalonNotificationsParams';
 export * from './listSalonsAvailability';
 export * from './listSalonsGender';

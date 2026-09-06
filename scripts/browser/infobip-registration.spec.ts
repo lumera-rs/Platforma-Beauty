@@ -172,8 +172,9 @@ async function cleanUpFixture() {
           lastEventAt: providerWebhookReceiptsTable.lastEventAt,
         }).from(providerWebhookReceiptsTable)
           .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
-        const currentReceiptBelongsToFixture = currentReceipt
-          && fixtureReceiptTimes.some((at) => at.getTime() === currentReceipt.lastEventAt.getTime());
+        const currentLastEventAt = currentReceipt?.lastEventAt ?? null;
+        const currentReceiptBelongsToFixture = currentLastEventAt !== null
+          && fixtureReceiptTimes.some((at) => at.getTime() === currentLastEventAt.getTime());
 
         // The provider table is a singleton keyed by provider. Restore the
         // saved row only while the singleton still contains fixture evidence;

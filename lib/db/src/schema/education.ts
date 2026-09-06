@@ -1322,12 +1322,23 @@ export const educationB2bOrdersTable = pgTable("education_b2b_orders", {
   refundedAmountRsd: integer("refunded_amount_rsd").notNull().default(0),
   settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   settledAt: timestamp("settled_at", { withTimezone: true }),
+  // Nullable (rather than notNull, unlike education_bundle_purchases) so this
+  // is a non-destructive addition to an already-deployed table: existing rows
+  // simply have no idempotency key, and the partial unique index below only
+  // constrains rows that do.
+  idempotencyKey: text("idempotency_key"),
+  idempotencyFingerprint: text("idempotency_fingerprint"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_b2b_orders_center_created_idx").on(table.centerId, table.createdAt),
   index("education_b2b_orders_purchaser_idx").on(table.purchaserUserId),
   index("education_b2b_orders_settled_by_idx").on(table.settledByUserId),
   index("education_b2b_orders_qualified_spend_idx").on(table.centerId, table.paymentStatus, table.fulfillmentStatus, table.completedAt),
+  // Tenant-scoped idempotency: centerId is leading, so a key from one center
+  // can never collide with -- or replay -- another center's request.
+  uniqueIndex("education_b2b_orders_center_idempotency_unique")
+    .on(table.centerId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} is not null`),
   check("education_b2b_orders_payment_status_check", sql`${table.paymentStatus} in ('pending','paid','refunded','cancelled')`),
   check("education_b2b_orders_fulfillment_status_check", sql`${table.fulfillmentStatus} in ('RECEIVED','PREPARING','PACKING','SHIPPED','COMPLETED','CANCELLED')`),
   check("education_b2b_orders_refund_check", sql`${table.refundedAmountRsd} >= 0 and ${table.refundedAmountRsd} <= ${table.totalRsd}`),

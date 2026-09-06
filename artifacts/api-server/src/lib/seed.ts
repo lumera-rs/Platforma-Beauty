@@ -54,8 +54,24 @@ import {
 import { getOrCreateShippingConfig } from "./shipping-config";
 import { EDUCATION_TAXONOMY } from "./education-taxonomy";
 import { issueOnlineEnrollmentFields } from "./education-entitlement";
+import { logger } from "./logger";
 
 let seedPromise: Promise<void> | undefined;
+
+/**
+ * Demo identities (including a SUPER_ADMIN) ship with a password documented
+ * in the repository, so creating them is safe only outside production, or in
+ * production when an operator has explicitly opted into a showcase/demo
+ * deployment. This must never default to "on" for real production traffic.
+ */
+export const PRODUCTION_DEMO_SEED_OPT_IN_ENV = "LUMERA_ALLOW_PRODUCTION_DEMO_SEED";
+
+export function productionDemoSeedAllowed(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return environment.NODE_ENV !== "production" || environment[PRODUCTION_DEMO_SEED_OPT_IN_ENV] === "1";
+}
+
 const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
 const DEMO_EDUCATION_OWNER_EMAIL = "edukacija@lumera.local";
 function educationTaxonomyKey(value: string): string {
@@ -391,6 +407,29 @@ async function seed(): Promise<void> {
     return;
   }
 
+  if (!productionDemoSeedAllowed()) {
+    // A fresh production database with no users yet: never auto-create the
+    // well-known demo accounts (including a SUPER_ADMIN) with the password
+    // documented in the repository. Real accounts are created only through
+    // normal registration/admin-setup flows, which do not depend on this
+    // function having run. Set LUMERA_ALLOW_PRODUCTION_DEMO_SEED=1 only for
+    // an intentional, non-production-data showcase deployment.
+    logger.warn(
+      { nodeEnv: process.env.NODE_ENV ?? null },
+      "Demo account seeding skipped: production database has no users yet and " +
+        `${PRODUCTION_DEMO_SEED_OPT_IN_ENV} is not set to \"1\". No demo accounts were created.`,
+    );
+    return;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    logger.warn(
+      {},
+      `Demo account seeding is running in production because ${PRODUCTION_DEMO_SEED_OPT_IN_ENV}=1 is set. ` +
+        "This creates well-known demo identities and must only be used for an intentional showcase deployment, never real customer data.",
+    );
+  }
+
   const passwordHash = await hashPassword("LumeraDemo2026!");
   const passwordSetAt = new Date();
   const demoUsers = await db.insert(usersTable).values([
@@ -412,14 +451,32 @@ async function seed(): Promise<void> {
   const owner = demoUsers[1]!;
   const customer = demoUsers[3]!;
   const employeeLearner = demoUsers[4]!;
-  const categoryRows = await db.insert(serviceCategoriesTable).values(
+  // Shared reference taxonomy, not demo-owned data. seedMarketplaceTaxonomy()
+  // inserts these same rows idempotently from the already-seeded branch above,
+  // so the taxonomy legitimately outlives the demo accounts: any caller that
+  // creates a user of its own takes that branch, and removing only the
+  // accounts it created leaves the taxonomy behind. This path is then reached
+  // again with no users but a populated taxonomy, so it has to converge on the
+  // existing rows instead of colliding with them.
+  await db.insert(serviceCategoriesTable).values(
     categories.map(([name, slug]) => ({
       name,
       slug,
       description: `Pažljivo izabrane ${name.toLowerCase()} usluge za svakodnevnu negu.`,
       fallbackImageUrl: categoryFallbackImages[name],
     })),
-  ).returning();
+  ).onConflictDoNothing();
+  // Read back in the declared `categories` order. The previous .returning()
+  // yielded insert order, and the demo services below pick a category by
+  // index, so an arbitrary select order would silently reshuffle which
+  // service belongs to which category.
+  const categoriesByName = new Map(
+    (await db.select().from(serviceCategoriesTable)).map((row) => [row.name, row]),
+  );
+  const categoryRows = categories.flatMap(([name]) => {
+    const row = categoriesByName.get(name);
+    return row ? [row] : [];
+  });
 
   const salons = await db.insert(salonsTable).values(
     salonNames.map(([name, slug, city, municipality], index) => ({

@@ -60,7 +60,9 @@ import {
   type SalonCalendarDayEmployee,
   type SearchSalonAvailabilityParams,
   type PackagePurchase,
-  type SalonPackageAppointmentSlot
+  type SalonPackageAppointmentSlot,
+  bookingCommandKey,
+  clearBookingCommandKey,
 } from "@workspace/api-client-react";
 import { CalendarDays, Clock3, House, Loader2, MapPin, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus, Search, Ban, AlignLeft, CalendarRange, Settings } from "lucide-react";
 
@@ -433,7 +435,7 @@ export default function OwnerCalendar() {
     },
   });
   const { data: services } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() } });
-  const { data: employees } = useListSalonEmployees({ query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
+  const { data: employees } = useListSalonEmployees(undefined, { query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
   const CUSTOMERS_PAGE_SIZE = 25;
   const [customersPage, setCustomersPage] = useState(1);
   const customersParams = useMemo(() => ({ page: customersPage, pageSize: CUSTOMERS_PAGE_SIZE }), [customersPage]);
@@ -653,17 +655,20 @@ export default function OwnerCalendar() {
       if (!seriesSlots.length) { toast.error("Prvo primenite pravilo ponavljanja."); return; }
       if (!previewSeries.data?.allAvailable) { toast.error("Pregledom potvrdite da su svi termini dostupni."); return; }
       if (previewSeries.data?.packageEligible === false) { toast.error(`Paket problem: ${previewSeries.data.packageReason}`); return; }
+      const seriesData = {
+        serviceId: form.serviceId, employeeId: form.employeeId || null, notes: form.notes || undefined,
+        slots: seriesSlots,
+        packagePurchaseId: form.packagePurchaseId || undefined,
+        ...(form.customerId === "new"
+          ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
+          : { salonCustomerId: form.customerId }),
+      };
       createSeries.mutate({
-        data: {
-          serviceId: form.serviceId, employeeId: form.employeeId || null, notes: form.notes || undefined,
-          slots: seriesSlots,
-          packagePurchaseId: form.packagePurchaseId || undefined,
-          ...(form.customerId === "new"
-            ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
-            : { salonCustomerId: form.customerId }),
-        },
+        data: seriesData,
+        headers: { "Idempotency-Key": bookingCommandKey("/api/salon/appointment-series", seriesData) },
       }, {
         onSuccess: () => {
+          clearBookingCommandKey("/api/salon/appointment-series", seriesData);
           toast.success("Serija termina je sačuvana", { description: "Svaki termin ima zasebnu SMS i e-mail potvrdu kada su podaci dostupni." });
           setOpen(false); selectDate(seriesSlots[0]!.date); setForm(initialForm); setSeriesSlots([]); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); refetchCustomerPackages();
         },
@@ -671,20 +676,23 @@ export default function OwnerCalendar() {
       });
       return;
     }
+    const appointmentData = {
+      serviceId: form.serviceId,
+      employeeId: form.employeeId || null,
+      date: form.date,
+      startTime: form.startTime,
+      notes: form.notes || undefined,
+      packagePurchaseId: form.packagePurchaseId || undefined,
+      ...(form.customerId === "new"
+        ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
+        : { salonCustomerId: form.customerId }),
+    };
     create.mutate({
-      data: {
-        serviceId: form.serviceId,
-        employeeId: form.employeeId || null,
-        date: form.date,
-        startTime: form.startTime,
-        notes: form.notes || undefined,
-        packagePurchaseId: form.packagePurchaseId || undefined,
-        ...(form.customerId === "new"
-          ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
-          : { salonCustomerId: form.customerId }),
-      },
+      data: appointmentData,
+      headers: { "Idempotency-Key": bookingCommandKey("/api/salon/appointments", appointmentData) },
     }, {
       onSuccess: () => {
+        clearBookingCommandKey("/api/salon/appointments", appointmentData);
         toast.success("Termin je sačuvan", { description: "Potvrda je evidentirana za SMS slanje ako klijent prima obaveštenja." });
         setOpen(false);
         selectDate(form.date);
@@ -709,18 +717,21 @@ export default function OwnerCalendar() {
       toast.error("Unesite ime, prezime i telefon gosta.");
       return;
     }
+    const bookingGroupData = {
+      treatments: bookingGroupRows.map(({ serviceId, date, startTime, employeeId }) => ({
+        serviceId, date, startTime, employeeId: employeeId || null,
+      })),
+      ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
+      ...(form.customerId === "new"
+        ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
+        : { salonCustomerId: form.customerId }),
+    };
     createBookingGroup.mutate({
-      data: {
-        treatments: bookingGroupRows.map(({ serviceId, date, startTime, employeeId }) => ({
-          serviceId, date, startTime, employeeId: employeeId || null,
-        })),
-        ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
-        ...(form.customerId === "new"
-          ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
-          : { salonCustomerId: form.customerId }),
-      },
+      data: bookingGroupData,
+      headers: { "Idempotency-Key": bookingCommandKey("/api/salon/booking-groups", bookingGroupData) },
     }, {
       onSuccess: (group) => {
+        clearBookingCommandKey("/api/salon/booking-groups", bookingGroupData);
         setCreatedBookingGroup(group);
         setOpen(false);
         setForm(initialForm);
@@ -741,18 +752,21 @@ export default function OwnerCalendar() {
       toast.error("Prvo proverite i potvrdite da su svi termini slobodni.");
       return;
     }
+    const packageSeriesData = {
+      packagePurchaseId: packagePlannerPackageId,
+      slots: packagePlannerRows.map(r => ({
+        serviceId: r.serviceId,
+        date: r.date,
+        startTime: r.startTime,
+        employeeId: r.employeeId || null,
+      }))
+    };
     createPackageSeries.mutate({
-      data: {
-        packagePurchaseId: packagePlannerPackageId,
-        slots: packagePlannerRows.map(r => ({
-          serviceId: r.serviceId,
-          date: r.date,
-          startTime: r.startTime,
-          employeeId: r.employeeId || null,
-        }))
-      }
+      data: packageSeriesData,
+      headers: { "Idempotency-Key": bookingCommandKey("/api/salon/package-appointments", packageSeriesData) },
     }, {
       onSuccess: () => {
+        clearBookingCommandKey("/api/salon/package-appointments", packageSeriesData);
         toast.success("Ceo paket je raspoređen.");
         setOpen(false);
         const firstDate = packagePlannerRows[0]?.date;

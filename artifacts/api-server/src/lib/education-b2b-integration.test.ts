@@ -20,8 +20,8 @@ const oldTiers = await db.select().from(educationB2bDiscountTiersTable);
 const passwordHash = await hashPassword(marker);
 const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
-const call = async (cookie: string, path: string, method = "GET", body?: unknown) => {
-  const response = await fetch(base + path, { method, headers: { cookie, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+const call = async (cookie: string, path: string, method = "GET", body?: unknown, headers: Record<string, string> = {}) => {
+  const response = await fetch(base + path, { method, headers: { cookie, ...headers, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
   return { status: response.status, body: response.status === 204 ? null : await response.json() as any };
 };
 let userIds: string[] = []; let centerId: string | undefined; let courseId: string | undefined; let productId: string | undefined;
@@ -55,9 +55,9 @@ try {
     {name:"Plus",minSpendRsd:1000,maxSpendRsd:1999,discountPercent:5,sortOrder:1},
     {name:"Pro",minSpendRsd:2000,maxSpendRsd:null,discountPercent:20,sortOrder:2},
   ]}); assert.equal(conflictSettings.status,200);
-  assert.equal((await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:1800})).status,409);
+  assert.equal((await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:1800},{"idempotency-key":randomUUID()})).status,409);
   const quote2=await call(ownerCookie,"/education/b2b/quote","POST",{lines:[{productId,quantity:2}]});
-  const checkout=await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:quote2.body.payableTotalRsd}); assert.equal(checkout.status,201);
+  const checkout=await call(ownerCookie,"/education/b2b/checkout","POST",{lines:[{productId,quantity:2}],expectedTotalRsd:quote2.body.payableTotalRsd},{"idempotency-key":randomUUID()}); assert.equal(checkout.status,201);
   assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd-1,reason:"Pogrešan iznos"})).status,409);
   assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd,reason:"Uplata potvrđena"})).status,200);
   assert.equal((await call(adminCookie,`/admin/education/b2b-orders/${checkout.body.id}/settle`,"POST",{confirmedAmountRsd:quote2.body.payableTotalRsd,reason:"Dupli pokušaj"})).status,409);

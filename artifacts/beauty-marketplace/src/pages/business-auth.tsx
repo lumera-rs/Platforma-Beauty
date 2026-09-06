@@ -156,6 +156,11 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                       onSubmit={loginForm.handleSubmit((values) => {
                         login.mutate({ data: values }, {
                           onSuccess: (response) => {
+                            // Drop any cached data from a previous identity
+                            // (anonymous browsing, or another business
+                            // account on a shared device) before seeding the
+                            // fresh identity and navigating.
+                            queryClient.clear();
                             queryClient.setQueryData(getGetCurrentUserQueryKey(), response);
                             toast.success("Uspešna prijava", { description: "Otvaramo vaš poslovni prostor." });
                             setLocation(returnTo ?? homeForRole(response.user.role));
@@ -209,6 +214,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         }
                         register.mutate({ data: { ...values, referralCode } }, {
                           onSuccess: (response) => {
+                            queryClient.clear();
                             queryClient.setQueryData(getGetCurrentUserQueryKey(), response);
                             clearStoredReferralCode();
                             toast.success("Poslovni nalog je kreiran", { description: "Dobrodošli u LUMERA Biznis." });

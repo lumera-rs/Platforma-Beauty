@@ -123,6 +123,17 @@ export const productCategoriesTable = pgTable("product_categories", {
   index("product_categories_supplier_parent_sort_idx").on(table.supplierId, table.parentId, table.sortOrder),
   // Active category listing ordered by sortOrder.
   index("product_categories_supplier_active_sort_idx").on(table.supplierId, table.active, table.sortOrder),
+  // The two supplier-scoped indexes above lead with supplierId, so neither
+  // can serve a lookup that does not constrain the supplier. These are the
+  // supplier-agnostic counterparts, and they are not redundant:
+  //  - parentId leading is what the self-referencing parent FK needs. Postgres
+  //    does not index FK columns automatically, and the RESTRICT check on
+  //    delete/update looks children up by parentId alone.
+  //  - GET /shop/categories filters active and orders by sortOrder across all
+  //    suppliers (routes/marketplace.ts, the "product-categories:active"
+  //    catalog-cache loader).
+  index("product_categories_parent_sort_idx").on(table.parentId, table.sortOrder),
+  index("product_categories_active_sort_idx").on(table.active, table.sortOrder),
   uniqueIndex("product_categories_supplier_parent_name_unique").on(table.supplierId, table.parentId, table.name),
   uniqueIndex("product_categories_supplier_parent_slug_unique").on(table.supplierId, table.parentId, table.slug),
   // PostgreSQL treats NULL parent IDs as distinct in a normal unique
@@ -215,6 +226,13 @@ export const productsTable = pgTable("products", {
   // Product catalog: active listings by category, sorted by creation date or price.
   index("products_supplier_category_active_idx").on(table.supplierId, table.categoryId, table.active),
   index("products_supplier_active_created_idx").on(table.supplierId, table.active, table.createdAt),
+  // Supplier-agnostic counterpart of products_supplier_category_active_idx,
+  // which cannot be used when supplierId is unconstrained. categoryId must
+  // lead an index of its own: it carries the FK to product_categories with
+  // ON DELETE SET NULL, so deleting a category rewrites matching rows and
+  // otherwise has to sequentially scan products, and routes/commerce-g.ts
+  // filters products by categoryId alone.
+  index("products_category_active_idx").on(table.categoryId, table.active),
   uniqueIndex("products_catalog_reference_unique").on(table.catalogReference),
   index("products_active_created_idx").on(table.active, table.createdAt),
   index("products_retail_active_created_idx").on(table.retailEnabled, table.active, table.createdAt),
