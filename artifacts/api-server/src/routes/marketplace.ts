@@ -10499,7 +10499,13 @@ export function expandRecurrence(input: {
       const lastDay = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0)).getUTCDate();
       cursor.setUTCDate(Math.min(day, lastDay));
     }
-    slots.push({ date: cursor.toISOString().slice(0, 10), startTime: input.startTime });
+    // Formatted from the UTC parts rather than through toISOString, which is
+    // reserved in route files for timestamps that reach a response body. This
+    // is a calendar date, and the noon anchor above keeps it off any boundary.
+    slots.push({
+      date: `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}-${String(cursor.getUTCDate()).padStart(2, "0")}`,
+      startTime: input.startTime,
+    });
   }
   return slots;
 }
