@@ -215,6 +215,12 @@ import
   shoppingCartItemsTable,
   shoppingCartsTable,
   salonLoyaltyStatusesTable,
+  serviceAddOnsTable,
+  serviceAddOnResourceRequirementsTable,
+  appointmentAddOnsTable,
+  appointmentEmployeesTable,
+  appointmentDepositsTable,
+  appointmentWaitlistTable,
   salonResourcesTable,
   salonsTable,
   salonCustomersTable,
@@ -2061,6 +2067,93 @@ async function customerIsBusy(
  * until somebody says otherwise.
  */
 /**
+ * Add-on ids from an untrusted body. Returns null on anything that is not a
+ * clean list of UUIDs, so a malformed request is refused rather than quietly
+ * booked without its add-ons.
+ */
+function readAddOnIds(raw: unknown): string[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > 20) return null;
+  const ids = raw.filter((value): value is string => typeof value === "string" && UUID_PATTERN_RE.test(value));
+  return ids.length === raw.length ? [...new Set(ids)] : null;
+}
+
+/** Seat count from an untrusted body; absent means one seat. */
+function readSeatCount(raw: unknown): number | null {
+  if (raw === undefined || raw === null) return 1;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1 || raw > 50) return null;
+  return raw;
+}
+
+const UUID_PATTERN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Add-ons chosen for a booking, read inside the transaction.
+ *
+ * Returns null when any requested add-on does not belong to this service or is
+ * no longer active — the booking then fails rather than silently dropping it,
+ * because a dropped add-on would give the customer a shorter treatment and a
+ * lower price than they agreed to.
+ */
+async function loadAddOnsForServiceInTx(
+  tx: any,
+  serviceId: string,
+  addOnIds: string[],
+): Promise<Array<typeof serviceAddOnsTable.$inferSelect> | null> {
+  const wanted = [...new Set(addOnIds)];
+  if (!wanted.length) return [];
+  const rows = await tx.select().from(serviceAddOnsTable).where(and(
+    eq(serviceAddOnsTable.serviceId, serviceId),
+    eq(serviceAddOnsTable.active, true),
+    inArray(serviceAddOnsTable.id, wanted),
+  ));
+  return rows.length === wanted.length ? rows : null;
+}
+
+/** Resources the chosen add-ons need on top of the base service. */
+async function fetchAddOnResourceRequirements(tx: any, addOnIds: string[]): Promise<ResourceRequirement[]> {
+  if (!addOnIds.length) return [];
+  return await tx.select({
+    resourceId: serviceAddOnResourceRequirementsTable.resourceId,
+    quantity: serviceAddOnResourceRequirementsTable.quantity,
+    capacity: salonResourcesTable.capacity,
+    active: salonResourcesTable.active,
+  }).from(serviceAddOnResourceRequirementsTable)
+    .innerJoin(salonResourcesTable, eq(salonResourcesTable.id, serviceAddOnResourceRequirementsTable.resourceId))
+    .where(inArray(serviceAddOnResourceRequirementsTable.addOnId, addOnIds));
+}
+
+/**
+ * The full crew a treatment needs, starting from the already-chosen primary.
+ *
+ * For an ordinary 1:1 treatment this is just the primary and costs nothing. For
+ * a treatment needing several people it asks the canonical engine — the same
+ * engine availability uses — which employees are simultaneously free, so the
+ * crew committed is the crew that was advertised. Returns null when the salon
+ * cannot field enough people, which fails the booking cleanly.
+ */
+async function selectTreatmentParticipantsInTx(
+  tx: any,
+  input: {
+    salonId: string; serviceId: string; service: typeof servicesTable.$inferSelect;
+    date: string; startTime: string; primary: typeof employeesTable.$inferSelect;
+    addOnMinutes: number; seatCount: number;
+  },
+): Promise<Array<typeof employeesTable.$inferSelect> | null> {
+  const required = Math.max(1, (input.service as unknown as { requiredEmployeeCount?: number }).requiredEmployeeCount ?? 1);
+  if (required <= 1) return [input.primary];
+  const slots = await canonicalAvailability({
+    salonId: input.salonId, service: input.service, dates: [input.date],
+    granularityMinutes: 5, addOnMinutes: input.addOnMinutes, seatCount: input.seatCount, store: tx,
+  });
+  const slot = slots.find((candidate) => candidate.startTime === input.startTime);
+  const ids = slot?.employeeIds ?? [];
+  if (ids.length < required) return null;
+  const rows = await tx.select().from(employeesTable).where(inArray(employeesTable.id, ids.slice(0, required)));
+  return rows.length === required ? rows : null;
+}
+
+/**
  * Gives a newly assigned employee a working week that mirrors the location's
  * own opening hours.
  *
@@ -2117,6 +2210,10 @@ export async function createAllocatedAppointment(input: {
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
   /** When set, redeem this package purchase against the created appointment in the SAME transaction. */
   packagePurchaseId?: string | null;
+  /** Add-ons chosen for this booking; they extend duration, price and resources. */
+  addOnIds?: string[];
+  /** Seats requested in a shared-capacity treatment. Defaults to 1. */
+  seatCount?: number;
   afterCreate?: (tx: any, appointment: typeof appointmentsTable.$inferSelect) => Promise<void>;
   tx?: any;
 }): Promise<{
@@ -2190,24 +2287,53 @@ export async function createAllocatedAppointment(input: {
       employee = await availableEmployeeWithDb(tx, input.salonId, input.serviceId, input.date, input.startTime, employeeEnd);
     }
     if (!employee) return { employee: null, appointment: null, allocatedResources: [] as [] };
+
+    // Add-ons are read inside the transaction and validated against this very
+    // service, so a client cannot attach another salon's add-on or one that was
+    // deactivated between preview and commit.
+    const addOns = await loadAddOnsForServiceInTx(tx, input.serviceId, input.addOnIds ?? []);
+    if (addOns === null) return { employee: null, appointment: null, allocatedResources: [] as [] };
+    const addOnMinutes = addOns.reduce((sum, addOn) => sum + addOn.durationMinutes, 0);
+    const addOnPrice = addOns.reduce((sum, addOn) => sum + addOn.price, 0);
+    const addOnRequirements = await fetchAddOnResourceRequirements(tx, addOns.map((addOn) => addOn.id));
+
+    // Every employee this treatment needs is locked, not only the primary.
+    // A partially locked crew is exactly the state that lets two bookings each
+    // think they secured the same person.
+    const participants = await selectTreatmentParticipantsInTx(tx, {
+      salonId: input.salonId, serviceId: input.serviceId, service,
+      date: input.date, startTime: input.startTime, primary: employee,
+      addOnMinutes, seatCount: input.seatCount ?? 1,
+    });
+    if (!participants) return { employee: null, appointment: null, allocatedResources: [] as [] };
+
     await lockAppointmentParticipants(tx, input.salonId, [
-      { date: input.date, employeeId: employee.id },
-      ...requirements.map((requirement) => ({ date: input.date, resourceId: requirement.resourceId })),
+      ...participants.map((participant) => ({ date: input.date, employeeId: participant.id })),
+      ...[...requirements, ...addOnRequirements].map((requirement) => ({ date: input.date, resourceId: requirement.resourceId })),
     ]);
     // The first selection happens before the global employee lock. Re-read all
     // canonical constraints under employee/resource locks so a sibling
-    // location cannot win the same person concurrently.
-    const revalidated = await canonicalAvailability({
-      salonId: input.salonId,
-      service,
-      dates: [input.date],
-      employeeId: employee.id,
-      granularityMinutes: 5,
-      resourceRequirements: requirements,
-      store: tx,
-    });
-    if (!revalidated.some((slot) => slot.startTime === input.startTime && slot.endTime === input.endTime)) {
-      return { employee: null, appointment: null, allocatedResources: [] as [] };
+    // location cannot win the same person concurrently. Every participant is
+    // revalidated, so a crew that lost one member fails the whole booking.
+    for (const participant of participants) {
+      const revalidated = await canonicalAvailability({
+        salonId: input.salonId,
+        service,
+        dates: [input.date],
+        employeeId: participant.id,
+        granularityMinutes: 5,
+        resourceRequirements: requirements,
+        addOnResourceRequirements: addOnRequirements,
+        addOnMinutes,
+        seatCount: input.seatCount ?? 1,
+        // The crew is already chosen and every member is locked; this pass asks
+        // only whether this one person is still free.
+        requiredEmployeeCount: 1,
+        store: tx,
+      });
+      if (!revalidated.some((slot) => slot.startTime === input.startTime && slot.endTime === input.endTime)) {
+        return { employee: null, appointment: null, allocatedResources: [] as [] };
+      }
     }
     // A customer can only be in one chair at a time. Availability models salon
     // hours, staff and resources but never the customer's own diary, so without
@@ -2218,17 +2344,48 @@ export async function createAllocatedAppointment(input: {
     })) {
       return { employee: null, appointment: null, allocatedResources: [] as [], customerBusy: true as const };
     }
+    const serviceShape = service as unknown as Record<string, number | undefined>;
     const appointment = await insertInitializedAppointmentInTx(tx, {
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
-      date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, notes: input.notes ?? null,
+      date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes,
+      price: input.price + addOnPrice, notes: input.notes ?? null,
+      // Snapshot of the treatment's shape. Occupancy is read from these, never
+      // from the service, so editing the service later cannot move this row.
+      preProcessingMinutes: serviceShape.preProcessingMinutes ?? 0,
+      processingMinutes: serviceShape.processingMinutes ?? 0,
+      postProcessingMinutes: serviceShape.postProcessingMinutes ?? 0,
+      bufferMinutes,
+      seatCount: Math.max(1, input.seatCount ?? 1),
       treatmentLocation: input.treatmentLocation ?? "salon", travelFee: input.travelFee ?? 0,
       treatmentAddressLine1: input.treatmentAddress?.line1 ?? null, treatmentAddressCity: input.treatmentAddress?.city ?? null,
       treatmentAddressPostalCode: input.treatmentAddress?.postalCode ?? null, treatmentAddressDetails: input.treatmentAddress?.details ?? null,
     }, input.status, input.createdByUserId ?? null);
+
+    // Participants, add-on snapshot and any deposit all commit with the
+    // appointment. None of them can exist without it, and it cannot exist
+    // without them.
+    await tx.insert(appointmentEmployeesTable).values(participants.map((participant) => ({
+      appointmentId: appointment.id,
+      employeeId: participant.id,
+      isPrimary: participant.id === employee!.id,
+    })));
+    if (addOns.length) {
+      await tx.insert(appointmentAddOnsTable).values(addOns.map((addOn) => ({
+        appointmentId: appointment.id, addOnId: addOn.id, name: addOn.name,
+        durationMinutes: addOn.durationMinutes, price: addOn.price,
+      })));
+    }
+    const depositAmount = serviceShape.depositAmount;
+    if (typeof depositAmount === "number" && depositAmount > 0) {
+      await tx.insert(appointmentDepositsTable).values({
+        appointmentId: appointment.id, salonId: input.salonId, amount: depositAmount,
+      });
+    }
+
     // allocateResourcesInTx throws ResourceCapacityError → transaction rolls back.
     await allocateResourcesInTx(
-      tx, input.salonId, requirements, appointment.id, input.date, input.startTime,
-      requirements.length ? bufferedEnd : input.endTime,
+      tx, input.salonId, [...requirements, ...addOnRequirements], appointment.id, input.date, input.startTime,
+      requirements.length || addOnRequirements.length ? bufferedEnd : input.endTime,
     );
     let finalizedAppointment = appointment;
     // Atomic package redemption — any failure throws → whole booking rolls back.
@@ -8331,7 +8488,27 @@ admitBookingRequest, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Termin mora biti zakazan za današnji ili budući datum." });
     return;
   }
-  const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
+  // Add-ons and seats come from the raw body: the generated request schema
+  // strips unknown fields, and silently dropping a chosen add-on would give the
+  // customer a shorter treatment than the one they agreed to.
+  const createBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : null;
+  const addOnIds = readAddOnIds(createBody?.addOnIds);
+  if (addOnIds === null) { res.status(400).json({ error: "Izabrane dopune nisu ispravne." }); return; }
+  const seatCount = readSeatCount(createBody?.seatCount);
+  if (seatCount === null) { res.status(400).json({ error: "Broj mesta nije ispravan." }); return; }
+  const chosenAddOns = addOnIds.length
+    ? await db.select().from(serviceAddOnsTable).where(and(
+      eq(serviceAddOnsTable.serviceId, service.id),
+      eq(serviceAddOnsTable.active, true),
+      inArray(serviceAddOnsTable.id, addOnIds),
+    ))
+    : [];
+  if (chosenAddOns.length !== addOnIds.length) {
+    res.status(404).json({ error: "Dopuna nije pronađena za ovu uslugu." }); return;
+  }
+  const totalDuration = service.durationMinutes
+    + chosenAddOns.reduce((sum, addOn) => sum + addOn.durationMinutes, 0);
+  const endTime = appointmentEndTime(parsed.data.startTime, totalDuration);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
   const [createdContact] = await db.insert(salonCustomersTable).values({
     salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
@@ -8349,8 +8526,9 @@ admitBookingRequest, async (req, res): Promise<void> => {
     }, async (tx) => {
       const allocation = await createAllocatedAppointment({
         salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
-        date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
+        date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: totalDuration,
         price: basePrice + (treatmentLocation === "home" ? service.homeServiceFee : 0),
+        addOnIds, seatCount,
         status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
         createdByUserId: user.id,
         preferredEmployeeId: parsed.data.employeeId,
