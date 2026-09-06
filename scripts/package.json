@@ -19,6 +19,7 @@
     "test:monitoring": "tsx ../artifacts/api-server/src/lib/monitoring.test.ts",
     "test:auth-registration": "playwright test browser/auth-registration.spec.ts",
     "test:booking-journey": "playwright test browser/booking-journey.spec.ts",
+    "test:booking-journey-browser": "tsx ./src/run-booking-journey-browser.ts",
     "test:appointment-status-consistency": "playwright test browser/appointment-status-consistency.spec.ts",
     "test:calendar-timezone-boundaries": "TZ=Pacific/Auckland NODE_ENV=test tsx --test ../artifacts/api-server/src/lib/calendar-timezone-boundaries.test.ts ../artifacts/beauty-marketplace/src/lib/date-only-timezone.test.ts",
     "test:rescheduled-confirmations": "tsx ./src/run-rescheduled-confirmation-qa.ts",

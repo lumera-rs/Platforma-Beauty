@@ -788,6 +788,7 @@ import
 from "../lib/appointment-locks"
 ;
 import { canonicalAvailability, preloadCanonicalAvailability } from "../lib/availability-store";
+import { DEFAULT_SALON_TIME_ZONE, wallClockNowInTimeZone } from "../lib/availability-engine";
 import { admitBookingRequest } from "../lib/booking-admission";
 import { notifyCustomer } from "../lib/customer-notifications";
 import { timestampAgeMinutes } from "../lib/timestamp-age";
@@ -1258,11 +1259,18 @@ async function sendAppointmentEmails(input: {
   salon: typeof salonsTable.$inferSelect;
   service: typeof servicesTable.$inferSelect;
   owner?: typeof usersTable.$inferSelect | null;
+  /**
+   * Enqueue inside the caller's transaction so the outbox row commits with the
+   * change it describes. Omitted, the enqueue happens after commit and a crash
+   * in between loses the notification for good.
+   */
+  store?: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 }) {
+  const store = input.store ?? db;
   const owner = input.owner === undefined
-    ? (await db.select().from(usersTable).where(eq(usersTable.id, input.salon.ownerId)).limit(1))[0] ?? null
+    ? (await store.select().from(usersTable).where(eq(usersTable.id, input.salon.ownerId)).limit(1))[0] ?? null
     : input.owner;
-  await enqueueTransactionalEmails(db, appointmentEmailInputs({ ...input, owner }));
+  await enqueueTransactionalEmails(store, appointmentEmailInputs({ ...input, owner }));
 }
 
 async function campaignRecipients(audience: "customers" | "salons" | "loyalty", loyaltyTierId?: string | null) {
@@ -1778,21 +1786,13 @@ function earliestSlotFromResponse(response: FirstAvailableResponse): string | nu
 
 async function computeFirstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const horizonEnd = dateAtOffset(now, FIRST_AVAILABLE_HORIZON_DAYS - 1);
-  const [services, employees] = await Promise.all([
-    db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true))),
-    db.select({ employee: employeesTable }).from(employeesTable)
-      .innerJoin(employeeLocationAssignmentsTable, and(
-        eq(employeeLocationAssignmentsTable.employeeId, employeesTable.id),
-        eq(employeeLocationAssignmentsTable.salonId, salonId),
-        eq(employeeLocationAssignmentsTable.active, true),
-      ))
-      .where(eq(employeesTable.active, true))
-      .then((rows) => rows.map((row) => row.employee)),
-  ]);
-  const dates = Array.from({ length: FIRST_AVAILABLE_HORIZON_DAYS }, (_, offset) => dateAtOffset(now, offset));
-  const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
+  const services = await db.select().from(servicesTable)
+    .where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true)));
+  // The horizon is built from the salon's own wall clock, not UTC. Deriving it
+  // from `now` in UTC shifts the first candidate day by one around midnight.
+  const salonNow = wallClockNowInTimeZone(now, DEFAULT_SALON_TIME_ZONE);
+  const dates = Array.from({ length: FIRST_AVAILABLE_HORIZON_DAYS }, (_, offset) =>
+    shiftCalendarDate(salonNow.date, offset));
   const canonicalServices: FirstAvailableServiceSlot[] = [];
   for (const service of services) {
     const [slot] = await canonicalAvailability({
@@ -1801,7 +1801,9 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
       dates,
       limit: 1,
       granularityMinutes: 30,
-      now: { date: today, time: currentTime },
+      // `now` is left to canonicalAvailability, which resolves the salon's wall
+      // clock itself. Passing a UTC time here advertised slots that had already
+      // passed by up to two hours during summer time.
     });
     canonicalServices.push(slot
       ? { serviceId: service.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime, employeeId: slot.employeeId, employeeName: slot.employeeName }
@@ -1812,96 +1814,6 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
     horizonDays: FIRST_AVAILABLE_HORIZON_DAYS,
     services: canonicalServices,
   };
-
-  /*
-   * Retained temporarily as rollout reference for the pre-canonical batched
-   * implementation. This block is unreachable and can be removed once the
-   * booking-settings schema adapter is generated.
-   */
-  const employeeIds = employees.map((employee) => employee.id);
-  const serviceIds = services.map((s) => s.id);
-  const [appointments, relevantLinks, relevantSchedules, relevantTimeOff, rawRequirements, rawAllocations] = await Promise.all([
-    // Candidates can work at several locations. Their personal diary is global,
-    // while services, schedules, and resources remain scoped to this location.
-    employeeIds.length ? db.select().from(appointmentsTable).where(and(
-      inArray(appointmentsTable.employeeId, employeeIds),
-      gte(appointmentsTable.date, today),
-      lte(appointmentsTable.date, horizonEnd),
-      ne(appointmentsTable.status, "cancelled"),
-    )) : Promise.resolve([] as (typeof appointmentsTable.$inferSelect)[]),
-    employeeIds.length ? db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)) : Promise.resolve([]),
-    employeeIds.length ? db.select().from(employeeLocationSchedulesTable).where(and(
-      inArray(employeeLocationSchedulesTable.employeeId, employeeIds),
-      eq(employeeLocationSchedulesTable.salonId, salonId),
-    )) : Promise.resolve([]),
-    employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
-      inArray(employeeTimeOffTable.employeeId, employeeIds),
-      lte(employeeTimeOffTable.startDate, horizonEnd),
-      gte(employeeTimeOffTable.endDate, today),
-      or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, salonId)),
-    )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
-    serviceIds.length ? db.select({
-      serviceId: serviceResourceRequirementsTable.serviceId,
-      resourceId: serviceResourceRequirementsTable.resourceId,
-      quantity: serviceResourceRequirementsTable.quantity,
-      capacity: salonResourcesTable.capacity,
-      resourceName: salonResourcesTable.name,
-      active: salonResourcesTable.active,
-    }).from(serviceResourceRequirementsTable)
-      .innerJoin(salonResourcesTable, eq(serviceResourceRequirementsTable.resourceId, salonResourcesTable.id))
-      .where(inArray(serviceResourceRequirementsTable.serviceId, serviceIds)) : Promise.resolve([]),
-    // Fetch existing allocation quantities, grouped by resource+date+timeslot.
-    db.select({
-      resourceId: appointmentResourceAllocationsTable.resourceId,
-      date: appointmentsTable.date,
-      startTime: appointmentsTable.startTime,
-      endTime: appointmentsTable.endTime,
-      usedQty: appointmentResourceAllocationsTable.quantity,
-    }).from(appointmentResourceAllocationsTable)
-      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
-      .where(and(
-        eq(appointmentsTable.salonId, salonId),
-        gte(appointmentsTable.date, today),
-        lte(appointmentsTable.date, horizonEnd),
-        ne(appointmentsTable.status, "cancelled"),
-      )),
-  ]);
-
-  // Build resourceRequirementsByService map.
-  const resourceRequirementsByService = new Map<string, ResourceRequirement[]>();
-  for (const req of rawRequirements as Array<ResourceRequirement & { serviceId: string }>) {
-    const existing = resourceRequirementsByService.get(req.serviceId) ?? [];
-    existing.push({ resourceId: req.resourceId, quantity: req.quantity, capacity: req.capacity, resourceName: req.resourceName, active: req.active });
-    resourceRequirementsByService.set(req.serviceId, existing);
-  }
-
-  // Build resourceAllocations map: key = resourceId:date, value = [{startTime, endTime, usedQty}]
-  const resourceAllocations: ResourceAllocationByDate = new Map();
-  for (const alloc of rawAllocations as Array<{ resourceId: string; date: string; startTime: string; endTime: string; usedQty: number }>) {
-    const key = `${alloc.resourceId}:${alloc.date}`;
-    const existing = resourceAllocations.get(key) ?? [];
-    existing.push({ startTime: alloc.startTime, endTime: alloc.endTime, usedQty: alloc.usedQty });
-    resourceAllocations.set(key, existing);
-  }
-
-  const servicesWithFirstSlot = computeFirstAvailableServiceSlots({
-    services,
-    employees,
-    appointments,
-    employeeServices: relevantLinks,
-    schedules: relevantSchedules,
-    timeOff: relevantTimeOff,
-    now,
-    resourceRequirementsByService,
-    resourceAllocations,
-  });
-
-  const response = {
-    generatedAt: now.toISOString(),
-    horizonDays: FIRST_AVAILABLE_HORIZON_DAYS,
-    services: servicesWithFirstSlot,
-  };
-  return response;
 }
 
 /**
@@ -2115,6 +2027,69 @@ class PackageRedemptionError extends Error {
   }
 }
 
+/**
+ * True when this customer already holds an active appointment overlapping the
+ * requested window, at any salon. Their own calendar is global; the location
+ * they happen to be booking has no bearing on whether they are free.
+ */
+async function customerIsBusy(
+  store: any,
+  input: { customerId: string; date: string; startTime: string; endTime: string; excludeAppointmentId?: string },
+): Promise<boolean> {
+  const [clash] = await store.select({ id: appointmentsTable.id })
+    .from(appointmentsTable)
+    .where(and(
+      eq(appointmentsTable.customerId, input.customerId),
+      eq(appointmentsTable.date, input.date),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+      lt(appointmentsTable.startTime, input.endTime),
+      gt(appointmentsTable.endTime, input.startTime),
+      ...(input.excludeAppointmentId ? [ne(appointmentsTable.id, input.excludeAppointmentId)] : []),
+    ))
+    .limit(1);
+  return Boolean(clash);
+}
+
+/**
+ * Gives a brand-new location a real, editable weekly schedule.
+ *
+ * Availability treats a salon with no `salon_hours` rows as open 09:00-18:00,
+ * a fallback kept for locations that predate the column. Writing the same
+ * window as actual rows means a new salon starts from something its owner can
+ * see and change, instead of an invisible default. `weekday` is ISO: Monday 1
+ * … Sunday 7, and Sunday is deliberately absent, so the salon is closed then
+ * until somebody says otherwise.
+ */
+/**
+ * Gives a newly assigned employee a working week that mirrors the location's
+ * own opening hours.
+ *
+ * Availability treats an employee with no schedule row for a weekday as
+ * available for the whole salon window, so an employee whose schedule was never
+ * entered is silently offered all day. Writing the salon's hours as real rows
+ * starts them from something the owner can see and narrow.
+ */
+async function seedEmployeeScheduleFromSalonHoursInTx(
+  tx: any,
+  employeeId: string,
+  salonId: string,
+): Promise<void> {
+  const hours = await tx.select().from(salonHoursTable).where(eq(salonHoursTable.salonId, salonId));
+  const open = hours.filter((row: typeof salonHoursTable.$inferSelect) => !row.closed);
+  if (!open.length) return;
+  await tx.insert(employeeLocationSchedulesTable).values(
+    open.map((row: typeof salonHoursTable.$inferSelect) => ({
+      employeeId, salonId, weekday: row.weekday, startTime: row.openTime, endTime: row.closeTime,
+    })),
+  ).onConflictDoNothing();
+}
+
+async function seedDefaultSalonHoursInTx(tx: any, salonId: string): Promise<void> {
+  await tx.insert(salonHoursTable).values([1, 2, 3, 4, 5, 6].map((weekday) => ({
+    salonId, weekday, openTime: "09:00", closeTime: "18:00", closed: false,
+  })));
+}
+
 async function insertInitializedAppointmentInTx(
   tx: any,
   values: any,
@@ -2126,10 +2101,12 @@ async function insertInitializedAppointmentInTx(
     ...values, status, createdByUserId: actorId, updatedByUserId: actorId,
     confirmedAt: status === "confirmed" ? initializedAt : null,
   }).returning();
-  if (status === "confirmed") await tx.insert(appointmentStatusHistoryTable).values({
-    appointmentId: appointment!.id, status: "confirmed", action: "confirm",
-    changedByUserId: actorId, occurredAt: initializedAt,
-  });
+  // Every booking gets its opening entry, not just the auto-confirmed ones.
+  // Without it a salon that reviews requests has no record of when a booking
+  // arrived or who made it until somebody changes its status.
+  await tx.insert(appointmentStatusHistoryTable).values(status === "confirmed"
+    ? { appointmentId: appointment!.id, status: "confirmed", action: "confirm", changedByUserId: actorId, occurredAt: initializedAt }
+    : { appointmentId: appointment!.id, status: "pending", action: "create", changedByUserId: actorId, occurredAt: initializedAt });
   return appointment!;
 }
 
@@ -2231,6 +2208,15 @@ export async function createAllocatedAppointment(input: {
     });
     if (!revalidated.some((slot) => slot.startTime === input.startTime && slot.endTime === input.endTime)) {
       return { employee: null, appointment: null, allocatedResources: [] as [] };
+    }
+    // A customer can only be in one chair at a time. Availability models salon
+    // hours, staff and resources but never the customer's own diary, so without
+    // this a retry in a second tab books the same person twice over.
+    if (input.customerId && await customerIsBusy(tx, {
+      customerId: input.customerId, date: input.date,
+      startTime: input.startTime, endTime: input.endTime,
+    })) {
+      return { employee: null, appointment: null, allocatedResources: [] as [], customerBusy: true as const };
     }
     const appointment = await insertInitializedAppointmentInTx(tx, {
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
@@ -5963,6 +5949,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           companyTaxId: input.pib,
           provisioningSource: "business_registration_salon",
         }).returning({ id: salonsTable.id }) : [];
+      if (workspace) await seedDefaultSalonHoursInTx(tx, workspace.id);
       let referredEducationCenterId: string | null = null;
       if (input.businessType === "EDUCATION_CENTER") {
         const centerId = randomUUID();
@@ -8392,6 +8379,15 @@ admitBookingRequest, async (req, res): Promise<void> => {
         },
       });
       if (!allocation.employee || !allocation.appointment) {
+        if ("customerBusy" in allocation && allocation.customerBusy) {
+          return {
+            status: 409,
+            body: {
+              code: "CUSTOMER_ALREADY_BOOKED",
+              error: "Već imate zakazan termin u to vreme. Izaberite drugo vreme ili otkažite postojeći termin.",
+            },
+          };
+        }
         return { status: 409, body: { error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin." } };
       }
       const response = appointmentView(
@@ -8439,7 +8435,7 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
   if (!params.success || !body.success || (req.body?.date !== undefined && !isValidCalendarDate(String(req.body.date)))) {
     res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return;
   }
-  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "booking-group" };
+  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" | "customer-busy" | "booking-group" };
   try {
     result = await db.transaction(async (tx) => {
       const [initial] = await tx.select().from(appointmentsTable).where(and(
@@ -8480,18 +8476,37 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
         excludeAppointmentIds: [appointment.id], store: tx,
       });
       if (!revalidated.some((slot) => slot.startTime === startTime && slot.endTime === endTime)) return { error: "unavailable" as const };
+      if (await customerIsBusy(tx, {
+        customerId: user.id, date, startTime, endTime, excludeAppointmentId: appointment.id,
+      })) return { error: "customer-busy" as const };
       const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, initialSlot.employeeId)).limit(1);
       if (!employee) return { error: "unavailable" as const };
       const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
       if (!bufferedEnd) return { error: "invalid-time" as const };
       const [updated] = await tx.update(appointmentsTable).set({
         date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
+        updatedAt: new Date(), updatedByUserId: user.id,
       }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
       if (!updated) return { error: "changed" as const };
       await tx.delete(appointmentResourceAllocationsTable)
         .where(eq(appointmentResourceAllocationsTable.appointmentId, updated.id));
       // Throws ResourceCapacityError → rolls back transaction.
       await allocateResourcesInTx(tx, appointment.salonId, requirements, updated.id, date, startTime, requirements.length ? bufferedEnd : endTime);
+      const [salonRow] = await tx.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1);
+      await sendAppointmentEmails({
+        event: "updated", appointment: updated, customer: user, salon: salonRow!, service, store: tx,
+      });
+      // The key names where the appointment now is, so every real move produces
+      // a new one. Keying on updated_at deduplicated every move after the first,
+      // because the reschedule never stamped that column.
+      await notifyCustomer(tx, {
+        userId: user.id,
+        eventKey: `appointment:${updated.id}:moved:${updated.date}:${updated.startTime}:${updated.employeeId ?? "unassigned"}`,
+        category: "booking",
+        title: "Termin je izmenjen",
+        body: `Termin u salonu ${salonRow!.name} je izmenjen.`,
+        deepLink: "/moji-termini",
+      });
       return { appointment: updated, service, employee };
     });
   } catch (err: unknown) {
@@ -8505,9 +8520,11 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
     const error = result.error;
     res.status(error === "not-found" ? 404 : error === "invalid-time" ? 400 : 409).json({
       ...(error === "booking-group" ? { code: "BOOKING_GROUP_MUTATION_REQUIRED" } : {}),
+      ...(error === "customer-busy" ? { code: "CUSTOMER_ALREADY_BOOKED" } : {}),
       error: error === "not-found" ? "Termin nije pronađen."
         : error === "invalid-time" ? "Trajanje termina izlazi van radnog dana."
           : error === "unavailable" ? "Termin više nije slobodan kod izabranog zaposlenog."
+            : error === "customer-busy" ? "Već imate zakazan termin u to vreme. Izaberite drugo vreme."
             : error === "booking-group" ? "Tretman iz grupne rezervacije mora se menjati kroz grupni raspored."
             : "Termin je u međuvremenu promenjen. Osvežite raspored i pokušajte ponovo.",
     });
@@ -8519,8 +8536,6 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
     db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1),
     getAllocationsForAppointment(db, updated!.id),
   ]);
-  await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
-  await notifyCustomer(db, { userId: user.id, eventKey: `appointment:${updated.id}:updated:${updated.updatedAt.toISOString()}`, category: "booking", title: "Termin je izmenjen", body: `Termin u salonu ${salon[0]!.name} je izmenjen.`, deepLink: "/moji-termini" });
   const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true, null, allocatedResources);
   UpdateAppointmentResponse.parse(response);
   res.json(response);
@@ -9283,6 +9298,11 @@ const BOOKING_CANCELLATION_DEADLINES = new Set([720, 1440, 2880]);
 const BOOKING_REMINDER_OFFSETS = new Set([120, 720, 1440]);
 
 function supportedCancellationDeadline(value: number | null | undefined) {
+  // 0 is the column default and means "this salon set no deadline".
+  // isLateCancellation() already reads <= 0 that way; it simply never used to
+  // receive a 0, because the whitelist rewrote it to 1440 and every salon that
+  // had never opened booking settings got a silent 24-hour deadline.
+  if (value === 0) return 0;
   return value != null && BOOKING_CANCELLATION_DEADLINES.has(value) ? value : 1440;
 }
 
@@ -9334,6 +9354,11 @@ router.put("/salon/booking-settings", async (req, res): Promise<void> => {
       .where(and(eq(salonResourcesTable.salonId, access.salon.id), inArray(salonResourcesTable.id, resourceIds)));
     if (resources.length !== resourceIds.length) { res.status(404).json({ error: "Resurs ne pripada aktivnom salonu." }); return; }
   }
+  // Replace semantics, deliberately: `dateHours` and `resourceDowntime` are the
+  // salon's complete set after this call, so an exception the payload omits is
+  // deleted. Any client must therefore send back everything it loaded — see the
+  // guard in booking-settings-form.tsx, which refuses to submit before the
+  // current settings have hydrated.
   await db.transaction(async (tx) => {
     await tx.insert(salonBookingSettingsTable).values({ salonId: access.salon.id, ...parsed.data, updatedByUserId: access.user.id, updatedAt: new Date() })
       .onConflictDoUpdate({ target: salonBookingSettingsTable.salonId, set: { ...parsed.data, updatedByUserId: access.user.id, updatedAt: new Date() } });
@@ -10875,6 +10900,7 @@ router.post("/salon/locations", async (req, res, next): Promise<void> => {
         // meaningful, stable-looking location URL.
         slug: `${businessSlug(body.name, access.user.id)}-${randomUUID().slice(0, 8)}`,
       }).returning();
+      await seedDefaultSalonHoursInTx(tx, location!.id);
       const warnings: string[] = [];
       const sourceServices = source && body.copyServices
         ? await tx.select().from(servicesTable).where(eq(servicesTable.salonId, source.id))
@@ -11387,6 +11413,7 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
         active: true,
         isDefault: true,
       });
+      await seedEmployeeScheduleFromSalonHoursInTx(tx, rows[0]!.id, access.salon.id);
       if (avatarUrl && !await claimMediaReference({
         userId: access.user.id, url: avatarUrl, scope: "employee-avatar", resourceId: rows[0]!.id,
       }, tx)) {
@@ -11557,13 +11584,54 @@ router.patch("/salon/leave-requests/:requestId", async (req, res): Promise<void>
   const employee = await employeeInSalon(request.employeeId, access.salon.id);
   if (!employee) { res.status(403).json({ error: "Zahtev pripada drugom salonu." }); return; }
   if (request.status !== "pending") { res.status(409).json({ error: "Ovaj zahtev je već obrađen." }); return; }
-  await db.transaction(async (tx) => {
-    await tx.update(employeeLeaveRequestsTable).set({ status, reviewedAt: new Date() }).where(eq(employeeLeaveRequestsTable.id, request.id));
-    if (status === "approved") {
+  // Approving leave hides the employee from availability. Appointments already
+  // booked in that window do not disappear with it, so approving blind leaves
+  // customers holding appointments nobody will keep. Surface them and require
+  // the owner to say what happens to them.
+  if (status === "approved") {
+    const booked = await db.select({
+      id: appointmentsTable.id,
+      date: appointmentsTable.date,
+      startTime: appointmentsTable.startTime,
+      endTime: appointmentsTable.endTime,
+      status: appointmentsTable.status,
+    }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.employeeId, request.employeeId),
+      gte(appointmentsTable.date, request.startDate),
+      lte(appointmentsTable.date, request.endDate),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    )).orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime));
+    const resolution = req.body?.affectedAppointments;
+    if (booked.length && resolution !== "cancel" && resolution !== "keep") {
+      res.status(409).json({
+        code: "LEAVE_CONFLICTS_WITH_APPOINTMENTS",
+        error: `Zaposleni ima ${booked.length} zakazan${booked.length === 1 ? " termin" : "a termina"} u tom periodu.`
+          + " Izaberite da li da se otkažu ili zadrže.",
+        appointments: booked,
+      });
+      return;
+    }
+    await db.transaction(async (tx) => {
+      await tx.update(employeeLeaveRequestsTable).set({ status, reviewedAt: new Date() }).where(eq(employeeLeaveRequestsTable.id, request.id));
       await tx.insert(employeeTimeOffTable).values({
         employeeId: request.employeeId, startDate: request.startDate, endDate: request.endDate, reason: request.reason,
       });
-    }
+      if (resolution === "cancel") {
+        for (const appointment of booked) {
+          await cancelAppointmentInTx(tx, {
+            appointmentId: appointment.id,
+            actorId: access.user.id,
+            occurredAt: new Date(),
+            reason: "Zaposleni je na odsustvu u terminu zakazanog tretmana.",
+          });
+        }
+      }
+    });
+    res.json({ id: request.id, status, affectedAppointments: booked.length, resolution: resolution ?? null });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    await tx.update(employeeLeaveRequestsTable).set({ status, reviewedAt: new Date() }).where(eq(employeeLeaveRequestsTable.id, request.id));
   });
   res.json({ id: request.id, status });
 });
@@ -24845,6 +24913,7 @@ router.post("/admin/accounts/setup", async (req, res): Promise<void> => {
           imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
           active: true,
         }).returning({ id: salonsTable.id });
+        await seedDefaultSalonHoursInTx(tx, salon!.id);
         const binding = await bindLegalEntityBusinessInTx(tx, {
           pib: input.companyTaxId, legalName: input.companyName, ownerUserId: created.id, salonId: salon!.id,
         });
@@ -25051,6 +25120,7 @@ router.post("/admin/users/:userId/business-conversion", async (req, res): Promis
           active: true,
         }).returning({ id: salonsTable.id });
         if (!salon) throw new Error("Business conversion salon insert returned no row.");
+        await seedDefaultSalonHoursInTx(tx, salon.id);
         const binding = await bindLegalEntityBusinessInTx(tx, {
           pib: input.companyTaxId, legalName: input.companyName, ownerUserId: target.id, salonId: salon.id,
         });

@@ -294,7 +294,14 @@ async function run(): Promise<void> {
       imageUrl: "/test.jpg",
       homeServiceAvailable: true,
     });
+    // A weekday with no row means the salon does not trade that day, so the
+    // fixture has to state the whole week it books across, not only the Sunday
+    // the Sunday-specific assertions need.
     await db.insert(salonHoursTable).values([
+      ...[1, 2, 3, 4, 5, 6].flatMap((weekday) => [
+        { salonId: salon!.id, weekday, openTime: "09:00", closeTime: "18:00", closed: false },
+        { salonId: foreignSalon!.id, weekday, openTime: "09:00", closeTime: "18:00", closed: false },
+      ]),
       {
         salonId: salon!.id,
         weekday: 7,
@@ -356,6 +363,16 @@ async function run(): Promise<void> {
       lastName: customer!.lastName,
       phone: "+381611234529",
       phoneNormalized: "+381611234529",
+    }).returning();
+    // A second, unrelated client. Resource capacity is about two different
+    // people occupying two units at once; the same person cannot be in both,
+    // and the booking path now refuses that outright.
+    const [secondContact] = await db.insert(salonCustomersTable).values({
+      salonId: salon!.id,
+      firstName: "Druga",
+      lastName: "Klijentkinja",
+      phone: "+381611234599",
+      phoneNormalized: "+381611234599",
     }).returning();
 
     // The employee booking route only permits existing clients they have served.
@@ -1571,7 +1588,7 @@ async function run(): Promise<void> {
     assert.equal(increaseCapacityResult.status, 200, "resource capacity must be safely increasable");
     const secondConcurrentResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
       serviceId: service!.id,
-      salonCustomerId: contact!.id,
+      salonCustomerId: secondContact!.id,
       date: resourceTestDate,
       startTime: "10:00",
       employeeId: resourceEmployee!.id,

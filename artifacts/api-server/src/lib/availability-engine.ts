@@ -105,9 +105,18 @@ function locationWindows(input: GenerateAvailabilityInput, date: string) {
       : [{ startTime: override.startTime, endTime: override.endTime }];
   }
   const rows = input.salonHours.filter((item) => item.weekday === weekday(date));
-  // Existing salons predate explicit hours. Keep the historical window only
-  // when no hours have been configured for this weekday.
-  if (!rows.length) return [{ startTime: "09:00", endTime: "18:00" }];
+  if (!rows.length) {
+    // A salon that has configured *any* opening hours has said everything it
+    // means to say: a weekday with no row is a day it does not trade. Falling
+    // back per weekday made every salon bookable on the days it had left out —
+    // Sunday, for a salon that only ever entered Monday to Saturday.
+    //
+    // The historical 09:00-18:00 window survives only for salons that predate
+    // the column and have no hours at all. New salons are given real rows when
+    // they are created, so they never reach this branch.
+    if (input.salonHours.length) return [];
+    return [{ startTime: "09:00", endTime: "18:00" }];
+  }
   return rows.filter((item) => !item.closed).map((item) => ({ startTime: item.startTime, endTime: item.endTime }));
 }
 
@@ -116,7 +125,16 @@ function employeeCanWork(input: GenerateAvailabilityInput, employeeId: string, d
     && item.startDate <= date && item.endDate >= date
     && (!item.startTime || !item.endTime || overlaps(start, employeeEnd, item.startTime, item.endTime)))) return false;
   const rows = input.employeeSchedules.filter((item) => item.employeeId === employeeId && item.weekday === weekday(date));
-  if (!rows.length) return true;
+  if (!rows.length) {
+    // Same rule as opening hours: once an employee has a schedule at all, a
+    // weekday with no row is a day they do not work. Falling back per weekday
+    // offered every employee on their days off.
+    //
+    // An employee with no schedule anywhere still follows the salon window, for
+    // salons whose staff predate the table. New employees are given a schedule
+    // when they are added, so they never rely on that.
+    return !input.employeeSchedules.some((item) => item.employeeId === employeeId);
+  }
   return rows.some((item) => start >= item.startTime && employeeEnd <= item.endTime
     && !(item.breakStart && item.breakEnd && overlaps(start, employeeEnd, item.breakStart, item.breakEnd)));
 }

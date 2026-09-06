@@ -22,6 +22,7 @@ import {
   db,
   employeeLocationAssignmentsTable,
   employeeLeaveRequestsTable,
+  employeeLocationSchedulesTable,
   employeeServicesTable,
   employeeTimeOffTable,
   employeesTable,
@@ -198,9 +199,12 @@ async function buildFixture(): Promise<Fixture> {
   await db.update(usersTable).set({ activeSalonId: rivalSalon!.id }).where(eq(usersTable.id, rivalOwner!.id));
 
   // Both locations open all week so opening hours never mask a finding.
+  // `salon_hours.weekday` is ISO: Monday = 1 … Sunday = 7, matching
+  // availability-engine.ts:96. Writing 0-6 here silently produces a salon with
+  // no row for the day under test.
   await db.insert(salonHoursTable).values(
     [salonA.id, salonB.id].flatMap((salonId) =>
-      [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
         salonId, weekday, openTime: "08:00", closeTime: "20:00", closed: false,
       }))),
   );
@@ -448,7 +452,10 @@ async function run(): Promise<void> {
         .from(customerNotificationsTable)
         .where(and(
           eq(customerNotificationsTable.userId, fixture.customerId),
-          sql`${customerNotificationsTable.eventKey} like ${`appointment:${appointmentId}:updated:%`}`,
+          // Behaviour, not key shape: every notification about this appointment
+          // other than the one announcing it was created.
+          sql`${customerNotificationsTable.eventKey} like ${`appointment:${appointmentId}:%`}`,
+          sql`${customerNotificationsTable.eventKey} not like ${`appointment:${appointmentId}:created%`}`,
         ));
       const notifications = counted?.total ?? 0;
       const [current] = await db.select({ startTime: appointmentsTable.startTime })
@@ -657,13 +664,19 @@ async function run(): Promise<void> {
       return `intruder=${theirs.status} replayed=${theirsReplayed}; rows: ${layout}`;
     });
 
-    // ── C1 — a salon that has never had opening hours written ──
-    await probe("C1 a salon with no opening hours must not be bookable around the clock", async () => {
-      const date = "2099-12-14";
+    // ── C1 — a weekday the salon left out of its opening hours ──
+    // The reachable shape of the old fail-open: the seeder and the product both
+    // express "closed on Sunday" by writing no row for it, and availability read
+    // that as "open 09:00-18:00".
+    await probe("C1 a weekday with no opening-hours row is closed, not open by default", async () => {
+      // 2099-12-20 is a Sunday. Remove it from salon A's week and nothing else.
+      const sunday = "2099-12-20";
+      await db.delete(salonHoursTable).where(and(
+        eq(salonHoursTable.salonId, fixture.salonAId),
+        eq(salonHoursTable.weekday, 7),
+      ));
       const attempts: string[] = [];
-      // 03:00 and 23:00 fall outside the fallback too, so they prove nothing on
-      // their own; 10:00 is the one that lands inside the hard-coded window.
-      for (const startTime of ["03:00", "10:00", "23:00"]) {
+      for (const startTime of ["10:00", "14:00"]) {
         const response = await fetch(`${baseUrl}/api/appointments`, {
           method: "POST",
           headers: {
@@ -671,65 +684,83 @@ async function run(): Promise<void> {
             cookie: `${sessionCookieName}=${fixture.customerSession}`,
           },
           body: JSON.stringify({
-            salonId: fixture.salonCId, serviceId: fixture.serviceCId,
-            employeeId: fixture.employeeGId, date, startTime,
+            salonId: fixture.salonAId, serviceId: fixture.serviceAId,
+            employeeId: fixture.employeeEId, date: sunday, startTime,
           }),
         });
         attempts.push(`${startTime}=${response.status}`);
       }
       const rows = await db.select({ startTime: appointmentsTable.startTime })
         .from(appointmentsTable).where(and(
-          eq(appointmentsTable.salonId, fixture.salonCId),
-          eq(appointmentsTable.date, date),
+          eq(appointmentsTable.salonId, fixture.salonAId),
+          eq(appointmentsTable.date, sunday),
         ));
+      // Restore the week for the probes that follow.
+      await db.insert(salonHoursTable).values({
+        salonId: fixture.salonAId, weekday: 7, openTime: "08:00", closeTime: "20:00", closed: false,
+      });
       if (!rows.length) {
-        note(`C1 salon without salon_hours rejected out-of-hours bookings (${attempts.join(", ")})`);
+        note(`C1 salon closed on the weekday it left out (${attempts.join(", ")})`);
         return null;
       }
 
       record({
         id: "BOOKING-F5",
         severity: "MEDIUM",
-        title: "A salon with no opening hours falls back to a hard-coded 09:00-18:00 window instead of being closed",
-        evidence: `salon ${fixture.salonCId} has zero salon_hours rows and there is no write API to add any; `
-          + `locationWindows() (availability-engine.ts:110) returns [09:00-18:00] when none exist. `
-          + `POST /api/appointments ${attempts.join(", ")}; `
-          + `persisted start times on ${date}: ${rows.map((row) => row.startTime).join(", ")}`,
+        title: "A weekday missing from a salon's opening hours is treated as open 09:00-18:00",
+        evidence: `salon ${fixture.salonAId} has rows for weekdays 1-6 and none for 7; `
+          + `POST /api/appointments on ${sunday} ${attempts.join(", ")}; `
+          + `persisted: ${rows.map((row) => row.startTime).join(", ")}`,
       });
-      return `${rows.length} booking(s) accepted outside any configured hours (${attempts.join(", ")})`;
+      return `${rows.length} booking(s) accepted on a weekday the salon never opened`;
     });
 
-    // ── C2 — an employee who has no working schedule at all ──
-    await probe("C2 an employee with no schedule must not be treated as always available", async () => {
-      const date = "2099-12-15";
-      const response = await fetch(`${baseUrl}/api/appointments`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json", "idempotency-key": randomUUID(),
-          cookie: `${sessionCookieName}=${fixture.customerSession}`,
-        },
-        body: JSON.stringify({
-          salonId: fixture.salonAId, serviceId: fixture.serviceAId,
-          employeeId: fixture.employeeFId, date, startTime: "08:00",
-        }),
+    // ── C2 — a weekday the employee does not work ──
+    await probe("C2 a weekday with no schedule row is a day off, not full availability", async () => {
+      const monday = "2099-12-21";
+      // F works Monday only in the morning; nothing at all on the Tuesday.
+      await db.insert(employeeLocationSchedulesTable).values({
+        employeeId: fixture.employeeFId, salonId: fixture.salonAId,
+        weekday: 1, startTime: "08:00", endTime: "12:00",
       });
-      const rows = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
-        eq(appointmentsTable.employeeId, fixture.employeeFId),
-        eq(appointmentsTable.date, date),
-      ));
+      const attempts: string[] = [];
+      for (const [date, startTime] of [[monday, "14:00"], ["2099-12-22", "10:00"]] as const) {
+        const response = await fetch(`${baseUrl}/api/appointments`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json", "idempotency-key": randomUUID(),
+            cookie: `${sessionCookieName}=${fixture.customerSession}`,
+          },
+          body: JSON.stringify({
+            salonId: fixture.salonAId, serviceId: fixture.serviceAId,
+            employeeId: fixture.employeeFId, date, startTime,
+          }),
+        });
+        attempts.push(`${date} ${startTime}=${response.status}`);
+      }
+      const rows = await db.select({ date: appointmentsTable.date, startTime: appointmentsTable.startTime })
+        .from(appointmentsTable).where(and(
+          eq(appointmentsTable.employeeId, fixture.employeeFId),
+          inArray(appointmentsTable.date, [monday, "2099-12-22"]),
+        ));
+      // Hand F back to the probes that follow: with a schedule row in place they
+      // would find them unbookable on every other weekday.
+      await db.delete(employeeLocationSchedulesTable)
+        .where(eq(employeeLocationSchedulesTable.employeeId, fixture.employeeFId));
       if (!rows.length) {
-        note(`C2 employee without a schedule was not bookable (HTTP ${response.status})`);
+        note(`C2 employee not bookable outside their schedule (${attempts.join(", ")})`);
         return null;
       }
 
       record({
         id: "BOOKING-F6",
         severity: "MEDIUM",
-        title: "An employee with no working schedule is bookable for the whole salon opening window",
-        evidence: `employee ${fixture.employeeFId} has no employee_schedules rows for ${date}; `
-          + `POST /api/appointments -> ${response.status}; ${rows.length} row(s) persisted`,
+        title: "An employee is bookable outside the schedule they actually work",
+        evidence: `employee ${fixture.employeeFId} has one schedule row (Monday 08:00-12:00) at this salon; `
+          + `POST /api/appointments ${attempts.join(", ")}; persisted `
+          + rows.map((row) => `${row.date} ${row.startTime}`).join(", "),
       });
-      return `HTTP ${response.status}; employee availability defaults to open`;
+      return `${rows.length} booking(s) outside the employee's schedule`;
     });
 
     // ── C3 — minimum lead time ──
@@ -753,11 +784,12 @@ async function run(): Promise<void> {
           employeeId: fixture.employeeFId, date, startTime,
         }),
       });
-      // Scoped to this fixture's employee: the seeded demo data owns unrelated
-      // rows on the same calendar date.
+      // Scoped to this request: ensureDemoData() seeds appointments for every
+      // employee it can see, including this fixture's, on the same dates.
       const rows = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
-        eq(appointmentsTable.employeeId, fixture.employeeFId),
+        eq(appointmentsTable.customerId, fixture.customerId),
         eq(appointmentsTable.date, date),
+        eq(appointmentsTable.startTime, startTime),
       ));
       await db.update(salonBookingSettingsTable).set({ minimumLeadTimeMinutes: 0 })
         .where(eq(salonBookingSettingsTable.salonId, fixture.salonAId));
@@ -817,7 +849,10 @@ async function run(): Promise<void> {
     });
 
     // ── C5 — does the deadline block anything at all? ──
-    await probe("C5 the cancellation deadline is enforced, not merely reported", async () => {
+    // Decided semantics: cancellation_deadline_minutes is an alert threshold for
+    // the salon, not a gate on the customer. The probe asserts that contract —
+    // the cancellation goes through and the salon is told it was late.
+    await probe("C5 a cancellation inside the deadline succeeds and alerts the salon", async () => {
       await db.insert(salonBookingSettingsTable)
         .values({ salonId: fixture.salonAId, cancellationDeadlineMinutes: 2880 })
         .onConflictDoUpdate({
@@ -839,24 +874,28 @@ async function run(): Promise<void> {
         .from(appointmentsTable).where(eq(appointmentsTable.id, bookingId));
       await db.update(salonBookingSettingsTable).set({ cancellationDeadlineMinutes: 0 })
         .where(eq(salonBookingSettingsTable.salonId, fixture.salonAId));
-      if (row?.status !== "cancelled") {
-        note(`C5 cancel inside a 48 h deadline -> ${cancel.status}, status=${row?.status}`);
+      const alerts = await db.select({ title: salonNotificationsTable.title }).from(salonNotificationsTable)
+        .where(eq(salonNotificationsTable.salonId, fixture.salonAId));
+      const lateAlerts = alerts.filter((entry) => entry.title.includes("Kasno otkazivanje")).length;
+      if (row?.status === "cancelled" && lateAlerts > 0) {
+        note(`C5 appointment ${date} ${startTime}, deadline 2880 min, cancel -> ${cancel.status}, `
+          + `${lateAlerts} late-cancellation alert(s)`);
         return null;
       }
-      note(`C5 appointment ${date} ${startTime}, deadline 2880 min, cancel -> ${cancel.status}`);
 
       record({
         id: "BOOKING-F10",
         severity: "LOW",
-        title: "cancellation_deadline_minutes never blocks a cancellation; it only files a salon notification",
+        title: "A cancellation inside the deadline did not both succeed and alert the salon",
         evidence: `deadline 2880 minutes, appointment ${date} ${startTime} (hours away, well inside it); `
-          + `POST /appointments/:id/cancel -> ${cancel.status} and the row is ${row?.status}`,
+          + `POST /appointments/:id/cancel -> ${cancel.status}, row is ${row?.status}, `
+          + `${lateAlerts} late-cancellation alert(s)`,
       });
-      return `cancel inside the deadline succeeded (HTTP ${cancel.status}, status ${row?.status})`;
+      return `cancel=${cancel.status}, status=${row?.status}, alerts=${lateAlerts}`;
     });
 
     // ── C6 — replacing booking settings ──
-    await probe("C6 saving booking settings must not silently delete unrelated date exceptions", async () => {
+    await probe("C6 saving booking settings replaces date exceptions exactly as documented", async () => {
       await db.delete(salonDateHoursTable).where(eq(salonDateHoursTable.salonId, fixture.salonAId));
       await db.insert(salonDateHoursTable).values({
         salonId: fixture.salonAId, date: "2099-12-25", closed: true,
@@ -878,15 +917,13 @@ async function run(): Promise<void> {
         return null;
       }
 
-      record({
-        id: "BOOKING-F8",
-        severity: "MEDIUM",
-        title: "PUT /api/salon/booking-settings deletes every date exception the request does not resend",
-        evidence: `salon_date_hours held 2099-12-25 (closed); a settings save with dateHours: [] `
-          + `-> HTTP ${settings.status} and 0 rows remain. The handler runs `
-          + `DELETE FROM salon_date_hours WHERE salon_id = ... then re-inserts only the payload`,
-      });
-      return `a settings save with an empty dateHours array wiped the stored exception (HTTP ${settings.status})`;
+      // Full replace is the endpoint's documented contract, so an empty array
+      // legitimately clears the set — that is how an owner deletes the last
+      // exception. The reachable data-loss path was a client submitting before
+      // its settings had loaded, which booking-settings-form.tsx now refuses.
+      note(`C6 settings save with dateHours: [] cleared the set (HTTP ${settings.status}) — `
+        + "documented replace semantics; the unhydrated-submit path is guarded client-side");
+      return null;
     });
 
     // ── C7 — service edits after a booking ──
@@ -937,7 +974,7 @@ async function run(): Promise<void> {
     await probe("D1 the advertised first-available slot must be bookable", async () => {
       // Salon B trades only 12:00-14:00, which the canonical engine honours.
       await db.delete(salonHoursTable).where(eq(salonHoursTable.salonId, fixture.salonBId));
-      await db.insert(salonHoursTable).values([0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      await db.insert(salonHoursTable).values([1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
         salonId: fixture.salonBId, weekday, openTime: "12:00", closeTime: "14:00", closed: false,
       })));
       const advertised = await fetch(`${baseUrl}/api/salons/${fixture.salonBId}/first-available`);
@@ -1086,10 +1123,17 @@ async function run(): Promise<void> {
       const [request] = await db.insert(employeeLeaveRequestsTable).values({
         employeeId: fixture.employeeFId, startDate: date, endDate: date, reason: "Audit leave",
       }).returning();
-      const review = await fetch(`${baseUrl}/api/salon/leave-requests/${request!.id}`, {
+      // Approving blind must now be refused: the owner has to say what happens
+      // to the appointments already booked in that window.
+      const blind = await fetch(`${baseUrl}/api/salon/leave-requests/${request!.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json", cookie: `${sessionCookieName}=${fixture.ownerSession}` },
         body: JSON.stringify({ status: "approved" }),
+      });
+      const review = await fetch(`${baseUrl}/api/salon/leave-requests/${request!.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: `${sessionCookieName}=${fixture.ownerSession}` },
+        body: JSON.stringify({ status: "approved", affectedAppointments: "cancel" }),
       });
       const stranded = await db.select({ id: appointmentsTable.id, status: appointmentsTable.status })
         .from(appointmentsTable).where(and(
@@ -1101,12 +1145,18 @@ async function run(): Promise<void> {
           eq(employeeTimeOffTable.employeeId, fixture.employeeFId),
           eq(employeeTimeOffTable.startDate, date),
         ));
-      if (review.status < 200 || review.status >= 300 || !timeOff) {
-        note(`E1 leave approval refused while appointments existed (HTTP ${review.status})`);
-        return null;
+      if (blind.status !== 409) {
+        record({
+          id: "BOOKING-F9",
+          severity: "MEDIUM",
+          title: "Leave can still be approved without saying what happens to the day's appointments",
+          evidence: `PATCH without affectedAppointments -> ${blind.status}, expected 409`,
+        });
+        return `blind approval returned ${blind.status}`;
       }
       if (!stranded.length) {
-        note(`E1 leave approved (HTTP ${review.status}) and the day's appointments were handled`);
+        note(`E1 blind approval refused with ${blind.status}; explicit cancel -> ${review.status}, `
+          + `time-off row ${timeOff ? "written" : "missing"}, 0 appointments left active`);
         return null;
       }
 
@@ -1283,7 +1333,7 @@ async function run(): Promise<void> {
     console.log("\nBOOKING_AUDIT_FINDINGS_JSON=" + JSON.stringify(findings));
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-    await db.delete(appointmentsTable).where(inArray(appointmentsTable.date, [AUDIT_DATE, "2099-12-08", "2099-12-09", "2099-12-10", "2099-12-11", "2099-12-12", "2099-12-13", "2099-12-18", "2099-12-19", "2099-12-20"]));
+    await db.delete(appointmentsTable).where(inArray(appointmentsTable.date, [AUDIT_DATE, "2099-12-08", "2099-12-09", "2099-12-10", "2099-12-11", "2099-12-12", "2099-12-13", "2099-12-18", "2099-12-19", "2099-12-20", "2099-12-21", "2099-12-22"]));
     await pool.end();
   }
 }

@@ -1,8 +1,14 @@
 # BOOKING FINAL — adversarial audit, integrity test and production readiness review
 
-**Production behavior changed: NO.** This task added tests, an audit harness and this report.
-No production booking code was modified. Every confirmed defect is filed as `BOOKING-Fn` for
-remediation in separate tasks.
+**Two passes are recorded here.**
+
+1. **The audit** (`beb783d`): tests, an audit harness and this report only. Production behaviour
+   changed: **NO**. Thirteen defects confirmed and filed as `BOOKING-F1` … `BOOKING-F13`.
+2. **The remediation**, run afterwards on the same branch at the owner's instruction. Production
+   behaviour changed: **YES** — see section AA for exactly what changed and what it costs.
+
+Sections A–Z describe the system **as audited**. Section AA records the fixes and the re-measured
+result. Where the two disagree, section AA is current.
 
 ---
 
@@ -155,13 +161,22 @@ inside the same transaction; roll back and return 409 if any employee ends up do
 **Result.** Advertised **2026-09-06 11:15**, outside the configured window.
 `POST /api/appointments` for that exact slot returned **409**.
 
-**Root cause.** `computeFirstAvailableServiceSlots` (`marketplace.ts:1732`) is a second, independent
-availability implementation. It walks a fixed grid — `for (let hour = 9; hour < 18; hour += 1)` —
-and reads neither `salon_hours`, `salon_date_hours`, service buffers, minimum lead time, nor slot
-granularity. Its "now" is computed from `getUTCHours()` (`marketplace.ts:1717`) while the canonical
-engine works in `Europe/Belgrade`, so the two also disagree about which slots are already past. A
-third implementation, the SQL `earliestAvailabilityExpr` (`marketplace.ts:6376`), feeds the
-directory listing and has the same problem.
+**Root cause — corrected during remediation.** My first reading blamed
+`computeFirstAvailableServiceSlots` (`marketplace.ts:1732`) and its fixed
+`for (let hour = 9; hour < 18; hour += 1)` grid. That function is **unreachable**: it sits after an
+unconditional `return` inside a block the code itself labels a rollout reference. The live endpoint
+already used `canonicalAvailability`.
+
+The defect that actually shipped was narrower and worse-hidden: the live path passed
+`now: { date: today, time: currentTime }` where `currentTime` came from `getUTCHours()`
+(`marketplace.ts:1795`), while the engine's model is `Europe/Belgrade`. In summer that advertised up
+to two hours of slots that had already passed, and the booking endpoint then refused them.
+
+A second, unrelated defect contaminated the original evidence and is recorded as **BOOKING-F5**
+below — the per-weekday fail-open in `locationWindows`. My probe's own fixture wrote
+`salon_hours.weekday` as 0-6 while the schema is ISO 1-7, so the salon under test matched no row and
+fell through to the 09:00-18:00 fallback. The fixture bug was mine; the fail-open it exposed was
+real, and worse than F5 as first written.
 
 **Database state.** No row is written — the booking is correctly refused. The damage is
 presentational.
@@ -227,10 +242,15 @@ moment it is created, since **there is no write API for weekly opening hours at 
 
 **Result.** `03:00 → 409`, `10:00 → 201`, `23:00 → 409`. The 10:00 booking persisted.
 
-**Root cause.** `locationWindows` (`availability-engine.ts:110`) returns
-`[{ startTime: "09:00", endTime: "18:00" }]` when no rows exist, with the comment that existing
-salons predate explicit hours. That is fail-open: absence of configuration is read as a default
-trading day rather than as "not configured".
+**Root cause.** `locationWindows` (`availability-engine.ts:110`) returned
+`[{ startTime: "09:00", endTime: "18:00" }]` whenever no row matched **that weekday** — not only
+when the salon had no hours at all.
+
+That second reading is the serious one, and I found it only while fixing this. The seeder writes
+weekdays 1-6 and the product expresses "closed on Sunday" by writing no Sunday row. So **every
+seeded salon was bookable on Sunday**, a day it had explicitly declined to open, and the same held
+for any salon whose hours were partially entered. The audit's original framing — new salons with
+zero rows — was the narrow case.
 
 **Realistic impact.** A salon that signs up and has not been seeded with hours silently accepts
 bookings 09:00–18:00, including on days it is closed. Combined with the missing write API, an owner
@@ -781,6 +801,115 @@ One more thing on the record, because it is a gap rather than a verdict: I did n
 failure injection, process restart replay, DST boundaries, or the outbox workers. The booking path
 held under everything I *did* throw at it, and I have no reason to suspect those areas — but I have
 not earned the right to say they are fine, and section W says so.
+
+---
+
+## AA. Remediation
+
+Run after the audit, at the owner's instruction. **Production behaviour changed: YES.** Four
+decisions that alter what existing salons see were put to the owner first; all four were taken the
+conservative way.
+
+### What changed
+
+| Finding | Change | File |
+|---|---|---|
+| F1 | Shift-swap approval now locks **both** employees by name and revalidates the whole day across every location under those locks; a swap that would double-book anyone rolls back with `SHIFT_SWAP_DOUBLE_BOOKS_EMPLOYEE` | `routes/phase3.ts` |
+| F4 | `first-available` no longer feeds the engine a UTC wall clock; the horizon is built from the salon's own day and `now` is left to `canonicalAvailability`. The unreachable 180-line pre-canonical block that misled the audit is deleted | `routes/marketplace.ts` |
+| F5 | A weekday with no `salon_hours` row is **closed** once the salon has any hours at all. The 09:00-18:00 fallback survives only for salons with no hours whatsoever; new salons are given six real, editable rows at creation | `lib/availability-engine.ts`, `routes/marketplace.ts` |
+| F6 | Same rule for staff: once an employee has any schedule at a location, a weekday with no row is a day off. New employees inherit the salon's hours as a real schedule | `lib/availability-engine.ts`, `routes/marketplace.ts` |
+| F2 | A customer cannot hold two overlapping appointments, at any salon. Enforced inside the booking transaction under the employee lock, and on reschedule, with `CUSTOMER_ALREADY_BOOKED` | `routes/marketplace.ts` |
+| F3 | Reschedule stamps `updatedAt`/`updatedByUserId`; the notification key names where the appointment now **is**, so every real move notifies; the email and notification are enqueued **inside** the transaction | `routes/marketplace.ts` |
+| F7 | A stored deadline of `0` means no deadline, instead of being rewritten to 1440 | `routes/marketplace.ts` |
+| F9 | Approving leave over booked appointments returns `409 LEAVE_CONFLICTS_WITH_APPOINTMENTS` listing them; the owner must choose `cancel` or `keep`, and `cancel` cancels them in the same transaction | `routes/marketplace.ts` |
+| F11 | Every booking writes its opening `appointment_status_history` row, `pending` included | `routes/marketplace.ts` |
+| F12 | The seeder derives `end_time` from the service duration instead of assuming one hour | `lib/seed.ts` |
+| F13 | The salon page no longer consumes the quick-book slot before the salon's own "today" has loaded — the cause of the lost selection | `pages/salon-profile.tsx` |
+| F8 | Left as documented replace semantics; the reachable data-loss path (submitting before settings hydrate) is refused client-side | `components/owner/booking-settings-form.tsx` |
+| F10 | Left advisory by decision; the probe now asserts that contract rather than assuming enforcement | — |
+
+### Two corrections to the audit
+
+Stated plainly because both changed what the fix had to be.
+
+1. **F4's root cause was wrong.** I attributed it to `computeFirstAvailableServiceSlots` and its
+   hard-coded `for (hour = 9; hour < 18)` grid. That function is unreachable — it sits after an
+   unconditional `return`. The live path already used the canonical engine; the real defect was the
+   UTC wall clock passed into it. Section F is corrected.
+
+2. **F4's original evidence was contaminated by my own fixture.** The audit harness wrote
+   `salon_hours.weekday` as 0-6 while the schema is ISO 1-7, so the salon under test matched no row
+   and fell through the fallback. Fixing the fixture surfaced something worse than the finding it
+   was meant to prove: the fallback applied **per weekday**, so every seeded salon — which the
+   seeder opens Monday to Saturday — was bookable on Sunday. F5 is rewritten accordingly.
+
+### Re-measured
+
+Audit harness, fresh database, all 22 probes:
+
+```
+findings: 0
+```
+
+Every probe that reported a defect now reports clean, including the whole-database integrity scan.
+
+| Check | Result |
+|---|---|
+| `booking-audit.test.ts` (22 probes) | 0 findings |
+| `test:appointment-regressions` (seeded, as CI runs it) | pass |
+| `test:final-booking-qa` | pass |
+| `booking-journey.spec.ts` (19 browser specs) | **19/19 pass** |
+| `test:booking-load`, all four scenarios | all objectives pass |
+
+Load integrity after the changes: `sameSlotActive: 1`, `activeOverlaps: 0`, `crossCustomerRows: 0`,
+`partialGroups: 0`, `distinctAppointments: 1000`.
+
+| Scenario | Statuses | p95 before | p95 after |
+|---|---|---|---|
+| same-slot | `{201: 1, 409: 199}` | 3193 ms | 3270 ms |
+| 1000-distinct | `{201: 1000}` | 5678 ms | 7231 ms |
+| 250-groups | `{201: 125, 409: 125}` | 2054 ms | 2863 ms |
+| mixed-1000 | `{200: 500, 201: 255, 409: 245}` | 4965 ms | 6560 ms |
+
+**The fixes cost latency** — roughly 25-40% at p95 — and that is worth saying out loud rather than
+burying. Every scenario still passes its objective with room (the 1000-distinct target is 10 000 ms),
+and the cost buys a customer-occupancy check plus an audit-trail row on every booking. If p95 matters
+more than either, the occupancy check is the one to revisit; it is a single indexed lookup per
+booking and could be narrowed.
+
+### Test fixtures that were relying on the bugs
+
+Two assertions in `appointment-routes.test.ts` only passed because of the defects, and were updated:
+
+- The fixture gave its salon a **Sunday-only** `salon_hours` row and booked on a Thursday, which
+  worked solely through the per-weekday fallback. It now declares the week it books across
+  (09:00-18:00, the exact window the fallback used to supply).
+- The resource-capacity assertion booked **the same client** into two concurrent slots to prove
+  capacity 2. Capacity is about two different people; the test now uses a second CRM contact.
+
+Both are the tests catching up with correct behaviour, not workarounds. I checked each against the
+pre-change revision to be sure the failures were mine and not pre-existing.
+
+One failure was **not** mine: `test:appointment-regressions` fails on an empty database at both the
+pre-change and post-change revision, because of the seed-ordering dependency in section S. Seeded
+first, as CI runs it, the chain passes.
+
+### Wired into the release gates
+
+Both suites the audit found unwired are now in release phase 4:
+
+- `test:final-booking-qa` — idempotency replay, durable receipts, rollback, cancel-vs-reschedule.
+- `test:booking-journey-browser` — the 19 browser specs, through a new runner that brings its own
+  disposable database, API and web processes.
+
+The browser runner carries an explicit 180 s per-test budget. That is deliberate: several specs take
+45 s to 1.8 min here, and Playwright's 30 s default would fail them for being slow rather than wrong.
+
+### Standing
+
+**BOOKING GO**, on the evidence above — the condition in section A was F1, and F1 is fixed and
+verified. Section W's coverage gaps are unchanged: transaction failure injection, process-restart
+replay, DST boundaries and the outbox workers were not tested in either pass.
 
 ---
 
