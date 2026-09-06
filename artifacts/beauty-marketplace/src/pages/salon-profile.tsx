@@ -53,6 +53,7 @@ import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { fetchNativeJson } from "@/lib/native-fetch";
 import { loginPathWithReturnTo } from "@/lib/auth-return";
 import { formatDateOnlyInTimeZone, parseLocalDateOnly } from "@/lib/date-only";
+import { trackEvent } from "@/lib/analytics";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
@@ -433,6 +434,11 @@ export default function SalonProfile() {
 
   const submitBooking = (locationType: "salon" | "home", packagePurchaseId?: string) => {
     if (!user) {
+      trackEvent("booking_sign_in_required", {
+        surface: "salon_profile",
+        candidate_selected: Boolean(selectedSlot),
+        return_flow: "dialog",
+      });
       toast.error("Prijava obavezna", { description: "Morate biti prijavljeni da biste zakazali termin." });
       if (selectedService) requireBookingSignIn(selectedService);
       return;
@@ -459,6 +465,11 @@ export default function SalonProfile() {
       }
     }, {
       onSuccess: (response) => {
+        trackEvent("direct_booking_completed", {
+          treatment_location: locationType,
+          booking_status: response.status === "confirmed" ? "confirmed" : "pending",
+          package_used: Boolean(packagePurchaseId),
+        });
         queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         if (packagePurchaseId) {
