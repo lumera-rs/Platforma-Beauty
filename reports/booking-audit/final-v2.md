@@ -684,4 +684,16 @@ are fine, and section AC says so plainly rather than letting a green report impl
 
 ---
 
+## Filed issues
+
+| Issue | Finding |
+|---|---|
+| [#20](https://github.com/lumera-rs/Platforma-Beauty/issues/20) | BOOKING-F14 — late start overruns the next appointment (HIGH) |
+| [#21](https://github.com/lumera-rs/Platforma-Beauty/issues/21) | BOOKING-F15 — deactivated salon still accepts bookings (MEDIUM) |
+| [#22](https://github.com/lumera-rs/Platforma-Beauty/issues/22) | BOOKING-F16 — only the widget surface is rate limited (RELIABILITY) |
+
+The v1 findings and their remediation are issues [#10](https://github.com/lumera-rs/Platforma-Beauty/issues/10)–[#19](https://github.com/lumera-rs/Platforma-Beauty/issues/19), all closed.
+
+---
+
 *Audit performed against `06eb22f`. Production behavior changed: NO.*
