@@ -115,18 +115,43 @@ function rescheduledConfirmationLabel(value: {
   return "Potvrda nije dostupna";
 }
 
+/**
+ * Where a dragged appointment is currently hovering, and which one it is.
+ * Module-level rather than context because the day button is rendered by
+ * react-day-picker, which does not forward extra props through `components`.
+ */
+let draggedAppointmentId: string | null = null;
+let dropAppointmentOnDate: ((appointmentId: string, date: string) => void) | null = null;
+
 function AppointmentDayButton({ day, modifiers, className, ...props }: ComponentProps<typeof CalendarDayButton>) {
   const hasAppointments = Boolean(modifiers.hasAppointments);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const dayKey = dateKey(day.date);
   return (
     <CalendarDayButton
       {...props}
       day={day}
       modifiers={modifiers}
+      data-testid={`calendar-day-${dayKey}`}
+      onDragOver={(event) => {
+        if (!draggedAppointmentId || modifiers.disabled) return;
+        // Preventing default is what marks this element as a valid drop target.
+        event.preventDefault();
+        setIsDropTarget(true);
+      }}
+      onDragLeave={() => setIsDropTarget(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDropTarget(false);
+        const appointmentId = event.dataTransfer.getData("text/plain") || draggedAppointmentId;
+        if (appointmentId && !modifiers.disabled) dropAppointmentOnDate?.(appointmentId, dayKey);
+      }}
       className={cn(
         "!h-11 !min-h-11 !min-w-0 rounded-xl border border-transparent py-1.5 text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary/45 sm:!h-14 sm:!min-h-14",
         modifiers.today && !modifiers.selected && "border-primary/60 bg-primary/[0.035]",
         modifiers.disabled && "cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/45 opacity-70 hover:translate-y-0 hover:bg-muted/30 hover:shadow-none",
         modifiers.outside && "opacity-25",
+        isDropTarget && "border-primary bg-primary/10 shadow-sm",
         className,
       )}
     >
@@ -458,6 +483,7 @@ export default function OwnerCalendar() {
   const cancelGroup = useCancelBookingGroup();
   const moveSeries = useMoveSalonAppointmentSeries();
   const updateAppointment = useUpdateSalonAppointment();
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const updateCustomer = useUpdateSalonCustomer();
   const createBlock = useCreateSalonTimeBlock();
   const deleteBlock = useDeleteSalonTimeBlock();
@@ -817,6 +843,37 @@ export default function OwnerCalendar() {
       });
     }
   };
+
+  /**
+   * Dropping an appointment on another day moves it to the same time on that
+   * day. It calls the ordinary salon-appointment update, so the move is
+   * validated exactly like a typed reschedule — a busy slot answers with the
+   * server's own conflict message instead of silently overwriting anything.
+   */
+  const moveAppointmentToDate = (appointmentId: string, date: string) => {
+    const appointment = (appointments ?? []).find((item) => item.id === appointmentId);
+    if (!appointment || appointment.date === date) return;
+    if (appointment.bookingGroupId) {
+      toast.error("Grupna rezervacija", { description: "Tretman iz grupne rezervacije menja se kroz grupni raspored." });
+      return;
+    }
+    updateAppointment.mutate(
+      { appointmentId, data: { date, startTime: appointment.startTime } },
+      {
+        onSuccess: () => {
+          refetchAppointments();
+          refetchUnfilteredAppointments();
+          toast.success("Termin je pomeren", { description: `${appointment.customerName} · ${dateLabel(date)} u ${appointment.startTime}` });
+        },
+        onError: (error) => toast.error("Termin nije pomeren", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }),
+      },
+    );
+  };
+
+  useEffect(() => {
+    dropAppointmentOnDate = moveAppointmentToDate;
+    return () => { dropAppointmentOnDate = null; };
+  });
 
   const saveAppointmentUpdate = () => {
     if (!editing) return;
@@ -1411,7 +1468,19 @@ export default function OwnerCalendar() {
 
                           const appointment = item;
                           return (
-                            <div key={`app-${appointment.id}`} data-testid={`list-appointment-${appointment.id}`} className={cn("flex flex-col gap-4 rounded-xl border bg-background p-4 transition-all hover:border-primary/20 hover:shadow-md sm:flex-row sm:items-center", appointment.status === "cancelled" && "opacity-60 grayscale hover:opacity-100 hover:grayscale-0", appointment.status === "no-show" && "border-red-200 bg-red-50/30")}>
+                            <div
+                              key={`app-${appointment.id}`}
+                              data-testid={`list-appointment-${appointment.id}`}
+                              draggable={appointment.status === "pending" || appointment.status === "confirmed"}
+                              onDragStart={(event) => {
+                                draggedAppointmentId = appointment.id;
+                                setDraggingId(appointment.id);
+                                event.dataTransfer.setData("text/plain", appointment.id);
+                                event.dataTransfer.effectAllowed = "move";
+                              }}
+                              onDragEnd={() => { draggedAppointmentId = null; setDraggingId(null); }}
+                              title="Prevucite termin na drugi dan u kalendaru da ga pomerite"
+                              className={cn("flex flex-col gap-4 rounded-xl border bg-background p-4 transition-all hover:border-primary/20 hover:shadow-md sm:flex-row sm:items-center", (appointment.status === "pending" || appointment.status === "confirmed") && "cursor-grab active:cursor-grabbing", draggingId === appointment.id && "opacity-50 ring-2 ring-primary/40", appointment.status === "cancelled" && "opacity-60 grayscale hover:opacity-100 hover:grayscale-0", appointment.status === "no-show" && "border-red-200 bg-red-50/30")}>
                               <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                                 <div className="flex items-center gap-3 font-semibold text-primary"><Clock3 className="h-5 w-5 text-muted-foreground" />{appointment.startTime}</div>
                                 <div className="flex-1 space-y-1">

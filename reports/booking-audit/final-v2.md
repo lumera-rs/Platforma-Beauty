@@ -133,6 +133,13 @@ confirmed by exhaustive grep across `artifacts/` and `lib/`.
 | §82 — appointment waitlist, recurring appointments | **Absent.** Only `education_waitlist` and `product_waitlist` exist. Confirmed as stated in the brief. |
 | §83 — deposit / payment capture at booking | **Absent** for salon booking. `depositAmount` exists only in education course validation. Package redemption (section Z) is the only payment-like step in the booking transaction. |
 
+> **Later addendum, not part of this audit.** The table above records the state of `06eb22f`, the
+> revision audited. All seven were subsequently built in a separate task, on request, after this
+> report was signed off — the audit itself changed no production behaviour (section AD). They route
+> through the existing guarded path rather than beside it; `reports/booking-audit/feature-build.md`
+> describes what was added and how each was verified. Read this table as history, not as the current
+> feature set.
+
 ---
 
 ## E. Existing test inventory

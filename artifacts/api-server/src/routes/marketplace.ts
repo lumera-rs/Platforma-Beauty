@@ -2510,6 +2510,9 @@ async function createAppointmentSeries(input: {
   notes?: string | null;
   preferredEmployeeId?: string | null;
   packagePurchaseId?: string | null;
+  /** Recorded on the series for display; the slots are already expanded. */
+  recurrenceFrequency?: string | null;
+  recurrenceInterval?: number | null;
   /** Allows package-wide booking to keep all per-service series in one tx. */
   tx?: any;
 }) {
@@ -2539,6 +2542,10 @@ async function createAppointmentSeries(input: {
       serviceId: input.service.id,
       employeeId: allocatedEmployeeIds.length === 1 ? allocatedEmployeeIds[0]! : null,
       totalAppointments: input.slots.length,
+      // Recorded for display only. The slots were already expanded, so nothing
+      // reads this to schedule anything later.
+      recurrenceFrequency: input.recurrenceFrequency ?? null,
+      recurrenceInterval: input.recurrenceInterval ?? null,
       createdByUserId: input.createdByUserId,
     }).returning();
     const appointments: (typeof appointmentsTable.$inferSelect)[] = [];
@@ -8635,41 +8642,14 @@ router.patch("/appointments/:appointmentId", admitBookingRequest, async (req, re
         eq(appointmentsTable.customerId, user.id),
       )).for("update").limit(1);
       if (!appointment || !["pending", "confirmed"].includes(appointment.status)) return { error: "changed" as const };
-      const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
-      const endTime = service ? appointmentEndTime(startTime, service.durationMinutes) : null;
-      if (!service || !endTime) return { error: "invalid-time" as const };
-      const requirements = await fetchServiceResourceRequirements(tx, service.id);
-      const initialSlots = await canonicalAvailability({
-        salonId: appointment.salonId, service, dates: [date], employeeId,
-        excludeAppointmentIds: [appointment.id], store: tx,
+
+      // One reschedule implementation, shared with the owner calendar.
+      const moved = await rescheduleAppointmentInTx(tx, {
+        appointment, date, startTime, employeeId,
+        notes: body.data.notes ?? appointment.notes, actorId: user.id,
       });
-      const initialSlot = initialSlots.find((slot) => slot.startTime === startTime && slot.endTime === endTime);
-      if (!initialSlot) return { error: "unavailable" as const };
-      await lockAppointmentResources(tx, appointment.salonId, [
-        { date, employeeId: initialSlot.employeeId },
-        ...requirements.map((requirement) => ({ date, resourceId: requirement.resourceId })),
-      ]);
-      const revalidated = await canonicalAvailability({
-        salonId: appointment.salonId, service, dates: [date], employeeId: initialSlot.employeeId,
-        excludeAppointmentIds: [appointment.id], store: tx,
-      });
-      if (!revalidated.some((slot) => slot.startTime === startTime && slot.endTime === endTime)) return { error: "unavailable" as const };
-      if (await customerIsBusy(tx, {
-        customerId: user.id, date, startTime, endTime, excludeAppointmentId: appointment.id,
-      })) return { error: "customer-busy" as const };
-      const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, initialSlot.employeeId)).limit(1);
-      if (!employee) return { error: "unavailable" as const };
-      const bufferedEnd = appointmentEndTime(endTime, service.bufferMinutes);
-      if (!bufferedEnd) return { error: "invalid-time" as const };
-      const [updated] = await tx.update(appointmentsTable).set({
-        date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
-        updatedAt: new Date(), updatedByUserId: user.id,
-      }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
-      if (!updated) return { error: "changed" as const };
-      await tx.delete(appointmentResourceAllocationsTable)
-        .where(eq(appointmentResourceAllocationsTable.appointmentId, updated.id));
-      // Throws ResourceCapacityError → rolls back transaction.
-      await allocateResourcesInTx(tx, appointment.salonId, requirements, updated.id, date, startTime, requirements.length ? bufferedEnd : endTime);
+      if ("error" in moved) return moved;
+      const { appointment: updated, service, employee } = moved;
       const [salonRow] = await tx.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1);
       await sendAppointmentEmails({
         event: "updated", appointment: updated, customer: user, salon: salonRow!, service, store: tx,
@@ -8742,6 +8722,144 @@ async function applyAppointmentCompletionEffectsInTx(
 }
 
 /** Canonical cancellation; callers perform their own tenant/actor authorization. */
+/**
+ * Tells anyone waiting for a slot that it just opened up.
+ *
+ * The platform never books on their behalf: it sends a notification and marks
+ * the entry `notified`, leaving the customer to book through the same guarded
+ * endpoint as everyone else. That keeps one booking path and stops a waitlist
+ * from quietly outbidding a customer already on the page.
+ *
+ * Runs in the caller's transaction, so a released slot and its notifications
+ * commit together — a cancellation that rolls back never tells anyone.
+ */
+async function notifyWaitlistForReleasedSlotInTx(
+  tx: MarketplaceTransaction,
+  released: { salonId: string; serviceId: string; employeeId: string | null; date: string; startTime: string; endTime: string },
+): Promise<number> {
+  const waiting = await tx.select().from(appointmentWaitlistTable).where(and(
+    eq(appointmentWaitlistTable.salonId, released.salonId),
+    eq(appointmentWaitlistTable.serviceId, released.serviceId),
+    eq(appointmentWaitlistTable.date, released.date),
+    eq(appointmentWaitlistTable.status, "waiting"),
+    // Their window has to actually contain the freed slot.
+    lte(appointmentWaitlistTable.earliestTime, released.startTime),
+    gte(appointmentWaitlistTable.latestTime, released.startTime),
+    // An entry pinned to an employee only matches that employee.
+    or(
+      isNull(appointmentWaitlistTable.employeeId),
+      released.employeeId ? eq(appointmentWaitlistTable.employeeId, released.employeeId) : sql`false`,
+    ),
+  )).orderBy(asc(appointmentWaitlistTable.createdAt));
+  if (!waiting.length) return 0;
+
+  const notifiedAt = new Date();
+  for (const entry of waiting) {
+    await notifyCustomer(tx, {
+      userId: entry.customerId,
+      // Keyed on the freed slot, so re-releasing the same slot can notify again
+      // while a single release never notifies twice.
+      eventKey: `waitlist:${entry.id}:${released.date}:${released.startTime}`,
+      category: "booking",
+      title: "Oslobodio se termin",
+      body: `Termin ${released.date} u ${released.startTime} je ponovo slobodan. Požurite da ga rezervišete.`,
+      deepLink: "/moji-termini",
+      metadata: { waitlistId: entry.id, salonId: released.salonId, serviceId: released.serviceId, date: released.date, startTime: released.startTime },
+    });
+  }
+  await tx.update(appointmentWaitlistTable)
+    .set({ status: "notified", notifiedAt, updatedAt: notifiedAt })
+    .where(inArray(appointmentWaitlistTable.id, waiting.map((entry) => entry.id)));
+  return waiting.length;
+}
+
+/**
+ * Moves one appointment to a new date, time or employee.
+ *
+ * The single reschedule implementation. Both the customer's own reschedule and
+ * the owner's calendar (including drag-and-drop) call this, so a move is
+ * validated identically no matter which surface asked for it: the old and new
+ * slots are locked, canonical availability is re-run inside the transaction
+ * with this appointment excluded from its own conflict check, the customer's
+ * diary is checked, and resource allocations are rebuilt.
+ *
+ * Notifications are deliberately left to the caller — they differ per surface —
+ * but they run in this same transaction.
+ */
+async function rescheduleAppointmentInTx(
+  tx: MarketplaceTransaction,
+  input: {
+    appointment: typeof appointmentsTable.$inferSelect;
+    date: string;
+    startTime: string;
+    employeeId: string | null;
+    notes?: string | null;
+    actorId: string;
+  },
+): Promise<
+  | { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect }
+  | { error: "changed" | "invalid-time" | "unavailable" | "customer-busy" }
+> {
+  const appointment = input.appointment;
+  const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
+  // The appointment's own duration is authoritative: it already includes any
+  // add-ons chosen at booking time, which the service alone does not know about.
+  const endTime = service ? appointmentEndTime(input.startTime, appointment.durationMinutes) : null;
+  if (!service || !endTime) return { error: "invalid-time" as const };
+  const requirements = await fetchServiceResourceRequirements(tx, service.id);
+  const initialSlots = await canonicalAvailability({
+    salonId: appointment.salonId, service, dates: [input.date], employeeId: input.employeeId,
+    excludeAppointmentIds: [appointment.id], store: tx,
+  });
+  const initialSlot = initialSlots.find((slot) => slot.startTime === input.startTime && slot.endTime === endTime);
+  if (!initialSlot) return { error: "unavailable" as const };
+  await lockAppointmentParticipants(tx, appointment.salonId, [
+    { date: input.date, employeeId: initialSlot.employeeId },
+    ...requirements.map((requirement) => ({ date: input.date, resourceId: requirement.resourceId })),
+  ]);
+  const revalidated = await canonicalAvailability({
+    salonId: appointment.salonId, service, dates: [input.date], employeeId: initialSlot.employeeId,
+    excludeAppointmentIds: [appointment.id], store: tx,
+  });
+  if (!revalidated.some((slot) => slot.startTime === input.startTime && slot.endTime === endTime)) {
+    return { error: "unavailable" as const };
+  }
+  if (appointment.customerId && await customerIsBusy(tx, {
+    customerId: appointment.customerId, date: input.date, startTime: input.startTime, endTime,
+    excludeAppointmentId: appointment.id,
+  })) return { error: "customer-busy" as const };
+  const [employee] = await tx.select().from(employeesTable).where(eq(employeesTable.id, initialSlot.employeeId)).limit(1);
+  if (!employee) return { error: "unavailable" as const };
+  const bufferedEnd = appointmentEndTime(endTime, appointment.bufferMinutes ?? 0);
+  if (!bufferedEnd) return { error: "invalid-time" as const };
+  const [updated] = await tx.update(appointmentsTable).set({
+    date: input.date, startTime: input.startTime, endTime, employeeId: employee.id,
+    notes: input.notes === undefined ? appointment.notes : input.notes,
+    updatedAt: new Date(), updatedByUserId: input.actorId,
+  }).where(and(
+    eq(appointmentsTable.id, appointment.id),
+    inArray(appointmentsTable.status, ["pending", "confirmed"]),
+  )).returning();
+  if (!updated) return { error: "changed" as const };
+  // Participants and resources follow the appointment to its new slot.
+  await tx.delete(appointmentEmployeesTable).where(eq(appointmentEmployeesTable.appointmentId, updated.id));
+  await tx.insert(appointmentEmployeesTable).values({
+    appointmentId: updated.id, employeeId: employee.id, isPrimary: true,
+  });
+  await tx.delete(appointmentResourceAllocationsTable)
+    .where(eq(appointmentResourceAllocationsTable.appointmentId, updated.id));
+  await allocateResourcesInTx(tx, appointment.salonId, requirements, updated.id, input.date, input.startTime,
+    requirements.length ? bufferedEnd : endTime);
+  // The old slot is free now; tell anyone who was waiting for it.
+  if (appointment.date !== input.date || appointment.startTime !== input.startTime) {
+    await notifyWaitlistForReleasedSlotInTx(tx, {
+      salonId: appointment.salonId, serviceId: appointment.serviceId, employeeId: appointment.employeeId,
+      date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
+    });
+  }
+  return { appointment: updated, service, employee };
+}
+
 async function cancelAppointmentInTx(
   tx: MarketplaceTransaction,
   input: {
@@ -8789,8 +8907,127 @@ async function cancelAppointmentInTx(
       metadata: { appointmentId: cancelled.id, bookingGroupId: cancelled.bookingGroupId, action: "cancel", occurredAt: input.occurredAt.toISOString() },
     });
   }
+  // The slot is free again; anyone waiting for it hears about it in this same
+  // transaction.
+  await notifyWaitlistForReleasedSlotInTx(tx, {
+    salonId: cancelled.salonId, serviceId: cancelled.serviceId, employeeId: cancelled.employeeId,
+    date: cancelled.date, startTime: cancelled.startTime, endTime: cancelled.endTime,
+  });
   return { appointment: cancelled };
 }
+
+// ---------------------------------------------------------------------------
+// Appointment waitlist.
+// Joining a waitlist creates no appointment and holds no capacity: it is a
+// request to be told when a slot frees up. Booking still happens through
+// POST /api/appointments like every other booking.
+// ---------------------------------------------------------------------------
+
+router.get("/customer/waitlist", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const rows = await db.select({
+    id: appointmentWaitlistTable.id,
+    salonId: appointmentWaitlistTable.salonId,
+    salonName: salonsTable.name,
+    serviceId: appointmentWaitlistTable.serviceId,
+    serviceName: servicesTable.name,
+    employeeId: appointmentWaitlistTable.employeeId,
+    date: appointmentWaitlistTable.date,
+    earliestTime: appointmentWaitlistTable.earliestTime,
+    latestTime: appointmentWaitlistTable.latestTime,
+    status: appointmentWaitlistTable.status,
+    notifiedAt: appointmentWaitlistTable.notifiedAt,
+    createdAt: appointmentWaitlistTable.createdAt,
+  }).from(appointmentWaitlistTable)
+    .innerJoin(salonsTable, eq(salonsTable.id, appointmentWaitlistTable.salonId))
+    .innerJoin(servicesTable, eq(servicesTable.id, appointmentWaitlistTable.serviceId))
+    .where(and(
+      eq(appointmentWaitlistTable.customerId, user.id),
+      inArray(appointmentWaitlistTable.status, ["waiting", "notified"]),
+    ))
+    .orderBy(asc(appointmentWaitlistTable.date), asc(appointmentWaitlistTable.earliestTime));
+  res.json(rows.map((row) => ({ ...row, notifiedAt: safeIsoTimestamp(row.notifiedAt), createdAt: safeIsoTimestamp(row.createdAt) })));
+});
+
+router.post("/customer/waitlist", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  const salonId = typeof body.salonId === "string" ? body.salonId : "";
+  const serviceId = typeof body.serviceId === "string" ? body.serviceId : "";
+  const employeeId = typeof body.employeeId === "string" ? body.employeeId : null;
+  const date = typeof body.date === "string" ? body.date.slice(0, 10) : "";
+  const earliestTime = typeof body.earliestTime === "string" ? body.earliestTime : "00:00";
+  const latestTime = typeof body.latestTime === "string" ? body.latestTime : "23:59";
+  if (!UUID_PATTERN_RE.test(salonId) || !UUID_PATTERN_RE.test(serviceId)
+    || (employeeId !== null && !UUID_PATTERN_RE.test(employeeId))
+    || !isValidCalendarDate(date)
+    || !/^\d{2}:\d{2}$/.test(earliestTime) || !/^\d{2}:\d{2}$/.test(latestTime)
+    || earliestTime >= latestTime) {
+    res.status(400).json({ error: "Podaci za listu čekanja nisu ispravni." }); return;
+  }
+  if (date < new Date().toISOString().slice(0, 10)) {
+    res.status(400).json({ error: "Lista čekanja se pravi za današnji ili budući datum." }); return;
+  }
+  // The service must belong to an active salon; a waitlist for a closed salon
+  // would promise something that can never be delivered.
+  const [service] = await db.select({ id: servicesTable.id }).from(servicesTable)
+    .innerJoin(salonsTable, eq(salonsTable.id, servicesTable.salonId))
+    .where(and(
+      eq(servicesTable.id, serviceId), eq(servicesTable.salonId, salonId),
+      eq(servicesTable.active, true), eq(salonsTable.active, true),
+    )).limit(1);
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
+  if (employeeId && !(await employeeInSalon(employeeId, salonId))) {
+    res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." }); return;
+  }
+  const [entry] = await db.insert(appointmentWaitlistTable).values({
+    salonId, serviceId, customerId: user.id, employeeId, date, earliestTime, latestTime,
+  }).onConflictDoNothing().returning();
+  if (!entry) {
+    res.status(409).json({ code: "ALREADY_WAITING", error: "Već ste na listi čekanja za ovaj termin." });
+    return;
+  }
+  res.status(201).json({ id: entry.id, status: entry.status });
+});
+
+router.delete("/customer/waitlist/:waitlistId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const waitlistId = String(req.params.waitlistId);
+  if (!UUID_PATTERN_RE.test(waitlistId)) { res.status(404).json({ error: "Stavka nije pronađena." }); return; }
+  const [updated] = await db.update(appointmentWaitlistTable)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(and(
+      eq(appointmentWaitlistTable.id, waitlistId),
+      eq(appointmentWaitlistTable.customerId, user.id),
+      inArray(appointmentWaitlistTable.status, ["waiting", "notified"]),
+    )).returning({ id: appointmentWaitlistTable.id });
+  if (!updated) { res.status(404).json({ error: "Stavka nije pronađena." }); return; }
+  res.json({ id: updated.id, status: "cancelled" });
+});
+
+router.get("/salon/waitlist", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const rows = await db.select({
+    id: appointmentWaitlistTable.id,
+    serviceId: appointmentWaitlistTable.serviceId,
+    serviceName: servicesTable.name,
+    employeeId: appointmentWaitlistTable.employeeId,
+    customerName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+    date: appointmentWaitlistTable.date,
+    earliestTime: appointmentWaitlistTable.earliestTime,
+    latestTime: appointmentWaitlistTable.latestTime,
+    status: appointmentWaitlistTable.status,
+    createdAt: appointmentWaitlistTable.createdAt,
+  }).from(appointmentWaitlistTable)
+    .innerJoin(servicesTable, eq(servicesTable.id, appointmentWaitlistTable.serviceId))
+    .innerJoin(usersTable, eq(usersTable.id, appointmentWaitlistTable.customerId))
+    .where(and(
+      eq(appointmentWaitlistTable.salonId, access.salon.id),
+      inArray(appointmentWaitlistTable.status, ["waiting", "notified"]),
+    ))
+    .orderBy(asc(appointmentWaitlistTable.date), asc(appointmentWaitlistTable.earliestTime));
+  res.json(rows.map((row) => ({ ...row, createdAt: safeIsoTimestamp(row.createdAt) })));
+});
 
 router.post("/appointments/:appointmentId/lifecycle", async (req, res): Promise<void> => {
   const actor = await current(req, res); if (!actor) return;
@@ -10226,12 +10463,73 @@ admitBookingRequest, async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * Turns a recurrence rule into the explicit dates it means.
+ *
+ * This is the whole of the recurring-appointment feature: a generator that runs
+ * before anything is booked. The dates it produces are handed to the ordinary
+ * appointment-series path, so a recurring booking gets exactly the same locks,
+ * revalidation, receipts and failure behaviour as a hand-picked one. There is
+ * no second scheduler and nothing recurs on its own after the fact.
+ *
+ * Returns null on a rule that is not supported, so the caller refuses rather
+ * than booking something the customer did not describe.
+ */
+export function expandRecurrence(input: {
+  startDate: string;
+  startTime: string;
+  frequency: "weekly" | "biweekly" | "monthly";
+  count: number;
+}): Array<{ date: string; startTime: string }> | null {
+  if (!isValidCalendarDate(input.startDate)) return null;
+  if (!/^\d{2}:\d{2}$/.test(input.startTime)) return null;
+  if (!Number.isInteger(input.count) || input.count < 1 || input.count > 26) return null;
+  const stepDays = input.frequency === "weekly" ? 7 : input.frequency === "biweekly" ? 14 : 0;
+  const slots: Array<{ date: string; startTime: string }> = [];
+  for (let index = 0; index < input.count; index += 1) {
+    const cursor = new Date(`${input.startDate}T12:00:00.000Z`);
+    if (stepDays) {
+      cursor.setUTCDate(cursor.getUTCDate() + stepDays * index);
+    } else {
+      // Monthly keeps the day of the month, clamped so the 31st does not spill
+      // into the next month on a short one.
+      const day = cursor.getUTCDate();
+      cursor.setUTCDate(1);
+      cursor.setUTCMonth(cursor.getUTCMonth() + index);
+      const lastDay = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0)).getUTCDate();
+      cursor.setUTCDate(Math.min(day, lastDay));
+    }
+    slots.push({ date: cursor.toISOString().slice(0, 10), startTime: input.startTime });
+  }
+  return slots;
+}
+
 router.post("/salon/appointment-series", (req, res, next) =>
   replayOwnerBookingCommand(req, res, next, "salon.appointment-series.create"),
 admitBookingRequest, async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const idempotencyKey = bookingIdempotencyKey(req, res); if (!idempotencyKey) return;
-  const parsed = CreateSalonAppointmentSeriesBody.safeParse(req.body);
+  // A recurrence rule is expanded into explicit slots BEFORE validation, so the
+  // rest of this handler cannot tell a recurring series from a hand-picked one.
+  const seriesBody = req.body && typeof req.body === "object" ? { ...req.body as Record<string, unknown> } : {};
+  const recurrence = seriesBody.recurrence;
+  if (recurrence && typeof recurrence === "object") {
+    const rule = recurrence as Record<string, unknown>;
+    const frequency = rule.frequency;
+    if (frequency !== "weekly" && frequency !== "biweekly" && frequency !== "monthly") {
+      res.status(400).json({ error: "Pravilo ponavljanja nije podržano." }); return;
+    }
+    const expanded = expandRecurrence({
+      startDate: typeof rule.startDate === "string" ? rule.startDate.slice(0, 10) : "",
+      startTime: typeof rule.startTime === "string" ? rule.startTime : "",
+      frequency,
+      count: typeof rule.count === "number" ? rule.count : Number.NaN,
+    });
+    if (!expanded) { res.status(400).json({ error: "Pravilo ponavljanja nije ispravno." }); return; }
+    seriesBody.slots = expanded;
+    req.body = seriesBody;
+  }
+  const parsed = CreateSalonAppointmentSeriesBody.safeParse(seriesBody);
   if (!parsed.success) { res.status(400).json({ error: "Podaci za seriju termina nisu ispravni." }); return; }
   if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
     res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
@@ -10415,6 +10713,78 @@ router.patch("/salon/appointments/:appointmentId", admitBookingRequest, async (r
     res.status(400).json({ error: "Status termina menjajte isključivo preko lifecycle endpointa." });
     return;
   }
+
+  // Moving an appointment in time — what the calendar's drag-and-drop does —
+  // goes through the same reschedule implementation the customer surface uses.
+  // There is no lighter-weight owner path.
+  const requestedDate = body.data.date === undefined ? null : body.data.date.slice(0, 10);
+  const requestedStartTime = body.data.startTime ?? null;
+  if (requestedDate !== null || requestedStartTime !== null) {
+    if ((requestedDate !== null && !isValidCalendarDate(requestedDate))
+      || (requestedStartTime !== null && !/^\d{2}:\d{2}$/.test(requestedStartTime))) {
+      res.status(400).json({ error: "Novi termin nije ispravan." }); return;
+    }
+    const moved = await db.transaction(async (tx) => {
+      const [initial] = await tx.select().from(appointmentsTable).where(and(
+        eq(appointmentsTable.id, params.data.appointmentId),
+        eq(appointmentsTable.salonId, salon.id),
+      )).limit(1);
+      if (!initial) return { error: "not-found" as const };
+      if (initial.bookingGroupId) return { error: "booking-group" as const };
+      const date = requestedDate ?? initial.date;
+      const startTime = requestedStartTime ?? initial.startTime;
+      const employeeId = body.data.employeeId ?? initial.employeeId;
+      await lockAppointmentResources(tx, salon.id, [
+        { date: initial.date, employeeId: initial.employeeId },
+        { date, employeeId },
+      ]);
+      const [appointment] = await tx.select().from(appointmentsTable).where(and(
+        eq(appointmentsTable.id, initial.id),
+        eq(appointmentsTable.salonId, salon.id),
+      )).for("update").limit(1);
+      if (!appointment || !["pending", "confirmed"].includes(appointment.status)) return { error: "changed" as const };
+      const outcome = await rescheduleAppointmentInTx(tx, {
+        appointment, date, startTime, employeeId,
+        notes: body.data.notes === undefined ? appointment.notes : (body.data.notes === "" ? null : body.data.notes),
+        actorId: access.user.id,
+      });
+      if ("error" in outcome) return outcome;
+      if (outcome.appointment.customerId) {
+        await notifyCustomer(tx, {
+          userId: outcome.appointment.customerId,
+          eventKey: `appointment:${outcome.appointment.id}:moved:${outcome.appointment.date}:${outcome.appointment.startTime}:${outcome.appointment.employeeId ?? "unassigned"}`,
+          category: "booking",
+          title: "Termin je pomeren",
+          body: `Termin u salonu ${salon.name} je pomeren na ${outcome.appointment.date} u ${outcome.appointment.startTime}.`,
+          deepLink: "/moji-termini",
+        });
+      }
+      return outcome;
+    });
+    if ("error" in moved) {
+      const status = moved.error === "not-found" ? 404 : moved.error === "invalid-time" ? 400 : 409;
+      res.status(status).json({
+        ...(moved.error === "booking-group" ? { code: "BOOKING_GROUP_MUTATION_REQUIRED" } : {}),
+        ...(moved.error === "customer-busy" ? { code: "CUSTOMER_ALREADY_BOOKED" } : {}),
+        error: moved.error === "not-found" ? "Termin nije pronađen."
+          : moved.error === "invalid-time" ? "Trajanje termina izlazi van radnog dana."
+            : moved.error === "unavailable" ? "Termin nije slobodan u izabrano vreme."
+              : moved.error === "customer-busy" ? "Klijent već ima termin u to vreme."
+                : moved.error === "booking-group" ? "Tretman iz grupne rezervacije mora se menjati kroz grupni raspored."
+                  : "Termin je u međuvremenu promenjen. Osvežite raspored i pokušajte ponovo.",
+      });
+      return;
+    }
+    const [customer, allocations] = await Promise.all([
+      moved.appointment.customerId
+        ? db.select().from(usersTable).where(eq(usersTable.id, moved.appointment.customerId)).limit(1)
+        : Promise.resolve([]),
+      getAllocationsForAppointment(db, moved.appointment.id),
+    ]);
+    res.json(appointmentView(moved.appointment, salon, moved.service, customer[0] ?? null, moved.employee, true, null, allocations));
+    return;
+  }
+
   const result = await db.transaction(async (tx) => {
     await lockAppointmentResources(tx, salon.id);
     if (body.data.employeeId) {

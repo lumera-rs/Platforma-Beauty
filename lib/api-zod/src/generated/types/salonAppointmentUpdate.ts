@@ -12,4 +12,6 @@ export interface SalonAppointmentUpdate {
   /** @nullable */
   employeeId?: string | null;
   notes?: string;
+  date?: string;
+  startTime?: string;
 }
