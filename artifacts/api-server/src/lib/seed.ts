@@ -836,6 +836,10 @@ async function seedFutureBookingAvailability(): Promise<void> {
           const occupiedKey = `${employee.id}:${date}:${startTime}`;
           if (occupiedKeys.has(occupiedKey)) continue;
           const customer = customerRows[(offset + slotIndex + salonEmployees.indexOf(employee)) % customerRows.length]!;
+          // The window has to match the duration it claims. A fixed one-hour
+          // block with the service's own duration_minutes produced rows saying
+          // 09:00-10:00 lasts 45 minutes, which no booking could ever create.
+          const endMinutes = startHour * 60 + service.durationMinutes;
           demoAppointments.push({
             salonId: salon.id,
             customerId: customer.id,
@@ -843,7 +847,7 @@ async function seedFutureBookingAvailability(): Promise<void> {
             serviceId: service.id,
             date,
             startTime,
-            endTime: `${String(startHour + 1).padStart(2, "0")}:00`,
+            endTime: `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
             durationMinutes: service.durationMinutes,
             price: service.promoPrice ?? service.price,
             status: "confirmed",

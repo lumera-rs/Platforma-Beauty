@@ -4496,7 +4496,9 @@ export const UpdateSalonAppointmentParams = zod.object({
 export const UpdateSalonAppointmentBody = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']).optional(),
   "employeeId": zod.string().nullish(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "date": zod.string().optional(),
+  "startTime": zod.string().optional()
 })
 
 export const updateSalonAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');

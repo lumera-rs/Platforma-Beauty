@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { TransactionRollbackError, and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   appointmentsTable,
@@ -626,6 +626,40 @@ router.post("/employee/shift-swaps/:requestId/cancel", async (req, res): Promise
   res.json(swapResponse(row!));
 });
 
+/**
+ * True when either employee would end the day holding two active appointments
+ * that overlap in wall-clock time.
+ *
+ * Deliberately not scoped to a salon: one person can be assigned to several
+ * locations, and the whole point of a shift swap is that it moves a day's work
+ * between people, so the sibling location's calendar is exactly where a clash
+ * hides.
+ */
+async function employeeSwapCreatesOverlap(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  date: string,
+  employeeIds: string[],
+): Promise<boolean> {
+  const later = alias(appointmentsTable, "later_appointment");
+  const [clash] = await tx.select({ id: appointmentsTable.id })
+    .from(appointmentsTable)
+    .innerJoin(later, and(
+      eq(later.employeeId, appointmentsTable.employeeId),
+      eq(later.date, appointmentsTable.date),
+      lt(appointmentsTable.id, later.id),
+      lt(appointmentsTable.startTime, later.endTime),
+      gt(appointmentsTable.endTime, later.startTime),
+    ))
+    .where(and(
+      eq(appointmentsTable.date, date),
+      inArray(appointmentsTable.employeeId, employeeIds),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+      inArray(later.status, ["pending", "confirmed"]),
+    ))
+    .limit(1);
+  return Boolean(clash);
+}
+
 async function swapAppointmentPreviews(salonId: string, date: string, employeeIds: string[]) {
   const rows = await db.select({
     id: appointmentsTable.id,
@@ -700,8 +734,14 @@ router.post("/salon/shift-swaps/:requestId/review", async (req, res): Promise<vo
     if (!updated) { res.status(409).json({ error: "Zahtev ne čeka odobrenje." }); return; }
   } else {
     const approved = await db.transaction(async (tx) => {
-      // Serialize with booking allocation on this salon-day before reassigning.
-      await lockAppointmentResources(tx, request.salonId, [{ date: request.swapDate }]);
+      // Both employees are locked by name, not just the salon-day: employee
+      // occupancy is global across every location a person serves, so a swap
+      // that only holds the salon-day lock can hand someone an hour they are
+      // already working at a sibling location.
+      await lockAppointmentResources(tx, request.salonId, [
+        { date: request.swapDate, employeeId: request.requesterEmployeeId },
+        { date: request.swapDate, employeeId: request.targetEmployeeId },
+      ]);
       const [updated] = await tx.update(shiftSwapRequestsTable).set({
         status: "approved",
         ownerReviewedAt: new Date(),
@@ -709,7 +749,7 @@ router.post("/salon/shift-swaps/:requestId/review", async (req, res): Promise<vo
         eq(shiftSwapRequestsTable.id, request.id),
         eq(shiftSwapRequestsTable.status, "pending_owner"),
       )).returning();
-      if (!updated) return false;
+      if (!updated) return "not-pending" as const;
       // Single-statement A↔B swap of that day's upcoming appointments.
       await tx.update(appointmentsTable).set({
         employeeId: sql`CASE WHEN ${appointmentsTable.employeeId} = ${request.requesterEmployeeId} THEN ${request.targetEmployeeId}::uuid ELSE ${request.requesterEmployeeId}::uuid END`,
@@ -719,9 +759,28 @@ router.post("/salon/shift-swaps/:requestId/review", async (req, res): Promise<vo
         inArray(appointmentsTable.employeeId, [request.requesterEmployeeId, request.targetEmployeeId]),
         inArray(appointmentsTable.status, ["pending", "confirmed"]),
       ));
-      return true;
+      // Revalidate under the locks we now hold. The swap moves whole days
+      // between people, so the only way to know the result is legal is to look
+      // at every location each employee serves, not just this salon.
+      if (await employeeSwapCreatesOverlap(tx, request.swapDate, [
+        request.requesterEmployeeId, request.targetEmployeeId,
+      ])) {
+        tx.rollback();
+      }
+      return "approved" as const;
+    }).catch((error) => {
+      // drizzle's tx.rollback() throws a sentinel; anything else is a real fault.
+      if (error instanceof TransactionRollbackError) return "overlap" as const;
+      throw error;
     });
-    if (!approved) { res.status(409).json({ error: "Zahtev ne čeka odobrenje." }); return; }
+    if (approved === "not-pending") { res.status(409).json({ error: "Zahtev ne čeka odobrenje." }); return; }
+    if (approved === "overlap") {
+      res.status(409).json({
+        code: "SHIFT_SWAP_DOUBLE_BOOKS_EMPLOYEE",
+        error: "Zamena smene bi jednom zaposlenom dala dva termina u isto vreme. Razrešite preklapanje pa pokušajte ponovo.",
+      });
+      return;
+    }
   }
   const [row] = await loadSwaps(and(eq(shiftSwapRequestsTable.id, request.id)), 1);
   const previews = await swapAppointmentPreviews(access.salon.id, request.swapDate, [request.requesterEmployeeId, request.targetEmployeeId]);

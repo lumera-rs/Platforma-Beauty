@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import {
+  appointmentEmployeesTable,
   appointmentResourceAllocationsTable,
   appointmentsTable,
   db,
@@ -24,6 +25,7 @@ import {
   type BusyAppointment,
   type GenerateAvailabilityInput,
   type ResourceAllocation,
+  type ResourceRequirement,
   wallClockNowInTimeZone,
 } from "./availability-engine";
 
@@ -44,8 +46,16 @@ export type CanonicalAvailabilityContext = {
   dateHours: Array<typeof salonDateHoursTable.$inferSelect>;
   employees: Array<typeof employeesTable.$inferSelect>;
   employeeServiceLinks: Array<typeof employeeServicesTable.$inferSelect>;
-  appointments: Array<{ id: string; employeeId: string | null; date: string; startTime: string; endTime: string; service: typeof servicesTable.$inferSelect }>;
+  appointments: Array<{
+    id: string; employeeId: string | null; serviceId: string; date: string;
+    startTime: string; endTime: string;
+    preProcessingMinutes: number; processingMinutes: number; postProcessingMinutes: number;
+    bufferMinutes: number; seatCount: number;
+    service: typeof servicesTable.$inferSelect;
+  }>;
   resourceIdsByAppointment: Map<string, string[]>;
+  /** Every employee each appointment commits, primary plus participants. */
+  employeeIdsByAppointment: Map<string, string[]>;
   schedules: Array<typeof employeeLocationSchedulesTable.$inferSelect>;
   timeOff: Array<typeof employeeTimeOffTable.$inferSelect>;
   salonHours: Array<typeof salonHoursTable.$inferSelect>;
@@ -53,6 +63,26 @@ export type CanonicalAvailabilityContext = {
   resourceAllocations: Array<{ appointmentId: string; resourceId: string; quantity: number; date: string; startTime: string; endTime: string; service: typeof servicesTable.$inferSelect }>;
   downtime: Array<typeof salonResourceDowntimeTable.$inferSelect>;
 };
+
+/**
+ * Base-service requirements plus whatever the chosen add-ons need, summed per
+ * resource. An add-on that pulls in a resource the base treatment does not use
+ * must be checked by the same revalidation, not a separate one.
+ */
+function mergeResourceRequirements(
+  base: ResourceRequirement[],
+  addOns: ResourceRequirement[] | undefined,
+): ResourceRequirement[] {
+  if (!addOns?.length) return base;
+  const merged = new Map<string, ResourceRequirement>();
+  for (const requirement of [...base, ...addOns]) {
+    const existing = merged.get(requirement.resourceId);
+    merged.set(requirement.resourceId, existing
+      ? { ...existing, quantity: existing.quantity + requirement.quantity }
+      : { ...requirement });
+  }
+  return [...merged.values()];
+}
 
 /** Load invariant persisted availability facts once for a bounded request window. */
 export async function preloadCanonicalAvailability(input: {
@@ -85,10 +115,31 @@ export async function preloadCanonicalAvailability(input: {
   const typedRequirements = requirementRows as Array<{ serviceId: string; resourceId: string; quantity: number; capacity: number; active: boolean }>;
   const requirementsByServiceId = new Map<string, Array<{ resourceId: string; quantity: number; capacity: number; active: boolean }>>();
   for (const requirement of typedRequirements) requirementsByServiceId.set(requirement.serviceId, [...(requirementsByServiceId.get(requirement.serviceId) ?? []), requirement]);
-  if (!employeeIds.length) return { salonId: input.salonId, startDate, endDate, settings, dateHours, employees, employeeServiceLinks: [], appointments: [], resourceIdsByAppointment: new Map(), schedules: [], timeOff: [], salonHours, requirementsByServiceId, resourceAllocations: [], downtime: downtimeRows.map((row: { downtime: typeof salonResourceDowntimeTable.$inferSelect }) => row.downtime) };
+  if (!employeeIds.length) return { salonId: input.salonId, startDate, endDate, settings, dateHours, employees, employeeServiceLinks: [], appointments: [], resourceIdsByAppointment: new Map(), employeeIdsByAppointment: new Map(), schedules: [], timeOff: [], salonHours, requirementsByServiceId, resourceAllocations: [], downtime: downtimeRows.map((row: { downtime: typeof salonResourceDowntimeTable.$inferSelect }) => row.downtime) };
   const [employeeServiceLinks, appointments, schedules, timeOff] = await Promise.all([
     store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, employeeIds), inArray(employeeServicesTable.serviceId, serviceIds))),
-    store.select({ id: appointmentsTable.id, employeeId: appointmentsTable.employeeId, date: appointmentsTable.date, startTime: appointmentsTable.startTime, endTime: appointmentsTable.endTime, service: servicesTable }).from(appointmentsTable).innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId)).where(and(inArray(appointmentsTable.employeeId, employeeIds), gte(appointmentsTable.date, startDate), lte(appointmentsTable.date, endDate), ne(appointmentsTable.status, "cancelled"))),
+    // An appointment is relevant when ANY employee it commits is a candidate —
+    // the primary on the row, or a participant on a multi-employee treatment.
+    store.select({
+      id: appointmentsTable.id, employeeId: appointmentsTable.employeeId,
+      serviceId: appointmentsTable.serviceId,
+      date: appointmentsTable.date, startTime: appointmentsTable.startTime, endTime: appointmentsTable.endTime,
+      preProcessingMinutes: appointmentsTable.preProcessingMinutes,
+      processingMinutes: appointmentsTable.processingMinutes,
+      postProcessingMinutes: appointmentsTable.postProcessingMinutes,
+      bufferMinutes: appointmentsTable.bufferMinutes,
+      seatCount: appointmentsTable.seatCount,
+      service: servicesTable,
+    }).from(appointmentsTable).innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId)).where(and(
+      or(
+        inArray(appointmentsTable.employeeId, employeeIds),
+        sql`exists (select 1 from ${appointmentEmployeesTable} ae
+          where ae.appointment_id = ${appointmentsTable.id}
+            and ae.employee_id in ${employeeIds})`,
+      ),
+      gte(appointmentsTable.date, startDate), lte(appointmentsTable.date, endDate),
+      ne(appointmentsTable.status, "cancelled"),
+    )),
     store.select().from(employeeLocationSchedulesTable).where(and(inArray(employeeLocationSchedulesTable.employeeId, employeeIds), eq(employeeLocationSchedulesTable.salonId, input.salonId))),
     store.select().from(employeeTimeOffTable).where(and(inArray(employeeTimeOffTable.employeeId, employeeIds), lte(employeeTimeOffTable.startDate, endDate), gte(employeeTimeOffTable.endDate, startDate), or(isNull(employeeTimeOffTable.salonId), eq(employeeTimeOffTable.salonId, input.salonId)))),
   ]);
@@ -98,7 +149,20 @@ export async function preloadCanonicalAvailability(input: {
   const resourceAllocations = resourceIds.length ? await store.select({ appointmentId: appointmentsTable.id, resourceId: appointmentResourceAllocationsTable.resourceId, quantity: appointmentResourceAllocationsTable.quantity, date: appointmentsTable.date, startTime: appointmentsTable.startTime, endTime: appointmentsTable.endTime, service: servicesTable }).from(appointmentResourceAllocationsTable).innerJoin(appointmentsTable, eq(appointmentsTable.id, appointmentResourceAllocationsTable.appointmentId)).innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId)).where(and(inArray(appointmentResourceAllocationsTable.resourceId, resourceIds), gte(appointmentsTable.date, startDate), lte(appointmentsTable.date, endDate), ne(appointmentsTable.status, "cancelled"))) : [];
   const resourceIdsByAppointment = new Map<string, string[]>();
   for (const allocation of allocationLinks) resourceIdsByAppointment.set(allocation.appointmentId, [...(resourceIdsByAppointment.get(allocation.appointmentId) ?? []), allocation.resourceId]);
-  return { salonId: input.salonId, startDate, endDate, settings, dateHours, employees, employeeServiceLinks, appointments, resourceIdsByAppointment, schedules, timeOff, salonHours, requirementsByServiceId, resourceAllocations, downtime: downtimeRows.map((row: { downtime: typeof salonResourceDowntimeTable.$inferSelect }) => row.downtime) };
+  const participantRows = appointmentIds.length
+    ? await store.select().from(appointmentEmployeesTable).where(inArray(appointmentEmployeesTable.appointmentId, appointmentIds))
+    : [];
+  const employeeIdsByAppointment = new Map<string, string[]>();
+  for (const appointment of appointments as Array<{ id: string; employeeId: string | null }>) {
+    if (appointment.employeeId) employeeIdsByAppointment.set(appointment.id, [appointment.employeeId]);
+  }
+  for (const participant of participantRows as Array<{ appointmentId: string; employeeId: string }>) {
+    const current = employeeIdsByAppointment.get(participant.appointmentId) ?? [];
+    if (!current.includes(participant.employeeId)) {
+      employeeIdsByAppointment.set(participant.appointmentId, [...current, participant.employeeId]);
+    }
+  }
+  return { salonId: input.salonId, startDate, endDate, settings, dateHours, employees, employeeServiceLinks, appointments, resourceIdsByAppointment, employeeIdsByAppointment, schedules, timeOff, salonHours, requirementsByServiceId, resourceAllocations, downtime: downtimeRows.map((row: { downtime: typeof salonResourceDowntimeTable.$inferSelect }) => row.downtime) };
 }
 
 /**
@@ -120,6 +184,18 @@ export async function canonicalAvailability(input: {
   reservedAppointments?: BusyAppointment[];
   /** Tentative resource usage by members of the same preview/write batch. */
   resourceReservations?: ResourceAllocation[];
+  /** Extra active minutes contributed by the add-ons chosen for this booking. */
+  addOnMinutes?: number;
+  /** Seats requested in a shared-capacity treatment. Defaults to 1. */
+  seatCount?: number;
+  /** Resources the chosen add-ons require on top of the base service. */
+  addOnResourceRequirements?: ResourceRequirement[];
+  /**
+   * Overrides the service's own crew size. The booking transaction picks the
+   * crew once, then revalidates each member individually — at which point the
+   * question is "is THIS person free", not "are N people free", so it passes 1.
+   */
+  requiredEmployeeCount?: number;
   /**
    * Optional route-level preload. Group previews call this adapter repeatedly
    * while extending candidates, so supplying this avoids re-reading the same
@@ -151,7 +227,10 @@ export async function canonicalAvailability(input: {
     const candidates = context.employees.filter((employee) => linked.has(employee.id) && (!input.employeeId || employee.id === input.employeeId));
     if (!candidates.length) return [];
     const candidateIds = new Set(candidates.map((employee) => employee.id));
-    const requirements = input.resourceRequirements ?? context.requirementsByServiceId.get(input.service.id) ?? [];
+    const requirements = mergeResourceRequirements(
+      input.resourceRequirements ?? context.requirementsByServiceId.get(input.service.id) ?? [],
+      input.addOnResourceRequirements,
+    );
     const requirementIds = new Set(requirements.map((item) => item.resourceId));
     const resourceDowntime = context.downtime.flatMap((downtime) => input.dates.flatMap((date) => {
       const dayStart = new Date(`${date}T00:00:00.000Z`); const dayEnd = new Date(`${date}T24:00:00.000Z`);
@@ -160,20 +239,52 @@ export async function canonicalAvailability(input: {
       const end = downtime.endsAt < dayEnd ? downtime.endsAt : dayEnd;
       return [{ resourceId: downtime.resourceId, date, startTime: start.toISOString().slice(11, 16), endTime: end.getTime() === dayEnd.getTime() ? "24:00" : end.toISOString().slice(11, 16) }];
     }));
+    const shape = input.service as unknown as Record<string, unknown>;
     return generateAvailability({
       dates: input.dates, durationMinutes: input.service.durationMinutes,
-      bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+      bufferMinutes: optionalNumber(shape.bufferMinutes, 0),
+      // The treatment's real shape. Absent or zero segments behave exactly as
+      // an unsegmented block, so services predating this keep their behaviour.
+      preProcessingMinutes: optionalNumber(shape.preProcessingMinutes, 0),
+      processingMinutes: optionalNumber(shape.processingMinutes, 0),
+      postProcessingMinutes: optionalNumber(shape.postProcessingMinutes, 0),
+      requiredEmployeeCount: input.requiredEmployeeCount ?? optionalNumber(shape.requiredEmployeeCount, 1),
+      seatCapacity: optionalNumber(shape.seatCapacity, 1),
+      addOnMinutes: input.addOnMinutes ?? 0,
+      seatCount: input.seatCount ?? 1,
+      serviceId: input.service.id,
       granularityMinutes: granularity, employees: candidates,
       salonHours: context.salonHours.map((hours) => ({ weekday: hours.weekday, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
       dateOverrides: context.dateHours.map((hours) => ({ date: hours.date, startTime: hours.openTime, endTime: hours.closeTime, closed: hours.closed })),
       employeeSchedules: context.schedules.filter((schedule) => candidateIds.has(schedule.employeeId)),
       timeOff: context.timeOff.filter((timeOff) => candidateIds.has(timeOff.employeeId)),
       appointments: [
-        ...context.appointments.filter((appointment) => !!appointment.employeeId && candidateIds.has(appointment.employeeId) && (!input.excludeAppointmentIds?.includes(appointment.id))).map((appointment) => ({
-          employeeId: appointment.employeeId, date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime,
-          bufferMinutes: optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
-          resourceIds: context.resourceIdsByAppointment.get(appointment.id) ?? [],
-        })),
+        ...context.appointments.filter((appointment) => {
+          if (input.excludeAppointmentIds?.includes(appointment.id)) return false;
+          // A multi-employee appointment blocks every participant, so it is
+          // relevant whenever ANY of its employees is a candidate here.
+          const committed = context.employeeIdsByAppointment.get(appointment.id)
+            ?? (appointment.employeeId ? [appointment.employeeId] : []);
+          return committed.some((employeeId) => candidateIds.has(employeeId));
+        }).map((appointment) => {
+          const row = appointment as unknown as Record<string, unknown>;
+          return {
+            employeeId: appointment.employeeId, date: appointment.date,
+            startTime: appointment.startTime, endTime: appointment.endTime,
+            // The appointment's own buffer snapshot, falling back to the
+            // service's for rows booked before appointments carried one.
+            bufferMinutes: optionalNumber(row.bufferMinutes,
+              optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0)),
+            preProcessingMinutes: optionalNumber(row.preProcessingMinutes, 0),
+            processingMinutes: optionalNumber(row.processingMinutes, 0),
+            postProcessingMinutes: optionalNumber(row.postProcessingMinutes, 0),
+            seatCount: optionalNumber(row.seatCount, 1),
+            serviceId: appointment.serviceId,
+            employeeIds: context.employeeIdsByAppointment.get(appointment.id)
+              ?? (appointment.employeeId ? [appointment.employeeId] : []),
+            resourceIds: context.resourceIdsByAppointment.get(appointment.id) ?? [],
+          };
+        }),
         ...(input.reservedAppointments ?? []),
       ],
       resourceRequirements: requirements,
@@ -251,7 +362,8 @@ export async function canonicalAvailability(input: {
     .where(eq(serviceResourceRequirementsTable.serviceId, input.service.id)) as Array<{
       resourceId: string; quantity: number; capacity: number; active: boolean;
     }>;
-  const requirementIds = requirements.map((item) => item.resourceId);
+  const effectiveRequirements = mergeResourceRequirements(requirements, input.addOnResourceRequirements);
+  const requirementIds = effectiveRequirements.map((item) => item.resourceId);
 
   // Sequential reads also make this adapter safe to use with a transaction's
   // single pg client during final booking revalidation.
@@ -281,22 +393,53 @@ export async function canonicalAvailability(input: {
   const busyAppointments = await store.select({
     id: appointmentsTable.id,
     employeeId: appointmentsTable.employeeId,
+    serviceId: appointmentsTable.serviceId,
     date: appointmentsTable.date,
     startTime: appointmentsTable.startTime,
     endTime: appointmentsTable.endTime,
+    preProcessingMinutes: appointmentsTable.preProcessingMinutes,
+    processingMinutes: appointmentsTable.processingMinutes,
+    postProcessingMinutes: appointmentsTable.postProcessingMinutes,
+    bufferMinutes: appointmentsTable.bufferMinutes,
+    seatCount: appointmentsTable.seatCount,
     service: servicesTable,
   }).from(appointmentsTable)
     .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
     .where(and(
-      inArray(appointmentsTable.employeeId, candidateIds),
+      // Same rule as the preloaded branch: any committed employee makes the
+      // appointment relevant, not only the one on the row.
+      or(
+        inArray(appointmentsTable.employeeId, candidateIds),
+        sql`exists (select 1 from ${appointmentEmployeesTable} ae
+          where ae.appointment_id = ${appointmentsTable.id}
+            and ae.employee_id in ${candidateIds})`,
+      ),
       gte(appointmentsTable.date, startDate),
       lte(appointmentsTable.date, endDate),
       ne(appointmentsTable.status, "cancelled"),
       input.excludeAppointmentIds?.length ? notInArray(appointmentsTable.id, input.excludeAppointmentIds) : undefined,
     )) as Array<{
-      id: string; employeeId: string | null; date: string; startTime: string; endTime: string;
+      id: string; employeeId: string | null; serviceId: string; date: string; startTime: string; endTime: string;
+      preProcessingMinutes: number; processingMinutes: number; postProcessingMinutes: number;
+      bufferMinutes: number; seatCount: number;
       service: typeof servicesTable.$inferSelect;
     }>;
+  const busyParticipants = busyAppointments.length
+    ? await store.select().from(appointmentEmployeesTable)
+      .where(inArray(appointmentEmployeesTable.appointmentId, busyAppointments.map((item) => item.id))) as Array<{
+        appointmentId: string; employeeId: string;
+      }>
+    : [];
+  const busyEmployeeIdsByAppointment = new Map<string, string[]>();
+  for (const appointment of busyAppointments) {
+    if (appointment.employeeId) busyEmployeeIdsByAppointment.set(appointment.id, [appointment.employeeId]);
+  }
+  for (const participant of busyParticipants) {
+    const current = busyEmployeeIdsByAppointment.get(participant.appointmentId) ?? [];
+    if (!current.includes(participant.employeeId)) {
+      busyEmployeeIdsByAppointment.set(participant.appointmentId, [...current, participant.employeeId]);
+    }
+  }
   const schedules = await store.select().from(employeeLocationSchedulesTable).where(and(
     inArray(employeeLocationSchedulesTable.employeeId, candidateIds),
     eq(employeeLocationSchedulesTable.salonId, input.salonId),
@@ -353,10 +496,19 @@ export async function canonicalAvailability(input: {
       service: typeof servicesTable.$inferSelect;
     }>;
 
+  const shape = input.service as unknown as Record<string, unknown>;
   return generateAvailability({
     dates: input.dates,
     durationMinutes: input.service.durationMinutes,
-    bufferMinutes: optionalNumber((input.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+    bufferMinutes: optionalNumber(shape.bufferMinutes, 0),
+    preProcessingMinutes: optionalNumber(shape.preProcessingMinutes, 0),
+    processingMinutes: optionalNumber(shape.processingMinutes, 0),
+    postProcessingMinutes: optionalNumber(shape.postProcessingMinutes, 0),
+    requiredEmployeeCount: input.requiredEmployeeCount ?? optionalNumber(shape.requiredEmployeeCount, 1),
+    seatCapacity: optionalNumber(shape.seatCapacity, 1),
+    addOnMinutes: input.addOnMinutes ?? 0,
+    seatCount: input.seatCount ?? 1,
+    serviceId: input.service.id,
     granularityMinutes: granularity,
     employees: candidates,
     salonHours: salonHours.map((hours: { weekday: number; openTime: string; closeTime: string; closed: boolean }) => ({
@@ -376,15 +528,23 @@ export async function canonicalAvailability(input: {
     appointments: [
       ...busyAppointments.map((appointment) => ({
         employeeId: appointment.employeeId,
+        serviceId: appointment.serviceId,
         date: appointment.date,
         startTime: appointment.startTime,
         endTime: appointment.endTime,
-        bufferMinutes: optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0),
+        bufferMinutes: optionalNumber(appointment.bufferMinutes,
+          optionalNumber((appointment.service as unknown as { bufferMinutes?: unknown }).bufferMinutes, 0)),
+        preProcessingMinutes: optionalNumber(appointment.preProcessingMinutes, 0),
+        processingMinutes: optionalNumber(appointment.processingMinutes, 0),
+        postProcessingMinutes: optionalNumber(appointment.postProcessingMinutes, 0),
+        seatCount: optionalNumber(appointment.seatCount, 1),
+        employeeIds: busyEmployeeIdsByAppointment.get(appointment.id)
+          ?? (appointment.employeeId ? [appointment.employeeId] : []),
         resourceIds: resourceIdsByAppointment.get(appointment.id) ?? [],
       })),
       ...(input.reservedAppointments ?? []),
     ],
-    resourceRequirements: requirements,
+    resourceRequirements: effectiveRequirements,
     resourceAllocations: [
       ...resourceAllocations.map((allocation: {
         resourceId: string; quantity: number; date: string; startTime: string; endTime: string;

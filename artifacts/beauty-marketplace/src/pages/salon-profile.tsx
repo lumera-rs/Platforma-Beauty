@@ -307,6 +307,12 @@ export default function SalonProfile() {
 
     const requestedDateValue = requestedDate ? parseISO(requestedDate) : null;
     const salonTodayDate = formatDateOnlyInTimeZone(firstAvailableResponse?.generatedAt);
+    // A quick-book slot in the URL can only be judged once the salon's own
+    // "today" has arrived. Running before then falls through to the standard
+    // wizard AND stamps restoredSelection, so the later run that does have the
+    // data is skipped by the key guard and the customer silently loses the slot
+    // they picked before signing in. Wait for it instead.
+    if (requestedDate && requestedStartTime && requestedEmployeeId && !salonTodayDate) return;
     const salonToday = salonTodayDate ? parseLocalDateOnly(salonTodayDate) : null;
     const hasValidRequestedSlot = !!requestedDate
       && !!requestedStartTime

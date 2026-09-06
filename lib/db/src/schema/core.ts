@@ -487,6 +487,26 @@ export const servicesTable = pgTable("services", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  /**
+   * Segmented treatments. A colour is 20 minutes of work, 30 minutes of the
+   * colour developing, then 10 minutes of rinsing: the stylist is only needed
+   * for the first and last stretch. When `processingMinutes` is 0 the treatment
+   * is one continuous block and `durationMinutes` is authoritative, which is
+   * how every service created before segments existed keeps behaving.
+   *
+   * When set, the three must sum to `durationMinutes`; the DB check below
+   * enforces it so no writer can produce a treatment whose parts disagree with
+   * its whole.
+   */
+  preProcessingMinutes: integer("pre_processing_minutes").notNull().default(0),
+  processingMinutes: integer("processing_minutes").notNull().default(0),
+  postProcessingMinutes: integer("post_processing_minutes").notNull().default(0),
+  /** Clients served together in one slot by one employee. 1 = an ordinary 1:1 treatment. */
+  seatCapacity: integer("seat_capacity").notNull().default(1),
+  /** Employees who must ALL be free for this treatment (four hands, trainer + trainee). */
+  requiredEmployeeCount: integer("required_employee_count").notNull().default(1),
+  /** Amount the salon expects up front. NULL means no deposit is asked for. */
+  depositAmount: integer("deposit_amount"),
   /** Calendar occupancy after treatment; does not change the customer-visible end time. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
   price: integer("price").notNull(),
@@ -506,6 +526,20 @@ export const servicesTable = pgTable("services", {
   // Leading FK coverage for categoryId alone (global category browse).
   index("services_category_idx").on(table.categoryId),
   check("services_buffer_minutes_check", sql`${table.bufferMinutes} >= 0`),
+  // Segments are either unused (all zero) or a complete partition of the
+  // treatment. Half-configured segments would make occupancy ambiguous.
+  check("services_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} = ${table.durationMinutes})
+    )
+  `),
+  check("services_seat_capacity_check", sql`${table.seatCapacity} >= 1`),
+  check("services_required_employee_count_check", sql`${table.requiredEmployeeCount} >= 1`),
+  check("services_deposit_amount_check", sql`${table.depositAmount} is null or ${table.depositAmount} >= 0`),
 ]);
 
 export const productBrandsTable = pgTable("product_brands", {
@@ -659,6 +693,15 @@ export const appointmentSeriesTable = pgTable("appointment_series", {
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   totalAppointments: integer("total_appointments").notNull(),
+  /**
+   * Recurrence is a slot GENERATOR, not a second booking path. When set, the
+   * rule is expanded into explicit dates up front and every one of them goes
+   * through the same appointment-series creation that a hand-picked series
+   * uses, so recurring bookings get the same locks, revalidation and receipts.
+   * NULL means the slots were chosen by hand.
+   */
+  recurrenceFrequency: text("recurrence_frequency"),
+  recurrenceInterval: integer("recurrence_interval"),
   createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -701,6 +744,19 @@ export const appointmentsTable = pgTable("appointments", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
+  /**
+   * Segment snapshot, taken at booking time. Occupancy is computed from these
+   * columns and never re-read from `services`, so editing a service afterwards
+   * cannot move an appointment that is already in the calendar. All zero means
+   * one continuous block, exactly as every pre-segment appointment behaves.
+   */
+  preProcessingMinutes: integer("pre_processing_minutes").notNull().default(0),
+  processingMinutes: integer("processing_minutes").notNull().default(0),
+  postProcessingMinutes: integer("post_processing_minutes").notNull().default(0),
+  /** Buffer snapshot; the service's buffer at the moment of booking. */
+  bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  /** Seats this booking takes in a shared-capacity slot. 1 for ordinary treatments. */
+  seatCount: integer("seat_count").notNull().default(1),
   price: integer("price").notNull(),
   treatmentLocation: text("treatment_location").notNull().default("salon"),
   travelFee: integer("travel_fee").notNull().default(0),
@@ -747,6 +803,17 @@ export const appointmentsTable = pgTable("appointments", {
     .on(table.salonCustomerId, table.date)
     .where(sql`${table.status} = 'completed'`),
   index("appointments_service_idx").on(table.serviceId),
+  check("appointments_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} = ${table.durationMinutes})
+    )
+  `),
+  check("appointments_seat_count_check", sql`${table.seatCount} >= 1`),
+  check("appointments_buffer_minutes_check", sql`${table.bufferMinutes} >= 0`),
   index("appointments_series_idx").on(table.seriesId),
   index("appointments_booking_group_idx").on(table.bookingGroupId),
   index("appointments_created_by_idx").on(table.createdByUserId),
@@ -894,6 +961,151 @@ export const customerNotesTable = pgTable("customer_notes", {
   index("customer_notes_salon_customer_idx").on(table.salonId, table.customerId),
   // Leading FK coverage for customerId alone (customer history view).
   index("customer_notes_customer_idx").on(table.customerId),
+]);
+
+// ---------------------------------------------------------------------------
+// Add-on services.
+// An add-on extends an existing treatment rather than being booked on its own:
+// it lengthens the appointment, adds to the price, and may pull in resources the
+// base service does not need. It is deliberately NOT a second appointment, so
+// there is exactly one booking path and one occupancy calculation.
+// ---------------------------------------------------------------------------
+export const serviceAddOnsTable = pgTable("service_add_ons", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  /** Added to the treatment's active tail, so it never lands inside a processing gap. */
+  durationMinutes: integer("duration_minutes").notNull().default(0),
+  price: integer("price").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("service_add_ons_service_name_unique").on(table.serviceId, table.name),
+  index("service_add_ons_service_active_idx").on(table.serviceId, table.active),
+  check("service_add_ons_duration_check", sql`${table.durationMinutes} >= 0`),
+  check("service_add_ons_price_check", sql`${table.price} >= 0`),
+]);
+
+/** Resources an add-on needs on top of whatever the base service requires. */
+export const serviceAddOnResourceRequirementsTable = pgTable("service_add_on_resource_requirements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  addOnId: uuid("add_on_id").notNull().references(() => serviceAddOnsTable.id, { onDelete: "cascade" }),
+  resourceId: uuid("resource_id").notNull().references(() => salonResourcesTable.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull().default(1),
+}, (table) => [
+  uniqueIndex("service_add_on_resource_unique").on(table.addOnId, table.resourceId),
+  index("service_add_on_resource_resource_idx").on(table.resourceId),
+  check("service_add_on_resource_quantity_check", sql`${table.quantity} >= 1`),
+]);
+
+/** Immutable per-appointment snapshot of the add-ons chosen at booking time. */
+export const appointmentAddOnsTable = pgTable("appointment_add_ons", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  addOnId: uuid("add_on_id").references(() => serviceAddOnsTable.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  price: integer("price").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("appointment_add_ons_appointment_add_on_unique").on(table.appointmentId, table.addOnId),
+  index("appointment_add_ons_appointment_idx").on(table.appointmentId),
+  index("appointment_add_ons_add_on_idx").on(table.addOnId),
+]);
+
+// ---------------------------------------------------------------------------
+// Appointment participants.
+// `appointments.employee_id` stays the primary assignee so every existing query
+// keeps working. When a service needs several people at once, each of them —
+// including the primary — also gets a row here, and the booking transaction
+// locks and revalidates all of them together.
+// ---------------------------------------------------------------------------
+export const appointmentEmployeesTable = pgTable("appointment_employees", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "restrict" }),
+  /** True for the row mirroring `appointments.employee_id`. */
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("appointment_employees_appointment_employee_unique").on(table.appointmentId, table.employeeId),
+  index("appointment_employees_appointment_idx").on(table.appointmentId),
+  // The occupancy query: everything a given employee is committed to on a date.
+  index("appointment_employees_employee_idx").on(table.employeeId),
+]);
+
+// ---------------------------------------------------------------------------
+// Appointment waitlist.
+// A customer who wants a slot that is taken. Entries are matched when capacity
+// is released (cancellation, reschedule away) and the customer is notified —
+// the platform never books on their behalf, so no booking happens outside the
+// guarded path.
+// ---------------------------------------------------------------------------
+export const appointmentWaitlistStatusEnum = pgEnum("appointment_waitlist_status", [
+  "waiting",
+  "notified",
+  "converted",
+  "cancelled",
+  "expired",
+]);
+
+export const appointmentWaitlistTable = pgTable("appointment_waitlist", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  /** NULL means "any employee who can perform the service". */
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "cascade" }),
+  date: date("desired_date", { mode: "string" }).notNull(),
+  earliestTime: text("earliest_time").notNull().default("00:00"),
+  latestTime: text("latest_time").notNull().default("23:59"),
+  status: appointmentWaitlistStatusEnum("status").notNull().default("waiting"),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // One live request per customer per salon-service-day.
+  uniqueIndex("appointment_waitlist_live_unique")
+    .on(table.salonId, table.serviceId, table.customerId, table.date)
+    .where(sql`${table.status} in ('waiting', 'notified')`),
+  // The release scan: who is waiting for this salon-day.
+  index("appointment_waitlist_salon_date_status_idx").on(table.salonId, table.date, table.status),
+  index("appointment_waitlist_customer_idx").on(table.customerId),
+  index("appointment_waitlist_service_idx").on(table.serviceId),
+  index("appointment_waitlist_employee_idx").on(table.employeeId),
+  check("appointment_waitlist_window_check", sql`${table.earliestTime} < ${table.latestTime}`),
+]);
+
+// ---------------------------------------------------------------------------
+// Booking deposits.
+// Recorded inside the booking transaction so a deposit can never exist without
+// its appointment. There is no card capture in this product: a deposit is an
+// obligation the salon settles, matching the pay-at-salon model used elsewhere.
+// ---------------------------------------------------------------------------
+export const appointmentDepositStatusEnum = pgEnum("appointment_deposit_status", [
+  "pending",
+  "paid",
+  "waived",
+  "refunded",
+  "forfeited",
+]);
+
+export const appointmentDepositsTable = pgTable("appointment_deposits", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  status: appointmentDepositStatusEnum("status").notNull().default("pending"),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("appointment_deposits_appointment_unique").on(table.appointmentId),
+  index("appointment_deposits_salon_status_idx").on(table.salonId, table.status),
+  index("appointment_deposits_settled_by_idx").on(table.settledByUserId),
+  check("appointment_deposits_amount_check", sql`${table.amount} >= 0`),
 ]);
 
 // ---------------------------------------------------------------------------

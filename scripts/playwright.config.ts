@@ -117,7 +117,20 @@ if (isolatedBrowserTest) {
   }
 }
 
+// Diagnostic escape hatch: lets a run distinguish "this environment is too slow
+// for the default 30 s budget" from "the page is actually broken". Unset in CI
+// and in every wired suite, so the default budget is unchanged.
+const timeoutOverrideMs = Number(process.env.LUMERA_PLAYWRIGHT_TIMEOUT_MS);
+
+const expectTimeoutOverrideMs = Number(process.env.LUMERA_PLAYWRIGHT_EXPECT_TIMEOUT_MS);
+
 export default defineConfig({
+  ...(Number.isFinite(timeoutOverrideMs) && timeoutOverrideMs > 0
+    ? { timeout: timeoutOverrideMs }
+    : {}),
+  ...(Number.isFinite(expectTimeoutOverrideMs) && expectTimeoutOverrideMs > 0
+    ? { expect: { timeout: expectTimeoutOverrideMs } }
+    : {}),
   testDir: "./browser",
   testMatch: ciDiagnosticsProbe ? "ci-failure-diagnostics-probe.spec.ts" : undefined,
   globalSetup: ciDiagnosticsProbe ? undefined : "./src/browser-preflight.ts",

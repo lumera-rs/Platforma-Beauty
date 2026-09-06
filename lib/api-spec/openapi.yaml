@@ -11405,6 +11405,8 @@ components:
           enum: [pending, confirmed, completed, cancelled, no-show]
         employeeId: { type: ["string", "null"] }
         notes: { type: string }
+        date: { type: string }
+        startTime: { type: string }
     SalonCustomer:
       type: object
       properties:

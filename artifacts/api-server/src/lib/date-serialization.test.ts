@@ -289,12 +289,19 @@ const approvedInternalIsoReceivers: Record<string, string[]> = {
   "education-bundle-purchases.ts": ["consentAt", "consentAt"],
   "education-subscription-billing.ts": ["last.occurredAt"],
   "growth.ts": ["date"],
+  // Three entries left this list with the booking audit remediation, and the
+  // exact-equality assertion below is what keeps that honest: two `now` calls
+  // went when first-available stopped computing "today" in UTC against a
+  // Belgrade wall clock (BOOKING-F4, one of them inside the unreachable block
+  // deleted with it), and `updated.updatedAt` went when the reschedule event
+  // key stopped keying on a timestamp the reschedule never wrote, which had
+  // meant only the first move of an appointment ever notified (BOOKING-F3).
   "marketplace.ts": [
     "bd", "cancelledAt", "cart.updatedAt", "cart.updatedAt", "d", "d", "date",
     "fromInstant", "input.occurredAt", "input.occurredAt", "issuedAt",
-    "now", "now", "now", "now", "now", "occurredAt", "occurredAt",
+    "now", "now", "now", "occurredAt", "occurredAt",
     "order.invoiceIssuedAt", "parsed", "releaseAt", "result", "toInstant",
-    "updated.updatedAt", "value", "value", "value", "value",
+    "value", "value", "value", "value",
   ],
   "media.ts": ["expiresAt"],
   "phase3.ts": ["parsed"],

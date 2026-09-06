@@ -119,6 +119,14 @@ export function BookingSettingsForm({ onSaved }: { onSaved?: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError(null);
+    // PUT /salon/booking-settings replaces the stored date exceptions and
+    // resource downtime with whatever this payload carries. Submitting before
+    // `settings` has hydrated would post the empty defaults and delete every
+    // exception the salon had entered, so refuse until the form holds real data.
+    if (!settings) {
+      setSaveError("Podešavanja još nisu učitana. Sačekajte da se učitaju pa pokušajte ponovo.");
+      return;
+    }
     const validationError = validateDateHours(formData.dateHours);
     setDateHoursError(validationError);
     if (validationError) return;
