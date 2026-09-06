@@ -10,6 +10,8 @@ export interface WidgetAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   startTime: string;
   /**

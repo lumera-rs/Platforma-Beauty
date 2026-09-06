@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsers, useAdminUpdateUser, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount, useAdminGetBusinessRoleTransition, useAdminTransitionBusinessRole, getAdminGetBusinessRoleTransitionQueryKey, getApiErrorDetails } from "@workspace/api-client-react";
+import { useAdminCreateAccountSetup, useAdminReissueAccountSetup, useAdminListUsersPage, useAdminUpdateUser, getAdminListUsersPageQueryKey, getAdminListUsersQueryKey, useGetCurrentUser, useAdminListSalons, getAdminListSalonsQueryKey, useListAdminEducationCenters, getListAdminEducationCentersQueryKey, useAdminConvertUserToBusinessAccount, useAdminGetBusinessRoleTransition, useAdminTransitionBusinessRole, getAdminGetBusinessRoleTransitionQueryKey, getApiErrorDetails } from "@workspace/api-client-react";
 import type { AdminCreateAccountSetupInput, AdminUserUpdateRole, AdminListUsersRole, AdminUser, AdminBusinessAccountConversionInput, AdminBusinessRoleTransitionInput, AdminBusinessRoleTransitionState, AdminBusinessRelation, AdminBusinessRelationAllowedActionsItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -335,9 +335,9 @@ export default function AdminUsers() {
     pageSize,
   };
 
-  const { data: users, isLoading, error } = useAdminListUsers(queryParams);
-  // customFetch returns only the body; infer next-page availability from length.
-  const hasNextPage = (users?.length ?? 0) === pageSize;
+  const { data: usersPage, isLoading, error } = useAdminListUsersPage(queryParams);
+  const users = usersPage?.items;
+  const hasNextPage = usersPage?.hasNext ?? false;
   const { data: currentUserResponse } = useGetCurrentUser();
   const updateUser = useAdminUpdateUser();
   const createCustomer = useAdminCreateAccountSetup();
@@ -391,6 +391,7 @@ export default function AdminUsers() {
       onSuccess: () => {
         toast.success("Korisnik ažuriran", { description: "Status naloga je promenjen." });
         queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
       },
       onError: () => {
         toast.error("Greška", { description: "Nije moguće ažurirati korisnika." });
@@ -408,6 +409,7 @@ export default function AdminUsers() {
       onSuccess: () => {
         toast.success("Uloga promenjena", { description: "Uloga korisnika je uspešno ažurirana." });
         queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
       },
       onError: () => {
         toast.error("Greška", { description: "Nije moguće promeniti ulogu." });
@@ -475,6 +477,7 @@ export default function AdminUsers() {
           description: "Nova uloga je aktivna, a istorijski podaci su sačuvani.",
         });
         queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
         queryClient.invalidateQueries({ queryKey: getAdminGetBusinessRoleTransitionQueryKey(userToExit.id) });
         closeBusinessExitDialog(true);
       },
@@ -490,6 +493,7 @@ export default function AdminUsers() {
     setExitValidationError("");
     exitBusinessRole.reset();
     queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
     queryClient.invalidateQueries({ queryKey: getAdminGetBusinessRoleTransitionQueryKey(userToExit?.id ?? "") });
     exitTransition.refetch();
   };
@@ -603,6 +607,7 @@ export default function AdminUsers() {
       onSuccess: () => {
         toast.success("Nalog uspešno konvertovan", { description: `Korisnik je sada ${roleName}.` });
         queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
         closeConvertDialog();
       },
       onError: (err: any) => {
@@ -709,6 +714,7 @@ export default function AdminUsers() {
       onSuccess: (result) => {
         setSetupResult({ setupUrl: result.setupUrl, expiresAt: result.expiresAt });
         queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersPageQueryKey() });
         toast.success(`Nalog ${roleName} je kreiran`, { description: "Kopirajte setup link pre zatvaranja prozora." });
       },
       onError: () => {

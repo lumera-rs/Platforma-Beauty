@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "./layout";
-import { useAdminListSalons, useAdminUpdateSalon, getAdminListSalonsQueryKey } from "@workspace/api-client-react";
+import { useAdminListSalonsPage, useAdminUpdateSalon, getAdminListSalonsPageQueryKey, getAdminListSalonsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,9 @@ export default function AdminSalons() {
     pageSize,
   };
 
-  const { data: salons, isLoading, error } = useAdminListSalons(queryParams);
-  // customFetch returns only the body; infer next-page availability from length.
-  const hasNextPage = (salons?.length ?? 0) === pageSize;
+  const { data: salonsPage, isLoading, error } = useAdminListSalonsPage(queryParams);
+  const salons = salonsPage?.items;
+  const hasNextPage = salonsPage?.hasNext ?? false;
   const updateSalon = useAdminUpdateSalon();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -59,6 +59,7 @@ export default function AdminSalons() {
       onSuccess: () => {
         toast.success("Salon uspešno ažuriran", { description: "Status salona je promenjen." });
         queryClient.invalidateQueries({ queryKey: getAdminListSalonsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListSalonsPageQueryKey() });
         actionGuard.end(actionKey);
       },
       onError: () => {

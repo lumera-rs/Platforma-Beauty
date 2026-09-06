@@ -1,0 +1,60 @@
+export type ApiGeneratorOutput = Readonly<{
+  source: string;
+  published: string;
+}>;
+
+export const orvalFileProducingOutputOptions: readonly string[];
+export const orvalFileProducingOutputValueShapes: Readonly<Record<string, readonly string[]>>;
+export const orvalNonFileOutputOptions: readonly string[];
+export const orvalNestedOutputContracts: Readonly<Record<string, Readonly<{
+  configPath: string;
+  fileProducing: readonly string[];
+  fileProducingValueShapes: Readonly<Record<string, readonly string[]>>;
+  nonFile: readonly string[];
+}>>>;
+
+export function readOrvalInterfaceFieldValueShapes(
+  declarations: string,
+  interfaceName: string,
+): Record<string, string[]>;
+
+export function assertOrvalOutputContractRecognized(
+  installedOutputOptions: readonly string[],
+): void;
+
+export function assertOrvalFileProducingOutputValueShapesRecognized(
+  installedShapes: Readonly<Record<string, readonly string[]>>,
+): void;
+
+export function assertOrvalNestedOutputContractsRecognized(
+  installedContracts: Readonly<Record<string, readonly string[]>>,
+): void;
+
+export function assertOrvalNestedFileProducingOutputValueShapesRecognized(
+  installedShapes: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>,
+): void;
+
+export function collectOrvalConfiguredOutputPaths(
+  output: Readonly<Record<string, unknown>>,
+  workspace: string,
+  fileProducingOptions?: readonly string[],
+): Array<{ option: string; path: string }>;
+
+export const apiOutputInventory: Readonly<{
+  publicDocumentation: readonly string[];
+  generators: Readonly<Record<string, ApiGeneratorOutput>>;
+}>;
+
+export function assertApiGeneratorInventoryComplete(
+  configuredGeneratorNames: readonly string[],
+): void;
+
+export function assertApiGeneratorOutputPathsCovered(
+  config: Readonly<Record<string, unknown>>,
+  outputRoot?: string,
+): void;
+
+export function defineInventoriedGeneratorConfig<const Config extends Readonly<Record<string, unknown>>>(
+  config: Config,
+  outputRoot?: string,
+): Config;

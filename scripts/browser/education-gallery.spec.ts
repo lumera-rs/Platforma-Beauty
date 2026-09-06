@@ -698,8 +698,9 @@ test("concurrent gallery attach, cleanup, and deletion preserve a referenced fin
     );
     await waitForGalleryLockWaiters(fixture.courseId, 3);
 
-    if (!releaseGalleryLock) throw new Error("Gallery lock was never armed, so the waiters could not be released.");
-    releaseGalleryLock();
+    const release = releaseGalleryLock;
+    if (!release) throw new Error("Expected the gallery lock to be held");
+    release();
     releaseGalleryLock = undefined;
 
     const [attachResult, cleanupResult, deleteResult] = await Promise.all([

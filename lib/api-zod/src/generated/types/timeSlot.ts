@@ -13,4 +13,9 @@ export interface TimeSlot {
   employeeId?: string | null;
   /** @nullable */
   employeeName?: string | null;
+  employeeIds?: string[];
+  employeeNames?: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
 }

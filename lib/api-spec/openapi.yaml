@@ -300,6 +300,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminWebPushDeliveryMetrics"
+  /admin/integrations/brevo/stale-webhooks:
+    get:
+      operationId: adminListBrevoStaleWebhooks
+      tags: [admin]
+      summary: List provider-side Brevo webhooks that are eligible for administrator cleanup
+      responses:
+        "200":
+          description: Stale Brevo webhook registrations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [staleWebhooks]
+                properties:
+                  staleWebhooks:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, maskedUrl]
+                      properties:
+                        id: { type: integer }
+                        maskedUrl: { type: string }
   /admin/integrations/{integration}:
     put:
       operationId: adminSaveIntegration
@@ -474,6 +496,15 @@ paths:
         - name: employeeId
           in: query
           schema: { type: string }
+        - name: employeeIds
+          in: query
+          style: form
+          explode: true
+          description: Ordered employee positions; an empty value means that position may use any qualified available employee.
+          schema:
+            type: array
+            maxItems: 20
+            items: { type: string }
         - name: date
           in: query
           required: true
@@ -1419,6 +1450,14 @@ paths:
         - name: employeeId
           in: query
           schema: { type: string }
+        - name: employeeIds
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 20
+            items: { type: string }
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100 }
@@ -2939,6 +2978,45 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminOrder" }
+  /admin/orders/page:
+    get:
+      operationId: adminListOrdersPage
+      tags: [admin]
+      summary: List a bounded page of B2B orders for administration
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        - name: salon
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: paymentStatus
+          in: query
+          schema: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+        - name: deliveryMethod
+          in: query
+          schema: { type: string, enum: [courier, personal_belgrade] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin order page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOrderPage" }
   /admin/orders/{orderId}:
     get:
       operationId: adminGetOrder
@@ -3350,7 +3428,7 @@ paths:
       summary: Request one parent package entitlement
       parameters:
         - { name: bundleId, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -4663,6 +4741,9 @@ paths:
       summary: Request one course purchase per selected salon employee in a single transaction
       parameters:
         - $ref: "#/components/parameters/CourseId"
+        # Deliberately NOT the shared IdempotencyKey parameter, which is
+        # required. This operation's header is optional and callers rely on
+        # omitting it; generated-api-header-typing.type-check.ts asserts that.
         - name: Idempotency-Key
           in: header
           required: false
@@ -5678,6 +5759,39 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminSalon" }
+  /admin/salons/page:
+    get:
+      operationId: adminListSalonsPage
+      tags: [admin]
+      summary: Searchable/filterable bounded salon page
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: featured
+          in: query
+          schema: { type: boolean }
+        - name: subscriptionStatus
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin salon page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSalonPage" }
   /admin/salons/{salonId}:
     get:
       operationId: adminGetSalon
@@ -5744,6 +5858,35 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AdminUser" }
+  /admin/users/page:
+    get:
+      operationId: adminListUsersPage
+      tags: [admin]
+      summary: Searchable/filterable bounded user page
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUKATIVNI_CENTAR, INSTRUCTOR, CUSTOMER, STUDENT]
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded admin user page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
   /admin/customers/setup:
     post:
       operationId: adminCreateCustomerSetup
@@ -8242,7 +8385,7 @@ paths:
       summary: Public widget booking — creates a pending appointment for the salon
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/WidgetBookingIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -8278,7 +8421,7 @@ paths:
       summary: Public rate-limited grouped booking for an anonymous salon customer
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/WidgetBookingIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -9139,6 +9282,80 @@ paths:
         "400": { description: Invalid contact data }
         "404": { description: Supplier/product scope not found }
         "409": { description: Product is currently directly purchasable }
+  /admin/price-inquiries:
+    get:
+      operationId: adminListPriceInquiries
+      tags: [admin]
+      summary: List supplier product price inquiries for administrator review
+      parameters:
+        - name: search
+          in: query
+          description: Case-insensitive customer name, email, product, or supplier search.
+          schema: { type: string, maxLength: 120 }
+        - name: page
+          in: query
+          description: One-based result page in newest-first order.
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: pageSize
+          in: query
+          description: Maximum number of inquiries returned per page.
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: Price inquiries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminPriceInquiry"
+  /admin/price-inquiries/page:
+    get:
+      operationId: adminListPriceInquiriesPage
+      tags: [admin]
+      summary: List a bounded page of supplier product price inquiries with exact navigation metadata
+      parameters:
+        - name: search
+          in: query
+          description: Case-insensitive customer name, email, product, or supplier search.
+          schema: { type: string, maxLength: 120 }
+        - name: page
+          in: query
+          description: One-based result page in newest-first order.
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: pageSize
+          in: query
+          description: Maximum number of inquiries returned per page.
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: Price inquiry page with bounded look-ahead metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPriceInquiryPage"
+  /admin/price-inquiries/{id}:
+    patch:
+      operationId: adminUpdatePriceInquiry
+      tags: [admin]
+      summary: Update an administrator price inquiry status or internal note
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPriceInquiryUpdate"
+      responses:
+        "200":
+          description: Updated price inquiry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPriceInquiry"
+        "400": { description: Invalid update }
+        "404": { description: Inquiry not found }
   /shop/quotes:
     post:
       operationId: createShopQuote
@@ -9235,6 +9452,19 @@ paths:
           content:
             application/pdf:
               schema: { type: string, format: binary }
+  /admin/quotes:
+    get:
+      operationId: adminListQuotes
+      tags: [admin]
+      summary: List B2B quote snapshots for administrator review
+      responses:
+        "200":
+          description: B2B quote snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/B2bQuote" }
   /admin/catalog/meta/status:
     get:
       operationId: adminGetMetaCatalogStatus
@@ -9311,7 +9541,13 @@ paths:
       tags: [admin]
       summary: List RMAs
       responses:
-        "200": { description: RMA list }
+        "200":
+          description: RMA list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminRmaListItem" }
   /admin/rmas/{id}:
     get:
       operationId: adminGetRma
@@ -9320,7 +9556,11 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: RMA detail }
+        "200":
+          description: RMA detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRmaDetail" }
         "404": { description: RMA not found }
   /admin/rmas/{id}/status:
     patch:
@@ -9339,7 +9579,11 @@ paths:
               properties:
                 status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
       responses:
-        "200": { description: Current RMA and whether a real transition occurred }
+        "200":
+          description: Current RMA and whether a real transition occurred
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRmaStatusResult" }
   /admin/review-rewards:
     get:
       operationId: adminGetReviewRewardSettings
@@ -9652,7 +9896,13 @@ components:
       in: header
       required: true
       description: Client-generated command identifier; reuse it only to retry the identical booking payload.
-      schema: { type: string, minLength: 1, maxLength: 200 }
+      schema: { type: string, minLength: 1, maxLength: 200, pattern: '^[!-~]+$' }
+    WidgetBookingIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required client-generated widget booking identifier; reuse it only to retry the identical payload.
+      schema: { type: string, minLength: 1, maxLength: 200, pattern: '^[!-~]+$' }
     CityQuery:
       name: city
       in: query
@@ -9725,6 +9975,159 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    AdminPriceInquiry:
+      type: object
+      required:
+        - id
+        - supplierId
+        - productId
+        - productName
+        - supplierName
+        - contactName
+        - contactEmail
+        - contactPhone
+        - message
+        - status
+        - internalNote
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        supplierId: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        supplierName: { type: string }
+        contactName: { type: string }
+        contactEmail: { type: string }
+        contactPhone: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
+        internalNote: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminPriceInquiryPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPriceInquiry"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 500 }
+        hasNext: { type: boolean }
+    AdminPriceInquiryUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [NEW, CONTACTED, CLOSED] }
+        internalNote: { type: ["string", "null"], maxLength: 5000 }
+    RmaRecordBase:
+      type: object
+      required:
+        - id
+        - rmaNumber
+        - requesterUserId
+        - quantity
+        - reason
+        - description
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        rmaNumber: { type: string }
+        requesterUserId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        reason: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [RECEIVED, IN_REVIEW, APPROVED, REJECTED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    StandardRmaRecord:
+      allOf:
+        - { $ref: "#/components/schemas/RmaRecordBase" }
+        - type: object
+          required: [orderId, orderItemId, retailOrderId, retailOrderItemId]
+          properties:
+            orderId: { type: string, format: uuid }
+            orderItemId: { type: string, format: uuid }
+            retailOrderId: { type: "null" }
+            retailOrderItemId: { type: "null" }
+    RetailRmaRecord:
+      allOf:
+        - { $ref: "#/components/schemas/RmaRecordBase" }
+        - type: object
+          required: [orderId, orderItemId, retailOrderId, retailOrderItemId]
+          properties:
+            orderId: { type: "null" }
+            orderItemId: { type: "null" }
+            retailOrderId: { type: string, format: uuid }
+            retailOrderItemId: { type: string, format: uuid }
+    RmaRecord:
+      oneOf:
+        - { $ref: "#/components/schemas/StandardRmaRecord" }
+        - { $ref: "#/components/schemas/RetailRmaRecord" }
+    AdminRmaOwner:
+      type: object
+      required: [email]
+      properties:
+        firstName: { type: ["string", "null"] }
+        lastName: { type: ["string", "null"] }
+        businessName: { type: ["string", "null"] }
+        pib: { type: ["string", "null"] }
+        email: { type: string }
+    AdminRmaListItem:
+      oneOf:
+        - allOf:
+            - { $ref: "#/components/schemas/StandardRmaRecord" }
+            - type: object
+              required: [target, owner]
+              properties:
+                target: { type: string, const: b2b }
+                owner: { $ref: "#/components/schemas/AdminRmaOwner" }
+        - allOf:
+            - { $ref: "#/components/schemas/RetailRmaRecord" }
+            - type: object
+              required: [target, owner]
+              properties:
+                target: { type: string, const: b2c }
+                owner: { $ref: "#/components/schemas/AdminRmaOwner" }
+    AdminRmaItem:
+      type: object
+      required: [orderItemId, productName, quantity]
+      properties:
+        orderItemId: { type: string, format: uuid }
+        productName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+    AdminRmaAuditEntry:
+      type: object
+      required: [action, timestamp, actorId, note]
+      properties:
+        action: { type: string }
+        timestamp: { type: string, format: date-time }
+        actorId: { type: ["string", "null"], format: uuid }
+        note: { type: ["string", "null"] }
+    AdminRmaDetail:
+      allOf:
+        - { $ref: "#/components/schemas/AdminRmaListItem" }
+        - type: object
+          required: [items, privatePhotos, auditTrail]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AdminRmaItem" }
+            privatePhotos:
+              type: array
+              items: { type: string }
+            auditTrail:
+              type: array
+              items: { $ref: "#/components/schemas/AdminRmaAuditEntry" }
+    AdminRmaStatusResult:
+      type: object
+      required: [row, changed]
+      properties:
+        row: { $ref: "#/components/schemas/RmaRecord" }
+        changed: { type: boolean }
     CatalogSyncRun:
       type: object
       required: [id, provider, status, itemCount, validationErrors, createdAt]
@@ -10759,7 +11162,11 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -10772,7 +11179,7 @@ components:
         resourceRequirements:
           type: array
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, resourceRequirements]
+      required: [id, category, name, description, durationMinutes, preProcessingMinutes, processingMinutes, postProcessingMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, resourceRequirements]
     SalonManagedService:
       type: object
       properties:
@@ -10781,7 +11188,11 @@ components:
         name: { type: string }
         description: { type: string }
         durationMinutes: { type: number }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
         tags: { type: array, items: { type: string } }
@@ -10795,7 +11206,7 @@ components:
         resourceRequirements:
           type: array
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted, resourceRequirements]
+      required: [id, category, name, description, durationMinutes, preProcessingMinutes, processingMinutes, postProcessingMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted, resourceRequirements]
     ServiceTemplate:
       type: object
       properties:
@@ -10968,6 +11379,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [serviceId]
     GroupedAvailabilityInput:
       type: object
@@ -10996,10 +11411,23 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
         endTime: { type: string }
+        preProcessingMinutes: { type: integer, minimum: 0 }
+        processingMinutes: { type: integer, minimum: 0 }
+        postProcessingMinutes: { type: integer, minimum: 0 }
         bufferMinutes: { type: integer, minimum: 0 }
-      required: [position, serviceId, date, employeeId, startTime, endTime, bufferMinutes]
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended:
+          type: boolean
+          description: True only for a meaningfully better same-day option within the same employee/resource assignment.
+      required: [position, serviceId, date, employeeId, startTime, endTime, preProcessingMinutes, processingMinutes, postProcessingMinutes, bufferMinutes]
     GroupedAvailabilityCandidate:
       type: object
       properties:
@@ -11009,6 +11437,12 @@ components:
         treatments:
           type: array
           items: { $ref: "#/components/schemas/GroupedTreatmentSlot" }
+        score:
+          type: number
+          description: Additive aggregate compaction score for the displayed treatment group.
+        recommended:
+          type: boolean
+          description: True when the API marks the group as a discreet recommended option.
       required: [date, startTime, endTime, treatments]
     GroupedAvailabilityCalendarDay:
       type: object
@@ -11045,6 +11479,10 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
       required: [serviceId, startTime]
     BookingGroupInput:
@@ -11084,6 +11522,10 @@ components:
         serviceId: { type: string }
         date: { type: string, format: date }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         startTime: { type: string }
       required: [serviceId, date, startTime]
     BookingGroupRescheduleTreatmentInput:
@@ -11093,6 +11535,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [appointmentId, date, startTime]
     BookingGroupRescheduleInput:
       type: object
@@ -11257,6 +11703,12 @@ components:
         end: { type: string }
         employeeId: { type: ["string", "null"] }
         employeeName: { type: ["string", "null"] }
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended: { type: boolean }
       required: [start, end]
     FirstAvailableServiceSlot:
       type: object
@@ -11289,6 +11741,12 @@ components:
         serviceName: { type: string }
         employeeId: { type: ["string", "null"] }
         employeeName: { type: string }
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+        score:
+          type: number
+          description: Additive schedule-compaction score; never affects validity, identity, count, or order.
+        recommended: { type: boolean }
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         startTime: { type: string }
         endTime: { type: string }
@@ -11348,7 +11806,7 @@ components:
         cancelledAt: { type: ["string", "null"], format: date-time }
         completedAt: { type: ["string", "null"], format: date-time }
         noShowAt: { type: ["string", "null"], format: date-time }
-      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
+      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, employeeIds, employeeNames, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
     AppointmentSalonContact:
       type: object
       properties:
@@ -11368,6 +11826,10 @@ components:
         salonId: { type: string }
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' }
         notes: { type: string }
@@ -11396,6 +11858,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         notes: { type: string }
     SalonAppointmentUpdate:
       type: object
@@ -11404,6 +11870,10 @@ components:
           type: string
           enum: [pending, confirmed, completed, cancelled, no-show]
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         notes: { type: string }
         date: { type: string }
         startTime: { type: string }
@@ -11435,6 +11905,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         packagePurchaseId: { type: ["string", "null"] }
         salonCustomerId: { type: ["string", "null"] }
         slots:
@@ -11663,6 +12137,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
         notes: { type: string }
@@ -11685,6 +12163,10 @@ components:
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
       required: [serviceId, date, startTime]
     SalonPackageAppointmentsInput:
       type: object
@@ -11790,7 +12272,11 @@ components:
         name: { type: string, minLength: 1, pattern: '.*\S.*' }
         description: { type: string }
         durationMinutes: { type: number, minimum: 5 }
+        preProcessingMinutes: { type: number, minimum: 0, default: 0 }
+        processingMinutes: { type: number, minimum: 0, default: 0 }
+        postProcessingMinutes: { type: number, minimum: 0, default: 0 }
         bufferMinutes: { type: number, minimum: 0, default: 0 }
+        requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20, default: 1 }
         price: { type: number, minimum: 0 }
         promoPrice: { type: ["number", "null"] }
         imageUrl: { type: string }
@@ -13353,6 +13839,16 @@ components:
             adminNote: { type: ["string", "null"] }
             history: { type: array, items: { $ref: "#/components/schemas/OrderHistoryEvent" } }
           required: [adminNote, history]
+    AdminOrderPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminOrder" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     OrderItem:
       type: object
       properties:
@@ -15195,6 +15691,16 @@ components:
         loyaltySpend: { type: number }
         createdAt: { type: string, format: date-time }
       required: [id, name, slug, city, active, featured, isVerified, topSalon, videoUrl, rating, reviewCount, loyaltySpend, createdAt]
+    AdminSalonPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSalon" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     AdminSalonUpdate:
       type: object
       properties:
@@ -15248,6 +15754,16 @@ components:
         passwordSetAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
       required: [id, firstName, lastName, email, role, active, passwordSetAt, createdAt]
+    AdminUserPage:
+      type: object
+      required: [items, page, pageSize, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminUser" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasNext: { type: boolean }
     AdminUserUpdate:
       type: object
       additionalProperties: false
@@ -17294,10 +17810,11 @@ components:
               id: { type: string }
               name: { type: string }
               durationMinutes: { type: number }
+              requiredEmployeeCount: { type: integer, minimum: 1, maximum: 20 }
               price: { type: number }
               promoPrice: { type: ["number", "null"] }
               categoryName: { type: string }
-            required: [id, name, durationMinutes, price, categoryName]
+            required: [id, name, durationMinutes, requiredEmployeeCount, price, categoryName]
         employees:
           type: array
           items:
@@ -17318,7 +17835,9 @@ components:
         end: { type: string }
         employeeId: { type: string }
         employeeName: { type: string }
-      required: [start, end, employeeId, employeeName]
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+      required: [start, end, employeeId, employeeName, employeeIds, employeeNames]
     EmployeeTimeBlock:
       type: object
       properties:
@@ -17346,7 +17865,9 @@ components:
         endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
         employeeId: { type: string }
         employeeName: { type: string }
-      required: [date, startTime, endTime, employeeId, employeeName]
+        employeeIds: { type: array, items: { type: string } }
+        employeeNames: { type: array, items: { type: string } }
+      required: [date, startTime, endTime, employeeId, employeeName, employeeIds, employeeNames]
     AvailabilitySearchResponse:
       type: array
       description: Server-confirmed canonical slots for exactly seven calendar days beginning at the requested startDate. The fixed window lets calendar clients represent every date and disable dates absent from this list.
@@ -17443,6 +17964,10 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        employeeIds:
+          type: array
+          maxItems: 20
+          items: { type: ["string", "null"] }
         date: { type: string }
         startTime: { type: string }
         firstName: { type: string, minLength: 1, maxLength: 80 }
@@ -17460,6 +17985,7 @@ components:
         startTime: { type: string }
         endTime: { type: string }
         employeeName: { type: string }
+        employeeIds: { type: array, items: { type: string } }
         serviceName: { type: string }
         salonName: { type: string }
       required: [appointmentId, status, date, startTime, endTime, employeeName, serviceName, salonName]
@@ -17480,6 +18006,10 @@ components:
             properties:
               serviceId: { type: string }
               employeeId: { type: ["string", "null"] }
+              employeeIds:
+                type: array
+                maxItems: 20
+                items: { type: ["string", "null"] }
               date: { type: string, format: date }
               startTime: { type: string }
             required: [serviceId, date, startTime]

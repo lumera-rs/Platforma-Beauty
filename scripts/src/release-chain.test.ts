@@ -5,60 +5,13 @@ import test from "node:test";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
-const requiredIsolatedBrowserGateScripts = [
+const requiredOtherIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",
   "test:education-dispute-browser",
-  // Each of these ships an isolated runner but was wired into no release
-  // phase, so the suite existed and never ran. Guarded here for the same
-  // reason as the backend gate below: a suite that stops running is a
-  // regression in its own right.
-  "test:safe-external-url-rendering-browser",
-  "test:education-public-center-hook-order-browser",
-  "test:logout-login-cache-residue-browser",
-  "test:infobip-registration-browser",
-  "test:retention-preview",
 ] as const;
 
 const requiredIsolatedBrowserGatePhase = "validate:release:4-isolated";
-
-/**
- * Security/boot regressions that must never silently fall out of CI again.
- * Each one is the dedicated guard for a finding that was launch-blocking when
- * it was found, so a suite that stops running is a regression in its own
- * right -- the Task #11 audit found all three present in the repository but
- * wired into no script, workflow, or release phase at all.
- */
-const requiredBackendSecurityGateScripts = [
-  // Guards #11-F2: an unlinked Google identity must not claim an existing
-  // local account by presenting its email.
-  "test:social-oauth-google-account-linking-safety",
-  // Guards #11-F1: ensureBusinessGrowthSchema() must repair a database whose
-  // rollout version already reads current but whose cleanup-reports table is
-  // absent, rather than crashing the API at boot.
-  "test:business-growth-schema-cleanup-reports",
-  "test:business-growth-schema-boot-regression",
-  // Guards the CI break where importing the Express app required the
-  // Replit-provisioned Anthropic integration variables, failing unrelated
-  // database/monitoring suites in GitHub Actions.
-  "test:anthropic-integration-lazy-init",
-] as const;
-
-const requiredBackendSecurityGatePhase = "validate:release:2-backend";
-
-/**
- * These share the single mutable integration_settings rows for both OAuth
- * providers (each deletes and restores them), so they must stay in one
- * sequential "&&" chain inside the same phase. Running them concurrently
- * makes them corrupt each other's fixtures.
- */
-const sequentialSocialOauthScripts = [
-  "test:social-oauth-domain-change",
-  "test:social-oauth-return-to",
-  "test:social-oauth-referral-context",
-  "test:social-oauth-facebook-account-linking-safety",
-  "test:social-oauth-google-account-linking-safety",
-] as const;
 const branchCiPath = path.join(workspaceRoot, ".github", "workflows", "ci.yml");
 const workflowLintPath = path.join(
   workspaceRoot,
@@ -66,12 +19,174 @@ const workflowLintPath = path.join(
   "workflows",
   "workflow-lint.yml",
 );
+const rulesetAuditScriptPath = path.join(
+  workspaceRoot,
+  "scripts",
+  "verify-github-ruleset.sh",
+);
 
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
     const match = /^pnpm run ([\w:-]+)$/.exec(step);
     return match ? [match[1]] : [];
   });
+}
+
+type FocusedAdministratorBrowserGateInventory = {
+  release?: string[];
+  localOnly?: string[];
+};
+
+type FocusedOwnerBrowserGateInventory = {
+  release?: string[];
+  localOnly?: string[];
+};
+
+type FocusedEmployeeBrowserGateInventory = {
+  scriptNamePattern?: string;
+  specFilePattern?: string;
+  release?: string[];
+  localOnly?: string[];
+};
+
+function focusedAdministratorBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:admin-") &&
+      (
+        command.includes("playwright:checked") ||
+        /tsx \.\/src\/run-admin-[\w-]+\.ts(?: |$)/.test(command)
+      )
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedAdministratorBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedAdministratorBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedAdministratorBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused administrator browser command must be classified exactly once in scripts/package.json focusedAdministratorBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:admin-* browser command must be classified in scripts/package.json focusedAdministratorBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused administrator browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
+}
+
+function focusedOwnerBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:owner-") &&
+      command.includes("playwright:checked")
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedOwnerBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedOwnerBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedOwnerBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused salon-owner browser command must be classified exactly once in scripts/package.json focusedOwnerBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
+}
+
+function focusedEmployeeBrowserCommands(
+  packageScripts: Record<string, string>,
+): string[] {
+  return Object.entries(packageScripts)
+    .filter(([scriptName, command]) =>
+      scriptName.startsWith("test:employee-") &&
+      /playwright:checked -- browser\/employee-[\w-]+\.spec\.ts(?: |$)/.test(command)
+    )
+    .map(([scriptName]) => scriptName)
+    .sort();
+}
+
+function validateFocusedEmployeeBrowserGateInventory(
+  packageScripts: Record<string, string>,
+  inventory: FocusedEmployeeBrowserGateInventory,
+  isolatedPhaseCommand: string,
+): void {
+  assert.equal(
+    inventory.scriptNamePattern,
+    "test:employee-*",
+    "Focused employee browser commands must follow the documented test:employee-* package-script naming convention.",
+  );
+  assert.equal(
+    inventory.specFilePattern,
+    "browser/employee-*.spec.ts",
+    "Focused employee browser commands must target the documented browser/employee-*.spec.ts naming convention.",
+  );
+
+  const releaseScripts = inventory.release ?? [];
+  const localOnlyScripts = inventory.localOnly ?? [];
+  const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
+  const discoveredScripts = focusedEmployeeBrowserCommands(packageScripts);
+
+  assert.equal(
+    new Set(classifiedScripts).size,
+    classifiedScripts.length,
+    "Each focused employee browser command must be classified exactly once in scripts/package.json focusedEmployeeBrowserGates.",
+  );
+  assert.deepEqual(
+    [...classifiedScripts].sort(),
+    discoveredScripts,
+    "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified in scripts/package.json focusedEmployeeBrowserGates.release or .localOnly.",
+  );
+
+  for (const scriptName of releaseScripts) {
+    assert.match(
+      isolatedPhaseCommand,
+      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
+      `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command ${scriptName}. Move it to localOnly only if it is intentionally diagnostic.`,
+    );
+  }
 }
 
 test("publish validation checks the release chain first without database access", async () => {
@@ -156,6 +271,51 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
   );
 });
 
+test("repository audit verifies branch cleanup, merge queue configuration, and a live merge-group run", async () => {
+  const auditScript = await readFile(rulesetAuditScriptPath, "utf8");
+
+  assert.match(
+    auditScript,
+    /expected_repository="lumera-rs\/Platforma-Beauty"/,
+    "The audit must be pinned to the intended repository.",
+  );
+  assert.match(
+    auditScript,
+    /\.delete_branch_on_merge == true/,
+    "The audit must fail unless automatic merged-branch deletion is enabled.",
+  );
+  assert.doesNotMatch(
+    auditScript,
+    /curl[\s\S]*?--request\s+(?:POST|PUT|PATCH|DELETE)|curl[\s\S]*?\s-X\s*(?:POST|PUT|PATCH|DELETE)/i,
+    "The repository audit must remain read-only.",
+  );
+  assert.match(
+    auditScript,
+    /\.owner\.type == "Organization"/,
+    "The audit must reject repositories that are not organization-owned.",
+  );
+  assert.match(
+    auditScript,
+    /\.visibility == "public"/,
+    "The audit must verify the repository is eligible for merge queue on the current plan.",
+  );
+  assert.match(
+    auditScript,
+    /\.type == "merge_queue"/,
+    "The audit must require an active merge queue rule.",
+  );
+  assert.match(
+    auditScript,
+    /actions\/workflows\/\$\{workflow_file\}\/runs\?event=merge_group&status=success/,
+    "The audit must query successful merge-group workflow runs.",
+  );
+  assert.match(
+    auditScript,
+    /\.head_branch \| startswith\("gh-readonly-queue\/"\)/,
+    "The audit must prove the workflow ran on a GitHub merge queue ref.",
+  );
+});
+
 test("branch CI isolates database checks and orders browser journeys after every prerequisite", async () => {
   const [workflow, packageJsonSource] = await Promise.all([
     readFile(branchCiPath, "utf8"),
@@ -167,7 +327,7 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
+    "export CI=true && pnpm run build && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions",
     "The build CI command must preserve every genuinely database-free phase-one publish check.",
   );
   assert.equal(
@@ -268,6 +428,11 @@ test("manual CI probe verifies complete Playwright diagnostics without exposing 
   );
   assert.match(probeJob, /LUMERA_CI_DIAGNOSTICS_PROBE: "1"/);
   assert.match(probeJob, /id: probe\n {8}continue-on-error: true/);
+  assert.match(
+    probeJob,
+    /run: pnpm --filter @workspace\/scripts run playwright:checked/,
+    "The diagnostics probe must not bypass browser spec import checks.",
+  );
   assert.match(probeJob, /test -f scripts\/playwright-report\/index\.html/);
   assert.match(probeJob, /find scripts\/test-results -type f -name '\*\.png'/);
   assert.match(probeJob, /find scripts\/test-results -type f -name 'trace\.zip'/);
@@ -278,6 +443,11 @@ test("manual CI probe verifies complete Playwright diagnostics without exposing 
     /testMatch: ciDiagnosticsProbe \? "ci-failure-diagnostics-probe\.spec\.ts" : undefined/,
   );
   assert.match(playwrightConfig, /globalSetup: ciDiagnosticsProbe \? undefined :/);
+  assert.match(
+    playwrightConfig,
+    /LUMERA_BROWSER_SPEC_TYPES_CHECKED !== "1"[\s\S]*runBrowserSpecTypeCheck\(\)/,
+    "Direct Playwright launches must run the browser spec import check from the config.",
+  );
   assert.match(playwrightConfig, /trace: "retain-on-failure"/);
   assert.match(playwrightConfig, /screenshot: "only-on-failure"/);
 });
@@ -369,13 +539,18 @@ test("release validation phases preserve the full gate and print safe continuati
   });
 });
 
-test("required isolated browser checks remain wired into the release gate", async () => {
+test("focused administrator browser inventory remains wired into the release gate", async () => {
   const [rootPackageJson, scriptsPackageJson] = await Promise.all([
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
   ]);
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
-  const packageScripts = (JSON.parse(scriptsPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
   const releaseCommand = rootScripts["validate:release"];
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
@@ -386,14 +561,29 @@ test("required isolated browser checks remain wired into the release gate", asyn
     `validate:release must invoke ${requiredIsolatedBrowserGatePhase}.`,
   );
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory.",
+  );
 
-  for (const scriptName of requiredIsolatedBrowserGateScripts) {
+  validateFocusedAdministratorBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
     assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
     assert.match(
       rootScripts[scriptName],
       new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
       `Root script ${scriptName} must delegate to the scripts package.`,
     );
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
+  }
+
+  for (const scriptName of requiredOtherIsolatedBrowserGateScripts) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
     assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
     assert.match(
       isolatedPhaseCommand,
@@ -403,61 +593,216 @@ test("required isolated browser checks remain wired into the release gate", asyn
   }
 });
 
-test("required backend security and boot regressions remain wired into the release gate and CI", async () => {
-  const rootScripts =
-    (JSON.parse(
-      await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
-    ) as { scripts?: Record<string, string> }).scripts ?? {};
-  const backendPhaseCommand = rootScripts[requiredBackendSecurityGatePhase];
-  const releaseCommand = rootScripts["validate:release"];
-  const ciDatabaseCommand = rootScripts["validate:ci:database"];
+test("a new focused administrator browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:admin-existing": "pnpm run playwright:checked -- browser/admin-existing.spec.ts",
+    "test:admin-new-regression": "pnpm run playwright:checked -- browser/admin-new-regression.spec.ts",
+  };
 
-  assert.ok(backendPhaseCommand, `${requiredBackendSecurityGatePhase} must be defined.`);
-  assert.ok(releaseCommand, "validate:release must be defined.");
-  assert.ok(ciDatabaseCommand, "validate:ci:database must be defined.");
-
-  // The phase has to stay reachable from BOTH entry points, otherwise a
-  // suite can be "wired" into a phase that nothing actually runs.
-  assert.match(
-    releaseCommand,
-    new RegExp(`(?:^| && )pnpm run ${requiredBackendSecurityGatePhase}(?: && |$)`),
-    `validate:release must invoke ${requiredBackendSecurityGatePhase}.`,
-  );
-  assert.match(
-    ciDatabaseCommand,
-    new RegExp(`(?:^| && )pnpm run ${requiredBackendSecurityGatePhase}(?: && |$)`),
-    `validate:ci:database must invoke ${requiredBackendSecurityGatePhase} so branch CI runs these guards.`,
+  assert.throws(
+    () =>
+      validateFocusedAdministratorBrowserGateInventory(
+        packageScripts,
+        { release: ["test:admin-existing"], localOnly: [] },
+        "pnpm run test:admin-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:admin-* browser command must be classified in scripts/package.json focusedAdministratorBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
+      ),
   );
 
-  for (const scriptName of requiredBackendSecurityGateScripts) {
-    assert.ok(
-      rootScripts[scriptName],
-      `Root script ${scriptName} must be defined -- its regression suite exists and must stay runnable.`,
-    );
+  assert.doesNotThrow(() =>
+    validateFocusedAdministratorBrowserGateInventory(
+      packageScripts,
+      {
+        release: ["test:admin-existing"],
+        localOnly: ["test:admin-new-regression"],
+      },
+      "pnpm run test:admin-existing",
+    )
+  );
+});
+
+test("focused salon-owner browser inventory remains wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedOwnerBrowserGates?: FocusedOwnerBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedOwnerBrowserGates;
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedOwnerBrowserGates as the authoritative release/local-only inventory for test:owner-* Playwright commands.",
+  );
+
+  validateFocusedOwnerBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
     assert.match(
-      backendPhaseCommand,
-      new RegExp(`(?:^| && )pnpm run ${scriptName}(?: && |$)`),
-      `${requiredBackendSecurityGatePhase} must invoke ${scriptName}.`,
+      rootScripts[scriptName],
+      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
+      `Root script ${scriptName} must delegate to the scripts package.`,
     );
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
   }
+});
 
-  // Every social OAuth suite mutates the same integration_settings rows, so
-  // they must all remain in this one sequential chain -- never split across
-  // phases and never run concurrently.
-  let previousIndex = -1;
-  for (const scriptName of sequentialSocialOauthScripts) {
-    const stepIndex = backendPhaseCommand
-      .split(" && ")
-      .findIndex((step) => step.trim() === `pnpm run ${scriptName}`);
-    assert.notEqual(
-      stepIndex,
-      -1,
-      `${requiredBackendSecurityGatePhase} must invoke ${scriptName} as its own sequential step.`,
+test("a new focused salon-owner browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
+    "test:owner-new-regression": "pnpm run playwright:checked -- browser/owner-new-regression.spec.ts",
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedOwnerBrowserGateInventory(
+        packageScripts,
+        { release: ["test:owner-existing"], localOnly: [] },
+        "pnpm run test:owner-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly.",
+      ),
+  );
+
+  assert.throws(
+    () =>
+      validateFocusedOwnerBrowserGateInventory(
+        packageScripts,
+        {
+          release: ["test:owner-existing", "test:owner-new-regression"],
+          localOnly: [],
+        },
+        "pnpm run test:owner-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command test:owner-new-regression.`,
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedOwnerBrowserGateInventory(
+      packageScripts,
+      {
+        release: ["test:owner-existing"],
+        localOnly: ["test:owner-new-regression"],
+      },
+      "pnpm run test:owner-existing",
+    )
+  );
+});
+
+test("focused employee browser inventory remains wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
+  );
+
+  validateFocusedEmployeeBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+  );
+
+  for (const scriptName of inventory.release ?? []) {
+    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
+    assert.match(
+      rootScripts[scriptName],
+      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
+      `Root script ${scriptName} must delegate to the scripts package.`,
     );
-    assert.ok(
-      stepIndex > previousIndex,
-      `${scriptName} must keep its sequential position among the social OAuth suites; they share mutable integration_settings rows and corrupt each other if reordered into a different chain or parallelized.`,
-    );
-    previousIndex = stepIndex;
+    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
   }
+});
+
+test("a new focused employee browser command must be released or explicitly local-only", () => {
+  const packageScripts = {
+    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
+    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+  };
+  const namingConvention = {
+    scriptNamePattern: "test:employee-*",
+    specFilePattern: "browser/employee-*.spec.ts",
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified",
+      ),
+  );
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing", "test:employee-new-regression"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command test:employee-new-regression.`,
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedEmployeeBrowserGateInventory(
+      packageScripts,
+      {
+        ...namingConvention,
+        release: ["test:employee-existing"],
+        localOnly: ["test:employee-new-regression"],
+      },
+      "pnpm run test:employee-existing",
+    )
+  );
 });

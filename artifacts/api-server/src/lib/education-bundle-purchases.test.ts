@@ -207,7 +207,27 @@ async function run() {
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `inconsistent-${suffix}` }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) })).status, 409);
     await db.update(coursesTable).set({ published: true }).where(eq(coursesTable.id, courses[1].id));
 
-    assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) })).status, 400, "Idempotency-Key is required.");
+    const invalidBundleKeys: ReadonlyArray<{ label: string; value?: string }> = [
+      { label: "missing" },
+      { label: "empty", value: "" },
+      { label: "spaced", value: "contains space" },
+      { label: "Unicode", value: "é" },
+      { label: "201 characters", value: "x".repeat(201) },
+    ];
+    const bundlePurchasesBeforeInvalidKeys = (await db.select().from(educationBundlePurchasesTable)
+      .where(eq(educationBundlePurchasesTable.bundleId, testBundleId))).length;
+    for (const invalidKey of invalidBundleKeys) {
+      const response = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
+        method: "POST",
+        cookie: buyerCookie,
+        ...(invalidKey.value === undefined ? {} : { headers: { "Idempotency-Key": invalidKey.value } }),
+        body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }),
+      });
+      assert.equal(response.status, 400, `Bundle purchase must reject a ${invalidKey.label} Idempotency-Key.`);
+    }
+    assert.equal((await db.select().from(educationBundlePurchasesTable)
+      .where(eq(educationBundlePurchasesTable.bundleId, testBundleId))).length, bundlePurchasesBeforeInvalidKeys,
+    "Rejected Idempotency-Key requests must not create bundle purchases.");
     // Consent is intentionally omitted to verify the online bundle requirement.
     assert.equal((await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": `missing-consent-${suffix}` }, body: { targetType: "individual" } })).status, 400, "Online bundle purchase requires explicit digital-content consent.");
     assert.deepEqual(
@@ -215,7 +235,7 @@ async function run() {
       { targetType: "individual", digitalContentConsent: true },
       "Generated bundle purchase contract carries explicit online-content consent.",
     );
-    const key = `individual-${suffix}`;
+    const key = "!";
     const created = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, { method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": key }, body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }) });
     assert.equal(created.status, 201);
     const purchase = await created.json() as { id: string; amount: number; paymentInstructions: { reference: string; recipientAccount: string; payload: string } };
@@ -223,7 +243,7 @@ async function run() {
     assert.equal(purchase.paymentInstructions.recipientAccount, "111111111111111111");
     assert.match(purchase.paymentInstructions.payload, /\|I:RSD21000,00\|/,
       "Bundle purchases use the canonical NBS amount field.");
-    const secondPurchaseKey = `individual-second-${suffix}`;
+    const secondPurchaseKey = "~".repeat(200);
     const secondPurchaseResponse = await request(baseUrl, `/education/bundles/${testBundleId}/purchases`, {
       method: "POST", cookie: buyerCookie, headers: { "Idempotency-Key": secondPurchaseKey },
       body: buildValidOnlineEducationEnrollmentRequest({ targetType: "individual" }),

@@ -25,7 +25,7 @@ type BusinessNavLink = {
   guideId?: string;
 };
 
-export function BusinessNavbar() {
+export function BusinessNavbar({ hideMobileMenu = false }: { hideMobileMenu?: boolean }) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { data: userResp } = useGetCurrentUser();
@@ -224,7 +224,7 @@ export function BusinessNavbar() {
             </span>
           </Link>
 
-          <div className={cn("hidden items-center gap-6", !isSalonOperator && "2xl:flex")}>
+          <div className={cn("hidden items-center gap-6", !isSalonOperator && !hideMobileMenu && "2xl:flex")}>
             {navLinks.map((link) => (
               <Link 
                 key={link.href} 
@@ -318,21 +318,23 @@ export function BusinessNavbar() {
             )}
           </div>
 
-          <Button 
-            ref={mobileMenuButtonRef}
-            variant="ghost" 
-            size="icon" 
-            className={cn("text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground", !isSalonOperator && "2xl:hidden")}
-            onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
-            aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
-            data-testid="button-mobile-menu"
-          >
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+          {!hideMobileMenu && (
+            <Button
+              ref={mobileMenuButtonRef}
+              variant="ghost"
+              size="icon"
+              className={cn("text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground", !isSalonOperator && "2xl:hidden")}
+              onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
+              aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
+              data-testid="button-mobile-menu"
+            >
+              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          )}
         </div>
       </div>
 
-      {isMobileMenuOpen && (
+      {!hideMobileMenu && isMobileMenuOpen && (
         <div
           ref={mobileMenuRef}
           className={cn(

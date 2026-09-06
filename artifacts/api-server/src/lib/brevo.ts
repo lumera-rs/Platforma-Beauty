@@ -9,6 +9,7 @@ import {
   missingBrevoWebhookEvents,
   webhookTokenMatches,
 } from "./provider-events";
+import { safeModeNoExternalCalls } from "./runtime-environment";
 
 type Recipient = { email: string; name?: string | null };
 type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
@@ -105,6 +106,9 @@ async function sender() {
 export class BrevoConfigurationError extends Error {}
 
 async function brevoFetch(path: string, init: RequestInit): Promise<Response> {
+  if (safeModeNoExternalCalls()) {
+    throw new BrevoConfigurationError("SAFE_MODE_NO_EXTERNAL_CALLS blokira Brevo pozive.");
+  }
   const settings = await integrationSettings("brevo");
   if (!settings.enabled) throw new BrevoConfigurationError("Brevo integracija je isključena u admin podešavanjima.");
   const apiKey = settings.values.apiKey ?? process.env["BREVO_API_KEY"];
@@ -134,6 +138,13 @@ async function brevoJson<T>(path: string, body: unknown): Promise<T> {
 
 export const brevoTransactionalEmailTransport: TransactionalEmailTransport = {
   async send(input) {
+    if (safeModeNoExternalCalls()) {
+      logger.info(
+        { event: "safe_mode_email_would_send", idempotencyKey: input.idempotencyKey },
+        "Safe mode recorded a Brevo email without an outbound call",
+      );
+      return { messageId: `safe-mode:${input.idempotencyKey}` };
+    }
     const from = await sender();
     if (!from) return { skipped: true, errorMessage: "BREVO_SENDER_EMAIL nije podešen." };
     return brevoJson<{ messageId?: string }>("/smtp/email", {

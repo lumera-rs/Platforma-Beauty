@@ -11,11 +11,10 @@ import {
   imageAssetStagingStoragePath,
   imageAssetVariantStoragePath,
   imageVariantMetadata,
-  rawPrivateObjectPath,
   readPrivateObject,
-  signPrivateObject,
   uploadPrivateObject,
 } from "../lib/image-storage";
+import { getObjectStorage } from "../lib/object-storage";
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -113,7 +112,7 @@ router.post("/media/uploads/request-url", async (req, res): Promise<void> => {
     .where(eq(imageAssetsTable.id, asset.id));
 
   try {
-    const uploadUrl = await signPrivateObject(rawPrivateObjectPath(expectedPath), "PUT", 900);
+    const uploadUrl = await getObjectStorage().signPut(expectedPath, 900);
     res.json({
       assetId: asset.id,
       uploadUrl,
@@ -274,7 +273,7 @@ router.get("/media/images/:assetId", async (req, res): Promise<void> => {
     "X-Content-Type-Options": "nosniff",
   };
   try {
-    const signedUrl = await signPrivateObject(rawPrivateObjectPath(variant.objectPath), "GET", 60);
+    const signedUrl = await getObjectStorage().signGet(variant.objectPath, 60);
     const response = await fetch(signedUrl, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok || !response.body) throw new Error(`App Storage returned ${response.status}.`);
     const bytes = Buffer.from(await response.arrayBuffer());

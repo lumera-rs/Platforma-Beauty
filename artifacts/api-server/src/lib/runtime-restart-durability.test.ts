@@ -38,8 +38,22 @@ const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const tsxBin = path.resolve(thisDir, "../../../../scripts/node_modules/.bin/tsx");
 const childScript = path.resolve(thisDir, "http-security-hsts-child.ts");
 
+/**
+ * Strips anything that looks like credentials out of child output before it can
+ * reach a log. The child is handed this process's env, so its stderr can echo
+ * DATABASE_URL on a connection failure.
+ */
+function withoutCredentials(text: string): string {
+  return text.replace(/\b([a-z+]+:\/\/)[^\s@/]*@/gi, "$1***@");
+}
+
 async function spawnApiChild(): Promise<{ child: ChildProcess; port: number }> {
-  const child = spawn(tsxBin, [childScript], { env: process.env, stdio: ["ignore", "pipe", "inherit"] });
+  // stderr is piped rather than inherited so a failing child cannot print the
+  // connection string straight to the parent's console; it is surfaced through
+  // the rejection below instead, with credentials removed.
+  const child = spawn(tsxBin, [childScript], { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+  let diagnostics = "";
+  child.stderr?.on("data", (chunk: Buffer) => { diagnostics = (diagnostics + chunk.toString("utf8")).slice(-2000); });
   const port = await new Promise<number>((resolve, reject) => {
     let buffered = "";
     const onData = (chunk: Buffer) => {
@@ -49,7 +63,9 @@ async function spawnApiChild(): Promise<{ child: ChildProcess; port: number }> {
     };
     child.stdout?.on("data", onData);
     child.on("error", reject);
-    child.on("exit", (code) => reject(new Error(`API child process exited early (code ${code})`)));
+    child.on("exit", (code) => reject(new Error(
+      `API child process exited early (code ${code})${diagnostics ? `\n${withoutCredentials(diagnostics)}` : ""}`,
+    )));
   });
   return { child, port };
 }

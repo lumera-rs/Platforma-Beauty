@@ -14,7 +14,18 @@ export interface Service {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes: number;
+  /** @minimum 0 */
+  processingMinutes: number;
+  /** @minimum 0 */
+  postProcessingMinutes: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;

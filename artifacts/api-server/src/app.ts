@@ -2,14 +2,36 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
+import {
+  isDatabaseQueryObservationRuntimeAllowed,
+  runWithDatabaseQueryObservation,
+} from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiErrorHandler, normalizeAdminErrorResponses } from "./lib/api-errors";
+import {
+  databaseQueryObservationControl,
+  denyInternalRequestControlErrors,
+  denyInternalRequestControlsInProduction,
+  readInternalRequestControl,
+} from "./lib/internal-request-controls";
+import { trustProxySetting } from "./lib/runtime-environment";
 
 const app: Express = express();
 // Replit deployments have one controlled edge proxy. Local/test processes are
 // directly reachable, so forwarded headers must not influence req.ip there.
-app.set("trust proxy", process.env["REPLIT_DEPLOYMENT"] ? 1 : false);
+app.set("trust proxy", trustProxySetting());
+
+app.use(denyInternalRequestControlsInProduction);
+app.use((req, _res, next) => {
+  const captureId = isDatabaseQueryObservationRuntimeAllowed()
+    ? readInternalRequestControl(req, databaseQueryObservationControl)
+    : undefined;
+  runWithDatabaseQueryObservation(
+    typeof captureId === "string" ? captureId : undefined,
+    next,
+  );
+});
 
 // Task #8: baseline HTTP security headers. This process is a pure JSON API --
 // it never serves HTML, so Content-Security-Policy/X-Frame-Options/frame-
@@ -159,9 +181,13 @@ app.use(
 app.use("/api/webhooks", express.json({ limit: "5mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Run again after cookie/body parsers. Path controls are denied by the shared
+// reader and normalized by denyInternalRequestControlErrors below.
+app.use(denyInternalRequestControlsInProduction);
 app.use(normalizeAdminErrorResponses);
 
 app.use("/api", router);
+app.use(denyInternalRequestControlErrors);
 app.use(apiErrorHandler);
 
 export default app;

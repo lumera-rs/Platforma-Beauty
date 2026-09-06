@@ -19,9 +19,12 @@ import {
   servicesTable,
   usersTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Query count tests");
 
 type QueryProbe = {
   path: string;

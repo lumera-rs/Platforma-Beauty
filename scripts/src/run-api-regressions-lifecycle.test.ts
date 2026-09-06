@@ -7,7 +7,11 @@ import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import {
+  assertDestructiveTestRuntimeAllowed,
+  destructiveTestGuardEnvironments,
+} from "./destructive-test-runtime";
+import { registeredDestructiveHarnesses } from "./destructive-harness-registry";
 import {
   runIsolatedApiRegressionSuiteCommand,
   runIsolatedApiSuiteCommand,
@@ -175,6 +179,60 @@ async function dropDatabase(databaseName: string): Promise<void> {
   ]);
 }
 
+async function discoverDestructiveHarnessSources(root = workspaceRoot): Promise<string[]> {
+  const candidates: string[] = [];
+  const collectFiles = async (
+    directory: string,
+    include: (filename: string) => boolean,
+  ): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await collectFiles(entryPath, include);
+      } else if (entry.isFile() && include(entry.name)) {
+        candidates.push(entryPath);
+      }
+    }
+  };
+
+  const collectIfPresent = async (directory: string, include: (filename: string) => boolean) => {
+    await collectFiles(directory, include).catch((error: unknown) => {
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
+    });
+  };
+  await collectIfPresent(path.join(root, "scripts"), (filename) =>
+    filename.endsWith(".ts") || filename.endsWith(".sh"));
+  await collectIfPresent(
+    path.join(root, "artifacts", "api-server", "src", "lib"),
+    (filename) => filename.endsWith(".test.ts"),
+  );
+  await collectIfPresent(
+    path.join(root, "artifacts", "api-server", "src", "routes"),
+    (filename) => filename.endsWith(".test.ts"),
+  );
+
+  const destructiveSignal =
+    /\bpsql\b|\bcreatedb\b|\bdropdb\b|\b(?:pool|client|connection)\.query\b|\b(?:db|tx|transaction)\.(?:insert|update|delete|execute)\b/;
+  const discovered: string[] = [];
+  for (const candidate of candidates) {
+    const source = await readFile(candidate, "utf8");
+    const relativePath = path.relative(root, candidate).split(path.sep).join("/");
+    const executableShell = candidate.endsWith(".sh")
+      && source.startsWith("#!")
+      && /^set -/m.test(source);
+    const executableTypeScript = candidate.endsWith(".ts")
+      && !relativePath.startsWith("scripts/browser/")
+      && (
+        relativePath.endsWith(".test.ts")
+        || /\b(?:void\s+)?main\(\)|\bmain\(\)\.catch/.test(source)
+      );
+    if ((executableShell || executableTypeScript) && destructiveSignal.test(source)) {
+      discovered.push(relativePath);
+    }
+  }
+  return [...new Set(discovered)].sort();
+}
+
 test("destructive harnesses refuse deployment runtimes before database commands", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-deployment-guard-"));
   const binDirectory = path.join(temporaryRoot, "bin");
@@ -187,30 +245,6 @@ test("destructive harnesses refuse deployment runtimes before database commands"
     "src",
     "run-isolated-browser-suite.ts",
   );
-  const bookingLoadPath = path.join(workspaceRoot, "scripts", "src", "run-booking-load.ts");
-  const lifecycleTestPath = path.join(
-    workspaceRoot,
-    "scripts",
-    "src",
-    "run-api-regressions-lifecycle.test.ts",
-  );
-  const educationExtrasPath = path.join(
-    workspaceRoot,
-    "artifacts",
-    "api-server",
-    "src",
-    "lib",
-    "education-extras.test.ts",
-  );
-  const educationFinancialPath = path.join(
-    workspaceRoot,
-    "artifacts",
-    "api-server",
-    "src",
-    "lib",
-    "education-financial.test.ts",
-  );
-  const b2bCatalogPath = path.join(workspaceRoot, "scripts", "test-b2b-catalog.sh");
   const playwrightConfigPath = path.join(workspaceRoot, "scripts", "playwright.config.ts");
 
   await mkdir(binDirectory, { recursive: true });
@@ -261,26 +295,92 @@ void main();
     "utf8",
   );
 
-  const harnesses = [
-    { name: "isolated browser", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "browser", verifyAllowed: true },
-    { name: "isolated API", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "api", verifyAllowed: true },
-    { name: "isolated API regression", command: runnerPath, scriptPath: isolatedRunnerPath, mode: "regression", verifyAllowed: true },
-    { name: "booking load", command: runnerPath, scriptPath: bookingLoadPath, mode: undefined, verifyAllowed: true },
-    { name: "API regression lifecycle", command: runnerPath, scriptPath: lifecycleTestPath, mode: undefined, verifyAllowed: false },
-    { name: "Education extras", command: runnerPath, scriptPath: educationExtrasPath, mode: undefined, verifyAllowed: false },
-    { name: "Education financial", command: runnerPath, scriptPath: educationFinancialPath, mode: undefined, verifyAllowed: false },
-    { name: "B2B catalog shell", command: "bash", scriptPath: b2bCatalogPath, mode: undefined, verifyAllowed: false },
-    { name: "browser preflight", command: runnerPath, scriptPath: browserPreflightRunnerPath, mode: undefined, verifyAllowed: false },
-  ] as const;
-  const guardedEnvironments = [
-    { name: "NODE_ENV=production", values: { NODE_ENV: "production" } },
-    { name: "REPLIT_DEPLOYMENT=1", values: { REPLIT_DEPLOYMENT: "1" } },
-    { name: "REPL_DEPLOYMENT=1", values: { REPL_DEPLOYMENT: "1" } },
-  ] as const;
+  const harnesses = registeredDestructiveHarnesses.map((registration) => ({
+    ...registration,
+    command: registration.launch === "bash" ? "bash" : runnerPath,
+    scriptPath: registration.launch === "isolated-wrapper"
+      ? isolatedRunnerPath
+      : registration.launch === "browser-preflight"
+        ? browserPreflightRunnerPath
+        : path.join(workspaceRoot, registration.sourcePath),
+  }));
 
   try {
+    const registeredSources = [...new Set(
+      registeredDestructiveHarnesses.map(({ sourcePath }) => sourcePath),
+    )].sort();
+    const discoveredSources = await discoverDestructiveHarnessSources();
+    const automaticallyGuardedDatabaseTests: string[] = [];
+    for (const sourcePath of discoveredSources) {
+      if (!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(sourcePath)) continue;
+      const source = await readFile(path.join(workspaceRoot, sourcePath), "utf8");
+      if (/from\s+["']@workspace\/db["']/.test(source)) {
+        automaticallyGuardedDatabaseTests.push(sourcePath);
+      }
+    }
+    assert.deepEqual(
+      discoveredSources.filter((sourcePath) =>
+        !registeredSources.includes(sourcePath)
+        && !automaticallyGuardedDatabaseTests.includes(sourcePath)),
+      [],
+      "Every sink-discovered harness must use the mandatory database-test boundary or be registered for guard execution.",
+    );
+
+    const omissionFixtureRoot = path.join(temporaryRoot, "omission-fixture");
+    await mkdir(path.join(omissionFixtureRoot, "scripts"), { recursive: true });
+    await writeFile(
+      path.join(omissionFixtureRoot, "scripts", "unsafe-psql-harness.sh"),
+      "#!/usr/bin/env bash\nset -euo pipefail\npsql \"$DATABASE_URL\" -c 'DELETE FROM users'\n",
+      { mode: 0o755 },
+    );
+    assert.deepEqual(
+      await discoverDestructiveHarnessSources(omissionFixtureRoot),
+      ["scripts/unsafe-psql-harness.sh"],
+      "An unguarded psql mutation harness must be discovered even without a guard identifier or registration.",
+    );
+
+    const drizzleFixturePath = path.join(temporaryRoot, "unsafe-drizzle.test.ts");
+    await writeFile(
+      drizzleFixturePath,
+      `import { db } from ${JSON.stringify(path.join(workspaceRoot, "lib", "db", "src", "index.ts"))};
+void db.insert({} as never);
+`,
+      "utf8",
+    );
+    const drizzleRefusal = await execFileAsync(runnerPath, [drizzleFixturePath], {
+      cwd: workspaceRoot,
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        DATABASE_URL: databaseUrl,
+      },
+    }).then(
+      () => assert.fail("An unregistered db.insert test accepted NODE_ENV=production."),
+      (error: unknown) => error as { stdout?: string; stderr?: string },
+    );
+    assert.match(
+      `${drizzleRefusal.stdout ?? ""}\n${drizzleRefusal.stderr ?? ""}`,
+      /Destructive test harnesses refuse production or deployment runtimes[\s\S]*Blocked: Direct database tests/,
+      "The shared database boundary must reject unregistered Drizzle write tests before execution.",
+    );
+
+    const uniqueRegistrations = new Set<string>();
     for (const harness of harnesses) {
-      for (const guardedEnvironment of guardedEnvironments) {
+      const registrationKey = `${harness.name}:${harness.mode ?? ""}`;
+      assert.ok(!uniqueRegistrations.has(registrationKey), `Duplicate destructive harness registration: ${registrationKey}`);
+      uniqueRegistrations.add(registrationKey);
+      const source = await readFile(path.join(workspaceRoot, harness.sourcePath), "utf8");
+      assert.match(
+        source,
+        harness.guardContract === "typescript"
+          ? /assertDestructiveTestRuntimeAllowed/
+          : /destructive-test-runtime\.sh/,
+        `${harness.name} must invoke the shared destructive-runtime guard`,
+      );
+    }
+
+    for (const harness of harnesses) {
+      for (const guardedEnvironment of destructiveTestGuardEnvironments) {
         await unlink(commandLogPath).catch(() => undefined);
         const result = await execFileAsync(harness.command, [harness.scriptPath], {
           cwd: workspaceRoot,
@@ -298,10 +398,11 @@ void main();
           },
         }).then(
           () => assert.fail(`${harness.name} accepted ${guardedEnvironment.name}.`),
-          (error: unknown) => error as { stderr?: string },
+          (error: unknown) => error as { stdout?: string; stderr?: string },
         );
+        const refusalOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
         assert.match(
-          result.stderr ?? "",
+          refusalOutput,
           /refuse(?:s)? production or deployment runtimes/,
           `${harness.name} must explain its ${guardedEnvironment.name} refusal`,
         );

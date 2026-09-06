@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { ImageAssetVariantSet } from "@workspace/db";
+import { getObjectStorage } from "./object-storage";
 
 export const MAX_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 40_000_000;
@@ -27,15 +28,11 @@ export type GeneratedImageSet = {
   variants: Record<ImageSize, Record<VariantFormat, GeneratedImage>>;
 };
 
-function privateObjectRoot(): string {
-  const root = process.env.PRIVATE_OBJECT_DIR;
-  if (!root) throw new Error("App Storage nije podešen.");
-  return root.replace(/\/+$/, "");
-}
-
 export function rawPrivateObjectPath(storagePath: string): string {
   if (!storagePath.startsWith("/objects/")) throw new Error("Neispravna putanja objekta.");
-  return `${privateObjectRoot()}/${storagePath.slice("/objects/".length)}`;
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return `${root.replace(/\/+$/, "")}/${storagePath.slice("/objects/".length)}`;
 }
 
 export function imageAssetStagingStoragePath(userId: string, assetId: string): string {
@@ -60,41 +57,24 @@ export async function signPrivateObject(
   method: "DELETE" | "GET" | "PUT",
   ttlSeconds: number,
 ): Promise<string> {
-  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
-  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      bucket_name: bucketName,
-      object_name: objectParts.join("/"),
-      method,
-      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
-  const data = await response.json() as { signed_url?: string };
-  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
-  return data.signed_url;
+  const root = process.env.PRIVATE_OBJECT_DIR?.replace(/\/+$/, "");
+  if (!root || !rawPath.startsWith(`${root}/`)) throw new Error("Neispravna putanja objekta.");
+  const storagePath = `/objects/${rawPath.slice(root.length + 1)}`;
+  const storage = getObjectStorage();
+  if (method === "PUT") return storage.signPut(storagePath, ttlSeconds);
+  if (method === "GET") return storage.signGet(storagePath, ttlSeconds);
+  throw new Error("Potpisani DELETE URL nije deo javnog adapter ugovora.");
 }
 
 export async function uploadPrivateObject(storagePath: string, bytes: Buffer, contentType: string): Promise<void> {
-  const uploadUrl = await signPrivateObject(rawPrivateObjectPath(storagePath), "PUT", 120);
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: bytes,
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) throw new Error(`App Storage nije sačuvao sliku (${response.status}).`);
+  await getObjectStorage().put(storagePath, bytes, contentType);
 }
 
 export async function readPrivateObject(storagePath: string, maxBytes = MAX_IMAGE_UPLOAD_BYTES): Promise<{
   bytes: Buffer;
   contentType: string;
 }> {
-  const downloadUrl = await signPrivateObject(rawPrivateObjectPath(storagePath), "GET", 60);
-  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
+  const response = await getObjectStorage().get(storagePath);
   if (!response.ok) throw new Error(`App Storage nije pronašao sliku (${response.status}).`);
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -110,13 +90,7 @@ export async function readPrivateObject(storagePath: string, maxBytes = MAX_IMAG
 }
 
 export async function deletePrivateObject(storagePath: string): Promise<void> {
-  const deleteUrl = await signPrivateObject(rawPrivateObjectPath(storagePath), "DELETE", 60);
-  const response = await fetch(deleteUrl, {
-    method: "DELETE",
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (response.ok || response.status === 404) return;
-  throw new Error(`App Storage nije obrisao objekat (${response.status}).`);
+  await getObjectStorage().delete(storagePath);
 }
 
 function hasExpectedImageSignature(contentType: string, bytes: Buffer): boolean {

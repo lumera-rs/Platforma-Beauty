@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 120;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 123;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -249,6 +249,63 @@ function tableStatements(s: string): string[] {
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+    // v123 — multi-staff treatments, and v122 processing phases. Existing rows deliberately default to
+    // zero so their historical continuous employee occupancy is unchanged.
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS pre_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS post_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.services ADD COLUMN IF NOT EXISTS required_employee_count integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS pre_processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS processing_minutes integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.appointment_treatments ADD COLUMN IF NOT EXISTS post_processing_minutes integer NOT NULL DEFAULT 0`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.services'::regclass AND conname = 'services_required_employee_count_check') THEN
+         ALTER TABLE ${s}.services ADD CONSTRAINT services_required_employee_count_check CHECK (required_employee_count >= 1 AND required_employee_count <= 20);
+       END IF;
+     END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.appointment_treatment_employees (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      appointment_treatment_id uuid NOT NULL REFERENCES ${s}.appointment_treatments(id) ON DELETE CASCADE,
+      employee_id uuid NOT NULL,
+      role text, position integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT appointment_treatment_employees_position_check CHECK (position >= 0),
+      CONSTRAINT appointment_treatment_employees_treatment_employee_unique UNIQUE (appointment_treatment_id, employee_id),
+      CONSTRAINT appointment_treatment_employees_treatment_position_unique UNIQUE (appointment_treatment_id, position),
+      CONSTRAINT appointment_treatment_employees_employee_id_fkey
+        FOREIGN KEY (employee_id) REFERENCES ${s}.employees(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED
+    )`,
+    `DO $$ BEGIN
+       ALTER TABLE ${s}.appointment_treatment_employees
+         DROP CONSTRAINT IF EXISTS appointment_treatment_employees_employee_id_fkey;
+       ALTER TABLE ${s}.appointment_treatment_employees
+         ADD CONSTRAINT appointment_treatment_employees_employee_id_fkey
+          FOREIGN KEY (employee_id) REFERENCES ${s}.employees(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED;
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS appointment_treatment_employees_employee_idx ON ${s}.appointment_treatment_employees (employee_id)`,
+    `CREATE INDEX IF NOT EXISTS appointment_treatment_employees_treatment_idx ON ${s}.appointment_treatment_employees (appointment_treatment_id)`,
+    `INSERT INTO ${s}.appointment_treatment_employees (appointment_treatment_id, employee_id, position)
+      SELECT id, employee_id, 0 FROM ${s}.appointment_treatments
+      WHERE employee_id IS NOT NULL
+      ON CONFLICT (appointment_treatment_id, employee_id) DO NOTHING`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.services'::regclass AND conname = 'services_processing_segments_check') THEN
+         ALTER TABLE ${s}.services ADD CONSTRAINT services_processing_segments_check CHECK (
+           pre_processing_minutes >= 0 AND processing_minutes >= 0 AND post_processing_minutes >= 0 AND
+           ((pre_processing_minutes = 0 AND processing_minutes = 0 AND post_processing_minutes = 0)
+             OR (duration_minutes = pre_processing_minutes + processing_minutes + post_processing_minutes AND duration_minutes > 0))
+         );
+       END IF;
+     END $$`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '${s}.appointment_treatments'::regclass AND conname = 'appointment_treatments_processing_segments_check') THEN
+         ALTER TABLE ${s}.appointment_treatments ADD CONSTRAINT appointment_treatments_processing_segments_check CHECK (
+           pre_processing_minutes >= 0 AND processing_minutes >= 0 AND post_processing_minutes >= 0 AND
+           ((pre_processing_minutes = 0 AND processing_minutes = 0 AND post_processing_minutes = 0)
+             OR (duration_minutes = pre_processing_minutes + processing_minutes + post_processing_minutes AND duration_minutes > 0))
+         );
+       END IF;
+     END $$`,
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
@@ -3171,6 +3228,14 @@ function tableStatements(s: string): string[] {
       ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_check CHECK (num_nonnulls(order_id, retail_order_id) = 1 AND num_nonnulls(order_item_id, retail_order_item_id) = 1) NOT VALID;
       ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_check;
     END IF; END $$`,
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rmas_target_pair_check' AND conrelid = '${s}.rmas'::regclass) THEN
+      ALTER TABLE ${s}.rmas ADD CONSTRAINT rmas_target_pair_check CHECK (
+        (order_id IS NOT NULL AND order_item_id IS NOT NULL AND retail_order_id IS NULL AND retail_order_item_id IS NULL)
+        OR
+        (order_id IS NULL AND order_item_id IS NULL AND retail_order_id IS NOT NULL AND retail_order_item_id IS NOT NULL)
+      ) NOT VALID;
+      ALTER TABLE ${s}.rmas VALIDATE CONSTRAINT rmas_target_pair_check;
+    END IF; END $$`,
     `CREATE TABLE IF NOT EXISTS ${s}.rma_attachments (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), rma_id uuid NOT NULL REFERENCES ${s}.rmas(id) ON DELETE CASCADE,
       media_asset_id uuid NOT NULL UNIQUE REFERENCES ${s}.media_assets(id) ON DELETE RESTRICT,
@@ -4993,6 +5058,13 @@ export async function runBusinessGrowthSchemaDdl(
       if ((state.rows[0]?.version ?? 0) >= BUSINESS_GROWTH_SCHEMA_VERSION) {
         // Keep additive contract repairs replayable even for installations that
         // recorded the current version before an interrupted/manual rollout.
+        if ((await client.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`${schemaName}.appointment_treatment_employees`])).rows[0]?.exists) {
+          await client.query(`ALTER TABLE ${quoted}.appointment_treatment_employees
+            DROP CONSTRAINT IF EXISTS appointment_treatment_employees_employee_id_fkey`);
+          await client.query(`ALTER TABLE ${quoted}.appointment_treatment_employees
+            ADD CONSTRAINT appointment_treatment_employees_employee_id_fkey
+            FOREIGN KEY (employee_id) REFERENCES ${quoted}.employees(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED`);
+        }
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_instructors ADD COLUMN IF NOT EXISTS portfolio_media jsonb NOT NULL DEFAULT '[]'::jsonb`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_center_reviews ADD COLUMN IF NOT EXISTS admin_note text`);
         await client.query(`ALTER TABLE IF EXISTS ${quoted}.education_center_reviews ADD COLUMN IF NOT EXISTS moderated_at timestamptz`);

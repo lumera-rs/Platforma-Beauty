@@ -1,0 +1,168 @@
+export type DestructiveHarnessRegistration = {
+  name: string;
+  sourcePath: string;
+  launch: "isolated-wrapper" | "tsx" | "bash" | "browser-preflight";
+  mode?: "browser" | "api" | "regression";
+  verifyAllowed: boolean;
+  guardContract: "typescript" | "shell";
+};
+
+export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistration[] = [
+  {
+    name: "isolated browser",
+    sourcePath: "scripts/src/run-isolated-browser-suite.ts",
+    launch: "isolated-wrapper",
+    mode: "browser",
+    verifyAllowed: true,
+    guardContract: "typescript",
+  },
+  {
+    name: "isolated API",
+    sourcePath: "scripts/src/run-isolated-browser-suite.ts",
+    launch: "isolated-wrapper",
+    mode: "api",
+    verifyAllowed: true,
+    guardContract: "typescript",
+  },
+  {
+    name: "isolated API regression",
+    sourcePath: "scripts/src/run-isolated-browser-suite.ts",
+    launch: "isolated-wrapper",
+    mode: "regression",
+    verifyAllowed: true,
+    guardContract: "typescript",
+  },
+  {
+    name: "booking load",
+    sourcePath: "scripts/src/run-booking-load.ts",
+    launch: "tsx",
+    verifyAllowed: true,
+    guardContract: "typescript",
+  },
+  {
+    name: "booking load HTTP suite",
+    sourcePath: "scripts/src/booking-load-suite.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "API regression lifecycle",
+    sourcePath: "scripts/src/run-api-regressions-lifecycle.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "backend standards database fixtures",
+    sourcePath: "scripts/src/backend-standards-database.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "backend standards combined runner",
+    sourcePath: "scripts/src/test-backend-standards.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "admin summary",
+    sourcePath: "artifacts/api-server/src/lib/admin-summary.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "booking P1 regressions",
+    sourcePath: "artifacts/api-server/src/lib/booking-p1-regressions.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "business growth schema",
+    sourcePath: "artifacts/api-server/src/lib/business-growth-schema.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "final booking hardening",
+    sourcePath: "artifacts/api-server/src/lib/final-booking-hardening.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "query count",
+    sourcePath: "artifacts/api-server/src/lib/query-count.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "retail checkout",
+    sourcePath: "artifacts/api-server/src/lib/retail-checkout.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "shipping configuration",
+    sourcePath: "artifacts/api-server/src/lib/shipping-config.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "marketplace query budget",
+    sourcePath: "artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "Education extras",
+    sourcePath: "artifacts/api-server/src/lib/education-extras.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "Education financial",
+    sourcePath: "artifacts/api-server/src/lib/education-financial.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "B2B catalog shell",
+    sourcePath: "scripts/test-b2b-catalog.sh",
+    launch: "bash",
+    verifyAllowed: false,
+    guardContract: "shell",
+  },
+  {
+    name: "damaged timestamp serialization shell",
+    sourcePath: "scripts/test-damaged-timestamp-serialization.sh",
+    launch: "bash",
+    verifyAllowed: false,
+    guardContract: "shell",
+  },
+  {
+    name: "marketplace discovery shell",
+    sourcePath: "scripts/test-marketplace-discovery.sh",
+    launch: "bash",
+    verifyAllowed: false,
+    guardContract: "shell",
+  },
+  {
+    name: "browser preflight",
+    sourcePath: "scripts/playwright.config.ts",
+    launch: "browser-preflight",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+] as const;

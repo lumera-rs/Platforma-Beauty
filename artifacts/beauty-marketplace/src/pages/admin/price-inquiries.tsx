@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { customFetch } from "@workspace/api-client-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { customFetch, getAdminListPriceInquiriesPageQueryKey, useAdminListPriceInquiriesPage } from "@workspace/api-client-react";
+import type { AdminPriceInquiry } from "@workspace/api-client-react";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,32 +13,18 @@ import { Loader2, Search, MailQuestion, Save, Phone, Mail, User, Clock, Store } 
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 
-interface PriceInquiry {
-  id: string;
-  supplierId: string;
-  productId: string;
-  productName: string;
-  supplierName: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  message: string;
-  status: 'NEW' | 'CONTACTED' | 'CLOSED';
-  internalNote: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export default function AdminPriceInquiries() {
+  const pageSize = 50;
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const debouncedSearch = useDebouncedSearch(search);
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: inquiries, isLoading } = useQuery<PriceInquiry[]>({
-    queryKey: ["admin", "price-inquiries", debouncedSearch],
-    queryFn: () => customFetch(`/api/admin/price-inquiries?search=${encodeURIComponent(debouncedSearch)}`, { method: 'GET' })
-  });
+  const { data: inquiryPage, isLoading } = useAdminListPriceInquiriesPage(
+    { ...(debouncedSearch ? { search: debouncedSearch } : {}), page, pageSize },
+  );
+  const inquiries = inquiryPage?.items;
 
   const updateInquiry = useMutation({
     mutationFn: ({ id, status, internalNote }: { id: string, status?: string, internalNote?: string }) => 
@@ -48,7 +35,7 @@ export default function AdminPriceInquiries() {
       }),
     onSuccess: () => {
       toast.success("Upit je uspešno ažuriran.");
-      qc.invalidateQueries({ queryKey: ["admin", "price-inquiries"] });
+      qc.invalidateQueries({ queryKey: getAdminListPriceInquiriesPageQueryKey() });
     },
     onError: () => toast.error("Greška prilikom ažuriranja upita.")
   });
@@ -67,7 +54,10 @@ export default function AdminPriceInquiries() {
           <Input 
             placeholder="Pretraga po imenu, emailu..." 
             value={search} 
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="pl-9"
           />
         </div>
@@ -84,7 +74,7 @@ export default function AdminPriceInquiries() {
             </CardContent>
           </Card>
         ) : (
-          inquiries.filter(q => q.contactName.toLowerCase().includes(debouncedSearch.toLowerCase()) || q.contactEmail.toLowerCase().includes(debouncedSearch.toLowerCase())).map((inquiry) => {
+          inquiries.map((inquiry: AdminPriceInquiry) => {
             const currentNote = notes[inquiry.id] !== undefined ? notes[inquiry.id] : (inquiry.internalNote || "");
             const hasChanged = currentNote !== (inquiry.internalNote || "");
             
@@ -169,6 +159,31 @@ export default function AdminPriceInquiries() {
               </Card>
             );
           })
+        )}
+        {!isLoading && inquiryPage && (page > 1 || inquiryPage.hasNext) && (
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-center text-sm text-muted-foreground sm:text-left">
+              Stranica {page}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={page === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Prethodna
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={!inquiryPage.hasNext}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Sledeća
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </AdminLayout>

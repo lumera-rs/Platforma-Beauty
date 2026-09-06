@@ -12,4 +12,6 @@ export interface BookingGroupRescheduleTreatmentInput {
   startTime: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }

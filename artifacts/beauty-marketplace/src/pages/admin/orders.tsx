@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRoute, useSearch } from "wouter";
 import {
-  getAdminGetOrderQueryKey, getAdminGetSalonQueryKey, getAdminListOrdersQueryKey, useAdminBulkUpdateOrders, useAdminGetOrder,
-  useAdminGetSalon, useAdminListCourierServices, useAdminListOrders, useAdminUpdateOrderStatus,
+  getAdminGetOrderQueryKey, getAdminGetSalonQueryKey, getAdminListOrdersPageQueryKey, getAdminListOrdersQueryKey, useAdminBulkUpdateOrders, useAdminGetOrder,
+  useAdminGetSalon, useAdminListCourierServices, useAdminListOrdersPage, useAdminUpdateOrderStatus,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AdminLayout } from "./layout";
@@ -223,7 +223,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
   const { data: salonProfile } = useAdminGetSalon(salonId, { query: { enabled: Boolean(salonId), queryKey: getAdminGetSalonQueryKey(salonId) } });
   const qc = useQueryClient(); const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
-  const update = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); qc.invalidateQueries({ queryKey: getAdminGetOrderQueryKey(orderId) }); toast.success("Operativni podaci su sačuvani."); } } });
+  const update = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); qc.invalidateQueries({ queryKey: getAdminListOrdersPageQueryKey() }); qc.invalidateQueries({ queryKey: getAdminGetOrderQueryKey(orderId) }); toast.success("Operativni podaci su sačuvani."); } } });
   const [courierId, setCourierId] = useState<string | null | undefined>(undefined);
   const [tracking, setTracking] = useState<string | undefined>(undefined);
   const [url, setUrl] = useState<string | undefined>(undefined);
@@ -277,11 +277,10 @@ export default function AdminOrders() {
   // Reset to the first page whenever any filter changes so results stay reachable.
   useEffect(() => { setPage(1); }, [debouncedSearch, status, paymentStatus, deliveryMethod, from, to]);
   const params = useMemo(() => ({ ...(debouncedSearch ? { search: debouncedSearch } : {}), ...(status !== "all" ? { status: status as typeof statuses[number] } : {}), ...(paymentStatus !== "all" ? { paymentStatus: paymentStatus as typeof paymentStatuses[number] } : {}), ...(deliveryMethod !== "all" ? { deliveryMethod: deliveryMethod as "courier" | "personal_belgrade" } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), page, pageSize }), [debouncedSearch, status, paymentStatus, deliveryMethod, from, to, page]);
-  const { data: orders = [], isLoading } = useAdminListOrders(params, { query: { enabled: !routeParams?.orderId, queryKey: getAdminListOrdersQueryKey(params) } });
-  // customFetch returns only the body, so we infer "has next page" from whether
-  // this page came back full (== pageSize).
-  const hasNextPage = orders.length === pageSize;
-  const bulk = useAdminBulkUpdateOrders({ mutation: { onSuccess: () => { setSelected([]); qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); toast.success("Izabrane porudžbine su ažurirane."); } } });
+  const { data: ordersPage, isLoading } = useAdminListOrdersPage(params, { query: { enabled: !routeParams?.orderId, queryKey: getAdminListOrdersPageQueryKey(params) } });
+  const orders = ordersPage?.items ?? [];
+  const hasNextPage = ordersPage?.hasNext ?? false;
+  const bulk = useAdminBulkUpdateOrders({ mutation: { onSuccess: () => { setSelected([]); qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); qc.invalidateQueries({ queryKey: getAdminListOrdersPageQueryKey() }); toast.success("Izabrane porudžbine su ažurirane."); } } });
   const updateBulkStatus = (nextStatus: string) => {
     if (!actionGuard.begin("bulk-status")) return;
     bulk.mutate(

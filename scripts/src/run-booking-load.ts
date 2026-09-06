@@ -5,6 +5,10 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import path from "node:path";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import {
+  pipeRedactedDatabaseOutput,
+  redactDatabaseCommandOutput,
+} from "./safe-child-process-output";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const state = path.join(root, ".lumera-test-state", "booking-load-databases");
@@ -47,9 +51,15 @@ function isolatedEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
   return environment;
 }
 const run = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Promise<void>((resolve, reject) => {
-  const child = spawn(command, args, { cwd: root, env, detached: process.platform !== "win32", stdio: "inherit" });
+  const child = spawn(command, args, { cwd: root, env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.once("error", () => reject(new Error(`${command} could not start`)));
-  child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`${command} failed`)));
+  child.once("exit", (code) => {
+    if (output) (code === 0 ? process.stdout : process.stderr).write(redactDatabaseCommandOutput(output, env));
+    code === 0 ? resolve() : reject(new Error(`${command} failed with exit code ${code ?? "unknown"}`));
+  });
 });
 const capture = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
   const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
@@ -57,7 +67,7 @@ const capture = (command: string, args: string[], env: NodeJS.ProcessEnv) => new
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.once("error", () => reject(new Error(`${command} could not start`)));
-  child.once("exit", (code) => resolve({ code, output }));
+  child.once("exit", (code) => resolve({ code, output: redactDatabaseCommandOutput(output, env) }));
 });
 async function enableActivityTracking(databaseUrl: string, environment: NodeJS.ProcessEnv) {
   const pgOptions = `${environment.PGOPTIONS ?? ""} -c track_activities=on`.trim();
@@ -153,7 +163,9 @@ async function main() {
         BOOKING_MAX_IN_FLIGHT_PER_PROCESS: String(bookingAdmissionPerProcess),
       };
       if (seed) apiEnvironment.LUMERA_TEST_SEED = "1";
-      return spawn(path.join(root, "scripts/node_modules/.bin/tsx"), [path.join(root, "artifacts/api-server/src/test-server.ts")], { cwd: root, env: apiEnvironment, detached: process.platform !== "win32", stdio: "inherit" });
+      const child = spawn(path.join(root, "scripts/node_modules/.bin/tsx"), [path.join(root, "artifacts/api-server/src/test-server.ts")], { cwd: root, env: apiEnvironment, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+      pipeRedactedDatabaseOutput(child, apiEnvironment);
+      return child;
     };
     const ready = async (url: string) => { for (let i = 0; i < 120; i++) { try { if ((await fetch(`${url}/api/healthz`)).ok) return; } catch {} await new Promise((r) => setTimeout(r, 250)); } throw new Error("Local test API did not become ready."); };
     // Seed once before the second process starts. ensureDemoData caches only
@@ -182,8 +194,9 @@ async function main() {
         LUMERA_BOOKING_LOAD_ADMISSION_PER_PROCESS: String(bookingAdmissionPerProcess),
       },
       detached: process.platform !== "win32",
-      stdio: "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    pipeRedactedDatabaseOutput(suite, environment);
     const suiteExitCode = await new Promise<number | null>((resolve) => suite!.once("exit", resolve));
     const expectFailure = process.env.LUMERA_BOOKING_LOAD_EXPECT_FAILURE === "1";
     if (expectFailure) {

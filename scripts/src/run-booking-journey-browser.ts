@@ -19,14 +19,14 @@ const configuration: IsolatedBrowserSuiteConfiguration = {
   manifestDirectoryName: "booking-journey-browser-databases",
   specPath: "browser/booking-journey.spec.ts",
   testLabel: "Customer booking journey browser checks",
+  // These specs drive the whole booking journey across desktop and mobile
+  // viewports; the heaviest take well over a minute on a modest runner, and
+  // several sit at 45-52 s. Playwright's 30 s default would fail them for being
+  // slow rather than wrong, so the suite carries its own budget instead of
+  // depending on how fast the machine happens to be.
+  timeoutMs: 180_000,
   environment: {
     LUMERA_RELEASE_BROWSER_TEST: "1",
-    // These specs drive the whole booking journey across desktop and mobile
-    // viewports; the heaviest take well over a minute on a modest runner, and
-    // several sit at 45-52 s. Playwright's 30 s default would fail them for
-    // being slow rather than wrong, so the suite carries its own budget instead
-    // of depending on how fast the machine happens to be.
-    LUMERA_PLAYWRIGHT_TIMEOUT_MS: "180000",
   },
 };
 

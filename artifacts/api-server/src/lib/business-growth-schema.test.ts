@@ -16,11 +16,14 @@
  */
 import assert from "node:assert/strict";
 import { pool } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY,
   BUSINESS_GROWTH_SCHEMA_VERSION,
   runBusinessGrowthSchemaDdl,
 } from "./business-growth-schema";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema tests");
 
 const TEST_SCHEMA = `bg_upgrade_test_${Date.now()}`;
 
@@ -372,7 +375,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 120, "v120 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 121, "v121 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;

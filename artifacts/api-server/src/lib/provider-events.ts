@@ -38,6 +38,7 @@ import {
 } from "@workspace/db";
 import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { integrationSettings, type IntegrationName } from "./integrations";
+import { isAllowedPublicHost, isDevelopmentHostname, safeModeNoExternalCalls } from "./runtime-environment";
 
 export type WebhookProvider = "brevo" | "sms";
 
@@ -80,13 +81,11 @@ export function deploymentPublicOrigin(): string | null {
   }
 
   const hostname = url.hostname.toLowerCase();
-  const developmentHost = hostname === "localhost"
-    || hostname === "127.0.0.1"
-    || hostname === "::1"
-    || hostname.endsWith(".replit.dev");
+  const developmentHost = isDevelopmentHostname(hostname);
   if (
     url.protocol !== "https:"
     || developmentHost
+    || !isAllowedPublicHost(hostname)
     || url.username
     || url.password
     || url.port
@@ -104,6 +103,7 @@ export function deploymentPublicOrigin(): string | null {
  * provider receives no notifyUrl and cannot be pointed at a preview origin.
  */
 export async function resolveInfobipNotifyUrl(): Promise<string | undefined> {
+  if (safeModeNoExternalCalls()) return undefined;
   const [secret, origin] = await Promise.all([
     resolveWebhookSecret("sms"),
     Promise.resolve(deploymentPublicOrigin()),

@@ -141,3 +141,10 @@
 - [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
 - [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.
 - [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH`; merge queue additionally requires an organization-owned repository.
+- [Cross-domain booking fixtures](cross-domain-booking-fixtures.md) — broad HTTP suites must satisfy booking idempotency and canonical location availability, not legacy setup alone.
+- [Required headers in generated clients](required-headers-generated-clients.md) — Orval documents headers but custom-transport calls still need typed wrappers to make them mandatory.
+- [Focused browser release gates](focused-browser-release-gates.md) — narrow shell regressions belong in dedicated specs instead of enrolling unrelated broad suites.
+- [Request-scoped SQL observation](request-scoped-sql-observation.md) — bridge test captures across loopback HTTP with a process-local registered ID, not AsyncLocalStorage alone.
+- [Test-only request controls](test-only-request-controls.md) — inventory every transport, scan guarded aliases, and enforce denial where each Express input becomes observable.
+- [Static browser config symlinks](static-browser-config-symlinks.md) — validate and consume canonical package exports without changing runner-relative testDir behavior.
+- [Declaration inventory parsing](declaration-inventory-parsing.md) — use the TypeScript AST for declaration shape checks; hand-written scanners cannot safely model nested template substitutions.

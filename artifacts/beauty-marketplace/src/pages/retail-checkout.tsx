@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { OptimizedImage } from "@/components/optimized-image";
 import { changedRetailCartItem, notifyRetailCartChanged } from "@/lib/retail-cart-events";
+import { trackEvent } from "@/lib/analytics";
 import {
   useGetRetailCart,
   updateRetailCartItem,
@@ -287,9 +288,14 @@ export function RetailCartPage() {
   const addItem = useAddRetailCartItem({
     mutation: {
       onMutate: onLocalMutationStart,
-      onSuccess: (data) => {
+      onSuccess: (data, variables) => {
         qc.setQueryData(getGetRetailCartQueryKey(), data);
         notifyRetailCartChanged(data.itemCount);
+        trackEvent("retail_cart_item_added", {
+          cart_item_count: data.itemCount,
+          quantity_added: variables.data.quantity,
+          source: "checkout_cross_sell",
+        });
         toast.success("Dodato u korpu");
       },
       onError: (error: unknown) => {
@@ -446,8 +452,19 @@ export function RetailCheckoutPage() {
   const [quoteRefreshError, setQuoteRefreshError] = useState<string | null>(null);
   const [cartChangedElsewhere, setCartChangedElsewhere] = useState(false);
   const [unavailableItems, setUnavailableItems] = useState<UnavailableRetailItem[] | null>(null);
+  const checkoutViewTracked = useRef(false);
 
   const { data: cart } = useGetRetailCart();
+
+  useEffect(() => {
+    if (checkoutViewTracked.current || !cart?.items.length) return;
+    checkoutViewTracked.current = true;
+    trackEvent("retail_checkout_viewed", {
+      item_count: cart.itemCount,
+      quantity_total: cart.items.reduce((total, item) => total + item.quantity, 0),
+      aftercare_recommendation_used: Boolean(aftercareRecommendationId),
+    });
+  }, [aftercareRecommendationId, cart]);
 
   useEffect(() => {
     const savedCoupon = sessionStorage.getItem("lumera_retail_coupon");
@@ -627,6 +644,14 @@ export function RetailCheckoutPage() {
       } as any
     }, {
       onSuccess: (order) => {
+        trackEvent("retail_order_completed", {
+          item_count: preview.cart.itemCount,
+          quantity_total: preview.cart.items.reduce((total, item) => total + item.quantity, 0),
+          delivery_method: form.deliveryMethod ?? "courier",
+          payment_method: form.paymentMethod ?? "bank_transfer",
+          coupon_applied: Boolean(appliedCoupon),
+          aftercare_recommendation_used: Boolean(aftercareRecommendationId),
+        });
         sessionStorage.setItem("retail-order", JSON.stringify(order));
         sessionStorage.removeItem("lumera_retail_coupon");
         sessionStorage.removeItem("lumera_retail_aftercare");

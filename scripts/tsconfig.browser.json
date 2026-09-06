@@ -4,19 +4,40 @@
   // never saw them and a missing import survived until the statement ran.
   //
   // They need the DOM lib because page.evaluate callbacks execute in the
-  // browser and reference window/document. That is also why
-  // education-gallery.spec.ts is excluded: it imports api-server route
-  // source, and checking server code under the DOM lib reports conflicts
-  // that are not real (Node accepts a Buffer as a fetch body and returns a
-  // Node ReadableStream; the DOM types do not). That file is still kept
-  // free of its own type errors, so the exclusion can be lifted once the
-  // api-server is consumable through declaration output.
+  // browser and reference window/document.
+  //
+  // The include list enumerates every extension rather than naming the
+  // directory, and covers the playwright config files, because
+  // check-browser-spec-types.ts verifies that each browser spec and runner
+  // config is actually part of this program — a bare "browser" entry silently
+  // left the config files unchecked.
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "jsx": "preserve",
+    "lib": ["es2022", "dom", "dom.iterable"],
     "noEmit": true,
-    "types": ["node"],
-    "lib": ["es2022", "dom", "dom.iterable"]
+    "noUncheckedSideEffectImports": true,
+    "rootDir": "..",
+    "types": ["node"]
   },
-  "include": ["browser"],
-  "exclude": ["browser/education-gallery.spec.ts"]
+  "include": [
+    "browser/**/*.ts",
+    "browser/**/*.tsx",
+    "browser/**/*.mts",
+    "browser/**/*.cts",
+    "browser/**/*.js",
+    "browser/**/*.jsx",
+    "browser/**/*.mjs",
+    "browser/**/*.cjs",
+    "playwright*.config.ts",
+    "playwright*.config.tsx",
+    "playwright*.config.mts",
+    "playwright*.config.cts",
+    "playwright*.config.js",
+    "playwright*.config.jsx",
+    "playwright*.config.mjs",
+    "playwright*.config.cjs"
+  ]
 }

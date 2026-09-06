@@ -9,7 +9,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import {
-  CreateEducationOperationalBookingBody, CreateEducationOperationalBookingHeader,
+  CreateEducationOperationalBookingBody,
   CreateEducationOperationalBookingResponse, GetEducationCourseAvailabilityParams,
   GetEducationCourseAvailabilityQueryParams, GetEducationCourseAvailabilityResponse,
   CreateEducationCenterOperationalStaffBody, CreateEducationCenterOperationalStaffParams,
@@ -25,13 +25,13 @@ import {
   ListEducationEducatorWeeklyAvailabilityParams, ListEducationEducatorWeeklyAvailabilityResponse,
   UpdateEducationEducatorWeeklyAvailabilityBody, UpdateEducationEducatorWeeklyAvailabilityParams, UpdateEducationEducatorWeeklyAvailabilityResponse,
   UpdateEducationEducatorAbsenceBody, UpdateEducationEducatorAbsenceParams, UpdateEducationEducatorAbsenceResponse,
-  CommitEducationCourseRecurrenceBody, CommitEducationCourseRecurrenceHeader, CommitEducationCourseRecurrenceParams, CommitEducationCourseRecurrenceResponse,
+  CommitEducationCourseRecurrenceBody, CommitEducationCourseRecurrenceParams, CommitEducationCourseRecurrenceResponse,
   PreviewEducationCourseRecurrenceBody, PreviewEducationCourseRecurrenceParams, PreviewEducationCourseRecurrenceResponse,
   GetEducationCenterOperationsCalendarParams, GetEducationCenterOperationsCalendarQueryParams, GetEducationCenterOperationsCalendarResponse,
   GetMyEducationOperationalBookingParams, GetMyEducationOperationalBookingResponse,
   ListMyEducationOperationalBookingsResponse,
   CancelEducationOperationalBookingBody, CancelEducationOperationalBookingParams, CancelEducationOperationalBookingResponse,
-  RescheduleEducationOperationalBookingBody, RescheduleEducationOperationalBookingHeader, RescheduleEducationOperationalBookingParams, RescheduleEducationOperationalBookingResponse,
+  RescheduleEducationOperationalBookingBody, RescheduleEducationOperationalBookingParams, RescheduleEducationOperationalBookingResponse,
   GetEducationOperationalAttendanceParams, GetEducationOperationalAttendanceResponse, UpsertEducationOperationalAttendanceBody, UpsertEducationOperationalAttendanceParams, UpsertEducationOperationalAttendanceResponse,
   SubstituteEducationSessionEducatorBody, SubstituteEducationSessionEducatorParams, SubstituteEducationSessionEducatorResponse,
   CancelEducationOperationalSessionBody, CancelEducationOperationalSessionParams, CancelEducationOperationalSessionResponse,
@@ -72,6 +72,7 @@ import {
 import { reconcileOperationalEducationEnrollmentInTx } from "../lib/education-certificate-eligibility";
 import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
 import { safeIsoTimestamp } from "../lib/date-serialization";
+import { parseEducationIdempotencyKey } from "../lib/education-idempotency";
 
 const router: IRouter = Router();
 
@@ -557,7 +558,7 @@ router.post("/education/operations/courses/:courseId/recurrence/preview", async 
 router.post("/education/operations/courses/:courseId/recurrence/commit", async (req, res): Promise<void> => {
   const params = CommitEducationCourseRecurrenceParams.safeParse(req.params);
   const body = CommitEducationCourseRecurrenceBody.safeParse(req.body);
-  const headers = CommitEducationCourseRecurrenceHeader.safeParse({ "Idempotency-Key": requestValue(req.headers["idempotency-key"]) });
+  const headers = parseEducationIdempotencyKey("commitEducationCourseRecurrence", req.headers["idempotency-key"]);
   if (!params.success) { invalid(res, params.error.message); return; }
   if (!body.success) { invalid(res, body.error.message); return; }
   if (!headers.success) { invalid(res, headers.error.message); return; }
@@ -582,7 +583,7 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
       if (!lockedCourse || lockedCourse.format === "online") throw new Error("ONLINE_SESSION_UNAVAILABLE");
       const [existing] = await tx.select().from(educationRecurrenceCommandsTable).where(and(
         eq(educationRecurrenceCommandsTable.actorUserId, target.access.user!.id),
-        eq(educationRecurrenceCommandsTable.idempotencyKey, headers.data["Idempotency-Key"]),
+        eq(educationRecurrenceCommandsTable.idempotencyKey, headers.key),
       )).limit(1);
       if (existing) {
         if (existing.requestFingerprint !== fingerprint) throw new Error("IDEMPOTENCY_MISMATCH");
@@ -622,7 +623,7 @@ router.post("/education/operations/courses/:courseId/recurrence/commit", async (
         }).where(eq(coursesTable.id, course.id));
       }
       await tx.insert(educationRecurrenceCommandsTable).values({
-        centerId: course.centerId!, actorUserId: target.access.user!.id, idempotencyKey: headers.data["Idempotency-Key"],
+        centerId: course.centerId!, actorUserId: target.access.user!.id, idempotencyKey: headers.key,
         requestFingerprint: fingerprint, responseSnapshot: snapshot,
       });
       return snapshot;
@@ -1190,7 +1191,7 @@ router.post("/education/operations/bookings/:bookingGroupId/cancel", async (req,
 router.patch("/education/operations/bookings/:bookingGroupId/reschedule", async (req, res): Promise<void> => {
   const params = RescheduleEducationOperationalBookingParams.safeParse(req.params);
   const body = RescheduleEducationOperationalBookingBody.safeParse(req.body);
-  const headers = RescheduleEducationOperationalBookingHeader.safeParse({ "Idempotency-Key": requestValue(req.headers["idempotency-key"]) });
+  const headers = parseEducationIdempotencyKey("rescheduleEducationOperationalBooking", req.headers["idempotency-key"]);
   if (!params.success) { invalid(res, params.error.message); return; }
   if (!body.success) { invalid(res, body.error.message); return; }
   if (!headers.success) { invalid(res, headers.error.message); return; }
@@ -1218,7 +1219,7 @@ router.patch("/education/operations/bookings/:bookingGroupId/reschedule", async 
     res.status(409).json({ code: "PARTIAL_RESCHEDULE_UNSUPPORTED", error: "Delimična promena termina nije podržana. Otkažite i ponovo rezervišite pojedinačna mesta." }); return;
   }
   const fingerprint = operationFingerprint({ targetSessionId: body.data.targetSessionId, participantIds: body.data.participantIds ?? null });
-  const receiptKey = `education-booking-reschedule:${visible.id}:${headers.data["Idempotency-Key"]}`;
+  const receiptKey = `education-booking-reschedule:${visible.id}:${headers.key}`;
   try {
     const result = await db.transaction(async (tx) => {
       const [receipt] = await tx.select().from(educationOutboxTable).where(eq(educationOutboxTable.dedupeKey, receiptKey)).for("update").limit(1);
@@ -1294,7 +1295,7 @@ router.patch("/education/operations/bookings/:bookingGroupId/reschedule", async 
 
 router.post("/education/operations/bookings", async (req, res): Promise<void> => {
   const body = CreateEducationOperationalBookingBody.safeParse(req.body);
-  const headers = CreateEducationOperationalBookingHeader.safeParse({ "Idempotency-Key": requestValue(req.headers["idempotency-key"]) });
+  const headers = parseEducationIdempotencyKey("createEducationOperationalBooking", req.headers["idempotency-key"]);
   if (!body.success) { invalid(res, body.error.message); return; }
   if (!headers.success) { invalid(res, headers.error.message); return; }
   const [course] = await db.select().from(coursesTable).where(and(eq(coursesTable.id, body.data.courseId), eq(coursesTable.published, true), eq(coursesTable.archived, false))).limit(1);
@@ -1339,7 +1340,7 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
       .where(and(eq(courseSessionsTable.id, lockedSession.id), sql`${courseSessionsTable.startsAt} <= now()`)).limit(1);
     if (started.length) throw new Error("SESSION_STARTED");
     const [existing] = await tx.select().from(educationBookingGroupsTable).where(and(
-      eq(educationBookingGroupsTable.createdByUserId, auth.user!.id), eq(educationBookingGroupsTable.idempotencyKey, headers.data["Idempotency-Key"]),
+      eq(educationBookingGroupsTable.createdByUserId, auth.user!.id), eq(educationBookingGroupsTable.idempotencyKey, headers.key),
     )).limit(1);
     if (existing) {
       if (existing.requestFingerprint !== fingerprint) throw new Error("IDEMPOTENCY_MISMATCH");
@@ -1375,7 +1376,7 @@ router.post("/education/operations/bookings", async (req, res): Promise<void> =>
     const [group] = await tx.insert(educationBookingGroupsTable).values({
       centerId: course.centerId!, courseId: course.id, sessionId: lockedSession.id,
       purchaserId: auth.user!.id, createdByUserId: auth.user!.id,
-      idempotencyKey: headers.data["Idempotency-Key"], requestFingerprint: fingerprint, status: active ? "pending" : "waitlisted",
+      idempotencyKey: headers.key, requestFingerprint: fingerprint, status: active ? "pending" : "waitlisted",
     }).returning();
     const participantRows = await tx.insert(educationBookingParticipantsTable).values(normalizedParticipants.map((participant) => ({
       bookingGroupId: group!.id, userId: participant.userId ?? null, fullName: participant.fullName,

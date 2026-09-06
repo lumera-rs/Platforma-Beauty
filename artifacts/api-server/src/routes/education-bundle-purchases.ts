@@ -21,6 +21,7 @@ import { educationIpsQrPayload, educationIpsRuntimeEnvironment } from "../lib/ed
 import { assertOnlineEnrollmentRequest, DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION, issueOnlineEnrollmentFields } from "../lib/education-entitlement";
 import { eligibleEducationCenterSql, hasActiveEducationSubscription } from "../lib/education-center-eligibility";
 import { writeEducationFinancialAuditInTx } from "../lib/education-financial-audit";
+import { parseEducationIdempotencyKey } from "../lib/education-idempotency";
 
 const router: IRouter = Router();
 const purchaseBody = z.object({
@@ -169,8 +170,10 @@ router.get("/education/bundles/:bundleId", async (req, res) => {
 });
 router.post("/education/bundles/:bundleId/purchases", async (req, res) => {
   const buyer = await user(req, res); if (!buyer) return;
-  const parsed = purchaseBody.safeParse(req.body); const key = req.header("Idempotency-Key")?.trim();
-  if (!parsed.success || !key || key.length > 200) { res.status(400).json({ error: "Ispravan zahtev i Idempotency-Key su obavezni." }); return; }
+  const parsed = purchaseBody.safeParse(req.body);
+  const parsedKey = parseEducationIdempotencyKey("purchaseEducationBundle", req.headers["idempotency-key"]);
+  if (!parsed.success || !parsedKey.success) { res.status(400).json({ error: "Ispravan zahtev i Idempotency-Key su obavezni." }); return; }
+  const key = parsedKey.key;
   const fp = fingerprint(parsed.data);
   const prior = await db.select().from(educationBundlePurchasesTable).where(and(eq(educationBundlePurchasesTable.purchaserId, buyer.id), eq(educationBundlePurchasesTable.idempotencyKey, key))).limit(1);
   if (prior[0]) { if (prior[0].idempotencyFingerprint !== fp) { res.status(409).json({ error: "Idempotency-Key je već korišćen za drugi zahtev." }); return; } res.json(view(prior[0], true)); return; }
