@@ -37,6 +37,9 @@ import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
+const customerPhone = `+3816${(
+  BigInt(`0x${suffix.replaceAll("-", "").slice(0, 12)}`) % 100_000_000n
+).toString().padStart(8, "0")}`;
 const primarySalonDate = "2099-10-18";
 const movedSeriesDate = "2099-10-19";
 const completedOrCancelledDate = "2099-10-20";
@@ -361,8 +364,8 @@ async function run(): Promise<void> {
       userId: customer!.id,
       firstName: customer!.firstName,
       lastName: customer!.lastName,
-      phone: "+381611234529",
-      phoneNormalized: "+381611234529",
+      phone: customerPhone,
+      phoneNormalized: customerPhone,
     }).returning();
     // A second, unrelated client. Resource capacity is about two different
     // people occupying two units at once; the same person cannot be in both,
@@ -695,8 +698,8 @@ async function run(): Promise<void> {
     );
 
     await db.update(usersTable).set({
-      phone: "+381611234529",
-      phoneNormalized: "+381611234529",
+      phone: customerPhone,
+      phoneNormalized: customerPhone,
     }).where(eq(usersTable.id, customer!.id));
     await db.update(servicesTable).set({
       homeServiceAvailable: true,

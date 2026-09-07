@@ -102,7 +102,7 @@
 - [Employee schedule weekdays](employee-schedule-weekdays.md) — location schedule fixtures use ISO weekdays 1–7; zero-based days silently trigger fallback availability.
 - [Grouped booking mutation boundary](grouped-booking-mutation-boundary.md) — every legacy single-item mutation must defer to the canonical group layout boundary.
 - [Web Push trust boundaries](web-push-trust-boundaries.md) — validate provider endpoints, VAPID key pairs, source freshness, and scope-relative links before offline delivery.
-- [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — connectionTimeoutMillis also limits queued checkout of existing clients, not just new connections.
+- [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — deadlines cover busy clients; custom checkout queues must drain when the pool closes.
 - [Deployment runtime detection](deployment-runtime-detection.md) — destructive harnesses need layered deployment guards; REPLIT_ENVIRONMENT alone is not authoritative.
 - [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.
 - [Booking overload admission](booking-overload-admission.md) — bound every booking creator as one workload; capacity 429s belong in the full-arrival latency objective.

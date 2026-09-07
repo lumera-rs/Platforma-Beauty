@@ -537,8 +537,23 @@ export const servicesTable = pgTable("services", {
       or (${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} = ${table.durationMinutes})
     )
   `),
+  check("services_processing_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (
+        ${table.durationMinutes} = ${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes}
+        and ${table.durationMinutes} > 0
+      )
+    )
+  `),
   check("services_seat_capacity_check", sql`${table.seatCapacity} >= 1`),
-  check("services_required_employee_count_check", sql`${table.requiredEmployeeCount} >= 1`),
+  check(
+    "services_required_employee_count_check",
+    sql`${table.requiredEmployeeCount} >= 1 and ${table.requiredEmployeeCount} <= 20`,
+  ),
   check("services_deposit_amount_check", sql`${table.depositAmount} is null or ${table.depositAmount} >= 0`),
 ]);
 

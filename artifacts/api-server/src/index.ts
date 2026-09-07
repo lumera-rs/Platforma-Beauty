@@ -24,7 +24,10 @@ import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
 import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts, runMalformedWebhookAlerts } from "./lib/delivery-report-alerts";
 import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
-import { createResilientScheduledJob } from "./lib/scheduler-resilience";
+import {
+  createResilientScheduledJob,
+  runSchedulerStartupSweep,
+} from "./lib/scheduler-resilience";
 import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
@@ -248,12 +251,10 @@ const retryInterval = setInterval(() => {
   void transactionalEmailOutbox.run();
 }, 60_000);
 retryInterval.unref();
-void transactionalEmailOutbox.run();
 const smsOutboxInterval = setInterval(() => {
   void smsOutboxDeliveries.run();
 }, 60_000);
 smsOutboxInterval.unref();
-void smsOutboxDeliveries.run();
 
 // Education session lifecycle: drain expired waitlist offers and auto-cancel
 // under-enrolled sessions. Runs every 5 minutes on a self-unreferencing timer
@@ -262,37 +263,30 @@ const educationMaintenanceInterval = setInterval(() => {
   void educationSessionMaintenance.run();
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
-void educationSessionMaintenance.run();
 const educationOutboxInterval = setInterval(() => {
   void educationOutboxDeliveries.run();
   void educationReminderSweep.run();
 }, 60_000);
 educationOutboxInterval.unref();
-void educationOutboxDeliveries.run();
-void educationReminderSweep.run();
 
 const featuredPlacementPaymentReminderInterval = setInterval(() => {
   void featuredPlacementPaymentReminders.run();
 }, 15 * 60_000);
 featuredPlacementPaymentReminderInterval.unref();
-void featuredPlacementPaymentReminders.run();
 const educationSubscriptionInterval = setInterval(() => {
   void educationSubscriptionLifecycle.run();
 }, 60 * 60_000);
 educationSubscriptionInterval.unref();
-void educationSubscriptionLifecycle.run();
 
 const beautyJobsExpiryInterval = setInterval(() => {
   void beautyJobsExpirySweep.run();
 }, 5 * 60_000);
 beautyJobsExpiryInterval.unref();
-void beautyJobsExpirySweep.run();
 
 const referralMaintenanceInterval = setInterval(() => {
   void referralMaintenance.run();
 }, 5 * 60_000);
 referralMaintenanceInterval.unref();
-void referralMaintenance.run();
 
 // The database trigger writes this durable queue in the same stock-update
 // transaction (including admin adjustments and cancellation credits). Drain it
@@ -301,46 +295,37 @@ const productWaitlistNotificationsInterval = setInterval(() => {
   void productWaitlistNotifications.run();
 }, 60_000);
 productWaitlistNotificationsInterval.unref();
-void productWaitlistNotifications.run();
 
 const retailSubscriptionCyclesInterval = setInterval(() => {
   void retailSubscriptionCycles.run();
 }, 60_000);
 retailSubscriptionCyclesInterval.unref();
-void retailSubscriptionCycles.run();
 
 const retailCartReminderSweepInterval = setInterval(() => {
   void retailCartReminderSweep.run();
 }, 15 * 60_000);
 retailCartReminderSweepInterval.unref();
-void retailCartReminderSweep.run();
 const retailReviewInvitationSweepInterval = setInterval(() => { void retailReviewInvitationSweep.run(); }, 60 * 60_000);
 retailReviewInvitationSweepInterval.unref();
-void retailReviewInvitationSweep.run();
 const appointmentCustomerEventsInterval = setInterval(() => {
   void appointmentReminders.run();
   void appointmentReviewInvitations.run();
 }, 60_000);
 appointmentCustomerEventsInterval.unref();
-void appointmentReminders.run();
-void appointmentReviewInvitations.run();
 const systemPushDeliveriesInterval = setInterval(() => {
   void systemPushDeliveries.run();
 }, 30_000);
 systemPushDeliveriesInterval.unref();
-void systemPushDeliveries.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
 }, 5 * 60_000);
 educationGalleryCleanupInterval.unref();
-void educationGalleryCleanup.run();
 
 const mediaCleanupInterval = setInterval(() => {
   void mediaUploadCleanup.run();
 }, 5 * 60_000);
 mediaCleanupInterval.unref();
-void mediaUploadCleanup.run();
 
 const compatibilityImageCleanupInterval = setInterval(() => {
   void compatibilityImageCleanup.run();
@@ -356,14 +341,12 @@ const automationWorkerInterval = setInterval(() => {
   void automationWorker.run();
 }, 15 * 60_000);
 automationWorkerInterval.unref();
-void automationWorker.run();
 
 // Platform B2C aftercare outbox, delivery, conversion and replenishment sweep.
 const aftercareWorkerInterval = setInterval(() => {
   void aftercareWorker.run();
 }, 15 * 60_000);
 aftercareWorkerInterval.unref();
-void aftercareWorker.run();
 
 // Delivery-report silence alerts: if automation messages went out recently but
 // no verified webhook events arrived, email administrators (deduplicated per
@@ -376,14 +359,14 @@ const deliveryReportAlertInterval = setInterval(() => {
   void beautyJobEmailDeliveryAlerts.run();
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
-void deliveryReportSilenceAlerts.run();
-void deliveryReportRecoveryAlerts.run();
-void brevoWebhookCoverageMonitor.run();
-void malformedWebhookAlerts.run();
-void beautyJobEmailDeliveryAlerts.run();
 compatibilityImageCleanupInterval.unref();
-void compatibilityImageCleanup.run();
-void communicationArchive.run();
+
+// Boot performs one ordered sweep instead of launching every database-backed
+// worker at once. Recurring timers still use each job's single-flight guard and
+// the shared FIFO activity/connection gates.
+void runSchedulerStartupSweep(scheduledJobs).catch((error) => {
+  logger.error({ err: error }, "Initial scheduler sweep failed");
+});
 
 const databaseMetricsInterval = setInterval(() => {
   logger.debug(
