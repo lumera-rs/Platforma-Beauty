@@ -173,9 +173,19 @@ const ADMIN_INITIAL_GET_FIXTURES: Record<string, RegisteredAdminFixture> = {
     schema: apiSchemas.AdminListOrdersResponse,
     payload: [],
   },
+  // The admin lists read their paginated variants; the unpaginated routes stay
+  // registered because other screens still call them.
+  "/api/admin/orders/page": {
+    schema: apiSchemas.AdminListOrdersPageResponse,
+    payload: { items: [], page: 1, pageSize: 20, hasNext: false },
+  },
   "/api/admin/price-inquiries": {
     schema: apiSchemas.AdminListPriceInquiriesResponse,
     payload: [],
+  },
+  "/api/admin/price-inquiries/page": {
+    schema: apiSchemas.AdminListPriceInquiriesPageResponse,
+    payload: { items: [], page: 1, pageSize: 20, hasNext: false },
   },
   "/api/admin/product-categories": {
     schema: apiSchemas.AdminListProductCategoriesResponse,
@@ -421,6 +431,14 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         });
         return;
       }
+      if (path === "/api/admin/salons/page" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/salons/page", apiSchemas.AdminListSalonsPageResponse, {
+            items: [salon], page: 1, pageSize: 20, hasNext: false,
+          }),
+        });
+        return;
+      }
       if (path === `/api/admin/salons/${salonId}` && method === "GET") {
         const detail = {
             ...salon,
@@ -447,6 +465,14 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       if (path === "/api/admin/users" && method === "GET") {
         await route.fulfill({
           json: checkedApiFixture("/api/admin/users", apiSchemas.AdminListUsersResponse, [user]),
+        });
+        return;
+      }
+      if (path === "/api/admin/users/page" && method === "GET") {
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/users/page", apiSchemas.AdminListUsersPageResponse, {
+            items: [user], page: 1, pageSize: 20, hasNext: false,
+          }),
         });
         return;
       }
