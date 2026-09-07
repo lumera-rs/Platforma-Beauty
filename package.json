@@ -53,7 +53,7 @@
     "test:education-popular-featured-ranking": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-popular-featured-ranking.test.ts",
     "test:education-featured-eligibility-consistency": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-featured-eligibility-consistency.test.ts",
     "test:education-course-featured-authorization": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-course-featured-authorization.test.ts",
-    "test:query-budgets": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
+    "test:query-budgets": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
     "test:crm-backfill": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/seed.test.ts",
     "test:production-demo-seed": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/production-demo-seed.test.ts",
     "test:appointment-concurrency": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts",
