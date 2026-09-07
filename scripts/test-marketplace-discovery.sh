@@ -2,6 +2,8 @@
 set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/destructive-test-runtime.sh"
+assert_destructive_test_runtime_allowed "Marketplace discovery tests"
 resolve_api_base_url
 check_api_server
 

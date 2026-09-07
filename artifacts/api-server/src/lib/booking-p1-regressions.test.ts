@@ -21,9 +21,12 @@ import {
   servicesTable,
   usersTable,
 } from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBookingCommandSchema } from "./booking-command-schema";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Booking P1 regression tests");
 
 async function post(baseUrl: string, path: string, session: string, body: unknown) {
   const response = await fetch(`${baseUrl}/api${path}`, {

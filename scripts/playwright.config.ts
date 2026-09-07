@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test";
 import { assertDestructiveTestRuntimeAllowed } from "./src/destructive-test-runtime";
+import { runBrowserSpecTypeCheck } from "./src/check-browser-spec-types";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Browser tests");
+if (process.env.LUMERA_BROWSER_SPEC_TYPES_CHECKED !== "1") {
+  runBrowserSpecTypeCheck();
+}
 
 const chromiumExecutablePath = process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const hostMatrixPublishedHost = "lumera-published.example.test";
@@ -117,20 +121,12 @@ if (isolatedBrowserTest) {
   }
 }
 
-// Diagnostic escape hatch: lets a run distinguish "this environment is too slow
-// for the default 30 s budget" from "the page is actually broken". Unset in CI
-// and in every wired suite, so the default budget is unchanged.
-const timeoutOverrideMs = Number(process.env.LUMERA_PLAYWRIGHT_TIMEOUT_MS);
-
-const expectTimeoutOverrideMs = Number(process.env.LUMERA_PLAYWRIGHT_EXPECT_TIMEOUT_MS);
-
+// A suite that needs a longer per-test budget passes `timeoutMs` to its
+// isolated runner, which forwards it as Playwright's `--timeout`. It is
+// deliberately not read from the environment here: check-browser-spec-types.ts
+// resolves this config statically to prove every spec is covered, and a
+// runtime-dependent expression would defeat that check.
 export default defineConfig({
-  ...(Number.isFinite(timeoutOverrideMs) && timeoutOverrideMs > 0
-    ? { timeout: timeoutOverrideMs }
-    : {}),
-  ...(Number.isFinite(expectTimeoutOverrideMs) && expectTimeoutOverrideMs > 0
-    ? { expect: { timeout: expectTimeoutOverrideMs } }
-    : {}),
   testDir: "./browser",
   testMatch: ciDiagnosticsProbe ? "ci-failure-diagnostics-probe.spec.ts" : undefined,
   globalSetup: ciDiagnosticsProbe ? undefined : "./src/browser-preflight.ts",

@@ -5,6 +5,10 @@ import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/pro
 import { createServer } from "node:net";
 import path from "node:path";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import {
+  pipeRedactedDatabaseOutput,
+  redactDatabaseCommandOutput,
+} from "./safe-child-process-output";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 const stateRoot = path.join(workspaceRoot, ".lumera-test-state");
@@ -18,6 +22,16 @@ interface IsolatedSuiteConfiguration {
 
 export interface IsolatedBrowserSuiteConfiguration extends IsolatedSuiteConfiguration {
   specPath: string;
+  /**
+   * Per-test budget in milliseconds, passed to Playwright as `--timeout`.
+   *
+   * It lives here rather than in playwright.config.ts because the config has to
+   * stay statically analysable: check-browser-spec-types.ts resolves it to
+   * verify every spec is covered, and an env-dependent expression there defeats
+   * that. A suite whose specs are legitimately slow raises its own budget;
+   * everything else keeps Playwright's default.
+   */
+  timeoutMs?: number;
 }
 
 export interface IsolatedApiSuiteConfiguration extends IsolatedSuiteConfiguration {
@@ -232,24 +246,28 @@ function runCommand(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let output = "";
+    const captureOutput = Boolean(options?.failOnOutput)
+      || Object.keys(environment).some((key) => /(?:^|_)DATABASE_URL$/.test(key));
     const child = spawn(command, args, {
       cwd: workspaceRoot,
       detached: process.platform !== "win32",
       env: environment,
-      stdio: options?.failOnOutput ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
     options?.onSpawn?.(child);
-    if (options?.failOnOutput) {
-      const writeOutput = (stream: NodeJS.WriteStream, chunk: Buffer) => {
-        output += chunk.toString();
-        stream.write(chunk);
-      };
-      child.stdout?.on("data", (chunk: Buffer) => writeOutput(process.stdout, chunk));
-      child.stderr?.on("data", (chunk: Buffer) => writeOutput(process.stderr, chunk));
+    if (captureOutput) {
+      child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    } else {
+      pipeRedactedDatabaseOutput(child, environment);
     }
 
     child.once("error", () => reject(new Error(`${label} could not be started.`)));
     child.once("exit", (code, signal) => {
+      if (output) {
+        const stream = code === 0 ? process.stdout : process.stderr;
+        stream.write(redactDatabaseCommandOutput(output, environment));
+      }
       if (code === 0 && (!options?.failOnOutput || !options.failOnOutput.test(output))) {
         resolve();
       } else {
@@ -273,8 +291,9 @@ function startProcess(
     cwd: workspaceRoot,
     detached: process.platform !== "win32",
     env: environment,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  pipeRedactedDatabaseOutput(child, environment);
 
   child.once("error", () => {
     console.error(`${label} could not be started.`);
@@ -526,6 +545,12 @@ export async function recoverInterruptedHarnessDatabaseSuites(
 export async function runIsolatedBrowserSuite(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
+  await runCommand(
+    path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
+    [path.join(workspaceRoot, "scripts", "src", "check-browser-spec-types.ts")],
+    process.env,
+    "Browser spec static checks",
+  );
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
@@ -551,6 +576,7 @@ export async function runIsolatedBrowserSuite(
     ...process.env,
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
+    LUMERA_BROWSER_SPEC_TYPES_CHECKED: "1",
     LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
     [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",
@@ -655,6 +681,7 @@ export async function runIsolatedBrowserSuite(
         configuration.specPath,
         "--config",
         "playwright.config.ts",
+        ...(configuration.timeoutMs ? ["--timeout", String(configuration.timeoutMs)] : []),
       ],
       { ...testEnvironment, LUMERA_WEB_BASE_URL: webBaseUrl },
       configuration.testLabel,

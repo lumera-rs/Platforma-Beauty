@@ -351,6 +351,7 @@ import
   AdminGetSalonResponse,
   AdminListOrdersQueryParams,
   AdminListOrdersResponse,
+  AdminListOrdersPageResponse,
   AdminListRetailOrdersQueryParams,
   AdminListEmailCampaignsResponse,
   AdminListCourierServicesResponse,
@@ -377,7 +378,9 @@ import
   AdminDeleteSubscriptionPlanParams,
   AdminListReviewsQueryParams,
   AdminListSalonsQueryParams,
+  AdminListSalonsPageResponse,
   AdminListUsersQueryParams,
+  AdminListUsersPageResponse,
   AdminUpdateLoyaltyTierBody,
   AdminUpdateLoyaltyTierParams,
   AdminUpdateReviewBody,
@@ -3173,6 +3176,7 @@ async function modulesForCourse(courseId: string, completedLessonIds = new Set<s
 }
 import { lockEducationScheduleResources } from "../lib/education-locks";
 import { educationEducatorHasAbsenceOverlap, educationLocalDatesTouched } from "../lib/education-availability-store";
+import { parseEducationIdempotencyKey } from "../lib/education-idempotency";
 
 async function sessionsForCourse(courseId: string, includeLocation = false) {
   const sessions = await db.select({ session: courseSessionsTable, educatorStaffId: educationSessionEducatorsTable.staffId })
@@ -18643,9 +18647,22 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
   */
 });
 
-router.get("/admin/orders", async (req, res): Promise<void> => {
+const listAdminOrders = async (req: Request, res: Response, paged: boolean): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const parsed = AdminListOrdersQueryParams.safeParse(req.query);
+  for (const field of ["from", "to"] as const) {
+    const value = req.query[field];
+    if (value !== undefined && (typeof value !== "string" || !isValidCalendarDate(value))) {
+      res.status(400).json({ error: `${field} mora biti ispravan datum u formatu YYYY-MM-DD.` });
+      return;
+    }
+  }
+  const parseQueryDate = (value: unknown) =>
+    typeof value === "string" ? new Date(`${value}T12:00:00.000Z`) : value;
+  const parsed = AdminListOrdersQueryParams.safeParse({
+    ...req.query,
+    from: parseQueryDate(req.query.from),
+    to: parseQueryDate(req.query.to),
+  });
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const q = parsed.data;
   // page/pageSize are read directly from req.query (independent of the generated
@@ -18657,8 +18674,16 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   if (q.status) sqlPredicates.push(eq(ordersTable.status, q.status));
   if (q.paymentStatus) sqlPredicates.push(eq(ordersTable.paymentStatus, q.paymentStatus));
   if (q.deliveryMethod) sqlPredicates.push(eq(ordersTable.deliveryMethod, q.deliveryMethod));
-  if (q.from) sqlPredicates.push(gte(ordersTable.createdAt, new Date(`${q.from}T00:00:00.000Z`)));
-  if (q.to) sqlPredicates.push(lte(ordersTable.createdAt, new Date(`${q.to}T23:59:59.999Z`)));
+  if (q.from) {
+    const from = new Date(q.from);
+    from.setUTCHours(0, 0, 0, 0);
+    sqlPredicates.push(gte(ordersTable.createdAt, from));
+  }
+  if (q.to) {
+    const to = new Date(q.to);
+    to.setUTCHours(23, 59, 59, 999);
+    sqlPredicates.push(lte(ordersTable.createdAt, to));
+  }
 
   // The `salon` filter is a hard AND constraint: resolve matching salon IDs by
   // name/email and require the order to belong to one of them. If nothing matches
@@ -18668,7 +18693,10 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     const matchingSalons = await db.select({ id: salonsTable.id }).from(salonsTable)
       .where(or(ilike(salonsTable.name, term), ilike(salonsTable.email, term)));
     const salonFilterIds = matchingSalons.map((s) => s.id);
-    if (!salonFilterIds.length) { res.json([]); return; }
+    if (!salonFilterIds.length) {
+      res.json(paged ? AdminListOrdersPageResponse.parse({ items: [], page: q.page, pageSize: q.pageSize, hasNext: false }) : []);
+      return;
+    }
     sqlPredicates.push(inArray(ordersTable.salonId, salonFilterIds));
   }
   // `search` matches the order id, shippingName, or the order's salon (name/email).
@@ -18687,12 +18715,17 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     sqlPredicates.push(or(...searchClauses)!);
   }
 
-  const orders = await db.select().from(ordersTable)
+  const orderRows = await db.select().from(ordersTable)
     .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
     .orderBy(desc(ordersTable.createdAt), desc(ordersTable.id))
-    .limit(limit).offset(offset);
+    .limit(paged ? limit + 1 : limit).offset(offset);
+  const hasNext = paged && orderRows.length > limit;
+  const orders = hasNext ? orderRows.slice(0, limit) : orderRows;
 
-  if (!orders.length) { res.json([]); return; }
+  if (!orders.length) {
+    res.json(paged ? AdminListOrdersPageResponse.parse({ items: [], page: q.page, pageSize: q.pageSize, hasNext: false }) : []);
+    return;
+  }
 
   // Fetch related rows only for the bounded result set.
   const orderIds = orders.map((o) => o.id);
@@ -18716,11 +18749,17 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
     arr.push(event);
     historiesByOrderId.set(event.orderId, arr);
   }
-  res.json(AdminListOrdersResponse.parse(orders.flatMap((order) => {
+  const result = AdminListOrdersResponse.parse(orders.flatMap((order) => {
     const salon = salonById.get(order.salonId);
     return salon ? [adminOrderDto(order, itemsByOrderId.get(order.id) ?? [], salon, historiesByOrderId.get(order.id) ?? [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
-  })));
-});
+  }));
+  res.json(paged
+    ? AdminListOrdersPageResponse.parse({ items: result, page: q.page, pageSize: q.pageSize, hasNext })
+    : result);
+};
+
+router.get("/admin/orders", (req, res) => listAdminOrders(req, res, false));
+router.get("/admin/orders/page", (req, res) => listAdminOrders(req, res, true));
 
 const allowedOrderTransitions: Record<string, string[]> = {
   pending: ["confirmed", "cancelled"],
@@ -23325,6 +23364,18 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   if (!params.success || !body.success) {
     res.status(400).json({ error: "Podaci grupne prijave nisu ispravni." }); return;
   }
+  // Validated through the generated header schema rather than by hand, so the
+  // spec stays the single source of truth: this operation's key is optional to
+  // send (unlike the other education commands, which use the shared required
+  // parameter), but a key that IS sent must be well formed. The previous
+  // `?.trim() || null` silently turned an empty or whitespace key into "absent"
+  // and only ever checked the length.
+  const parsedKey = parseEducationIdempotencyKey("createEducationGroupEnrollments", req.headers["idempotency-key"]);
+  if (!parsedKey.success) {
+    res.status(400).json({ error: "Idempotency-Key nije ispravan." }); return;
+  }
+  const idempotencyKey = parsedKey.key ?? null;
+
   const courseId = params.data.courseId;
   const access = await requireEducationAccess(req, res); if (!access) return;
   const salon = access.salon;
@@ -23375,11 +23426,6 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   }
   const effectiveDiscountPercent = (minGroup !== null && employeeIds.length >= minGroup) ? discountPercent : 0;
   const unitPrice = Math.max(0, Math.round(course.price * (1 - effectiveDiscountPercent / 100)));
-  const idempotencyKey = req.get("idempotency-key")?.trim() || null;
-  if (idempotencyKey && idempotencyKey.length > 200) {
-    res.status(400).json({ error: "Idempotency ključ je predugačak." }); return;
-  }
-
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
     const isSalonInternal = course.salonId === salon.id && !course.centerId;
@@ -24788,7 +24834,7 @@ router.post("/admin/education/sessions/process", async (req, res): Promise<void>
 
 // ── Admin Salons ──────────────────────────────────────────────────────────────
 
-router.get("/admin/salons", async (req, res): Promise<void> => {
+const listAdminSalons = async (req: Request, res: Response, paged: boolean): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
 
   const normalizedQuery = normalizeBooleanQuery(req.query, ["active", "featured"]);
@@ -24815,12 +24861,19 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
     sqlPredicates.push(sql`exists (select 1 from ${subscriptionsTable} where ${subscriptionsTable.salonId} = ${salonsTable.id} and ${subscriptionsTable.status}::text = ${subscriptionStatus})`);
   }
 
-  const salons = await db.select().from(salonsTable)
+  const salonRows = await db.select().from(salonsTable)
     .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
     .orderBy(desc(salonsTable.createdAt), desc(salonsTable.id))
-    .limit(limit).offset(offset);
+    .limit(paged ? limit + 1 : limit).offset(offset);
+  const hasNext = paged && salonRows.length > limit;
+  const salons = hasNext ? salonRows.slice(0, limit) : salonRows;
 
-  if (!salons.length) { res.json([]); return; }
+  if (!salons.length) {
+    res.json(paged ? AdminListSalonsPageResponse.parse({
+      items: [], page: parsedQuery.data.page, pageSize: parsedQuery.data.pageSize, hasNext: false,
+    }) : []);
+    return;
+  }
 
   const salonIds = salons.map((s) => s.id);
   const [subs, loyalties] = await Promise.all([
@@ -24863,8 +24916,13 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
     };
   });
 
-  res.json(result);
-});
+  res.json(paged ? AdminListSalonsPageResponse.parse({
+    items: result, page: parsedQuery.data.page, pageSize: parsedQuery.data.pageSize, hasNext,
+  }) : result);
+};
+
+router.get("/admin/salons", (req, res) => listAdminSalons(req, res, false));
+router.get("/admin/salons/page", (req, res) => listAdminSalons(req, res, true));
 
 router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
@@ -25075,7 +25133,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
 
 // ── Admin Users ───────────────────────────────────────────────────────────────
 
-router.get("/admin/users", async (req, res): Promise<void> => {
+const listAdminUsers = async (req: Request, res: Response, paged: boolean): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
 
   const normalizedQuery = normalizeBooleanQuery(req.query, ["active"]);
@@ -25099,12 +25157,14 @@ router.get("/admin/users", async (req, res): Promise<void> => {
     )!);
   }
 
-  const users = await db.select().from(usersTable)
+  const userRows = await db.select().from(usersTable)
     .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
     .orderBy(desc(usersTable.createdAt), desc(usersTable.id))
-    .limit(limit).offset(offset);
+    .limit(paged ? limit + 1 : limit).offset(offset);
+  const hasNext = paged && userRows.length > limit;
+  const users = hasNext ? userRows.slice(0, limit) : userRows;
 
-  res.json(users.map((u) => ({
+  const result = users.map((u) => ({
     id: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
@@ -25114,8 +25174,14 @@ router.get("/admin/users", async (req, res): Promise<void> => {
     active: u.active,
     passwordSetAt: safeIsoTimestamp(u.passwordSetAt),
     createdAt: safeIsoTimestamp(u.createdAt),
-  })));
-});
+  }));
+  res.json(paged ? AdminListUsersPageResponse.parse({
+    items: result, page: parsedQuery.data.page, pageSize: parsedQuery.data.pageSize, hasNext,
+  }) : result);
+};
+
+router.get("/admin/users", (req, res) => listAdminUsers(req, res, false));
+router.get("/admin/users/page", (req, res) => listAdminUsers(req, res, true));
 
 router.post("/admin/customers/setup", async (req, res): Promise<void> => {
   const admin = await requireSuperAdmin(req, res); if (!admin) return;

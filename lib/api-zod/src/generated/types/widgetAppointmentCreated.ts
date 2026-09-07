@@ -13,6 +13,7 @@ export interface WidgetAppointmentCreated {
   startTime: string;
   endTime: string;
   employeeName: string;
+  employeeIds?: string[];
   serviceName: string;
   salonName: string;
 }

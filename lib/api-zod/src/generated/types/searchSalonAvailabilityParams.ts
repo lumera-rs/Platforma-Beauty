@@ -14,6 +14,10 @@ serviceId: string;
 startDate: string;
 employeeId?: string;
 /**
+ * @maxItems 20
+ */
+employeeIds?: string[];
+/**
  * @minimum 1
  * @maximum 100
  */

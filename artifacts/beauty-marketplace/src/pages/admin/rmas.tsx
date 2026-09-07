@@ -1,8 +1,12 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminUpdateRmaStatus } from "@workspace/api-client-react";
-import { useQuery } from "@tanstack/react-query";
-import { customFetch } from "@workspace/api-client-react";
+import {
+  getAdminGetRmaQueryKey,
+  getAdminListRmasQueryKey,
+  useAdminGetRma,
+  useAdminListRmas,
+  useAdminUpdateRmaStatus,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,33 +15,23 @@ import { Loader2, AlertCircle, Image as ImageIcon, History, CheckCircle, XCircle
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { useQueryClient } from "@tanstack/react-query";
+import type { AdminRmaDetail, AdminRmaListItem } from "@workspace/api-client-react";
 
+type RmaOrderReferenceProps = {
+  rma: Pick<AdminRmaListItem | AdminRmaDetail, "orderId" | "retailOrderId">;
+  context: "list" | "detail";
+};
 
-interface RmaListItem {
-  id: string;
-  rmaNumber: string;
-  createdAt: string;
-  target: string;
-  owner: any;
-  orderId: string;
-  reason: string;
-  description: string;
-  status: string;
+export function RmaOrderReference({ rma, context }: RmaOrderReferenceProps) {
+  const reference = (rma.orderId ?? rma.retailOrderId)?.slice(0, 8) ?? "—";
+
+  return context === "list"
+    ? <>Porudžbina: {reference}</>
+    : <>Porudžbina #{reference}</>;
 }
 
-interface RmaDetail extends RmaListItem {
-  items: any[];
-  privatePhotos: string[];
-  auditTrail: any[];
-}
 export default function AdminRmas() {
-  const [page, setPage] = useState(1);
-  
-  
-  const { data, isLoading } = useQuery<RmaListItem[]>({
-    queryKey: ["admin", "rmas", page],
-    queryFn: () => customFetch(`/api/admin/rmas?page=${page}&pageSize=50`)
-  });
+  const { data, isLoading } = useAdminListRmas();
 
   
   const [selectedRmaId, setSelectedRmaId] = useState<string | null>(null);
@@ -82,10 +76,14 @@ export default function AdminRmas() {
                       </td>
                       <td className="p-3">
                         <div className="font-medium">
-                          {rma.target === 'b2c' ? (rma.owner as any)?.firstName + ' ' + (rma.owner as any)?.lastName : (rma.owner as any)?.businessName}
+                          {rma.target === 'b2c'
+                            ? [rma.owner.firstName, rma.owner.lastName].filter(Boolean).join(' ')
+                            : rma.owner.businessName}
                           <Badge variant="outline" className="ml-2 text-[10px] uppercase">{rma.target}</Badge>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">Porudžbina: {rma.orderId.slice(0,8)}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <RmaOrderReference rma={rma} context="list" />
+                        </div>
                       </td>
                       <td className="p-3">
                         <div className="font-medium text-foreground">{rma.reason}</div>
@@ -116,12 +114,11 @@ export default function AdminRmas() {
 }
 
 function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: boolean, onOpenChange: (open: boolean) => void }) {
-  
-  
-  const { data: rma, isLoading } = useQuery<RmaDetail>({
-    queryKey: ["admin", "rma", rmaId],
-    queryFn: () => customFetch(`/api/admin/rmas/${rmaId}`),
-    enabled: !!rmaId
+  const { data: rma, isLoading } = useAdminGetRma(rmaId, {
+    query: {
+      enabled: Boolean(rmaId),
+      queryKey: getAdminGetRmaQueryKey(rmaId),
+    },
   });
 
   const updateStatus = useAdminUpdateRmaStatus();
@@ -129,11 +126,11 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
   const qc = useQueryClient();
 
   const handleUpdate = (status: "IN_REVIEW" | "APPROVED" | "REJECTED") => {
-    updateStatus.mutate({ id: rmaId, data: { status: status as any } }, {
+    updateStatus.mutate({ id: rmaId, data: { status } }, {
       onSuccess: () => {
         toast.success("Status reklamacije je ažuriran.");
-        qc.invalidateQueries({ queryKey: ["admin", "rma", rmaId] });
-        qc.invalidateQueries({ queryKey: ["admin", "rmas"] });
+        qc.invalidateQueries({ queryKey: getAdminGetRmaQueryKey(rmaId) });
+        qc.invalidateQueries({ queryKey: getAdminListRmasQueryKey() });
       },
       onError: () => toast.error("Nije moguće ažurirati status reklamacije.")
     });
@@ -153,7 +150,7 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
               </div>
               <DialogTitle className="text-2xl font-serif">RMA: {rma.rmaNumber}</DialogTitle>
               <DialogDescription>
-                Porudžbina #{rma.orderId.slice(0,8)} · Kreirano: {new Date(rma.createdAt).toLocaleString("sr-RS")}
+                <RmaOrderReference rma={rma} context="detail" /> · Kreirano: {new Date(rma.createdAt).toLocaleString("sr-RS")}
               </DialogDescription>
             </DialogHeader>
 
@@ -164,14 +161,14 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
                   <div className="bg-muted/10 p-4 rounded-xl border space-y-1 text-sm">
                     {rma.target === 'b2c' ? (
                       <>
-                        <p><span className="font-semibold">Ime:</span> {(rma.owner as any)?.firstName} {(rma.owner as any)?.lastName}</p>
-                        <p><span className="font-semibold">Email:</span> {(rma.owner as any)?.email}</p>
+                        <p><span className="font-semibold">Ime:</span> {rma.owner.firstName} {rma.owner.lastName}</p>
+                        <p><span className="font-semibold">Email:</span> {rma.owner.email}</p>
                       </>
                     ) : (
                       <>
-                        <p><span className="font-semibold">Salon:</span> {(rma.owner as any)?.businessName}</p>
-                        <p><span className="font-semibold">PIB:</span> {(rma.owner as any)?.pib}</p>
-                        <p><span className="font-semibold">Email:</span> {(rma.owner as any)?.email}</p>
+                        <p><span className="font-semibold">Salon:</span> {rma.owner.businessName}</p>
+                        <p><span className="font-semibold">PIB:</span> {rma.owner.pib}</p>
+                        <p><span className="font-semibold">Email:</span> {rma.owner.email}</p>
                       </>
                     )}
                   </div>
@@ -180,9 +177,9 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Reklamirani artikli</h3>
                   <div className="border rounded-xl divide-y">
-                    {rma.items.map((item: any, i: number) => (
-                      <div key={i} className="p-3 text-sm flex justify-between items-center">
-                        <span className="font-medium">{item.productName || `Artikal ${item.orderItemId}`}</span>
+                    {rma.items.map((item) => (
+                      <div key={item.orderItemId} className="p-3 text-sm flex justify-between items-center">
+                        <span className="font-medium">{item.productName}</span>
                         <Badge variant="secondary">Kol: {item.quantity}</Badge>
                       </div>
                     ))}
@@ -215,8 +212,8 @@ function RmaDetailDialog({ rmaId, open, onOpenChange }: { rmaId: string, open: b
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5"><History className="w-4 h-4"/> Istorija i Audit</h3>
                   <div className="space-y-3">
-                    {rma.auditTrail.map((entry: any, i: number) => (
-                      <div key={i} className="bg-muted/10 p-3 rounded-lg text-xs border">
+                    {rma.auditTrail.map((entry) => (
+                      <div key={`${entry.timestamp}-${entry.action}`} className="bg-muted/10 p-3 rounded-lg text-xs border">
                         <div className="flex justify-between items-start mb-1 text-muted-foreground">
                           <span className="font-medium">{entry.action}</span>
                           <span>{new Date(entry.timestamp).toLocaleString("sr-RS")}</span>

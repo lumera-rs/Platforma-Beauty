@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -30,6 +30,8 @@ import { BusinessLayout } from "@/components/business-layout";
 import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { BeautyJobForm } from "@/components/beauty-jobs/beauty-job-form";
 import { RentalRequestList } from "@/components/beauty-jobs/rental-request-list";
+import { createRentalResponseHandler } from "@/components/beauty-jobs/rental-response";
+import { createCandidateReplyHandler } from "@/components/beauty-jobs/candidate-reply";
 import { BusinessJobsTab } from "@/components/beauty-jobs/business-jobs-tab";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -78,8 +80,10 @@ export default function BusinessBeautyJobsPage() {
 
   const toggleSaved = useToggleSavedBeautyJob();
   const replyMutation = useReplyToBeautyJobContact();
+  const replyPendingRef = useRef(false);
   const markReadMutation = useMarkBeautyJobNotificationRead();
   const respondRentalMutation = useRespondToBeautyJobRentalRequest();
+  const rentalResponsePendingRef = useRef(false);
   const [respondingRequestId, setRespondingRequestId] = useState<string>();
 
   useEffect(() => {
@@ -124,14 +128,19 @@ export default function BusinessBeautyJobsPage() {
   const handleReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyContact) return;
-    replyMutation.mutate({ contactId: replyContact.id as string, data: { authorReply: replyMessage, authorStatus } }, {
+    createCandidateReplyHandler({
+      mutation: replyMutation,
+      replyPendingRef,
       onSuccess: () => {
-        toast.success("Odgovor uspešno poslat.");
-        setReplyContact(null);
-        setReplyMessage("");
-        queryClient.invalidateQueries({ queryKey: getListBeautyJobInboxQueryKey() });
+          toast.success("Odgovor uspešno poslat.");
+          setReplyContact(null);
+          setReplyMessage("");
+          queryClient.invalidateQueries({ queryKey: getListBeautyJobInboxQueryKey() });
       },
-      onError: () => toast.error("Greška prilikom slanja odgovora.")
+      onError: () => toast.error("Greška prilikom slanja odgovora."),
+    })({
+      contactId: replyContact.id as string,
+      data: { authorReply: replyMessage, authorStatus },
     });
   };
 
@@ -141,20 +150,19 @@ export default function BusinessBeautyJobsPage() {
     });
   };
 
-  const handleRentalResponse = (requestId: string, status: "accepted" | "declined") => {
-    setRespondingRequestId(requestId);
-    respondRentalMutation.mutate({ requestId, data: { status } }, {
-      onSuccess: () => {
+  const handleRentalResponse = createRentalResponseHandler({
+    mutation: respondRentalMutation,
+    responsePendingRef: rentalResponsePendingRef,
+    setPendingRequestId: setRespondingRequestId,
+    onSuccess: (status) => {
         toast.success(status === "accepted" ? "Termin je potvrđen." : "Zahtev je odbijen.");
         queryClient.invalidateQueries({ queryKey: getListBeautyJobRentalRequestInboxQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobRentalRequestsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListBeautyJobNotificationsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMyBeautyJobsQueryKey() });
-      },
-      onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
-      onSettled: () => setRespondingRequestId(undefined),
-    });
-  };
+    },
+    onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
+  });
 
   return (
     <BusinessLayout>

@@ -21,6 +21,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import { pipeRedactedDatabaseOutput } from "../src/safe-child-process-output";
 
 type NotificationFixture = {
   ownerA: { email: string; password: string; id: string };
@@ -108,9 +109,10 @@ async function startSecondaryApiProcess(options?: { dropListenerDuringStartup?: 
           ? { LUMERA_TEST_DROP_SALON_NOTIFICATION_LISTENER_ON_STARTUP: "1" }
           : {}),
       },
-      stdio: ["ignore", "ignore", "inherit", "ipc"],
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
     },
   );
+  pipeRedactedDatabaseOutput(child, process.env);
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
     await waitForHttp(`${baseUrl}/api/healthz`);

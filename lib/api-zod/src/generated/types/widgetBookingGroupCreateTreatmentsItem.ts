@@ -10,6 +10,8 @@ export type WidgetBookingGroupCreateTreatmentsItem = {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: Date;
   startTime: string;
 };

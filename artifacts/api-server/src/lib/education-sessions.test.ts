@@ -370,7 +370,10 @@ async function run(): Promise<void> {
     assert.ok((await json<Array<{ id: string; educatorStaffId: string | null }>>(visibleFixedResponse))
       .some((row) => row.id === unassignedFixed.id && row.educatorStaffId === null));
     const legacyCompatibleBooking = await request(baseUrl, `/education/courses/${fixedCompatibilityCourse!.id}/enrollments`, {
-      method: "POST", cookie: fixedCompatibilityCookie, body: { sessionId: unassignedFixed.id },
+      method: "POST",
+      cookie: fixedCompatibilityCookie,
+      headers: { "Idempotency-Key": `legacy-fixed-session-${suffix}` },
+      body: { sessionId: unassignedFixed.id },
     });
     assert.equal(legacyCompatibleBooking.status, 201);
     enrollmentIds.push((await json<{ id: string }>(legacyCompatibleBooking)).id);

@@ -82,7 +82,11 @@ export const rmasTable = pgTable("rmas", {
   index("rmas_requester_user_idx").on(t.requesterUserId),
   index("rmas_status_created_idx").on(t.status, t.createdAt),
   check("rmas_quantity_check", sql`${t.quantity} > 0`),
-  check("rmas_target_check", sql`num_nonnulls(${t.orderId}, ${t.retailOrderId}) = 1 AND num_nonnulls(${t.orderItemId}, ${t.retailOrderItemId}) = 1`),
+  check("rmas_target_pair_check", sql`
+    (${t.orderId} IS NOT NULL AND ${t.orderItemId} IS NOT NULL AND ${t.retailOrderId} IS NULL AND ${t.retailOrderItemId} IS NULL)
+    OR
+    (${t.orderId} IS NULL AND ${t.orderItemId} IS NULL AND ${t.retailOrderId} IS NOT NULL AND ${t.retailOrderItemId} IS NOT NULL)
+  `),
 ]);
 
 export const rmaAttachmentsTable = pgTable("rma_attachments", {

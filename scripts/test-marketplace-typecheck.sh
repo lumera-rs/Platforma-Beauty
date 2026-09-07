@@ -207,4 +207,10 @@ require_declaration "$SCHEMA_DECLARATIONS" "publicDiscountPrice"
 require_declaration "$ZOD_DECLARATIONS" "AdminGetIntegrationsResponse"
 require_declaration "$ZOD_DECLARATIONS" "AdminGetWebhookFreshnessResponse"
 
+echo "Running focused generated RMA market contract checks..."
+(
+  cd "$ROOT_DIR"
+  pnpm --filter @workspace/scripts exec tsx --test src/rma-market-contract.test.ts
+)
+
 echo "Frontend standalone typechecks rebuilt and verified generated API declarations and schemas."

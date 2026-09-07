@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { inArray } from "drizzle-orm";
-import { db, salonsTable, subscriptionsTable, subscriptionPlansTable, usersTable } from "@workspace/db";
+import { db, ordersTable, salonsTable, subscriptionsTable, subscriptionPlansTable, usersTable } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 
@@ -14,11 +14,13 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 //   the first page.
 
 type SalonRow = { id: string; name: string; subscriptionStatus: string | null };
+type Page<T> = { items: T[]; page: number; pageSize: number; hasNext: boolean };
 
 async function run(): Promise<void> {
   const suffix = randomUUID().slice(0, 8);
   const createdSalonIds: string[] = [];
   const createdOwnerIds: string[] = [];
+  const createdOrderIds: string[] = [];
   let planId: string | null = null;
   let adminId: string | null = null;
 
@@ -86,6 +88,19 @@ async function run(): Promise<void> {
   });
 
   const cookie = `${sessionCookieName}=${await createSession(admin.id)}`;
+  const orderMarker = `Pagination Recipient ${suffix}`;
+  const createdOrders = await db.insert(ordersTable).values(
+    Array.from({ length: 4 }, (_, index) => ({
+      salonId: oldestSalonId,
+      total: 1000 + index,
+      shippingName: orderMarker,
+      shippingAddress: `Pagination ${index + 1}`,
+      paymentMethod: "CASH_ON_DELIVERY" as const,
+      createdAt: new Date(baseTime + index * 1_000),
+    })),
+  ).returning({ id: ordersTable.id });
+  createdOrderIds.push(...createdOrders.map((order) => order.id));
+
   const server = app.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
@@ -97,6 +112,20 @@ async function run(): Promise<void> {
       const text = await response.text();
       assert.equal(response.status, 200, `GET /admin/salons?${query}: ${text.slice(0, 500)}`);
       return JSON.parse(text) as SalonRow[];
+    };
+    const listPage = async <T>(path: string, query: string): Promise<Page<T>> => {
+      const response = await fetch(`${baseUrl}${path}?${query}`, { headers: { cookie } });
+      const text = await response.text();
+      assert.equal(response.status, 200, `GET ${path}?${query}: ${text.slice(0, 500)}`);
+      return JSON.parse(text) as Page<T>;
+    };
+    const listLegacy = async <T>(path: string, query: string): Promise<T[]> => {
+      const response = await fetch(`${baseUrl}${path}?${query}`, { headers: { cookie } });
+      const text = await response.text();
+      assert.equal(response.status, 200, `GET ${path}?${query}: ${text.slice(0, 500)}`);
+      const body = JSON.parse(text) as unknown;
+      assert.ok(Array.isArray(body), `${path} must preserve its legacy array response`);
+      return body as T[];
     };
 
     // 1) A matching row beyond the first page is reachable. Scope to our city so
@@ -127,12 +156,33 @@ async function run(): Promise<void> {
       assert.equal(filtered[0]?.subscriptionStatus, "active");
     }
 
+    // 3) A full page is not evidence of another page. Each bounded endpoint
+    //    reads one extra row and reports hasNext=false for an exact multiple.
+    {
+      const salonPage = await listPage<SalonRow>("/admin/salons/page", `city=${encodeURIComponent(cityTag)}&page=1&pageSize=5`);
+      assert.equal(salonPage.items.length, 5);
+      assert.equal(salonPage.hasNext, false, "five salons at pageSize=5 must be the final page");
+
+      const userPage = await listPage<{ id: string }>("/admin/users/page", `search=${encodeURIComponent(suffix)}&page=1&pageSize=6`);
+      assert.equal(userPage.items.length, 6);
+      assert.equal(userPage.hasNext, false, "six users at pageSize=6 must be the final page");
+      assert.equal((await listLegacy<{ id: string }>("/admin/users", `search=${encodeURIComponent(suffix)}&page=1&pageSize=6`)).length, 6);
+
+      const orderDate = new Date(baseTime).toISOString().slice(0, 10);
+      const orderQuery = `search=${encodeURIComponent(orderMarker)}&from=${orderDate}&to=${orderDate}&page=1&pageSize=4`;
+      const orderPage = await listPage<{ id: string }>("/admin/orders/page", orderQuery);
+      assert.equal(orderPage.items.length, 4);
+      assert.equal(orderPage.hasNext, false, "four orders at pageSize=4 must be the final page");
+      assert.equal((await listLegacy<{ id: string }>("/admin/orders", orderQuery)).length, 4);
+    }
+
     process.stdout.write("✓ admin list pagination regression suite passed\n");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     });
     if (createdSalonIds.length) {
+      if (createdOrderIds.length) await db.delete(ordersTable).where(inArray(ordersTable.id, createdOrderIds));
       await db.delete(subscriptionsTable).where(inArray(subscriptionsTable.salonId, createdSalonIds));
       await db.delete(salonsTable).where(inArray(salonsTable.id, createdSalonIds));
     }

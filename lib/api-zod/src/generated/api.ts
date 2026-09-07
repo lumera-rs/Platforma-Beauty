@@ -722,6 +722,17 @@ export const AdminGetWebPushDeliveryMetricsResponse = zod.object({
 
 
 /**
+ * @summary List provider-side Brevo webhooks that are eligible for administrator cleanup
+ */
+export const AdminListBrevoStaleWebhooksResponse = zod.object({
+  "staleWebhooks": zod.array(zod.object({
+  "id": zod.number().int(),
+  "maskedUrl": zod.string()
+}))
+})
+
+
+/**
  * @summary Save administrator integration settings
  */
 export const AdminSaveIntegrationParams = zod.object({
@@ -1014,8 +1025,20 @@ export const getSalonResponseTwoTopServicesItemPriceMin = 0;
 export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const getSalonResponseTwoServicesItemPreProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const getSalonResponseTwoServicesItemProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemProcessingMinutesMin = 0;
+
+export const getSalonResponseTwoServicesItemPostProcessingMinutesDefault = 0;
+export const getSalonResponseTwoServicesItemPostProcessingMinutesMin = 0;
+
 export const getSalonResponseTwoServicesItemBufferMinutesDefault = 0;
 export const getSalonResponseTwoServicesItemBufferMinutesMin = 0;
+
+export const getSalonResponseTwoServicesItemRequiredEmployeeCountDefault = 1;
+export const getSalonResponseTwoServicesItemRequiredEmployeeCountMax = 20;
 
 export const getSalonResponseTwoServicesItemHomeServiceFeeMin = 0;
 
@@ -1095,7 +1118,11 @@ export const GetSalonResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPreProcessingMinutesMin).default(getSalonResponseTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(getSalonResponseTwoServicesItemProcessingMinutesMin).default(getSalonResponseTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPostProcessingMinutesMin).default(getSalonResponseTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(getSalonResponseTwoServicesItemBufferMinutesMin).default(getSalonResponseTwoServicesItemBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(getSalonResponseTwoServicesItemRequiredEmployeeCountMax).default(getSalonResponseTwoServicesItemRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -1135,6 +1162,8 @@ export const GetSalonAvailabilityParams = zod.object({
   "salonId": zod.coerce.string().regex(getSalonAvailabilityPathSalonIdRegExp)
 })
 
+export const getSalonAvailabilityQueryEmployeeIdsMax = 20;
+
 export const getSalonAvailabilityQueryGranularityMinutesMin = 5;
 export const getSalonAvailabilityQueryGranularityMinutesMax = 180;
 
@@ -1143,6 +1172,7 @@ export const getSalonAvailabilityQueryGranularityMinutesMax = 180;
 export const GetSalonAvailabilityQueryParams = zod.object({
   "serviceId": zod.coerce.string(),
   "employeeId": zod.coerce.string().optional(),
+  "employeeIds": zod.array(zod.coerce.string()).max(getSalonAvailabilityQueryEmployeeIdsMax).optional().describe('Ordered employee positions; an empty value means that position may use any qualified available employee.'),
   "date": zod.coerce.string(),
   "granularityMinutes": zod.coerce.number().int().min(getSalonAvailabilityQueryGranularityMinutesMin).max(getSalonAvailabilityQueryGranularityMinutesMax).optional().describe('Optional requested cadence. The salon booking policy remains authoritative.')
 })
@@ -1151,7 +1181,11 @@ export const GetSalonAvailabilityResponseItem = zod.object({
   "start": zod.string(),
   "end": zod.string(),
   "employeeId": zod.string().nullish(),
-  "employeeName": zod.string().nullish()
+  "employeeName": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional()
 })
 export const GetSalonAvailabilityResponse = zod.array(GetSalonAvailabilityResponseItem)
 
@@ -1194,6 +1228,8 @@ export const GetGroupedBookingAvailabilityParams = zod.object({
 })
 
 export const getGroupedBookingAvailabilityBodyResultModeDefault = `list`;
+export const getGroupedBookingAvailabilityBodyTreatmentsItemEmployeeIdsMax = 20;
+
 export const getGroupedBookingAvailabilityBodyTreatmentsMax = 5;
 
 export const getGroupedBookingAvailabilityBodyAllowMultipleDaysDefault = false;
@@ -1202,7 +1238,8 @@ export const GetGroupedBookingAvailabilityBody = zod.object({
   "resultMode": zod.enum(['list', 'calendar']).default(getGroupedBookingAvailabilityBodyResultModeDefault).describe('List preserves the legacy cross-range maximum of five candidates. Calendar returns a day entry for every requested date and supports ranges of up to 14 days.'),
   "treatments": zod.array(zod.object({
   "serviceId": zod.string(),
-  "employeeId": zod.string().nullish()
+  "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(getGroupedBookingAvailabilityBodyTreatmentsItemEmployeeIdsMax).optional()
 })).min(1).max(getGroupedBookingAvailabilityBodyTreatmentsMax),
   "fromDate": zod.coerce.date(),
   "toDate": zod.coerce.date(),
@@ -1211,11 +1248,27 @@ export const GetGroupedBookingAvailabilityBody = zod.object({
 
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPositionMin = 0;
 
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
 export const getGroupedBookingAvailabilityResponseCandidatesMax = 20;
 
 export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPositionMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1237,10 +1290,18 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin)
-}))
+  "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCandidatesItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
+})),
+  "score": zod.number().optional().describe('Additive aggregate compaction score for the displayed treatment group.'),
+  "recommended": zod.boolean().optional().describe('True when the API marks the group as a discreet recommended option.')
 })).max(getGroupedBookingAvailabilityResponseCandidatesMax).describe('Legacy list-mode candidates. Empty when resultMode is calendar.'),
   "calendarDays": zod.array(zod.object({
   "date": zod.coerce.date(),
@@ -1253,10 +1314,18 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin)
-}))
+  "preProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
+})),
+  "score": zod.number().optional().describe('Additive aggregate compaction score for the displayed treatment group.'),
+  "recommended": zod.boolean().optional().describe('True when the API marks the group as a discreet recommended option.')
 })).max(getGroupedBookingAvailabilityResponseCalendarDaysItemCandidatesMax).describe('Complete valid treatment-group combinations that start on this date.'),
   "truncated": zod.boolean().describe('True when more than the safe per-day maximum of 20 valid combinations exist or the bounded candidate-search budget was reached.')
 })).max(getGroupedBookingAvailabilityResponseCalendarDaysMax).optional().describe('Present in calendar mode and includes every requested date, including dates with no candidates.')
@@ -1269,10 +1338,14 @@ export const GetGroupedBookingAvailabilityResponse = zod.object({
 export const createBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createBookingGroupHeaderIdempotencyKeyMax).regex(createBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
+
+export const createBookingGroupBodyTreatmentsItemEmployeeIdsMax = 20;
 
 export const createBookingGroupBodyTreatmentsMax = 5;
 
@@ -1287,6 +1360,7 @@ export const CreateBookingGroupBody = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date().optional(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createBookingGroupBodyTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string()
 })).min(1).max(createBookingGroupBodyTreatmentsMax),
   "notes": zod.string().max(createBookingGroupBodyNotesMax).nullish()
@@ -1297,6 +1371,14 @@ export const createBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 
 export const createBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1315,6 +1397,10 @@ export const CreateBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1352,9 +1438,15 @@ export const CreateBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1383,9 +1475,11 @@ export const CreateBookingGroupResponse = zod.object({
 export const createSalonBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonBookingGroupHeaderIdempotencyKeyMax).regex(createSalonBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonBookingGroupBodyGuestFirstNameMax = 100;
@@ -1396,6 +1490,8 @@ export const createSalonBookingGroupBodyGuestPhoneMin = 5;
 export const createSalonBookingGroupBodyGuestPhoneMax = 50;
 
 export const createSalonBookingGroupBodyGuestEmailMax = 320;
+
+export const createSalonBookingGroupBodyTreatmentsItemEmployeeIdsMax = 20;
 
 export const createSalonBookingGroupBodyTreatmentsMax = 5;
 
@@ -1415,6 +1511,7 @@ export const CreateSalonBookingGroupBody = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonBookingGroupBodyTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string()
 })).min(1).max(createSalonBookingGroupBodyTreatmentsMax),
   "notes": zod.string().max(createSalonBookingGroupBodyNotesMax).nullish()
@@ -1425,6 +1522,14 @@ export const createSalonBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 
 export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1443,6 +1548,10 @@ export const CreateSalonBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1480,9 +1589,15 @@ export const CreateSalonBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createSalonBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1511,9 +1626,11 @@ export const CreateSalonBookingGroupResponse = zod.object({
 export const createEmployeeBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeBookingGroupHeaderIdempotencyKeyMax).regex(createEmployeeBookingGroupHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createEmployeeBookingGroupBodyGuestFirstNameMax = 100;
@@ -1524,6 +1641,8 @@ export const createEmployeeBookingGroupBodyGuestPhoneMin = 5;
 export const createEmployeeBookingGroupBodyGuestPhoneMax = 50;
 
 export const createEmployeeBookingGroupBodyGuestEmailMax = 320;
+
+export const createEmployeeBookingGroupBodyTreatmentsItemEmployeeIdsMax = 20;
 
 export const createEmployeeBookingGroupBodyTreatmentsMax = 5;
 
@@ -1543,6 +1662,7 @@ export const CreateEmployeeBookingGroupBody = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createEmployeeBookingGroupBodyTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string()
 })).min(1).max(createEmployeeBookingGroupBodyTreatmentsMax),
   "notes": zod.string().max(createEmployeeBookingGroupBodyNotesMax).nullish()
@@ -1553,6 +1673,14 @@ export const createEmployeeBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 
 export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1571,6 +1699,10 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createEmployeeBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1608,9 +1740,15 @@ export const CreateEmployeeBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createEmployeeBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1664,6 +1802,8 @@ export const RescheduleBookingGroupParams = zod.object({
   "bookingGroupId": zod.coerce.string()
 })
 
+export const rescheduleBookingGroupBodyTreatmentsItemEmployeeIdsMax = 20;
+
 export const rescheduleBookingGroupBodyTreatmentsMax = 5;
 
 
@@ -1673,7 +1813,8 @@ export const RescheduleBookingGroupBody = zod.object({
   "appointmentId": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
-  "employeeId": zod.string().nullish()
+  "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(rescheduleBookingGroupBodyTreatmentsItemEmployeeIdsMax).optional()
 })).min(1).max(rescheduleBookingGroupBodyTreatmentsMax)
 })
 
@@ -1682,6 +1823,14 @@ export const rescheduleBookingGroupResponseGroupAppointmentsItemTravelFeeMin = 0
 
 
 export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -1701,6 +1850,10 @@ export const RescheduleBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(rescheduleBookingGroupResponseGroupAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1738,9 +1891,15 @@ export const RescheduleBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(rescheduleBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1789,6 +1948,14 @@ export const cancelBookingGroupResponseGroupAppointmentsItemTravelFeeMin = 0;
 
 export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -1807,6 +1974,10 @@ export const CancelBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(cancelBookingGroupResponseGroupAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1844,9 +2015,15 @@ export const CancelBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(cancelBookingGroupResponseGroupAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1895,6 +2072,14 @@ export const listMyAppointmentsResponseTravelFeeMin = 0;
 
 export const listMyAppointmentsResponseTreatmentsItemPositionMin = 0;
 
+export const listMyAppointmentsResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const listMyAppointmentsResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const listMyAppointmentsResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const listMyAppointmentsResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const listMyAppointmentsResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -1909,6 +2094,10 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(listMyAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -1946,9 +2135,15 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(listMyAppointmentsResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(listMyAppointmentsResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -1976,10 +2171,14 @@ export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseIt
 export const createAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createAppointmentHeaderIdempotencyKeyMax).regex(createAppointmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
+
+export const createAppointmentBodyEmployeeIdsMax = 20;
 
 export const createAppointmentBodyStartTimeRegExp = new RegExp('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$');
 export const createAppointmentBodyTreatmentAddressLine1Min = 3;
@@ -1998,6 +2197,7 @@ export const CreateAppointmentBody = zod.object({
   "salonId": zod.string(),
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createAppointmentBodyEmployeeIdsMax).optional(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createAppointmentBodyStartTimeRegExp),
   "notes": zod.string().optional(),
@@ -2017,6 +2217,14 @@ export const createAppointmentResponseTravelFeeMin = 0;
 
 export const createAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const createAppointmentResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const createAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const createAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2031,6 +2239,10 @@ export const CreateAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2068,9 +2280,15 @@ export const CreateAppointmentResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createAppointmentResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2123,10 +2341,15 @@ export const UpdateAppointmentParams = zod.object({
   "appointmentId": zod.coerce.string()
 })
 
+export const updateAppointmentBodyEmployeeIdsMax = 20;
+
+
+
 export const UpdateAppointmentBody = zod.object({
   "date": zod.coerce.date().optional(),
   "startTime": zod.string().optional(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(updateAppointmentBodyEmployeeIdsMax).optional(),
   "notes": zod.string().optional()
 })
 
@@ -2135,6 +2358,14 @@ export const updateAppointmentResponseTravelFeeMin = 0;
 
 
 export const updateAppointmentResponseTreatmentsItemPositionMin = 0;
+
+export const updateAppointmentResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const updateAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const updateAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const updateAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const updateAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
@@ -2150,6 +2381,10 @@ export const UpdateAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(updateAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2187,9 +2422,15 @@ export const UpdateAppointmentResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(updateAppointmentResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(updateAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2247,6 +2488,14 @@ export const cancelAppointmentResponseTravelFeeMin = 0;
 
 export const cancelAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const cancelAppointmentResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const cancelAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const cancelAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const cancelAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const cancelAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2261,6 +2510,10 @@ export const CancelAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(cancelAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2298,9 +2551,15 @@ export const CancelAppointmentResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(cancelAppointmentResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(cancelAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2344,6 +2603,14 @@ export const transitionAppointmentLifecycleResponseTravelFeeMin = 0;
 
 export const transitionAppointmentLifecycleResponseTreatmentsItemPositionMin = 0;
 
+export const transitionAppointmentLifecycleResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const transitionAppointmentLifecycleResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2358,6 +2625,10 @@ export const TransitionAppointmentLifecycleResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(transitionAppointmentLifecycleResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2395,9 +2666,15 @@ export const TransitionAppointmentLifecycleResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(transitionAppointmentLifecycleResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(transitionAppointmentLifecycleResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2564,6 +2841,14 @@ export const getCustomerDashboardResponseUpcomingItemTravelFeeMin = 0;
 
 export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPositionMin = 0;
 
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getCustomerDashboardResponseUpcomingItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -2579,6 +2864,10 @@ export const GetCustomerDashboardResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(getCustomerDashboardResponseUpcomingItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -2616,9 +2905,15 @@ export const GetCustomerDashboardResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(getCustomerDashboardResponseUpcomingItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -2959,6 +3254,14 @@ export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
 export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3008,6 +3311,10 @@ export const GetSalonDashboardResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(getSalonDashboardResponseTodayAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3045,9 +3352,15 @@ export const GetSalonDashboardResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(getSalonDashboardResponseTodayAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3377,6 +3690,14 @@ export const listSalonAppointmentsResponseTravelFeeMin = 0;
 
 export const listSalonAppointmentsResponseTreatmentsItemPositionMin = 0;
 
+export const listSalonAppointmentsResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const listSalonAppointmentsResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const listSalonAppointmentsResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const listSalonAppointmentsResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3391,6 +3712,10 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(listSalonAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3428,9 +3753,15 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(listSalonAppointmentsResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(listSalonAppointmentsResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3458,10 +3789,14 @@ export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResp
 export const createSalonAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentHeaderIdempotencyKeyMax).regex(createSalonAppointmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
+
+export const createSalonAppointmentBodyEmployeeIdsMax = 20;
 
 export const createSalonAppointmentBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 
@@ -3473,6 +3808,7 @@ export const createSalonAppointmentBodyGuestPhoneMin = 5;
 export const CreateSalonAppointmentBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonAppointmentBodyEmployeeIdsMax).optional(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createSalonAppointmentBodyStartTimeRegExp),
   "notes": zod.string().optional(),
@@ -3492,6 +3828,14 @@ export const createSalonAppointmentResponseTravelFeeMin = 0;
 
 export const createSalonAppointmentResponseTreatmentsItemPositionMin = 0;
 
+export const createSalonAppointmentResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const createSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3506,6 +3850,10 @@ export const CreateSalonAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3543,9 +3891,15 @@ export const CreateSalonAppointmentResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonAppointmentResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createSalonAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3569,6 +3923,8 @@ export const CreateSalonAppointmentResponse = zod.object({
 /**
  * @summary Check availability for a salon appointment series
  */
+export const previewSalonAppointmentSeriesBodyEmployeeIdsMax = 20;
+
 export const previewSalonAppointmentSeriesBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const previewSalonAppointmentSeriesBodySlotsMax = 24;
 
@@ -3577,6 +3933,7 @@ export const previewSalonAppointmentSeriesBodySlotsMax = 24;
 export const PreviewSalonAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(previewSalonAppointmentSeriesBodyEmployeeIdsMax).optional(),
   "packagePurchaseId": zod.string().nullish(),
   "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
@@ -3606,6 +3963,8 @@ export const PreviewSalonAppointmentSeriesResponse = zod.object({
  * @summary Preview booking every remaining session in a purchased package
  */
 export const previewSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonPackageAppointmentsBodySlotsItemEmployeeIdsMax = 20;
+
 export const previewSalonPackageAppointmentsBodySlotsMax = 100;
 
 
@@ -3616,11 +3975,14 @@ export const PreviewSalonPackageAppointmentsBody = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(previewSalonPackageAppointmentsBodySlotsItemStartTimeRegExp),
-  "employeeId": zod.string().nullish()
+  "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(previewSalonPackageAppointmentsBodySlotsItemEmployeeIdsMax).optional()
 })).min(1).max(previewSalonPackageAppointmentsBodySlotsMax)
 })
 
 export const previewSalonPackageAppointmentsResponseSlotsItemOneStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonPackageAppointmentsResponseSlotsItemOneEmployeeIdsMax = 20;
+
 
 
 export const PreviewSalonPackageAppointmentsResponse = zod.object({
@@ -3628,7 +3990,8 @@ export const PreviewSalonPackageAppointmentsResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(previewSalonPackageAppointmentsResponseSlotsItemOneStartTimeRegExp),
-  "employeeId": zod.string().nullish()
+  "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(previewSalonPackageAppointmentsResponseSlotsItemOneEmployeeIdsMax).optional()
 }).and(zod.object({
   "available": zod.boolean(),
   "reason": zod.string().nullable()
@@ -3646,12 +4009,16 @@ export const PreviewSalonPackageAppointmentsResponse = zod.object({
 export const createSalonPackageAppointmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonPackageAppointmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonPackageAppointmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonPackageAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonPackageAppointmentsHeaderIdempotencyKeyMax).regex(createSalonPackageAppointmentsHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const createSalonPackageAppointmentsBodySlotsItemEmployeeIdsMax = 20;
+
 export const createSalonPackageAppointmentsBodySlotsMax = 100;
 
 
@@ -3662,7 +4029,8 @@ export const CreateSalonPackageAppointmentsBody = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp),
-  "employeeId": zod.string().nullish()
+  "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonPackageAppointmentsBodySlotsItemEmployeeIdsMax).optional()
 })).min(1).max(createSalonPackageAppointmentsBodySlotsMax)
 })
 
@@ -3671,6 +4039,14 @@ export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTra
 
 
 export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -3690,6 +4066,10 @@ export const CreateSalonPackageAppointmentsResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3727,9 +4107,15 @@ export const CreateSalonPackageAppointmentsResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -3828,6 +4214,8 @@ export const DeleteSalonTimeBlockResponse = zod.void()
  * @summary Search server-confirmed owner booking availability over seven calendar days
  */
 export const searchSalonAvailabilityQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const searchSalonAvailabilityQueryEmployeeIdsMax = 20;
+
 export const searchSalonAvailabilityQueryLimitMax = 100;
 
 export const searchSalonAvailabilityQueryGranularityMinutesMin = 5;
@@ -3839,6 +4227,7 @@ export const SearchSalonAvailabilityQueryParams = zod.object({
   "serviceId": zod.coerce.string(),
   "startDate": zod.coerce.string().regex(searchSalonAvailabilityQueryStartDateRegExp),
   "employeeId": zod.coerce.string().optional(),
+  "employeeIds": zod.array(zod.coerce.string()).max(searchSalonAvailabilityQueryEmployeeIdsMax).optional(),
   "limit": zod.coerce.number().int().min(1).max(searchSalonAvailabilityQueryLimitMax).optional(),
   "granularityMinutes": zod.coerce.number().int().min(searchSalonAvailabilityQueryGranularityMinutesMin).max(searchSalonAvailabilityQueryGranularityMinutesMax).optional().describe('Optional requested cadence. The salon booking policy remains authoritative.')
 })
@@ -3853,7 +4242,9 @@ export const SearchSalonAvailabilityResponseItem = zod.object({
   "startTime": zod.string().regex(searchSalonAvailabilityResponseStartTimeRegExp),
   "endTime": zod.string().regex(searchSalonAvailabilityResponseEndTimeRegExp),
   "employeeId": zod.string(),
-  "employeeName": zod.string()
+  "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional()
 })
 export const SearchSalonAvailabilityResponse = zod.array(SearchSalonAvailabilityResponseItem)
 
@@ -3897,10 +4288,14 @@ export const GetSalonCalendarDayResponse = zod.array(GetSalonCalendarDayResponse
 export const createSalonAppointmentSeriesHeaderIdempotencyKeyMax = 200;
 
 
+export const createSalonAppointmentSeriesHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateSalonAppointmentSeriesHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createSalonAppointmentSeriesHeaderIdempotencyKeyMax).regex(createSalonAppointmentSeriesHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
+
+export const createSalonAppointmentSeriesBodyOneEmployeeIdsMax = 20;
 
 export const createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const createSalonAppointmentSeriesBodyOneSlotsMax = 24;
@@ -3914,6 +4309,7 @@ export const createSalonAppointmentSeriesBodyTwoGuestPhoneMin = 5;
 export const CreateSalonAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonAppointmentSeriesBodyOneEmployeeIdsMax).optional(),
   "packagePurchaseId": zod.string().nullish(),
   "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
@@ -3938,6 +4334,14 @@ export const createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 
 
 export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -3955,6 +4359,10 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -3992,9 +4400,15 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4093,6 +4507,14 @@ export const moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4110,6 +4532,10 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(moveSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4147,9 +4573,15 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(moveSalonAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4237,7 +4669,9 @@ export const SearchEmployeeAvailabilityResponseItem = zod.object({
   "startTime": zod.string().regex(searchEmployeeAvailabilityResponseStartTimeRegExp),
   "endTime": zod.string().regex(searchEmployeeAvailabilityResponseEndTimeRegExp),
   "employeeId": zod.string(),
-  "employeeName": zod.string()
+  "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional()
 })
 export const SearchEmployeeAvailabilityResponse = zod.array(SearchEmployeeAvailabilityResponseItem)
 
@@ -4245,6 +4679,8 @@ export const SearchEmployeeAvailabilityResponse = zod.array(SearchEmployeeAvaila
 /**
  * @summary Check availability for an employee appointment series
  */
+export const previewEmployeeAppointmentSeriesBodyEmployeeIdsMax = 20;
+
 export const previewEmployeeAppointmentSeriesBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const previewEmployeeAppointmentSeriesBodySlotsMax = 24;
 
@@ -4253,6 +4689,7 @@ export const previewEmployeeAppointmentSeriesBodySlotsMax = 24;
 export const PreviewEmployeeAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(previewEmployeeAppointmentSeriesBodyEmployeeIdsMax).optional(),
   "packagePurchaseId": zod.string().nullish(),
   "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
@@ -4284,10 +4721,14 @@ export const PreviewEmployeeAppointmentSeriesResponse = zod.object({
 export const createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeAppointmentSeriesHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeAppointmentSeriesHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentSeriesHeaderIdempotencyKeyMax).regex(createEmployeeAppointmentSeriesHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
+
+export const createEmployeeAppointmentSeriesBodyOneEmployeeIdsMax = 20;
 
 export const createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
 export const createEmployeeAppointmentSeriesBodyOneSlotsMax = 24;
@@ -4301,6 +4742,7 @@ export const createEmployeeAppointmentSeriesBodyTwoGuestPhoneMin = 5;
 export const CreateEmployeeAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createEmployeeAppointmentSeriesBodyOneEmployeeIdsMax).optional(),
   "packagePurchaseId": zod.string().nullish(),
   "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
@@ -4323,6 +4765,14 @@ export const createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin
 
 export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPositionMin = 0;
 
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
+
 export const createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
 
@@ -4340,6 +4790,10 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createEmployeeAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4377,9 +4831,15 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4407,9 +4867,11 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
 export const createEmployeeAppointmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createEmployeeAppointmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEmployeeAppointmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentsHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEmployeeAppointmentsHeaderIdempotencyKeyMax).regex(createEmployeeAppointmentsHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 
@@ -4493,9 +4955,14 @@ export const UpdateSalonAppointmentParams = zod.object({
   "appointmentId": zod.coerce.string()
 })
 
+export const updateSalonAppointmentBodyEmployeeIdsMax = 20;
+
+
+
 export const UpdateSalonAppointmentBody = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']).optional(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(updateSalonAppointmentBodyEmployeeIdsMax).optional(),
   "notes": zod.string().optional(),
   "date": zod.string().optional(),
   "startTime": zod.string().optional()
@@ -4506,6 +4973,14 @@ export const updateSalonAppointmentResponseTravelFeeMin = 0;
 
 
 export const updateSalonAppointmentResponseTreatmentsItemPositionMin = 0;
+
+export const updateSalonAppointmentResponseTreatmentsItemEmployeeIdsMax = 20;
+
+export const updateSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const updateSalonAppointmentResponseTreatmentsItemProcessingMinutesMin = 0;
+
+export const updateSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin = 0;
 
@@ -4521,6 +4996,10 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(updateSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -4558,9 +5037,15 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(updateSalonAppointmentResponseTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(updateSalonAppointmentResponseTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -4681,8 +5166,20 @@ export const DeleteSalonResourceResponse = zod.void()
 /**
  * @summary List salon services
  */
+export const listSalonServicesResponsePreProcessingMinutesDefault = 0;
+export const listSalonServicesResponsePreProcessingMinutesMin = 0;
+
+export const listSalonServicesResponseProcessingMinutesDefault = 0;
+export const listSalonServicesResponseProcessingMinutesMin = 0;
+
+export const listSalonServicesResponsePostProcessingMinutesDefault = 0;
+export const listSalonServicesResponsePostProcessingMinutesMin = 0;
+
 export const listSalonServicesResponseBufferMinutesDefault = 0;
 export const listSalonServicesResponseBufferMinutesMin = 0;
+
+export const listSalonServicesResponseRequiredEmployeeCountDefault = 1;
+export const listSalonServicesResponseRequiredEmployeeCountMax = 20;
 
 export const listSalonServicesResponseHomeServiceFeeMin = 0;
 
@@ -4698,7 +5195,11 @@ export const ListSalonServicesResponseItem = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(listSalonServicesResponsePreProcessingMinutesMin).default(listSalonServicesResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(listSalonServicesResponseProcessingMinutesMin).default(listSalonServicesResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(listSalonServicesResponsePostProcessingMinutesMin).default(listSalonServicesResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(listSalonServicesResponseBufferMinutesMin).default(listSalonServicesResponseBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(listSalonServicesResponseRequiredEmployeeCountMax).default(listSalonServicesResponseRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -4725,8 +5226,20 @@ export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem
 export const createSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const createSalonServiceBodyDurationMinutesMin = 5;
 
+export const createSalonServiceBodyPreProcessingMinutesDefault = 0;
+export const createSalonServiceBodyPreProcessingMinutesMin = 0;
+
+export const createSalonServiceBodyProcessingMinutesDefault = 0;
+export const createSalonServiceBodyProcessingMinutesMin = 0;
+
+export const createSalonServiceBodyPostProcessingMinutesDefault = 0;
+export const createSalonServiceBodyPostProcessingMinutesMin = 0;
+
 export const createSalonServiceBodyBufferMinutesDefault = 0;
 export const createSalonServiceBodyBufferMinutesMin = 0;
+
+export const createSalonServiceBodyRequiredEmployeeCountDefault = 1;
+export const createSalonServiceBodyRequiredEmployeeCountMax = 20;
 
 export const createSalonServiceBodyPriceMin = 0;
 
@@ -4745,7 +5258,11 @@ export const CreateSalonServiceBody = zod.object({
   "name": zod.string().min(1).regex(createSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(createSalonServiceBodyDurationMinutesMin),
+  "preProcessingMinutes": zod.number().min(createSalonServiceBodyPreProcessingMinutesMin).default(createSalonServiceBodyPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServiceBodyProcessingMinutesMin).default(createSalonServiceBodyProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServiceBodyPostProcessingMinutesMin).default(createSalonServiceBodyPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServiceBodyBufferMinutesMin).default(createSalonServiceBodyBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(createSalonServiceBodyRequiredEmployeeCountMax).default(createSalonServiceBodyRequiredEmployeeCountDefault),
   "price": zod.number().min(createSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
   "imageUrl": zod.string(),
@@ -4759,8 +5276,20 @@ export const CreateSalonServiceBody = zod.object({
 })).max(createSalonServiceBodyResourceRequirementsMax).optional()
 })
 
+export const createSalonServiceResponsePreProcessingMinutesDefault = 0;
+export const createSalonServiceResponsePreProcessingMinutesMin = 0;
+
+export const createSalonServiceResponseProcessingMinutesDefault = 0;
+export const createSalonServiceResponseProcessingMinutesMin = 0;
+
+export const createSalonServiceResponsePostProcessingMinutesDefault = 0;
+export const createSalonServiceResponsePostProcessingMinutesMin = 0;
+
 export const createSalonServiceResponseBufferMinutesDefault = 0;
 export const createSalonServiceResponseBufferMinutesMin = 0;
+
+export const createSalonServiceResponseRequiredEmployeeCountDefault = 1;
+export const createSalonServiceResponseRequiredEmployeeCountMax = 20;
 
 export const createSalonServiceResponseHomeServiceFeeMin = 0;
 
@@ -4776,7 +5305,11 @@ export const CreateSalonServiceResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonServiceResponsePreProcessingMinutesMin).default(createSalonServiceResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServiceResponseProcessingMinutesMin).default(createSalonServiceResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServiceResponsePostProcessingMinutesMin).default(createSalonServiceResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServiceResponseBufferMinutesMin).default(createSalonServiceResponseBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(createSalonServiceResponseRequiredEmployeeCountMax).default(createSalonServiceResponseRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -4854,8 +5387,20 @@ export const CreateSalonServicesBatchBody = zod.object({
 })).min(1).max(createSalonServicesBatchBodyItemsMax)
 })
 
+export const createSalonServicesBatchResponseCreatedItemPreProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemPreProcessingMinutesMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemProcessingMinutesMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemPostProcessingMinutesDefault = 0;
+export const createSalonServicesBatchResponseCreatedItemPostProcessingMinutesMin = 0;
+
 export const createSalonServicesBatchResponseCreatedItemBufferMinutesDefault = 0;
 export const createSalonServicesBatchResponseCreatedItemBufferMinutesMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemRequiredEmployeeCountDefault = 1;
+export const createSalonServicesBatchResponseCreatedItemRequiredEmployeeCountMax = 20;
 
 export const createSalonServicesBatchResponseCreatedItemHomeServiceFeeMin = 0;
 
@@ -4872,7 +5417,11 @@ export const CreateSalonServicesBatchResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemPreProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemPostProcessingMinutesMin).default(createSalonServicesBatchResponseCreatedItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonServicesBatchResponseCreatedItemBufferMinutesMin).default(createSalonServicesBatchResponseCreatedItemBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(createSalonServicesBatchResponseCreatedItemRequiredEmployeeCountMax).default(createSalonServicesBatchResponseCreatedItemRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -4903,8 +5452,20 @@ export const UpdateSalonServiceParams = zod.object({
 export const updateSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const updateSalonServiceBodyDurationMinutesMin = 5;
 
+export const updateSalonServiceBodyPreProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyPreProcessingMinutesMin = 0;
+
+export const updateSalonServiceBodyProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyProcessingMinutesMin = 0;
+
+export const updateSalonServiceBodyPostProcessingMinutesDefault = 0;
+export const updateSalonServiceBodyPostProcessingMinutesMin = 0;
+
 export const updateSalonServiceBodyBufferMinutesDefault = 0;
 export const updateSalonServiceBodyBufferMinutesMin = 0;
+
+export const updateSalonServiceBodyRequiredEmployeeCountDefault = 1;
+export const updateSalonServiceBodyRequiredEmployeeCountMax = 20;
 
 export const updateSalonServiceBodyPriceMin = 0;
 
@@ -4923,7 +5484,11 @@ export const UpdateSalonServiceBody = zod.object({
   "name": zod.string().min(1).regex(updateSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(updateSalonServiceBodyDurationMinutesMin),
+  "preProcessingMinutes": zod.number().min(updateSalonServiceBodyPreProcessingMinutesMin).default(updateSalonServiceBodyPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(updateSalonServiceBodyProcessingMinutesMin).default(updateSalonServiceBodyProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(updateSalonServiceBodyPostProcessingMinutesMin).default(updateSalonServiceBodyPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(updateSalonServiceBodyBufferMinutesMin).default(updateSalonServiceBodyBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(updateSalonServiceBodyRequiredEmployeeCountMax).default(updateSalonServiceBodyRequiredEmployeeCountDefault),
   "price": zod.number().min(updateSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
   "imageUrl": zod.string(),
@@ -4937,8 +5502,20 @@ export const UpdateSalonServiceBody = zod.object({
 })).max(updateSalonServiceBodyResourceRequirementsMax).optional()
 })
 
+export const updateSalonServiceResponsePreProcessingMinutesDefault = 0;
+export const updateSalonServiceResponsePreProcessingMinutesMin = 0;
+
+export const updateSalonServiceResponseProcessingMinutesDefault = 0;
+export const updateSalonServiceResponseProcessingMinutesMin = 0;
+
+export const updateSalonServiceResponsePostProcessingMinutesDefault = 0;
+export const updateSalonServiceResponsePostProcessingMinutesMin = 0;
+
 export const updateSalonServiceResponseBufferMinutesDefault = 0;
 export const updateSalonServiceResponseBufferMinutesMin = 0;
+
+export const updateSalonServiceResponseRequiredEmployeeCountDefault = 1;
+export const updateSalonServiceResponseRequiredEmployeeCountMax = 20;
 
 export const updateSalonServiceResponseHomeServiceFeeMin = 0;
 
@@ -4954,7 +5531,11 @@ export const UpdateSalonServiceResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(updateSalonServiceResponsePreProcessingMinutesMin).default(updateSalonServiceResponsePreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(updateSalonServiceResponseProcessingMinutesMin).default(updateSalonServiceResponseProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(updateSalonServiceResponsePostProcessingMinutesMin).default(updateSalonServiceResponsePostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(updateSalonServiceResponseBufferMinutesMin).default(updateSalonServiceResponseBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(updateSalonServiceResponseRequiredEmployeeCountMax).default(updateSalonServiceResponseRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -5058,8 +5639,20 @@ export const createSalonLocationResponseLocationTwoTopServicesItemPriceMin = 0;
 export const createSalonLocationResponseLocationTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesDefault = 0;
+export const createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesMin = 0;
+
 export const createSalonLocationResponseLocationTwoServicesItemBufferMinutesDefault = 0;
 export const createSalonLocationResponseLocationTwoServicesItemBufferMinutesMin = 0;
+
+export const createSalonLocationResponseLocationTwoServicesItemRequiredEmployeeCountDefault = 1;
+export const createSalonLocationResponseLocationTwoServicesItemRequiredEmployeeCountMax = 20;
 
 export const createSalonLocationResponseLocationTwoServicesItemHomeServiceFeeMin = 0;
 
@@ -5082,8 +5675,20 @@ export const createSalonLocationResponseSalonTwoTopServicesItemPriceMin = 0;
 export const createSalonLocationResponseSalonTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemProcessingMinutesMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesDefault = 0;
+export const createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesMin = 0;
+
 export const createSalonLocationResponseSalonTwoServicesItemBufferMinutesDefault = 0;
 export const createSalonLocationResponseSalonTwoServicesItemBufferMinutesMin = 0;
+
+export const createSalonLocationResponseSalonTwoServicesItemRequiredEmployeeCountDefault = 1;
+export const createSalonLocationResponseSalonTwoServicesItemRequiredEmployeeCountMax = 20;
 
 export const createSalonLocationResponseSalonTwoServicesItemHomeServiceFeeMin = 0;
 
@@ -5170,7 +5775,11 @@ export const CreateSalonLocationResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonLocationResponseLocationTwoServicesItemBufferMinutesMin).default(createSalonLocationResponseLocationTwoServicesItemBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(createSalonLocationResponseLocationTwoServicesItemRequiredEmployeeCountMax).default(createSalonLocationResponseLocationTwoServicesItemRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -5259,7 +5868,11 @@ export const CreateSalonLocationResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
+  "preProcessingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemPostProcessingMinutesDefault),
   "bufferMinutes": zod.number().min(createSalonLocationResponseSalonTwoServicesItemBufferMinutesMin).default(createSalonLocationResponseSalonTwoServicesItemBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(createSalonLocationResponseSalonTwoServicesItemRequiredEmployeeCountMax).default(createSalonLocationResponseSalonTwoServicesItemRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -8271,9 +8884,11 @@ export const QuoteEducationB2bOrderResponse = zod.object({
 export const checkoutEducationB2bOrderHeaderIdempotencyKeyMax = 200;
 
 
+export const checkoutEducationB2bOrderHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CheckoutEducationB2bOrderHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(checkoutEducationB2bOrderHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(checkoutEducationB2bOrderHeaderIdempotencyKeyMax).regex(checkoutEducationB2bOrderHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const checkoutEducationB2bOrderBodyOneLinesItemQuantityMax = 1000;
@@ -9577,6 +10192,138 @@ export const AdminListOrdersResponse = zod.array(AdminListOrdersResponseItem)
 
 
 /**
+ * @summary List a bounded page of B2B orders for administration
+ */
+export const adminListOrdersPageQueryPageDefault = 1;
+
+export const adminListOrdersPageQueryPageSizeDefault = 50;
+export const adminListOrdersPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListOrdersPageQueryParams = zod.object({
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
+  "salon": zod.coerce.string().optional(),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
+  "search": zod.coerce.string().optional(),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListOrdersPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListOrdersPageQueryPageSizeMax).default(adminListOrdersPageQueryPageSizeDefault)
+})
+
+export const adminListOrdersPageResponseItemsItemOneTotalMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneSubtotalMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneShippingCostMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneTotalWeightGramsMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneCouponDiscountRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditMerchandiseSubtotalRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditPreCreditPayableTotalRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneReferralCreditAppliedRsdMin = 0;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemQuantityMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemPriceMultipleOf = 1;
+
+export const adminListOrdersPageResponseItemsItemOneItemsItemCouponDiscountRsdMin = 0;
+
+
+export const adminListOrdersPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListOrdersPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "fulfillmentStatus": zod.enum(['RECEIVED', 'PREPARING', 'PACKING', 'SHIPPED', 'COMPLETED', 'CANCELLED']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneTotalWeightGramsMultipleOf),
+  "couponCode": zod.string().nullable(),
+  "couponDiscountRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneCouponDiscountRsdMin),
+  "couponFreeShipping": zod.boolean(),
+  "referralCreditMerchandiseSubtotalRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditMerchandiseSubtotalRsdMin),
+  "referralCreditPreCreditPayableTotalRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditPreCreditPayableTotalRsdMin),
+  "referralCreditAppliedRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneReferralCreditAppliedRsdMin),
+  "invoice": zod.object({
+  "number": zod.string(),
+  "issuedAt": zod.coerce.date().nullable()
+}).nullable(),
+  "itemCount": zod.number(),
+  "createdAt": zod.coerce.date().nullable(),
+  "updatedAt": zod.coerce.date().nullable(),
+  "salon": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
+}),
+  "delivery": zod.object({
+  "recipientName": zod.string(),
+  "address": zod.string(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "usesSalonAddress": zod.boolean()
+}),
+  "billing": zod.object({
+  "companyName": zod.string(),
+  "pib": zod.string(),
+  "registrationNumber": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string()
+}).nullable(),
+  "items": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "variantValue": zod.string().nullish(),
+  "variantLabel": zod.string().nullish(),
+  "productSku": zod.string().nullish(),
+  "quantity": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminListOrdersPageResponseItemsItemOneItemsItemPriceMultipleOf),
+  "couponDiscountRsd": zod.number().int().min(adminListOrdersPageResponseItemsItemOneItemsItemCouponDiscountRsdMin).optional()
+}))
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date().nullable()
+}))
+}))),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListOrdersPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
  * @summary Get complete B2B order for administration
  */
 export const AdminGetOrderParams = zod.object({
@@ -10850,8 +11597,14 @@ export const PurchaseEducationBundleParams = zod.object({
   "bundleId": zod.string().uuid()
 })
 
+export const purchaseEducationBundleHeaderIdempotencyKeyMax = 200;
+
+
+export const purchaseEducationBundleHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
+
 export const PurchaseEducationBundleHeader = zod.object({
-  "Idempotency-Key": zod.string()
+  "Idempotency-Key": zod.string().min(1).max(purchaseEducationBundleHeaderIdempotencyKeyMax).regex(purchaseEducationBundleHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const PurchaseEducationBundleBody = zod.object({
@@ -14022,9 +14775,11 @@ export const ListMyEducationOperationalBookingsResponse = zod.array(ListMyEducat
 export const createEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
 
 
+export const createEducationOperationalBookingHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEducationOperationalBookingHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createEducationOperationalBookingHeaderIdempotencyKeyMax).regex(createEducationOperationalBookingHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const createEducationOperationalBookingBodyInstallmentCountDefault = 1;
@@ -14195,9 +14950,11 @@ export const SettleAdminEducationInstallmentParams = zod.object({
 export const settleAdminEducationInstallmentHeaderIdempotencyKeyMax = 200;
 
 
+export const settleAdminEducationInstallmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const SettleAdminEducationInstallmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(settleAdminEducationInstallmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(settleAdminEducationInstallmentHeaderIdempotencyKeyMax).regex(settleAdminEducationInstallmentHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const SettleAdminEducationInstallmentResponse = zod.object({
@@ -14284,9 +15041,11 @@ export const RescheduleEducationOperationalBookingParams = zod.object({
 export const rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax = 200;
 
 
+export const rescheduleEducationOperationalBookingHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const RescheduleEducationOperationalBookingHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(rescheduleEducationOperationalBookingHeaderIdempotencyKeyMax).regex(rescheduleEducationOperationalBookingHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const rescheduleEducationOperationalBookingBodyParticipantIdsMax = 20;
@@ -14479,9 +15238,11 @@ export const CommitEducationCourseRecurrenceParams = zod.object({
 export const commitEducationCourseRecurrenceHeaderIdempotencyKeyMax = 200;
 
 
+export const commitEducationCourseRecurrenceHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CommitEducationCourseRecurrenceHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(commitEducationCourseRecurrenceHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(commitEducationCourseRecurrenceHeaderIdempotencyKeyMax).regex(commitEducationCourseRecurrenceHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const commitEducationCourseRecurrenceBodyWeekdaysItemMax = 7;
@@ -14952,9 +15713,11 @@ export const EnrollInEducationCourseParams = zod.object({
 export const enrollInEducationCourseHeaderIdempotencyKeyMax = 200;
 
 
+export const enrollInEducationCourseHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const EnrollInEducationCourseHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(enrollInEducationCourseHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(enrollInEducationCourseHeaderIdempotencyKeyMax).regex(enrollInEducationCourseHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const EnrollInEducationCourseBody = zod.object({
@@ -15007,9 +15770,11 @@ export const CreateEducationGroupEnrollmentsParams = zod.object({
 export const createEducationGroupEnrollmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEducationGroupEnrollmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
+  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).regex(createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
 })
 
 
@@ -19571,9 +20336,11 @@ export const ListEducationGiftVouchersResponse = zod.object({
 export const purchaseEducationGiftVoucherHeaderIdempotencyKeyMax = 200;
 
 
+export const purchaseEducationGiftVoucherHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const PurchaseEducationGiftVoucherHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(purchaseEducationGiftVoucherHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(purchaseEducationGiftVoucherHeaderIdempotencyKeyMax).regex(purchaseEducationGiftVoucherHeaderIdempotencyKeyRegExp).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
 })
 
 export const purchaseEducationGiftVoucherBodyRecipientEmailMax = 320;
@@ -20219,6 +20986,56 @@ export const AdminListSalonsResponse = zod.array(AdminListSalonsResponseItem)
 
 
 /**
+ * @summary Searchable/filterable bounded salon page
+ */
+export const adminListSalonsPageQueryPageDefault = 1;
+
+export const adminListSalonsPageQueryPageSizeDefault = 50;
+export const adminListSalonsPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListSalonsPageQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "city": zod.coerce.string().optional(),
+  "active": zod.coerce.boolean().optional(),
+  "featured": zod.coerce.boolean().optional(),
+  "subscriptionStatus": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListSalonsPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListSalonsPageQueryPageSizeMax).default(adminListSalonsPageQueryPageSizeDefault)
+})
+
+
+export const adminListSalonsPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListSalonsPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "active": zod.boolean(),
+  "featured": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "videoUrl": zod.string().nullable(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "loyaltyTier": zod.string().nullish(),
+  "loyaltySpend": zod.number(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListSalonsPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
  * @summary Admin salon profile with B2B order aggregates
  */
 export const adminGetSalonPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
@@ -20345,6 +21162,47 @@ export const AdminListUsersResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
+
+
+/**
+ * @summary Searchable/filterable bounded user page
+ */
+export const adminListUsersPageQueryPageDefault = 1;
+
+export const adminListUsersPageQueryPageSizeDefault = 50;
+export const adminListUsersPageQueryPageSizeMax = 100;
+
+
+
+export const AdminListUsersPageQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
+  "active": zod.coerce.boolean().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListUsersPageQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListUsersPageQueryPageSizeMax).default(adminListUsersPageQueryPageSizeDefault)
+})
+
+
+export const adminListUsersPageResponsePageSizeMax = 100;
+
+
+
+export const AdminListUsersPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "passwordSetAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListUsersPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
 
 
 /**
@@ -27213,6 +28071,10 @@ export const GetWidgetSalonParams = zod.object({
   "slug": zod.coerce.string()
 })
 
+export const getWidgetSalonResponseServicesItemRequiredEmployeeCountMax = 20;
+
+
+
 export const GetWidgetSalonResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -27223,6 +28085,7 @@ export const GetWidgetSalonResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "durationMinutes": zod.number(),
+  "requiredEmployeeCount": zod.number().int().min(1).max(getWidgetSalonResponseServicesItemRequiredEmployeeCountMax).optional(),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "categoryName": zod.string()
@@ -27253,7 +28116,9 @@ export const GetWidgetAvailabilityResponseItem = zod.object({
   "start": zod.string(),
   "end": zod.string(),
   "employeeId": zod.string(),
-  "employeeName": zod.string()
+  "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional()
 })
 export const GetWidgetAvailabilityResponse = zod.array(GetWidgetAvailabilityResponseItem)
 
@@ -27268,10 +28133,14 @@ export const CreateWidgetAppointmentParams = zod.object({
 export const createWidgetAppointmentHeaderIdempotencyKeyMax = 200;
 
 
+export const createWidgetAppointmentHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateWidgetAppointmentHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createWidgetAppointmentHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createWidgetAppointmentHeaderIdempotencyKeyMax).regex(createWidgetAppointmentHeaderIdempotencyKeyRegExp).describe('Required client-generated widget booking identifier; reuse it only to retry the identical payload.')
 })
+
+export const createWidgetAppointmentBodyEmployeeIdsMax = 20;
 
 export const createWidgetAppointmentBodyFirstNameMax = 80;
 
@@ -27289,6 +28158,7 @@ export const createWidgetAppointmentBodyNoteMax = 500;
 export const CreateWidgetAppointmentBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createWidgetAppointmentBodyEmployeeIdsMax).optional(),
   "date": zod.string(),
   "startTime": zod.string(),
   "firstName": zod.string().min(1).max(createWidgetAppointmentBodyFirstNameMax),
@@ -27305,6 +28175,7 @@ export const CreateWidgetAppointmentResponse = zod.object({
   "startTime": zod.string(),
   "endTime": zod.string(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
   "serviceName": zod.string(),
   "salonName": zod.string()
 })
@@ -27320,9 +28191,11 @@ export const CreateWidgetBookingGroupParams = zod.object({
 export const createWidgetBookingGroupHeaderIdempotencyKeyMax = 200;
 
 
+export const createWidgetBookingGroupHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateWidgetBookingGroupHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createWidgetBookingGroupHeaderIdempotencyKeyMax).describe('Client-generated command identifier; reuse it only to retry the identical booking payload.')
+  "Idempotency-Key": zod.string().min(1).max(createWidgetBookingGroupHeaderIdempotencyKeyMax).regex(createWidgetBookingGroupHeaderIdempotencyKeyRegExp).describe('Required client-generated widget booking identifier; reuse it only to retry the identical payload.')
 })
 
 export const createWidgetBookingGroupBodyFirstNameMax = 80;
@@ -27335,6 +28208,8 @@ export const createWidgetBookingGroupBodyPhoneMax = 30;
 export const createWidgetBookingGroupBodyEmailMax = 160;
 
 export const createWidgetBookingGroupBodyNoteMax = 500;
+
+export const createWidgetBookingGroupBodyTreatmentsItemEmployeeIdsMax = 20;
 
 export const createWidgetBookingGroupBodyTreatmentsMax = 5;
 
@@ -27349,6 +28224,7 @@ export const CreateWidgetBookingGroupBody = zod.object({
   "treatments": zod.array(zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createWidgetBookingGroupBodyTreatmentsItemEmployeeIdsMax).optional(),
   "date": zod.coerce.date(),
   "startTime": zod.string()
 })).min(1).max(createWidgetBookingGroupBodyTreatmentsMax)
@@ -27359,6 +28235,14 @@ export const createWidgetBookingGroupResponseAppointmentsItemTravelFeeMin = 0;
 
 
 export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPositionMin = 0;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax = 20;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin = 0;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin = 0;
+
+export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin = 0;
 
 export const createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin = 0;
 
@@ -27377,6 +28261,10 @@ export const CreateWidgetBookingGroupResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
+  "employeeIds": zod.array(zod.string()).optional(),
+  "employeeNames": zod.array(zod.string()).optional(),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional(),
   "date": zod.string().regex(createWidgetBookingGroupResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
@@ -27414,9 +28302,15 @@ export const CreateWidgetBookingGroupResponse = zod.object({
   "serviceId": zod.string(),
   "date": zod.coerce.date(),
   "employeeId": zod.string().nullable(),
+  "employeeIds": zod.array(zod.string().nullable()).max(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemEmployeeIdsMax).optional(),
   "startTime": zod.string(),
   "endTime": zod.string(),
-  "bufferMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin)
+  "preProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPreProcessingMinutesMin).optional(),
+  "processingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemProcessingMinutesMin).optional(),
+  "postProcessingMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemPostProcessingMinutesMin).optional(),
+  "bufferMinutes": zod.number().int().min(createWidgetBookingGroupResponseAppointmentsItemTreatmentsItemBufferMinutesMin),
+  "score": zod.number().optional().describe('Additive schedule-compaction score; never affects validity, identity, count, or order.'),
+  "recommended": zod.boolean().optional().describe('True only for a meaningfully better same-day option within the same employee\/resource assignment.')
 })).optional(),
   "plannedDate": zod.coerce.date().nullish(),
   "plannedStartTime": zod.string().nullish(),
@@ -31612,6 +32506,122 @@ export const CreatePriceInquiryResponse = zod.object({
 
 
 /**
+ * @summary List supplier product price inquiries for administrator review
+ */
+export const adminListPriceInquiriesQuerySearchMax = 120;
+
+export const adminListPriceInquiriesQueryPageDefault = 1;
+export const adminListPriceInquiriesQueryPageMax = 100000;
+
+export const adminListPriceInquiriesQueryPageSizeDefault = 50;
+export const adminListPriceInquiriesQueryPageSizeMax = 500;
+
+
+
+export const AdminListPriceInquiriesQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListPriceInquiriesQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.'),
+  "page": zod.coerce.number().int().min(1).max(adminListPriceInquiriesQueryPageMax).default(adminListPriceInquiriesQueryPageDefault).describe('One-based result page in newest-first order.'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListPriceInquiriesQueryPageSizeMax).default(adminListPriceInquiriesQueryPageSizeDefault).describe('Maximum number of inquiries returned per page.')
+})
+
+export const AdminListPriceInquiriesResponseItem = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListPriceInquiriesResponse = zod.array(AdminListPriceInquiriesResponseItem)
+
+
+/**
+ * @summary List a bounded page of supplier product price inquiries with exact navigation metadata
+ */
+export const adminListPriceInquiriesPageQuerySearchMax = 120;
+
+export const adminListPriceInquiriesPageQueryPageDefault = 1;
+export const adminListPriceInquiriesPageQueryPageMax = 100000;
+
+export const adminListPriceInquiriesPageQueryPageSizeDefault = 50;
+export const adminListPriceInquiriesPageQueryPageSizeMax = 500;
+
+
+
+export const AdminListPriceInquiriesPageQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListPriceInquiriesPageQuerySearchMax).optional().describe('Case-insensitive customer name, email, product, or supplier search.'),
+  "page": zod.coerce.number().int().min(1).max(adminListPriceInquiriesPageQueryPageMax).default(adminListPriceInquiriesPageQueryPageDefault).describe('One-based result page in newest-first order.'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListPriceInquiriesPageQueryPageSizeMax).default(adminListPriceInquiriesPageQueryPageSizeDefault).describe('Maximum number of inquiries returned per page.')
+})
+
+
+export const adminListPriceInquiriesPageResponsePageSizeMax = 500;
+
+
+
+export const AdminListPriceInquiriesPageResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "page": zod.number().int().min(1),
+  "pageSize": zod.number().int().min(1).max(adminListPriceInquiriesPageResponsePageSizeMax),
+  "hasNext": zod.boolean()
+})
+
+
+/**
+ * @summary Update an administrator price inquiry status or internal note
+ */
+export const AdminUpdatePriceInquiryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const adminUpdatePriceInquiryBodyInternalNoteMax = 5000;
+
+
+
+export const AdminUpdatePriceInquiryBody = zod.object({
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']).optional(),
+  "internalNote": zod.string().max(adminUpdatePriceInquiryBodyInternalNoteMax).nullish()
+}).strict()
+
+export const AdminUpdatePriceInquiryResponse = zod.object({
+  "id": zod.string(),
+  "supplierId": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "supplierName": zod.string(),
+  "contactName": zod.string(),
+  "contactEmail": zod.string(),
+  "contactPhone": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['NEW', 'CONTACTED', 'CLOSED']),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Snapshot the authenticated salon cart without creating an order
  */
 export const createShopQuoteBodyCustomerCompanyNameMax = 200;
@@ -31854,6 +32864,68 @@ export const GetShopQuotePdfResponse = zod.unknown()
 
 
 /**
+ * @summary List B2B quote snapshots for administrator review
+ */
+
+export const adminListQuotesResponseSubtotalWithoutVatMin = 0;
+
+export const adminListQuotesResponseVatAmountMin = 0;
+
+export const adminListQuotesResponseTotalWithVatMin = 0;
+
+
+
+export const AdminListQuotesResponseItem = zod.object({
+  "id": zod.string(),
+  "publicId": zod.string(),
+  "salonId": zod.string(),
+  "sourceCartId": zod.string().nullish(),
+  "customerCompanyName": zod.string().nullish(),
+  "sellerSnapshot": zod.object({
+  "companyName": zod.string(),
+  "taxId": zod.string().optional(),
+  "registrationNumber": zod.string().optional(),
+  "address": zod.string().optional(),
+  "city": zod.string().optional(),
+  "postalCode": zod.string().optional(),
+  "bankAccount": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional(),
+  "recipient": zod.object({
+  "companyName": zod.string(),
+  "registeredCompanyName": zod.string().optional(),
+  "taxId": zod.string().optional(),
+  "registrationNumber": zod.string().optional(),
+  "address": zod.string().optional(),
+  "city": zod.string().optional(),
+  "postalCode": zod.string().optional(),
+  "email": zod.string().optional(),
+  "phone": zod.string().optional()
+}).optional()
+}),
+  "itemSnapshots": zod.array(zod.object({
+  "productId": zod.string().nullable(),
+  "bundleId": zod.string().nullable(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().int(),
+  "quantity": zod.number().int().min(1),
+  "lineTotal": zod.number().int()
+})),
+  "subtotalWithoutVat": zod.number().int().min(adminListQuotesResponseSubtotalWithoutVatMin),
+  "vatAmount": zod.number().int().min(adminListQuotesResponseVatAmountMin),
+  "totalWithVat": zod.number().int().min(adminListQuotesResponseTotalWithVatMin),
+  "currency": zod.enum(['RSD']),
+  "validUntil": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListQuotesResponse = zod.array(AdminListQuotesResponseItem)
+
+
+/**
  * @summary Report provider-neutral catalog infrastructure connection status
  */
 export const adminGetMetaCatalogStatusResponseLatestRunOneItemCountMin = 0;
@@ -31958,7 +33030,60 @@ export const CreateRetailOrderRmaResponse = zod.void()
 /**
  * @summary List RMAs
  */
-export const AdminListRmasResponse = zod.unknown()
+
+
+
+
+export const AdminListRmasResponseItem = zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})).and(zod.object({
+  "target": zod.literal("b2b"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+})).and(zod.object({
+  "target": zod.literal("b2c"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+}))])
+export const AdminListRmasResponse = zod.array(AdminListRmasResponseItem)
 
 
 /**
@@ -31968,7 +33093,73 @@ export const AdminGetRmaParams = zod.object({
   "id": zod.coerce.string()
 })
 
-export const AdminGetRmaResponse = zod.unknown()
+
+
+
+
+
+export const AdminGetRmaResponse = zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})).and(zod.object({
+  "target": zod.literal("b2b"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+})).and(zod.object({
+  "target": zod.literal("b2c"),
+  "owner": zod.object({
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "businessName": zod.string().nullish(),
+  "pib": zod.string().nullish(),
+  "email": zod.string()
+})
+}))]).and(zod.object({
+  "items": zod.array(zod.object({
+  "orderItemId": zod.string().uuid(),
+  "productName": zod.string(),
+  "quantity": zod.number().int().min(1)
+})),
+  "privatePhotos": zod.array(zod.string()),
+  "auditTrail": zod.array(zod.object({
+  "action": zod.string(),
+  "timestamp": zod.coerce.date(),
+  "actorId": zod.string().uuid().nullable(),
+  "note": zod.string().nullable()
+}))
+}))
 
 
 /**
@@ -31982,7 +33173,44 @@ export const AdminUpdateRmaStatusBody = zod.object({
   "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED'])
 }).strict()
 
-export const AdminUpdateRmaStatusResponse = zod.unknown()
+
+
+
+
+export const AdminUpdateRmaStatusResponse = zod.object({
+  "row": zod.union([zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.string().uuid(),
+  "orderItemId": zod.string().uuid(),
+  "retailOrderId": zod.null(),
+  "retailOrderItemId": zod.null()
+})),zod.object({
+  "id": zod.string().uuid(),
+  "rmaNumber": zod.string(),
+  "requesterUserId": zod.string().uuid(),
+  "quantity": zod.number().int().min(1),
+  "reason": zod.string(),
+  "description": zod.string(),
+  "status": zod.enum(['RECEIVED', 'IN_REVIEW', 'APPROVED', 'REJECTED']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "orderId": zod.null(),
+  "orderItemId": zod.null(),
+  "retailOrderId": zod.string().uuid(),
+  "retailOrderItemId": zod.string().uuid()
+}))]),
+  "changed": zod.boolean()
+})
 
 
 /**

@@ -16,9 +16,10 @@
  *   fetches where DB-level pagination is contractually available.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,6 +32,262 @@ function repoPath(...parts: string[]): string {
 
 async function readSource(relPath: string): Promise<string> {
   return readFile(repoPath(relPath), "utf8");
+}
+
+const CHILD_PROCESS_IMPORT_PATTERN =
+  /from\s+["'](?:node:)?child_process["']|require\s*\(\s*["'](?:node:)?child_process["']\s*\)/;
+const DATABASE_HARNESS_PATTERN =
+  /\b(?:DATABASE_URL|LUMERA_TEST_DATABASE_URL|createdb|dropdb|psql|pg_dump|pg_restore)\b|@workspace\/db/;
+const INHERITED_CHILD_OUTPUT_PATTERN =
+  /stdio\s*:\s*(?:["']inherit["']|\[[^\]]*["']inherit["'][^\]]*\])/s;
+const RAW_CHILD_OUTPUT_FORWARDING_PATTERN =
+  /(?:stdout|stderr)(?:\?)*\.(?:on\s*\(\s*["']data["']|pipe\s*\(\s*process\.(?:stdout|stderr))[\s\S]{0,500}process\.(?:stdout|stderr)\.write\s*\(/;
+const REDACTED_CHILD_OUTPUT_USE_PATTERN =
+  /\b(?:pipeRedactedDatabaseOutput|redactDatabaseCommandOutput)\s*\(/;
+const AGGREGATE_QA_REPORT_RUNNER_PATTERN =
+  /(?:^|\/)run-[^/]*(?:qa|report)[^/]*\.tsx?$/i;
+const STATIC_CHECK_EXCLUSIONS = new Set([
+  "scripts/src/backend-standards-database.test.ts",
+  "scripts/src/test-backend-static-checks.ts",
+]);
+
+function parseAggregateRunner(source: string, file: string): ts.SourceFile {
+  return ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.toLowerCase().endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+}
+
+function formatAggregateRunnerParseDiagnostics(
+  sourceFile: ts.SourceFile,
+  file: string,
+): string[] {
+  const parseDiagnostics = (
+    sourceFile as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }
+  ).parseDiagnostics;
+  return parseDiagnostics.map((diagnostic) => {
+    const position = sourceFile.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
+    return `${file}:${position.line + 1}:${position.character + 1} has invalid TypeScript syntax: ${message}`;
+  });
+}
+
+function hasRawAggregateChildOutputCapture(sourceFile: ts.SourceFile): boolean {
+  const bindings = new Map<string, ts.Node>();
+  const functions = new Map<string, ts.FunctionLikeDeclaration>();
+
+  const indexBindings = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isIdentifier(node.name)) {
+        bindings.set(node.name.text, node.initializer);
+        if (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) {
+          functions.set(node.name.text, node.initializer);
+        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const property = element.propertyName ?? element.name;
+          if (!ts.isIdentifier(property)) continue;
+          bindings.set(
+            element.name.text,
+            ts.factory.createPropertyAccessExpression(node.initializer, property.text),
+          );
+        }
+      }
+    } else if (ts.isFunctionDeclaration(node) && node.name) {
+      functions.set(node.name.text, node);
+    } else if (
+      ts.isBinaryExpression(node)
+      && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      && ts.isIdentifier(node.left)
+    ) {
+      bindings.set(node.left.text, node.right);
+    }
+    ts.forEachChild(node, indexBindings);
+  };
+  indexBindings(sourceFile);
+
+  const resolve = (node: ts.Expression, seen = new Set<string>()): ts.Expression => {
+    if (!ts.isIdentifier(node) || seen.has(node.text)) return node;
+    const target = bindings.get(node.text);
+    if (!target || !ts.isExpression(target)) return node;
+    seen.add(node.text);
+    return resolve(target, seen);
+  };
+  const isChildOutputStream = (node: ts.Expression): boolean => {
+    const resolved = resolve(node);
+    return ts.isPropertyAccessExpression(resolved)
+      && (resolved.name.text === "stdout" || resolved.name.text === "stderr");
+  };
+  const resolveCallback = (node: ts.Expression): ts.FunctionLikeDeclaration | undefined => {
+    const resolved = resolve(node);
+    if (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved)) return resolved;
+    return ts.isIdentifier(resolved) ? functions.get(resolved.text) : undefined;
+  };
+  const isRedactionWriter = (node: ts.Expression): boolean => {
+    const resolved = resolve(node);
+    return ts.isCallExpression(resolved)
+      && ts.isIdentifier(resolved.expression)
+      && resolved.expression.text === "createRedactedDatabaseOutputWriter";
+  };
+
+  const callbackCapturesRawOutput = (callback: ts.FunctionLikeDeclaration): boolean => {
+    const tainted = new Set(
+      callback.parameters
+        .map((parameter) => parameter.name)
+        .filter(ts.isIdentifier)
+        .map((parameter) => parameter.text),
+    );
+    let violation = false;
+    const containsTaint = (node: ts.Node): boolean => {
+      let found = false;
+      const visit = (child: ts.Node): void => {
+        if (ts.isIdentifier(child) && tainted.has(child.text)) found = true;
+        if (!found) ts.forEachChild(child, visit);
+      };
+      visit(node);
+      return found;
+    };
+    const inspect = (node: ts.Node): void => {
+      if (violation) return;
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer
+        && containsTaint(node.initializer)
+      ) {
+        tainted.add(node.name.text);
+      } else if (ts.isBinaryExpression(node) && containsTaint(node.right)) {
+        if (node.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken) {
+          violation = true;
+          return;
+        }
+        if (
+          node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+          && ts.isIdentifier(node.left)
+        ) {
+          if (ts.isIdentifier(node.right) && tainted.has(node.right.text)) {
+            tainted.add(node.left.text);
+          } else {
+            violation = true;
+            return;
+          }
+        }
+      } else if (
+        ts.isCallExpression(node)
+        && ts.isPropertyAccessExpression(node.expression)
+        && node.arguments.some(containsTaint)
+      ) {
+        const method = node.expression.name.text;
+        const receiver = node.expression.expression;
+        if (
+          (method === "push" || method === "write")
+          && !(method === "write" && isRedactionWriter(receiver))
+        ) {
+          violation = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, inspect);
+    };
+    if (callback.body) inspect(callback.body);
+    return violation;
+  };
+
+  let violation = false;
+  const inspectListeners = (node: ts.Node): void => {
+    if (
+      !violation
+      && ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === "on"
+      && isChildOutputStream(node.expression.expression)
+      && node.arguments[0]
+      && ts.isStringLiteralLike(node.arguments[0])
+      && node.arguments[0].text === "data"
+      && node.arguments[1]
+    ) {
+      const callback = resolveCallback(node.arguments[1]);
+      violation = callback ? callbackCapturesRawOutput(callback) : false;
+    }
+    if (!violation) ts.forEachChild(node, inspectListeners);
+  };
+  inspectListeners(sourceFile);
+  return violation;
+}
+
+export function findUnsafeDatabaseChildProcessUses(
+  source: string,
+  file = "database harness",
+): string[] {
+  const isAggregateRunner = AGGREGATE_QA_REPORT_RUNNER_PATTERN.test(file);
+  const aggregateSourceFile = isAggregateRunner
+    ? parseAggregateRunner(source, file)
+    : undefined;
+  const violations = aggregateSourceFile
+    ? formatAggregateRunnerParseDiagnostics(aggregateSourceFile, file)
+    : [];
+
+  if (
+    !CHILD_PROCESS_IMPORT_PATTERN.test(source)
+    || !DATABASE_HARNESS_PATTERN.test(source)
+  ) {
+    return violations;
+  }
+
+  if (INHERITED_CHILD_OUTPUT_PATTERN.test(source)) {
+    violations.push(`${file} lets a database-oriented child process inherit stdout or stderr`);
+  }
+  if (
+    RAW_CHILD_OUTPUT_FORWARDING_PATTERN.test(source)
+    && !REDACTED_CHILD_OUTPUT_USE_PATTERN.test(source)
+  ) {
+    violations.push(`${file} forwards database-oriented child output without redaction`);
+  }
+  if (
+    aggregateSourceFile
+    && hasRawAggregateChildOutputCapture(aggregateSourceFile)
+  ) {
+    violations.push(
+      `${file} captures database-oriented child output for an aggregate report without chunk-safe redaction`,
+    );
+  }
+  return violations;
+}
+
+async function listTypeScriptSources(
+  directory: string,
+  relativeDirectory: string,
+): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const sources = await Promise.all(entries.map(async (entry): Promise<string[]> => {
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith(".")) {
+        return [];
+      }
+      return listTypeScriptSources(path.join(directory, entry.name), relativePath);
+    }
+    return entry.isFile() && /\.tsx?$/.test(entry.name) ? [relativePath] : [];
+  }));
+  return sources.flat();
+}
+
+export async function checkDatabaseChildProcessOutputSafety(): Promise<string[]> {
+  const roots = ["scripts/src", "scripts/browser", "artifacts"];
+  const files = (await Promise.all(roots.map((root) =>
+    listTypeScriptSources(repoPath(root), root)))).flat();
+  const violations: string[] = [];
+
+  await Promise.all(files.map(async (file) => {
+    if (STATIC_CHECK_EXCLUSIONS.has(file)) return;
+    violations.push(...findUnsafeDatabaseChildProcessUses(await readSource(file), file));
+  }));
+
+  return violations.sort();
 }
 
 // ── 1. await-in-loop check ───────────────────────────────────────────────────

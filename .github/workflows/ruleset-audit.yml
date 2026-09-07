@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify:
-    name: Default branch protection configuration
+    name: Branch cleanup and protection configuration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -21,3 +21,28 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.RULESET_AUDIT_TOKEN }}
         run: bash scripts/verify-github-ruleset.sh
+      # Configure RULESET_AUDIT_NOTIFICATION_WEBHOOK as a repository or
+      # environment secret with the incoming-webhook URL for the team's
+      # shared channel. The payload includes both common text field names so
+      # the channel provider can be selected without changing the audit.
+      - name: Notify shared team channel when audit fails
+        if: ${{ failure() }}
+        env:
+          NOTIFICATION_WEBHOOK_URL: ${{ secrets.RULESET_AUDIT_NOTIFICATION_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          : "${NOTIFICATION_WEBHOOK_URL:?RULESET_AUDIT_NOTIFICATION_WEBHOOK must be configured}"
+          message="Repository ruleset audit failed for ${REPOSITORY}. Review the failed run: ${RUN_URL}"
+          payload="$(jq -n \
+            --arg text "$message" \
+            --arg content "$message" \
+            '{text: $text, content: $content}')"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "$NOTIFICATION_WEBHOOK_URL"

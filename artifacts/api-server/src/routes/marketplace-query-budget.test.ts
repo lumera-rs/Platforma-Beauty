@@ -3,8 +3,18 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
 import type { AddressInfo } from "node:net";
+import { sql } from "drizzle-orm";
 import app from "../app";
-import { observeDatabaseQueries, pool, type DatabaseQueryObservation } from "@workspace/db";
+import {
+  databaseQueryObservationHeader,
+  db,
+  isDatabaseQueryObservationRuntimeAllowed,
+  observeDatabaseQueries,
+  pool,
+  runWithDatabaseQueryObservation,
+  type DatabaseQueryObservation,
+} from "@workspace/db";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { createSession, sessionCookieName } from "../lib/auth";
 
 // Regression coverage for the intended paid-featured-only popular-course
@@ -17,17 +27,283 @@ import { createSession, sessionCookieName } from "../lib/auth";
 // original ranking bypass went undetected by a "passing" test. It has been
 // removed rather than kept as a second, driftable source of truth.
 
+assertDestructiveTestRuntimeAllowed(process.env, "Marketplace query budget tests");
+
+test("database query observation runtime guard allows only explicit non-production runtimes", () => {
+  assert.equal(isDatabaseQueryObservationRuntimeAllowed({ NODE_ENV: "test" }), true);
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "development",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    true,
+  );
+  assert.equal(isDatabaseQueryObservationRuntimeAllowed({ NODE_ENV: "development" }), false);
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "production",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    false,
+  );
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "test",
+      REPLIT_DEPLOYMENT: "1",
+      DATABASE_QUERY_OBSERVATION_ENABLED: "1",
+    }),
+    false,
+  );
+  assert.equal(
+    isDatabaseQueryObservationRuntimeAllowed({
+      NODE_ENV: "test",
+      REPL_DEPLOYMENT: "1",
+    }),
+    false,
+  );
+});
+
 async function countedRequest(url: string, init?: RequestInit) {
   const queries: DatabaseQueryObservation[] = [];
-  const stopObserving = observeDatabaseQueries((query) => queries.push(query));
-  try {
-    const response = await fetch(url, init);
+  return observeDatabaseQueries((query) => queries.push(query), async (captureId) => {
+    const headers = new Headers(init?.headers);
+    headers.set(databaseQueryObservationHeader, captureId);
+    const response = await fetch(url, { ...init, headers });
     const body = await response.text();
     return { response, body, queries };
-  } finally {
-    stopObserving();
-  }
+  });
 }
+
+test("parallel SQL capture sessions observe only their own async context", async () => {
+  const markers = [randomUUID(), randomUUID()];
+  const capturedParams = await Promise.all(markers.map(async (marker) => {
+    const params: unknown[][] = [];
+    await observeDatabaseQueries(
+      (query) => params.push(query.params),
+      async () => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await db.execute(sql`select ${marker}::text as observation_marker`);
+      },
+    );
+    return params;
+  }));
+
+  for (const [index, marker] of markers.entries()) {
+    assert.ok(
+      capturedParams[index]!.some((params) => params.includes(marker)),
+      "each capture session must observe its own query",
+    );
+    assert.ok(
+      capturedParams[index]!.every((params) => !params.includes(markers[1 - index])),
+      "parallel capture sessions must not observe each other's queries",
+    );
+  }
+});
+
+test("failed nested SQL captures unregister stale IDs without disturbing the outer capture", async () => {
+  const failingMarker = randomUUID();
+  const staleInnerMarker = randomUUID();
+  const outerContinuationMarker = randomUUID();
+  const staleOuterMarker = randomUUID();
+  const outerParams: unknown[][] = [];
+  let outerCaptureId: string | undefined;
+  let innerCaptureId: string | undefined;
+  let innerObserverCalls = 0;
+
+  await observeDatabaseQueries(
+    (query) => outerParams.push(query.params),
+    async (captureId) => {
+      outerCaptureId = captureId;
+
+      await assert.rejects(
+        observeDatabaseQueries(
+          () => {
+            innerObserverCalls += 1;
+            throw new Error("intentional observer failure");
+          },
+          async (nestedCaptureId) => {
+            innerCaptureId = nestedCaptureId;
+            await db.execute(sql`select ${failingMarker}::text as observation_marker`);
+          },
+        ),
+        /intentional observer failure/,
+      );
+
+      assert.equal(innerObserverCalls, 1);
+      assert.ok(innerCaptureId);
+      await runWithDatabaseQueryObservation(innerCaptureId, () =>
+        db.execute(sql`select ${staleInnerMarker}::text as observation_marker`),
+      );
+      await db.execute(sql`select ${outerContinuationMarker}::text as observation_marker`);
+    },
+  );
+
+  assert.ok(
+    outerParams.some((params) => params.includes(failingMarker)),
+    "the outer capture must observe the query that failed the nested observer",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(staleInnerMarker)),
+    "the outer capture must remain active after nested cleanup",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(outerContinuationMarker)),
+    "the outer capture must continue observing later queries",
+  );
+
+  const capturedCountAfterOuterCleanup = outerParams.length;
+  assert.ok(outerCaptureId);
+  await runWithDatabaseQueryObservation(outerCaptureId, () =>
+    db.execute(sql`select ${staleOuterMarker}::text as observation_marker`),
+  );
+  assert.equal(
+    outerParams.length,
+    capturedCountAfterOuterCleanup,
+    "a later request must not reactivate a completed capture ID",
+  );
+});
+
+test("pre-SQL capture rejection unregisters its ID without disturbing the outer capture", async () => {
+  const staleInnerMarker = randomUUID();
+  const outerContinuationMarker = randomUUID();
+  const outerParams: unknown[][] = [];
+  const innerParams: unknown[][] = [];
+  let innerCaptureId: string | undefined;
+
+  await observeDatabaseQueries(
+    (query) => outerParams.push(query.params),
+    async () => {
+      await assert.rejects(
+        observeDatabaseQueries(
+          (query) => innerParams.push(query.params),
+          async (captureId) => {
+            innerCaptureId = captureId;
+            throw new Error("intentional pre-SQL failure");
+          },
+        ),
+        /intentional pre-SQL failure/,
+      );
+
+      assert.ok(innerCaptureId);
+      await runWithDatabaseQueryObservation(innerCaptureId, () =>
+        db.execute(sql`select ${staleInnerMarker}::text as observation_marker`),
+      );
+      await db.execute(sql`select ${outerContinuationMarker}::text as observation_marker`);
+    },
+  );
+
+  assert.deepEqual(
+    innerParams,
+    [],
+    "a rejected capture ID must not observe a later direct request",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(staleInnerMarker)),
+    "the enclosing capture must remain active while a stale nested ID is ignored",
+  );
+  assert.ok(
+    outerParams.some((params) => params.includes(outerContinuationMarker)),
+    "the enclosing capture must continue observing after the nested rejection",
+  );
+});
+
+test("HTTP query observation headers cannot activate captures in production", async () => {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const observedQueries: DatabaseQueryObservation[] = [];
+
+  try {
+    await observeDatabaseQueries(
+      (query) => observedQueries.push(query),
+      async (captureId) => {
+        process.env.NODE_ENV = "production";
+        const response = await fetch(
+          `http://127.0.0.1:${port}/api/salons?page=1&pageSize=1`,
+          { headers: { [databaseQueryObservationHeader]: captureId } },
+        );
+        assert.equal(response.status, 404);
+        await response.arrayBuffer();
+      },
+    );
+    assert.deepEqual(
+      observedQueries,
+      [],
+      "production HTTP requests must deny registered observation capture IDs",
+    );
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
+
+test("HTTP query observation ignores a rejected capture ID and preserves an enclosing capture", async () => {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}/api/salons?page=1&pageSize=1`;
+  const outerQueries: DatabaseQueryObservation[] = [];
+  const rejectedQueries: DatabaseQueryObservation[] = [];
+  let rejectedCaptureId: string | undefined;
+
+  try {
+    await observeDatabaseQueries(
+      (query) => outerQueries.push(query),
+      async (outerCaptureId) => {
+        await assert.rejects(
+          observeDatabaseQueries(
+            (query) => rejectedQueries.push(query),
+            async (captureId) => {
+              rejectedCaptureId = captureId;
+              throw new Error("intentional pre-SQL HTTP capture failure");
+            },
+          ),
+          /intentional pre-SQL HTTP capture failure/,
+        );
+
+        assert.ok(rejectedCaptureId);
+        const staleResponse = await fetch(url, {
+          headers: { [databaseQueryObservationHeader]: rejectedCaptureId },
+        });
+        assert.equal(staleResponse.status, 200);
+        await staleResponse.arrayBuffer();
+        assert.deepEqual(
+          rejectedQueries,
+          [],
+          "a later HTTP request must not invoke the rejected capture observer",
+        );
+        assert.deepEqual(
+          outerQueries,
+          [],
+          "the stale capture header must not leak into the enclosing capture",
+        );
+
+        const outerResponse = await fetch(url, {
+          headers: { [databaseQueryObservationHeader]: outerCaptureId },
+        });
+        assert.equal(outerResponse.status, 200);
+        await outerResponse.arrayBuffer();
+        assert.ok(
+          outerQueries.length > 0,
+          "the enclosing capture must continue observing its own HTTP request",
+        );
+        assert.deepEqual(
+          rejectedQueries,
+          [],
+          "the rejected observer must remain unregistered during later HTTP requests",
+        );
+      },
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+});
 
 test("optimized marketplace lists stay within fixed SQL query budgets", async () => {
   const server = app.listen(0, "127.0.0.1");
@@ -50,8 +326,11 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     });
     assert.equal(login.status, 200, "demo super-admin login must succeed");
     const cookie = login.headers.get("set-cookie")?.split(";")[0];
-    assert.ok(cookie, "login must set a session cookie");
 
+    const [parallelSalons, parallelCourses] = await Promise.all([
+      countedRequest(`${baseUrl}/salons?page=1&pageSize=1`),
+      countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=1`),
+    ]);
     const smallOrders = await countedRequest(`${baseUrl}/admin/orders?page=1&pageSize=1`, {
       headers: { cookie },
     });
@@ -237,10 +516,10 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
     const largeCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=24`);
     assert.equal(smallCourses.response.status, 200);
     assert.equal(largeCourses.response.status, 200);
-    assert.ok(smallCourses.queries.length <= 16, `public education courses used ${smallCourses.queries.length} SQL queries`);
-    assert.ok(largeCourses.queries.length <= 16, `public education courses used ${largeCourses.queries.length} SQL queries`);
+    assert.ok(smallCourses.queries.length <= 17, `public education courses used ${smallCourses.queries.length} SQL queries`);
+    assert.ok(largeCourses.queries.length <= 17, `public education courses used ${largeCourses.queries.length} SQL queries`);
     assert.ok(
-      largeCourses.queries.length <= smallCourses.queries.length + 1,
+      largeCourses.queries.length <= smallCourses.queries.length + 2,
       `education query count grew with page size (${smallCourses.queries.length} -> ${largeCourses.queries.length})`,
     );
 

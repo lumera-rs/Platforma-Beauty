@@ -2,6 +2,8 @@
 set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/destructive-test-runtime.sh"
+assert_destructive_test_runtime_allowed "Damaged timestamp serialization tests"
 resolve_api_base_url
 check_api_server
 
@@ -65,15 +67,19 @@ fixture_listings as (
     category_id, salon_id, user_id, posted_by_type, type, intent, title, description,
     city, region, status, moderation_status, expires_at, created_at, updated_at
   )
-  select category.id, null::uuid, fixture_user.id,
-    'user'::beauty_job_posted_by_type,
+  select category.id, owner.active_salon_id, null::uuid,
+    'salon'::beauty_job_posted_by_type,
     'equipment_rental'::beauty_job_listing_type,
     'offering'::beauty_job_listing_intent,
     :'marker' || '-damaged', :'marker', 'Beograd', 'Beograd',
     'active'::beauty_job_listing_status,
     'approved'::beauty_job_moderation_status,
     now() + interval '30 days', '-infinity'::timestamptz, now()
-  from fixture_category category cross join fixture_user
+  from fixture_category category
+  cross join lateral (
+    select active_salon_id from users
+    where email = 'salon@lumera.local' and active_salon_id is not null
+  ) owner
   union all
   select category.id, null::uuid, fixture_user.id,
     'user'::beauty_job_posted_by_type,
@@ -261,6 +267,148 @@ if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request` || typeof val
 }
 NODE
 
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v request_id="$damaged_request_id" >/dev/null <<'SQL'
+update beauty_job_rental_requests
+set created_at = now(),
+    updated_at = '-infinity'::timestamptz
+where id = :'request_id'::uuid;
+SQL
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request history with damaged updated_at expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request history omitted a fixture row beside damaged updatedAt.");
+if (damaged.updatedAt !== null) {
+  throw new Error(`Damaged rental-request updatedAt was not null: ${damaged.updatedAt}`);
+}
+if (typeof damaged.createdAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending") {
+  throw new Error("Unrelated fields on the rental request with damaged updatedAt were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string") {
+  throw new Error("Valid neighboring rental request was not preserved beside damaged updatedAt.");
+}
+NODE
+
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v damaged_request_id="$damaged_request_id" -v valid_request_id="$valid_request_id" >/dev/null <<'SQL'
+update beauty_job_rental_requests
+set created_at = now(),
+    updated_at = now(),
+    responded_at = '-infinity'::timestamptz
+where id = :'damaged_request_id'::uuid;
+update beauty_job_rental_requests
+set responded_at = now()
+where id = :'valid_request_id'::uuid;
+SQL
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request history with damaged responded_at expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request history omitted a fixture row beside damaged respondedAt.");
+if (damaged.respondedAt !== null) {
+  throw new Error(`Damaged rental-request respondedAt was not null: ${damaged.respondedAt}`);
+}
+if (typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending") {
+  throw new Error("Unrelated fields on the rental request with damaged respondedAt were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string") {
+  throw new Error("Valid neighboring rental request was not preserved beside damaged respondedAt.");
+}
+NODE
+
+for damaged_slot_field in starts_at ends_at; do
+  if [[ "$damaged_slot_field" == "starts_at" ]]; then
+    damaged_slot_value="'-infinity'::timestamptz"
+  else
+    damaged_slot_value="'infinity'::timestamptz"
+  fi
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v slot_id="$damaged_slot_id" >/dev/null <<SQL
+update beauty_job_rental_slots
+set starts_at = now() + interval '1 day',
+    ends_at = now() + interval '2 days'
+where id = :'slot_id'::uuid;
+update beauty_job_rental_slots
+set ${damaged_slot_field} = ${damaged_slot_value}
+where id = :'slot_id'::uuid;
+SQL
+
+  status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/mine")"
+  if [[ "$status" != "200" ]]; then
+    echo "FAIL: authenticated rental-request history with damaged slot $damaged_slot_field expected 200, got $status: $(cat "$body")" >&2
+    exit 1
+  fi
+
+  REQUESTS_BODY="$(cat "$body")" \
+  DETAIL_MARKER="$fixture_marker" \
+  DAMAGED_REQUEST_ID="$damaged_request_id" \
+  VALID_REQUEST_ID="$valid_request_id" \
+  DAMAGED_SLOT_FIELD="$damaged_slot_field" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request history response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) {
+  throw new Error(`Rental-request history omitted a fixture row beside damaged slot ${process.env.DAMAGED_SLOT_FIELD}.`);
+}
+
+const responseField = {
+  starts_at: "startsAt",
+  ends_at: "endsAt",
+}[process.env.DAMAGED_SLOT_FIELD];
+if (!responseField) throw new Error(`Unknown damaged slot field: ${process.env.DAMAGED_SLOT_FIELD}`);
+const neighboringSlotField = responseField === "startsAt" ? "endsAt" : "startsAt";
+if (damaged[responseField] !== null) {
+  throw new Error(`Damaged history slot ${responseField} was not null: ${damaged[responseField]}`);
+}
+if (typeof damaged[neighboringSlotField] !== "string"
+  || typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.respondedAt !== null
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending"
+  || typeof damaged.listingTitle !== "string"
+  || typeof damaged.applicantDisplayName !== "string") {
+  throw new Error(`Unrelated fields on the history request with damaged slot ${responseField} were not preserved.`);
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.startsAt !== "string"
+  || typeof valid.endsAt !== "string"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string"
+  || typeof valid.listingTitle !== "string"
+  || typeof valid.applicantDisplayName !== "string") {
+  throw new Error(`Valid neighboring history request was not preserved beside damaged slot ${responseField}.`);
+}
+NODE
+done
+
 status="$(curl -sS -o "$body" -w "%{http_code}" -c "$cookie" \
   -H "Content-Type: application/json" \
   --data "{\"email\":\"salon@lumera.local\",\"password\":\"$demo_password\"}" \
@@ -269,6 +417,105 @@ if [[ "$status" != "200" ]]; then
   echo "FAIL: salon login expected 200, got $status: $(cat "$body")" >&2
   exit 1
 fi
+
+status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/inbox")"
+if [[ "$status" != "200" ]]; then
+  echo "FAIL: authenticated rental-request inbox with damaged responded_at expected 200, got $status: $(cat "$body")" >&2
+  exit 1
+fi
+REQUESTS_BODY="$(cat "$body")" DETAIL_MARKER="$fixture_marker" DAMAGED_REQUEST_ID="$damaged_request_id" VALID_REQUEST_ID="$valid_request_id" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request inbox response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) throw new Error("Rental-request inbox omitted a fixture row beside damaged respondedAt.");
+if (damaged.respondedAt !== null) {
+  throw new Error(`Damaged inbox rental-request respondedAt was not null: ${damaged.respondedAt}`);
+}
+if (typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending"
+  || typeof damaged.listingTitle !== "string"
+  || typeof damaged.applicantDisplayName !== "string") {
+  throw new Error("Unrelated fields on the inbox rental request with damaged respondedAt were not preserved.");
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.respondedAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string"
+  || typeof valid.listingTitle !== "string"
+  || typeof valid.applicantDisplayName !== "string") {
+  throw new Error("Valid neighboring rental request was not preserved in the inbox beside damaged respondedAt.");
+}
+NODE
+
+for damaged_slot_field in starts_at ends_at; do
+  if [[ "$damaged_slot_field" == "starts_at" ]]; then
+    damaged_slot_value="'-infinity'::timestamptz"
+  else
+    damaged_slot_value="'infinity'::timestamptz"
+  fi
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v slot_id="$damaged_slot_id" >/dev/null <<SQL
+update beauty_job_rental_slots
+set starts_at = now() + interval '1 day',
+    ends_at = now() + interval '2 days'
+where id = :'slot_id'::uuid;
+update beauty_job_rental_slots
+set ${damaged_slot_field} = ${damaged_slot_value}
+where id = :'slot_id'::uuid;
+SQL
+
+  status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/rental-requests/inbox")"
+  if [[ "$status" != "200" ]]; then
+    echo "FAIL: authenticated rental-request inbox with damaged slot $damaged_slot_field expected 200, got $status: $(cat "$body")" >&2
+    exit 1
+  fi
+
+  REQUESTS_BODY="$(cat "$body")" \
+  DETAIL_MARKER="$fixture_marker" \
+  DAMAGED_REQUEST_ID="$damaged_request_id" \
+  VALID_REQUEST_ID="$valid_request_id" \
+  DAMAGED_SLOT_FIELD="$damaged_slot_field" node <<'NODE'
+const response = JSON.parse(process.env.REQUESTS_BODY);
+if (!Array.isArray(response.requests)) throw new Error("Rental-request inbox response has no requests.");
+const damaged = response.requests.find((request) => request.id === process.env.DAMAGED_REQUEST_ID);
+const valid = response.requests.find((request) => request.id === process.env.VALID_REQUEST_ID);
+if (!damaged || !valid) {
+  throw new Error(`Rental-request inbox omitted a fixture row beside damaged slot ${process.env.DAMAGED_SLOT_FIELD}.`);
+}
+
+const responseField = {
+  starts_at: "startsAt",
+  ends_at: "endsAt",
+}[process.env.DAMAGED_SLOT_FIELD];
+if (!responseField) throw new Error(`Unknown damaged slot field: ${process.env.DAMAGED_SLOT_FIELD}`);
+const neighboringSlotField = responseField === "startsAt" ? "endsAt" : "startsAt";
+if (damaged[responseField] !== null) {
+  throw new Error(`Damaged inbox slot ${responseField} was not null: ${damaged[responseField]}`);
+}
+if (typeof damaged[neighboringSlotField] !== "string"
+  || typeof damaged.createdAt !== "string"
+  || typeof damaged.updatedAt !== "string"
+  || damaged.message !== `${process.env.DETAIL_MARKER}-damaged-request`
+  || damaged.status !== "pending"
+  || typeof damaged.listingTitle !== "string"
+  || typeof damaged.applicantDisplayName !== "string") {
+  throw new Error(`Unrelated fields on the inbox request with damaged slot ${responseField} were not preserved.`);
+}
+if (valid.message !== `${process.env.DETAIL_MARKER}-valid-request`
+  || valid.status !== "pending"
+  || typeof valid.startsAt !== "string"
+  || typeof valid.endsAt !== "string"
+  || typeof valid.createdAt !== "string"
+  || typeof valid.updatedAt !== "string"
+  || typeof valid.listingTitle !== "string"
+  || typeof valid.applicantDisplayName !== "string") {
+  throw new Error(`Valid neighboring inbox request was not preserved beside damaged slot ${responseField}.`);
+}
+NODE
+done
 
 status="$(curl -sS -o "$body" -w "%{http_code}" -b "$cookie" "$BASE_URL/beauty-jobs/$applicant_listing_id/applicants")"
 if [[ "$status" != "200" ]]; then

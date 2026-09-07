@@ -185,12 +185,8 @@ async function webhookRejection(provider: DeliveryReportProvider): Promise<{ cou
 }
 async function countDatabaseQueries<T>(operation: () => Promise<T>): Promise<{ result: T; queries: number }> {
   let queries = 0;
-  const stopObserving = observeDatabaseQueries(() => { queries += 1; });
-  try {
-    return { result: await operation(), queries };
-  } finally {
-    stopObserving();
-  }
+  const result = await observeDatabaseQueries(() => { queries += 1; }, operation);
+  return { result, queries };
 }
 /**
  * Spawn the logcheck helper as a real child process and capture everything it

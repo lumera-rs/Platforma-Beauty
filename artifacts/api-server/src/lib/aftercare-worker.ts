@@ -5,6 +5,7 @@ import { brevoTransactionalEmailTransport, type TransactionalEmailTransport } fr
 import { deploymentPublicOrigin } from "./provider-events";
 import { hashAftercareEntitlement, normalizeTreatmentTaxonomyKey } from "./aftercare-domain";
 import { logger } from "./logger";
+import { safeModeNoExternalCalls } from "./runtime-environment";
 
 const DAY = 86_400_000;
 const DEFAULT_BATCH = 50;
@@ -445,12 +446,20 @@ export async function deliverAftercareEmails(options: WorkerOptions = {}) {
     }
     const href = `${origin}${String(delivery.payload_snapshot.href ?? `/moj-nalog/nega-posle-tretmana?recommendationId=${encodeURIComponent(delivery.recommendation_id)}`)}`;
     try {
-      const result = await transport.send({
-        idempotencyKey: delivery.id,
-        to: { email: delivery.email, name: `${delivery.first_name} ${delivery.last_name}`.trim() },
-        subject: delivery.kind === "FIRST" ? "Nega posle tretmana" : "Podsetnik za negu",
-        htmlContent: `<p>Vaša personalizovana preporuka je spremna.</p><p><a href="${href}">Pogledajte preporuku</a></p>`,
-      });
+      const result = safeModeNoExternalCalls()
+        ? { messageId: `safe-mode:${delivery.id}` }
+        : await transport.send({
+            idempotencyKey: delivery.id,
+            to: { email: delivery.email, name: `${delivery.first_name} ${delivery.last_name}`.trim() },
+            subject: delivery.kind === "FIRST" ? "Nega posle tretmana" : "Podsetnik za negu",
+            htmlContent: `<p>Vaša personalizovana preporuka je spremna.</p><p><a href="${href}">Pogledajte preporuku</a></p>`,
+          });
+      if (safeModeNoExternalCalls()) {
+        logger.info(
+          { event: "safe_mode_aftercare_email_would_send", deliveryId: delivery.id },
+          "Safe mode recorded an aftercare email without an outbound call",
+        );
+      }
       if ("skipped" in result) throw new Error(result.errorMessage);
       await options.afterProviderAccepted?.();
       await db.execute(sql`UPDATE aftercare_deliveries SET status='SENT', provider_message_id=${result.messageId ?? null},

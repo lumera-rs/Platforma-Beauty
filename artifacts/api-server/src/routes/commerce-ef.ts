@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import PDFDocument from "pdfkit";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   b2bQuotesTable, catalogSyncRunsTable, db, emailDeliveriesTable, priceInquiriesTable,
   orderItemsTable, ordersTable, productsTable, retailOrderItemsTable, retailOrdersTable, reviewRewardIssuancesTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
@@ -10,10 +10,42 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { canClaimMediaReference, claimMediaReference, mediaAssetIdFromUrl } from "./media";
 import { activeProductSale } from "../lib/active-product-sale";
+import {
+  AdminGetMetaCatalogStatusResponse,
+  AdminGetReviewRewardSettingsResponse,
+  AdminGetRmaResponse,
+  AdminListPriceInquiriesQueryParams,
+  AdminListPriceInquiriesPageQueryParams,
+  AdminListPriceInquiriesPageResponse,
+  AdminListPriceInquiriesResponse,
+  AdminListQuotesResponse,
+  AdminListRmasResponse,
+  AdminUpdatePriceInquiryBody,
+  AdminUpdatePriceInquiryParams,
+  AdminUpdatePriceInquiryResponse,
+  AdminUpdateReviewRewardSettingsResponse,
+  AdminUpdateRmaStatusResponse,
+  AdminValidateMetaCatalogResponse,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const clean = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const adminPriceInquirySelection = {
+  id: priceInquiriesTable.id,
+  supplierId: priceInquiriesTable.supplierId,
+  productId: priceInquiriesTable.productId,
+  productName: productsTable.name,
+  supplierName: suppliersTable.name,
+  contactName: priceInquiriesTable.name,
+  contactEmail: priceInquiriesTable.email,
+  contactPhone: priceInquiriesTable.phone,
+  message: priceInquiriesTable.message,
+  status: priceInquiriesTable.status,
+  internalNote: priceInquiriesTable.internalNote,
+  createdAt: priceInquiriesTable.createdAt,
+  updatedAt: priceInquiriesTable.updatedAt,
+};
 
 async function auth(req: Request, res: Response) {
   const user = await getCurrentUser(req);
@@ -118,35 +150,71 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  res.json(await db.select({
-    id: priceInquiriesTable.id,
-    supplierId: priceInquiriesTable.supplierId,
-    productId: priceInquiriesTable.productId,
-    productName: productsTable.name,
-    supplierName: suppliersTable.name,
-    contactName: priceInquiriesTable.name,
-    contactEmail: priceInquiriesTable.email,
-    contactPhone: priceInquiriesTable.phone,
-    message: priceInquiriesTable.message,
-    status: priceInquiriesTable.status,
-    internalNote: priceInquiriesTable.internalNote,
-    createdAt: priceInquiriesTable.createdAt,
-    updatedAt: priceInquiriesTable.updatedAt,
-  }).from(priceInquiriesTable)
+  const query = AdminListPriceInquiriesQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry query." }); return; }
+  const search = query.data.search?.trim();
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
     .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
-    .orderBy(desc(priceInquiriesTable.createdAt)).limit(500));
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+  sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
+});
+
+router.get("/admin/price-inquiries/page", async (req, res): Promise<void> => {
+  if (!await admin(req, res)) return;
+  const query = AdminListPriceInquiriesPageQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: "Invalid price inquiry query." }); return; }
+  const search = query.data.search?.trim();
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 50;
+  const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize + 1)
+    .offset((page - 1) * pageSize);
+  sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiriesPage", AdminListPriceInquiriesPageResponse, {
+    items: rows.slice(0, pageSize),
+    page,
+    pageSize,
+    hasNext: rows.length > pageSize,
+  });
 });
 router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const status = req.body?.status;
-  if (status !== undefined && !["NEW", "CONTACTED", "CLOSED"].includes(status)) { res.status(400).json({ error: "Invalid status." }); return; }
+  const params = AdminUpdatePriceInquiryParams.safeParse(req.params);
+  const body = AdminUpdatePriceInquiryBody.safeParse(req.body);
+  if (!params.success || !body.success) { res.status(400).json({ error: "Invalid price inquiry update." }); return; }
   const [updated] = await db.update(priceInquiriesTable).set({
-    ...(status ? { status } : {}), ...(req.body?.internalNote !== undefined ? { internalNote: clean(req.body.internalNote, 5_000) || null } : {}),
+    ...(body.data.status ? { status: body.data.status } : {}),
+    ...(body.data.internalNote !== undefined ? { internalNote: clean(body.data.internalNote, 5_000) || null } : {}),
     updatedAt: new Date(),
-  }).where(eq(priceInquiriesTable.id, req.params.id!)).returning();
+  }).where(eq(priceInquiriesTable.id, params.data.id)).returning({ id: priceInquiriesTable.id });
   if (!updated) { res.status(404).json({ error: "Inquiry not found." }); return; }
-  res.json(updated);
+  const [inquiry] = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(eq(priceInquiriesTable.id, updated.id))
+    .limit(1);
+  sendValidatedAdminCommerceResponse(req, res, "adminUpdatePriceInquiry", AdminUpdatePriceInquiryResponse, inquiry);
 });
 
 router.post("/shop/quotes", async (req, res): Promise<void> => {
@@ -328,11 +396,17 @@ router.get("/shop/quotes/:publicId/pdf", async (req, res): Promise<void> => {
   pdf.end();
 });
 
-router.get("/admin/quotes", async (req, res): Promise<void> => { if (await admin(req, res)) res.json(await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500)); });
+router.get("/admin/quotes", async (req, res): Promise<void> => {
+  if (!await admin(req, res)) return;
+  const rows = await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500);
+  sendValidatedAdminCommerceResponse(req, res, "adminListQuotes", AdminListQuotesResponse, rows);
+});
 router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const [latest] = await db.select().from(catalogSyncRunsTable).orderBy(desc(catalogSyncRunsTable.createdAt)).limit(1);
-  res.json({ connectionStatus: "NOT_CONNECTED", canSync: false, latestRun: latest ?? null });
+  sendValidatedAdminCommerceResponse(req, res, "adminGetMetaCatalogStatus", AdminGetMetaCatalogStatusResponse, {
+    connectionStatus: "NOT_CONNECTED", canSync: false, latestRun: latest ?? null,
+  });
 });
 
 router.post("/orders/:orderId/rmas", async (req, res): Promise<void> => {
@@ -406,7 +480,6 @@ function adminRmaListDto(row: Awaited<ReturnType<typeof adminRmaRows>>[number]) 
   return {
     ...row.rma,
     target,
-    orderId: row.rma.retailOrderId ?? row.rma.orderId!,
     owner: target === "b2c"
       ? row.requester
       : {
@@ -417,10 +490,61 @@ function adminRmaListDto(row: Awaited<ReturnType<typeof adminRmaRows>>[number]) 
   };
 }
 
+type AdminCommerceResponseSchema<T> = {
+  safeParse(value: unknown):
+    | { success: true; data: T }
+    | { success: false; error: { issues: Array<{ code: string; path: PropertyKey[] }> } };
+};
+
+export function validateAdminCommerceResponse<T>(
+  operation: string,
+  schema: AdminCommerceResponseSchema<T>,
+  value: unknown,
+  log: Pick<Request["log"], "error">,
+) {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  log.error({
+    operation,
+    issues: parsed.error.issues.map(({ code, path }) => ({
+      code,
+      path: path.map(String).join("."),
+    })),
+  }, "Admin commerce response failed contract validation");
+  return null;
+}
+
+function sendValidatedAdminCommerceResponse<T>(
+  req: Request,
+  res: Response,
+  operation: string,
+  schema: AdminCommerceResponseSchema<T>,
+  value: unknown,
+) {
+  const response = validateAdminCommerceResponse(operation, schema, value, req.log);
+  if (!response) {
+    res.status(500).json({ error: "Admin commerce data could not be returned safely." });
+    return false;
+  }
+  res.json(response);
+  return true;
+}
+
+export function validateAdminRmaResponse<T>(
+  operation: "list" | "detail" | "status-update",
+  schema: AdminCommerceResponseSchema<T>,
+  value: unknown,
+  log: Pick<Request["log"], "error">,
+) {
+  return validateAdminCommerceResponse(`adminRma:${operation}`, schema, value, log);
+}
+
 router.get("/admin/rmas", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const rows = await adminRmaRows(sql`true`, 500);
-  res.json(rows.map(adminRmaListDto));
+  const response = validateAdminRmaResponse("list", AdminListRmasResponse, rows.map(adminRmaListDto), req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
@@ -439,7 +563,7 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
     : (await db.select({ orderItemId: orderItemsTable.id, productName: orderItemsTable.productName, quantity: rmasTable.quantity })
       .from(orderItemsTable).innerJoin(rmasTable, eq(rmasTable.orderItemId, orderItemsTable.id))
       .where(eq(rmasTable.id, row.id)).limit(1))[0];
-  res.json({
+  const response = validateAdminRmaResponse("detail", AdminGetRmaResponse, {
     ...adminRmaListDto(base),
     items: item ? [item] : [],
     privatePhotos: attachments.map((attachment) => `/api/media/${attachment.mediaAssetId}`),
@@ -449,7 +573,9 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
       actorId: entry.actorUserId,
       note: null,
     })),
-  });
+  }, req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 router.post("/retail/orders/:orderId/rmas", async (req, res): Promise<void> => {
   const user = await auth(req, res); if (!user) return;
@@ -498,13 +624,15 @@ router.post("/admin/catalog/meta/validate", async (req, res): Promise<void> => {
   const [run] = await db.insert(catalogSyncRunsTable).values({
     status: "NOT_CONNECTED", itemCount, validationErrors: errors, requestedByUserId: user.id,
   }).returning();
-  res.json({ connectionStatus: "NOT_CONNECTED", canSync: false, run });
+  sendValidatedAdminCommerceResponse(req, res, "adminValidateMetaCatalog", AdminValidateMetaCatalogResponse, {
+    connectionStatus: "NOT_CONNECTED", canSync: false, run,
+  });
 });
 router.get("/admin/review-rewards", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const [settings] = await db.select().from(shopSettingsTable).limit(1);
   const [stats] = await db.select({ issued: sql<number>`count(*)::int` }).from(reviewRewardIssuancesTable);
-  res.json({
+  sendValidatedAdminCommerceResponse(req, res, "adminGetReviewRewardSettings", AdminGetReviewRewardSettingsResponse, {
     settings: settings ? {
       enabled: settings.reviewRewardsEnabled, invitationDelayDays: settings.reviewInvitationDelayDays,
       percent: settings.reviewRewardPercent, validityDays: settings.reviewRewardValidityDays, version: settings.version,
@@ -525,7 +653,10 @@ router.patch("/admin/review-rewards", async (req, res): Promise<void> => {
     version: version + 1, updatedAt: new Date(),
   }).where(eq(shopSettingsTable.version, version)).returning();
   if (!updated) { res.status(409).json({ error: "Settings changed; reload before saving." }); return; }
-  res.json({ enabled: updated.reviewRewardsEnabled, invitationDelayDays: updated.reviewInvitationDelayDays, percent: updated.reviewRewardPercent, validityDays: updated.reviewRewardValidityDays, version: updated.version });
+  sendValidatedAdminCommerceResponse(req, res, "adminUpdateReviewRewardSettings", AdminUpdateReviewRewardSettingsResponse, {
+    enabled: updated.reviewRewardsEnabled, invitationDelayDays: updated.reviewInvitationDelayDays,
+    percent: updated.reviewRewardPercent, validityDays: updated.reviewRewardValidityDays, version: updated.version,
+  });
 });
 
 router.patch("/admin/rmas/:id/status", async (req, res): Promise<void> => {
@@ -546,7 +677,9 @@ router.patch("/admin/rmas/:id/status", async (req, res): Promise<void> => {
     return { row: row!, changed: true };
   });
   if (!result) { res.status(404).json({ error: "RMA not found." }); return; }
-  res.json(result);
+  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
+  if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
+  res.json(response);
 });
 
 export default router;

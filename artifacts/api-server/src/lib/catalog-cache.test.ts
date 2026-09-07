@@ -27,7 +27,7 @@ async function runChildInvalidator(namespace: string): Promise<void> {
       namespace,
     ], {
       cwd: process.cwd(),
-      stdio: "inherit",
+      stdio: ["ignore", "ignore", "ignore"],
     });
     child.once("error", reject);
     child.once("exit", (code) => {

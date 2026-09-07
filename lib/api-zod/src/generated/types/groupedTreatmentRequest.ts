@@ -10,4 +10,6 @@ export interface GroupedTreatmentRequest {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }

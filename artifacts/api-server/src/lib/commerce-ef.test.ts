@@ -11,11 +11,16 @@ import {
   retailProductReviewAttachmentsTable, retailProductReviewsTable, rmaAttachmentsTable, rmaStatusHistoryTable, rmasTable, salonsTable, shopSettingsTable,
   shoppingCartItemsTable, shoppingCartsTable, suppliersTable, usersTable,
 } from "@workspace/db";
+import {
+  AdminGetMetaCatalogStatusResponse, AdminGetReviewRewardSettingsResponse, AdminGetRmaResponse,
+  AdminListPriceInquiriesResponse, AdminListQuotesResponse, AdminListRmasResponse,
+  AdminUpdatePriceInquiryResponse, AdminUpdateReviewRewardSettingsResponse, AdminUpdateRmaStatusResponse, AdminValidateMetaCatalogResponse,
+} from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { runRetailReviewInvitationSweep } from "./review-invitations";
-import { validatedSwatch } from "../routes/commerce-ef";
+import { validateAdminCommerceResponse, validateAdminRmaResponse, validatedSwatch } from "../routes/commerce-ef";
 import { settledCommerceSpend } from "./deo-g2-rule-loader";
 
 const marker = `commerce-ef-${randomUUID()}`;
@@ -218,8 +223,57 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const matrix = await api(`/public/products/${zeroProductId}/bulk-matrix`); const body = await matrix.json() as { priceOnRequest: boolean; cartEligible: boolean; rows: Array<Record<string, unknown>> };
     assert.equal(body.priceOnRequest, true); assert.equal(body.cartEligible, false); assert.equal("unitPrice" in body.rows[0]!, false);
     assert.equal((await api(`/public/suppliers/${ids.suppliers[0]}/products/${zeroProductId}/price-inquiries`, "", { method: "POST", body: JSON.stringify({ name: "Test User", email: "test@example.test", phone: "+381601234567", message: "Need a price for this item." }) })).status, 201);
-    const adminInquiries = await (await api("/admin/price-inquiries", await cookie(admin))).json() as Array<Record<string, unknown>>;
-    const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId);
+    await db.insert(priceInquiriesTable).values({ supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Unrelated Customer", email: "unrelated@example.test", phone: "+381601234568", message: "Separate inquiry used to prove filtering." });
+    const adminCookie = await cookie(admin);
+    const adminInquiries = await (await api("/admin/price-inquiries", adminCookie)).json() as Array<Record<string, unknown>>;
+    assert.equal(AdminListPriceInquiriesResponse.safeParse(adminInquiries).success, true);
+    const inquiry = adminInquiries.find((row) => row.productId === zeroProductId && row.contactName === "Test User");
+    assert.ok(inquiry);
+    for (const term of ["test user", "TEST@EXAMPLE.TEST", `${marker} zero`, marker]) {
+      const matches = await (await api(`/admin/price-inquiries?search=${encodeURIComponent(term)}`, adminCookie)).json() as Array<{ contactName: string }>;
+      assert.ok(matches.some((row) => row.contactName === "Test User"), `expected ${term} to match the inquiry`);
+    }
+    const customerMatches = await (await api("/admin/price-inquiries?search=test%20user", adminCookie)).json() as Array<{ contactName: string }>;
+    assert.ok(customerMatches.length > 0);
+    assert.ok(customerMatches.every((row) => row.contactName === "Test User"));
+    const noMatches = await (await api("/admin/price-inquiries?search=definitely-no-such-inquiry", adminCookie)).json();
+    assert.deepEqual(noMatches, []);
+    assert.equal((await api(`/admin/price-inquiries?search=${"x".repeat(121)}`, adminCookie)).status, 400);
+    await db.insert(priceInquiriesTable).values([
+      { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Oldest", email: "paged-oldest@example.test", phone: "+381601234571", message: "Pagination matching inquiry oldest.", createdAt: new Date("2025-01-02T03:04:03.000Z") },
+      { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Middle", email: "paged-middle@example.test", phone: "+381601234572", message: "Pagination matching inquiry middle.", createdAt: new Date("2025-01-02T03:04:04.000Z") },
+      { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Newest", email: "paged-newest@example.test", phone: "+381601234573", message: "Pagination matching inquiry newest.", createdAt: new Date("2025-01-02T03:04:05.000Z") },
+      { supplierId: ids.suppliers[0]!, productId: zeroProductId, name: "Paged Match Latest", email: "paged-latest@example.test", phone: "+381601234574", message: "Pagination matching inquiry latest.", createdAt: new Date("2025-01-02T03:04:06.000Z") },
+    ]);
+    const firstPageResponse = await api("/admin/price-inquiries?search=Paged%20Match&page=1&pageSize=2", adminCookie);
+    const secondPageResponse = await api("/admin/price-inquiries?search=Paged%20Match&page=2&pageSize=2", adminCookie);
+    const repeatedFirstPage = await (await api("/admin/price-inquiries?search=Paged%20Match&page=1&pageSize=2", adminCookie)).json() as Array<{ id: string }>;
+    const firstPage = await firstPageResponse.json() as Array<{ id: string; contactName: string }>;
+    const secondPage = await secondPageResponse.json() as Array<{ id: string; contactName: string }>;
+    assert.equal(firstPageResponse.status, 200);
+    assert.equal(secondPageResponse.status, 200);
+    assert.equal(firstPage.length, 2);
+    assert.equal(secondPage.length, 2);
+    assert.deepEqual(repeatedFirstPage.map((row) => row.id), firstPage.map((row) => row.id));
+    assert.equal(new Set([...firstPage, ...secondPage].map((row) => row.id)).size, 4);
+    assert.ok(secondPage.some((row) => row.contactName === "Paged Match Oldest"));
+    const firstPageWithMetadata = await (await api("/admin/price-inquiries/page?search=Paged%20Match&page=1&pageSize=2", adminCookie)).json() as { items: Array<{ id: string }>; hasNext: boolean; page: number; pageSize: number };
+    const exactFinalPage = await (await api("/admin/price-inquiries/page?search=Paged%20Match&page=2&pageSize=2", adminCookie)).json() as { items: Array<{ id: string }>; hasNext: boolean; page: number; pageSize: number };
+    assert.deepEqual(firstPageWithMetadata, { items: firstPage, page: 1, pageSize: 2, hasNext: true });
+    assert.deepEqual(exactFinalPage, { items: secondPage, page: 2, pageSize: 2, hasNext: false });
+    for (const invalidQuery of ["page=0", "page=1.5", "pageSize=0", "pageSize=501"]) {
+      assert.equal((await api(`/admin/price-inquiries?${invalidQuery}`, adminCookie)).status, 400);
+    }
+    const updatedInquiryResponse = await api(`/admin/price-inquiries/${inquiry.id}`, await cookie(admin), {
+      method: "PATCH",
+      body: JSON.stringify({ status: "CONTACTED", internalNote: "Administrator contacted the customer." }),
+    });
+    const updatedInquiry = await updatedInquiryResponse.json();
+    assert.equal(updatedInquiryResponse.status, 200);
+    assert.equal(AdminUpdatePriceInquiryResponse.safeParse(updatedInquiry).success, true);
+    assert.equal((updatedInquiry as { productName: string }).productName, `${marker} zero`);
+    assert.equal((updatedInquiry as { supplierName: string }).supplierName, marker);
+    const adminInquiry = adminInquiries.find((inquiry) => inquiry.productId === zeroProductId && inquiry.contactName === "Test User");
     assert.equal(adminInquiry?.contactName, "Test User"); assert.equal(adminInquiry?.contactEmail, "test@example.test");
     assert.equal(adminInquiry?.productName, `${marker} zero`); assert.equal(adminInquiry?.supplierName, marker);
     const before = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, ids.carts[0]!));
@@ -247,10 +301,12 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const failedValidation = await (await api("/admin/catalog/meta/validate", await cookie(admin), { method: "POST" })).json() as {
       run: { itemCount: number; validationErrors: string[] };
     };
+    assert.equal(AdminValidateMetaCatalogResponse.safeParse(failedValidation).success, true);
     assert.ok(failedValidation.run.itemCount >= 1); assert.ok(failedValidation.run.validationErrors.length >= 1);
     const failedStatus = await (await api("/admin/catalog/meta/status", await cookie(admin))).json() as {
       latestRun: { validationErrors: string[] };
     };
+    assert.equal(AdminGetMetaCatalogStatusResponse.safeParse(failedStatus).success, true);
     assert.deepEqual(failedStatus.latestRun.validationErrors, failedValidation.run.validationErrors);
     process.env.APP_BASE_URL = validOrigin;
     const explicitSession = await cookie(explicitBuyer);
@@ -307,6 +363,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
       settings: { enabled: boolean; invitationDelayDays: number; percent: number; validityDays: number; version: number };
       stats: { issued: number };
     };
+    assert.equal(AdminGetReviewRewardSettingsResponse.safeParse(loadedSettings).success, true);
     assert.ok(loadedSettings.settings.version >= 1); assert.ok(loadedSettings.stats.issued >= 0);
     const savedSettingsResponse = await api("/admin/review-rewards", adminSession, {
       method: "PATCH",
@@ -314,6 +371,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     });
     assert.equal(savedSettingsResponse.status, 200);
     const savedSettings = await savedSettingsResponse.json() as { version: number };
+    assert.equal(AdminUpdateReviewRewardSettingsResponse.safeParse(savedSettings).success, true);
     assert.equal(savedSettings.version, loadedSettings.settings.version + 1);
     const session = await cookie(customer);
     const firstAsset = randomUUID(); const replacementAsset = randomUUID(); ids.assets.push(firstAsset, replacementAsset);
@@ -354,17 +412,78 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     const b2bMade = await api(`/orders/${b2bOrderId}/rmas`, await cookie(salonOwner), { method: "POST", body: JSON.stringify({ orderItemId: b2bItemId, quantity: 1, reason: "Wrong item", description: "The delivered B2B item does not match the order." }) });
     assert.equal(b2bMade.status, 201);
     const b2bRma = await b2bMade.json() as { id: string };
+    await assert.rejects(
+      db.insert(rmasTable).values({
+        rmaNumber: `${marker}-ambiguous-rma`,
+        orderId: b2bOrderId,
+        orderItemId: b2bItemId,
+        retailOrderId,
+        retailOrderItemId: retailItemId,
+        requesterUserId: customer,
+        quantity: 1,
+        reason: "Invalid target",
+        description: "An RMA cannot reference standard and retail orders together.",
+      }),
+      (error: unknown) => {
+        let current: unknown = error;
+        while (current && typeof current === "object") {
+          if ((current as { code?: string }).code === "23514") return true;
+          current = (current as { cause?: unknown }).cause;
+        }
+        return false;
+      },
+    );
     const adminCookie = await cookie(admin);
-    const adminRows = await (await api("/admin/rmas", adminCookie)).json() as Array<{ id: string; target: string; orderId: string; owner: Record<string, unknown> }>;
-    assert.equal(adminRows.find((row) => row.id === rma.id)?.target, "b2c"); assert.equal(adminRows.find((row) => row.id === rma.id)?.orderId, retailOrderId);
-    assert.equal(adminRows.find((row) => row.id === b2bRma.id)?.target, "b2b"); assert.equal(adminRows.find((row) => row.id === b2bRma.id)?.owner.businessName, marker);
-    const retailDetail = await (await api(`/admin/rmas/${rma.id}`, adminCookie)).json() as { items: Array<{ productName: string; quantity: number }>; privatePhotos: string[]; auditTrail: Array<{ action: string }> };
+    const adminRowsBody = await (await api("/admin/rmas", adminCookie)).json();
+    const adminRowsResult = AdminListRmasResponse.safeParse(adminRowsBody);
+    assert.equal(adminRowsResult.success, true, adminRowsResult.success ? undefined : adminRowsResult.error.message);
+    const adminRows = adminRowsBody as Array<{ id: string; target: string; orderId: string | null; retailOrderId: string | null; owner: Record<string, unknown> }>;
+    const retailAdminRow = adminRows.find((row) => row.id === rma.id)!;
+    const b2bAdminRow = adminRows.find((row) => row.id === b2bRma.id)!;
+    assert.equal(retailAdminRow.target, "b2c"); assert.equal(retailAdminRow.orderId, null); assert.equal(retailAdminRow.retailOrderId, retailOrderId);
+    assert.equal(b2bAdminRow.target, "b2b"); assert.equal(b2bAdminRow.owner.businessName, marker);
+    assert.equal(AdminListRmasResponse.safeParse([{ ...retailAdminRow, target: "b2b" }]).success, false);
+    assert.equal(AdminListRmasResponse.safeParse([{ ...b2bAdminRow, target: "b2c" }]).success, false);
+    const retailDetailBody = await (await api(`/admin/rmas/${rma.id}`, adminCookie)).json();
+    const retailDetailResult = AdminGetRmaResponse.safeParse(retailDetailBody);
+    assert.equal(retailDetailResult.success, true, retailDetailResult.success ? undefined : retailDetailResult.error.message);
+    assert.equal(AdminGetRmaResponse.safeParse({ ...(retailDetailBody as object), target: "b2b" }).success, false);
+    const retailDetail = retailDetailBody as { items: Array<{ productName: string; quantity: number }>; privatePhotos: string[]; auditTrail: Array<{ action: string }> };
     assert.deepEqual(retailDetail.items, [{ orderItemId: retailItemId, productName: marker, quantity: 1 }]);
     assert.deepEqual(retailDetail.privatePhotos, [`/api/media/${assetId}`]); assert.match(retailDetail.auditTrail[0]!.action, /RECEIVED/);
-    const b2bDetail = await (await api(`/admin/rmas/${b2bRma.id}`, adminCookie)).json() as { items: Array<{ productName: string }> };
+    const b2bDetailBody = await (await api(`/admin/rmas/${b2bRma.id}`, adminCookie)).json();
+    const b2bDetailResult = AdminGetRmaResponse.safeParse(b2bDetailBody);
+    assert.equal(b2bDetailResult.success, true, b2bDetailResult.success ? undefined : b2bDetailResult.error.message);
+    assert.equal(AdminGetRmaResponse.safeParse({ ...(b2bDetailBody as object), target: "b2c" }).success, false);
+    const b2bDetail = b2bDetailBody as { items: Array<{ productName: string }> };
     assert.equal(b2bDetail.items[0]?.productName, marker);
-    assert.equal((await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) })).status, 200);
+    const statusResponse = await api(`/admin/rmas/${rma.id}/status`, adminCookie, { method: "PATCH", body: JSON.stringify({ status: "RECEIVED" }) });
+    const statusBody = await statusResponse.json();
+    assert.equal(statusResponse.status, 200);
+    assert.equal(AdminUpdateRmaStatusResponse.safeParse(statusBody).success, true);
     assert.equal((await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, `rma:${rma.id}:status:RECEIVED`))).length, 0);
+
+    const sensitiveValue = `${marker}-must-not-be-logged`;
+    const logged: unknown[] = [];
+    const invalid = {
+      ...retailAdminRow,
+      target: "b2c",
+      orderId: b2bOrderId,
+      orderItemId: b2bItemId,
+      retailOrderId,
+      retailOrderItemId: retailItemId,
+      description: sensitiveValue,
+    };
+    assert.equal(validateAdminRmaResponse("list", AdminListRmasResponse, [invalid], {
+      error: (...args: unknown[]) => { logged.push(args); },
+    }), null);
+    assert.equal(validateAdminRmaResponse("detail", AdminGetRmaResponse, {
+      ...invalid, items: [], privatePhotos: [], auditTrail: [],
+    }, { error: (...args: unknown[]) => { logged.push(args); } }), null);
+    assert.equal(validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, {
+      row: invalid, changed: false,
+    }, { error: (...args: unknown[]) => { logged.push(args); } }), null);
+    assert.equal(JSON.stringify(logged).includes(sensitiveValue), false);
   });
   await t.test("supplier-scoped bestseller ranking never crosses supplier or category", async () => {
     const [supplierB] = await db.insert(suppliersTable).values({ name: `${marker} B`, slug: `${marker}-b`, scope: "BOTH" }).returning();
@@ -395,4 +514,54 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(categoryScoped.status, 200);
     assert.deepEqual(await categoryScoped.json(), [], "Supplier A plus supplier B category must return no cross-supplier ranking.");
   });
+});
+
+test("admin commerce response contracts fail closed without logging payload values", async () => {
+  const adminSession = await cookie(admin);
+  const quotesResponse = await api("/admin/quotes", adminSession);
+  const validQuotes = await quotesResponse.json();
+  assert.equal(quotesResponse.status, 200);
+  assert.equal(AdminListQuotesResponse.safeParse(validQuotes).success, true);
+
+  const sensitiveValue = `${marker}-admin-commerce-secret`;
+  const logged: unknown[] = [];
+  const schemas = [
+    ["adminListPriceInquiries", AdminListPriceInquiriesResponse, [{ contactEmail: sensitiveValue }]],
+    ["adminUpdatePriceInquiry", AdminUpdatePriceInquiryResponse, { contactEmail: sensitiveValue }],
+    ["adminListQuotes", AdminListQuotesResponse, [{ customerCompanyName: sensitiveValue }]],
+    ["adminGetMetaCatalogStatus", AdminGetMetaCatalogStatusResponse, { connectionStatus: sensitiveValue }],
+    ["adminValidateMetaCatalog", AdminValidateMetaCatalogResponse, { connectionStatus: sensitiveValue }],
+    ["adminGetReviewRewardSettings", AdminGetReviewRewardSettingsResponse, { settings: sensitiveValue }],
+    ["adminUpdateReviewRewardSettings", AdminUpdateReviewRewardSettingsResponse, { enabled: sensitiveValue }],
+  ] as const;
+  for (const [operation, schema, malformed] of schemas) {
+    assert.equal(validateAdminCommerceResponse(operation, schema as {
+      safeParse(value: unknown):
+        | { success: true; data: unknown }
+        | { success: false; error: { issues: Array<{ code: string; path: PropertyKey[] }> } };
+    }, malformed, {
+      error: (...args: unknown[]) => { logged.push(args); },
+    }), null);
+  }
+  assert.equal(JSON.stringify(logged).includes(sensitiveValue), false);
+  assert.deepEqual(logged.map((entry) => (entry as [{ operation: string }])[0].operation), schemas.map(([operation]) => operation));
+  assert.ok(logged.every((entry) => {
+    const record = (entry as [{ issues: Array<Record<string, unknown>> }])[0];
+    return record.issues.every((issue) => Object.keys(issue).sort().join(",") === "code,path");
+  }));
+
+  const [quote] = (validQuotes as Array<{ id: string; itemSnapshots: unknown[] }>).filter((row) => row.itemSnapshots.length > 0);
+  assert.ok(quote);
+  const [stored] = await db.select({ itemSnapshots: b2bQuotesTable.itemSnapshots }).from(b2bQuotesTable).where(eq(b2bQuotesTable.id, quote.id));
+  assert.ok(stored);
+  await db.update(b2bQuotesTable).set({
+    itemSnapshots: stored.itemSnapshots.map((item, index) => index === 0 ? { ...item, quantity: 0 } : item),
+  }).where(eq(b2bQuotesTable.id, quote.id));
+  try {
+    const malformedResponse = await api("/admin/quotes", adminSession);
+    assert.equal(malformedResponse.status, 500);
+    assert.deepEqual(await malformedResponse.json(), { error: "Admin commerce data could not be returned safely." });
+  } finally {
+    await db.update(b2bQuotesTable).set({ itemSnapshots: stored.itemSnapshots }).where(eq(b2bQuotesTable.id, quote.id));
+  }
 });

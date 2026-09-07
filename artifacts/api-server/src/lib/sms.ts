@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
 import { infobipBaseUrl, integrationSettings, integrationValue } from "./integrations";
 import { resolveInfobipNotifyUrl } from "./provider-events";
+import { safeModeNoExternalCalls } from "./runtime-environment";
 
 export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert" | "retail_order" | "referral";
 
@@ -152,6 +153,13 @@ class InfobipSmsProvider implements SmsProvider {
   }
 
   async send(input: SmsSendInput) {
+    if (safeModeNoExternalCalls()) {
+      logger.info(
+        { event: "safe_mode_sms_would_send", idempotencyKey: input.idempotencyKey },
+        "Safe mode recorded an Infobip SMS without an outbound call",
+      );
+      return { messageId: input.idempotencyKey ? `safe-mode:${input.idempotencyKey}` : "safe-mode" };
+    }
     const { apiKey, baseUrl } = await this.credentials();
     const sender = await integrationValue("sms", "senderName", process.env["SMS_SENDER_NAME"]) ?? "LUMERA";
     if (!apiKey) throw new Error("SMS_PROVIDER_API_KEY nije podešen.");
@@ -184,6 +192,7 @@ class InfobipSmsProvider implements SmsProvider {
   }
 
   async lookupByMessageId(messageId: string): Promise<SmsReconcileResult> {
+    if (safeModeNoExternalCalls()) return { unavailable: true };
     const { apiKey, baseUrl } = await this.credentials();
     if (!apiKey) return { unavailable: true };
     try {
@@ -218,6 +227,10 @@ const provider: SmsProvider = new InfobipSmsProvider();
 export const infobipSmsProvider: SmsProvider = provider;
 
 export async function sendTestSms(to: string) {
+  if (safeModeNoExternalCalls()) {
+    logger.info({ event: "safe_mode_test_sms_would_send" }, "Safe mode blocked an Infobip test SMS");
+    return { messageId: "safe-mode:test-sms" };
+  }
   const settings = await integrationSettings("sms");
   if (!settings.enabled) throw new Error("SMS integracija je isključena.");
   if (!(settings.values.apiKey ?? process.env["SMS_PROVIDER_API_KEY"])) throw new Error("Unesite SMS API ključ pre testa.");
@@ -231,6 +244,10 @@ export function maskPhone(phone: string) {
 }
 
 export async function sendPhoneVerificationCode(phone: string, code: string) {
+  if (safeModeNoExternalCalls()) {
+    logger.info({ event: "safe_mode_verification_sms_would_send" }, "Safe mode blocked an Infobip verification SMS");
+    return true;
+  }
   const settings = await integrationSettings("sms");
   if (!settings.enabled || !(settings.values.apiKey ?? process.env["SMS_PROVIDER_API_KEY"])) return false;
   await provider.send({ to: phone, text: `LUMERA kod za potvrdu broja telefona: ${code}. Važi 10 minuta.`, idempotencyKey: randomUUID() });
@@ -350,6 +367,23 @@ export async function sendSms(
         .where(eq(smsDeliveriesTable.id, claimed.id));
       return { skipped: true };
     }
+  }
+  if (safeModeNoExternalCalls()) {
+    const messageId = `safe-mode:${claimed.id}`;
+    await db.update(smsDeliveriesTable)
+      .set({
+        status: "sent",
+        providerMessageId: messageId,
+        sentAt: now,
+        claimExpiresAt: null,
+        errorMessage: "SAFE_MODE_NO_EXTERNAL_CALLS: would send",
+      })
+      .where(eq(smsDeliveriesTable.id, claimed.id));
+    logger.info(
+      { event: "safe_mode_sms_would_send", eventKey: input.eventKey },
+      "Safe mode recorded an SMS without an outbound call",
+    );
+    return { messageId };
   }
   // If a provider override is supplied (e.g. in tests), skip the settings check.
   const activeProvider = providerOverride ?? null;

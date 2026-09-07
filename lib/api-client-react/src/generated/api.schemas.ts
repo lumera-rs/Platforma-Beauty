@@ -5,6 +5,152 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type AdminPriceInquiryStatus = typeof AdminPriceInquiryStatus[keyof typeof AdminPriceInquiryStatus];
+
+
+export const AdminPriceInquiryStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export interface AdminPriceInquiry {
+  id: string;
+  supplierId: string;
+  productId: string;
+  productName: string;
+  supplierName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  message: string;
+  status: AdminPriceInquiryStatus;
+  /** @nullable */
+  internalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPriceInquiryPage {
+  items: AdminPriceInquiry[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
+
+export type AdminPriceInquiryUpdateStatus = typeof AdminPriceInquiryUpdateStatus[keyof typeof AdminPriceInquiryUpdateStatus];
+
+
+export const AdminPriceInquiryUpdateStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export interface AdminPriceInquiryUpdate {
+  status?: AdminPriceInquiryUpdateStatus;
+  /**
+     * @maxLength 5000
+     * @nullable
+     */
+  internalNote?: string | null;
+}
+
+export type RmaRecordBaseStatus = typeof RmaRecordBaseStatus[keyof typeof RmaRecordBaseStatus];
+
+
+export const RmaRecordBaseStatus = {
+  RECEIVED: 'RECEIVED',
+  IN_REVIEW: 'IN_REVIEW',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+
+export interface RmaRecordBase {
+  id: string;
+  rmaNumber: string;
+  requesterUserId: string;
+  /** @minimum 1 */
+  quantity: number;
+  reason: string;
+  description: string;
+  status: RmaRecordBaseStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type StandardRmaRecord = RmaRecordBase & {
+  orderId: string;
+  orderItemId: string;
+  /** @nullable */
+  retailOrderId: null;
+  /** @nullable */
+  retailOrderItemId: null;
+};
+
+export type RetailRmaRecord = RmaRecordBase & {
+  /** @nullable */
+  orderId: null;
+  /** @nullable */
+  orderItemId: null;
+  retailOrderId: string;
+  retailOrderItemId: string;
+};
+
+export type RmaRecord = StandardRmaRecord | RetailRmaRecord;
+
+export interface AdminRmaOwner {
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  businessName?: string | null;
+  /** @nullable */
+  pib?: string | null;
+  email: string;
+}
+
+export type AdminRmaListItem = StandardRmaRecord & {
+  target: 'b2b';
+  owner: AdminRmaOwner;
+} | RetailRmaRecord & {
+  target: 'b2c';
+  owner: AdminRmaOwner;
+};
+
+export interface AdminRmaItem {
+  orderItemId: string;
+  productName: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface AdminRmaAuditEntry {
+  action: string;
+  timestamp: string;
+  /** @nullable */
+  actorId: string | null;
+  /** @nullable */
+  note: string | null;
+}
+
+export type AdminRmaDetail = AdminRmaListItem & {
+  items: AdminRmaItem[];
+  privatePhotos: string[];
+  auditTrail: AdminRmaAuditEntry[];
+};
+
+export interface AdminRmaStatusResult {
+  row: RmaRecord;
+  changed: boolean;
+}
+
 export interface CatalogSyncRun {
   id: string;
   provider: string;
@@ -1355,7 +1501,18 @@ export interface Service {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -1648,7 +1805,18 @@ export interface SalonManagedService {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -1923,6 +2091,8 @@ export interface GroupedTreatmentRequest {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 /**
@@ -1957,10 +2127,22 @@ export interface GroupedTreatmentSlot {
   date: string;
   /** @nullable */
   employeeId: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
   endTime: string;
   /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
+  /** @minimum 0 */
   bufferMinutes: number;
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  /** True only for a meaningfully better same-day option within the same employee/resource assignment. */
+  recommended?: boolean;
 }
 
 export interface GroupedAvailabilityCandidate {
@@ -1968,6 +2150,10 @@ export interface GroupedAvailabilityCandidate {
   startTime: string;
   endTime: string;
   treatments: GroupedTreatmentSlot[];
+  /** Additive aggregate compaction score for the displayed treatment group. */
+  score?: number;
+  /** True when the API marks the group as a discreet recommended option. */
+  recommended?: boolean;
 }
 
 export interface GroupedAvailabilityCalendarDay {
@@ -2001,6 +2187,8 @@ export interface BookingGroupTreatmentInput {
   date?: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
 }
 
@@ -2041,6 +2229,8 @@ export interface ManualBookingGroupTreatmentInput {
   date: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   startTime: string;
 }
 
@@ -2065,6 +2255,8 @@ export interface BookingGroupRescheduleTreatmentInput {
   startTime: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 export interface BookingGroupRescheduleInput {
@@ -2180,6 +2372,11 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
+  employeeIds?: string[];
+  employeeNames?: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;
@@ -2415,6 +2612,11 @@ export interface TimeSlot {
   employeeId?: string | null;
   /** @nullable */
   employeeName?: string | null;
+  employeeIds?: string[];
+  employeeNames?: string[];
+  /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
+  score?: number;
+  recommended?: boolean;
 }
 
 export interface FirstAvailableServiceSlot {
@@ -2483,6 +2685,8 @@ export interface AppointmentInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
@@ -2501,6 +2705,8 @@ export interface AppointmentUpdate {
   startTime?: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   notes?: string;
 }
 
@@ -2519,6 +2725,8 @@ export interface SalonAppointmentUpdate {
   status?: SalonAppointmentUpdateStatus;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   notes?: string;
   date?: string;
   startTime?: string;
@@ -2560,6 +2768,8 @@ export interface AppointmentSeriesPreviewInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   /** @nullable */
   packagePurchaseId?: string | null;
   /** @nullable */
@@ -2868,6 +3078,8 @@ export interface SalonAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
   startTime: string;
@@ -2885,6 +3097,8 @@ export interface SalonPackageAppointmentSlot {
   startTime: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
 }
 
 export interface SalonPackageAppointmentsInput {
@@ -3029,7 +3243,18 @@ export interface ServiceInput {
   /** @minimum 5 */
   durationMinutes: number;
   /** @minimum 0 */
+  preProcessingMinutes?: number;
+  /** @minimum 0 */
+  processingMinutes?: number;
+  /** @minimum 0 */
+  postProcessingMinutes?: number;
+  /** @minimum 0 */
   bufferMinutes?: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   /** @minimum 0 */
   price: number;
   /** @nullable */
@@ -5643,6 +5868,18 @@ export type AdminOrder = Order & ({
   adminNote: string | null;
   history: OrderHistoryEvent[];
 });
+
+export interface AdminOrderPage {
+  items: AdminOrder[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
 
 export type OrderInputItemsItem = {
   productId: string;
@@ -8836,6 +9073,18 @@ export interface AdminSalon {
   createdAt: string;
 }
 
+export interface AdminSalonPage {
+  items: AdminSalon[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
+}
+
 export interface AdminSalonUpdate {
   active?: boolean;
   featured?: boolean;
@@ -8904,6 +9153,18 @@ export interface AdminUser {
   /** @nullable */
   passwordSetAt: string | null;
   createdAt: string;
+}
+
+export interface AdminUserPage {
+  items: AdminUser[];
+  /** @minimum 1 */
+  page: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  pageSize: number;
+  hasNext: boolean;
 }
 
 export type AdminUserUpdateRole = typeof AdminUserUpdateRole[keyof typeof AdminUserUpdateRole];
@@ -11903,6 +12164,11 @@ export type WidgetSalonServicesItem = {
   id: string;
   name: string;
   durationMinutes: number;
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -11931,6 +12197,8 @@ export interface WidgetSlot {
   end: string;
   employeeId: string;
   employeeName: string;
+  employeeIds?: string[];
+  employeeNames?: string[];
 }
 
 export interface EmployeeTimeBlock {
@@ -11970,6 +12238,8 @@ export interface AvailabilitySearchSlot {
   endTime: string;
   employeeId: string;
   employeeName: string;
+  employeeIds?: string[];
+  employeeNames?: string[];
 }
 
 /**
@@ -12127,6 +12397,8 @@ export interface WidgetAppointmentCreate {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   startTime: string;
   /**
@@ -12163,6 +12435,7 @@ export interface WidgetAppointmentCreated {
   startTime: string;
   endTime: string;
   employeeName: string;
+  employeeIds?: string[];
   serviceName: string;
   salonName: string;
 }
@@ -12171,6 +12444,8 @@ export type WidgetBookingGroupCreateTreatmentsItem = {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @maxItems 20 */
+  employeeIds?: (string | null)[];
   date: string;
   startTime: string;
 };
@@ -14532,6 +14807,11 @@ export type BookingCapacityReachedResponse = BookingCapacityError;
  */
 export type IdempotencyKeyParameter = string;
 
+/**
+ * Required client-generated widget booking identifier; reuse it only to retry the identical payload.
+ */
+export type WidgetBookingIdempotencyKeyParameter = string;
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -14566,6 +14846,15 @@ export const AdminGetWebPushDeliveryMetricsPeriodDays = {
   NUMBER_30: 30,
   NUMBER_90: 90,
 } as const;
+
+export type AdminListBrevoStaleWebhooks200StaleWebhooksItem = {
+  id: number;
+  maskedUrl: string;
+};
+
+export type AdminListBrevoStaleWebhooks200 = {
+  staleWebhooks: AdminListBrevoStaleWebhooks200StaleWebhooksItem[];
+};
 
 export type ListSalonsParams = {
 city?: CityQueryParameter;
@@ -14634,6 +14923,11 @@ city?: CityQueryParameter;
 export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
+/**
+ * Ordered employee positions; an empty value means that position may use any qualified available employee.
+ * @maxItems 20
+ */
+employeeIds?: string[];
 date: string;
 /**
  * Optional requested cadence. The salon booking policy remains authoritative.
@@ -14648,6 +14942,7 @@ export type CreateBookingGroupHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14657,6 +14952,7 @@ export type CreateSalonBookingGroupHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14666,6 +14962,7 @@ export type CreateEmployeeBookingGroupHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14715,6 +15012,7 @@ export type CreateAppointmentHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14791,6 +15089,7 @@ export type CreateSalonAppointmentHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14800,6 +15099,7 @@ export type CreateSalonPackageAppointmentsHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14819,6 +15119,10 @@ serviceId: string;
  */
 startDate: string;
 employeeId?: string;
+/**
+ * @maxItems 20
+ */
+employeeIds?: string[];
 /**
  * @minimum 1
  * @maximum 100
@@ -14844,6 +15148,7 @@ export type CreateSalonAppointmentSeriesHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14881,6 +15186,7 @@ export type CreateEmployeeAppointmentSeriesHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14890,6 +15196,7 @@ export type CreateEmployeeAppointmentsHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -14977,6 +15284,7 @@ export type CheckoutEducationB2bOrderHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15108,6 +15416,57 @@ export const AdminListOrdersDeliveryMethod = {
   personal_belgrade: 'personal_belgrade',
 } as const;
 
+export type AdminListOrdersPageParams = {
+status?: AdminListOrdersPageStatus;
+salon?: string;
+from?: string;
+to?: string;
+search?: string;
+paymentStatus?: AdminListOrdersPagePaymentStatus;
+deliveryMethod?: AdminListOrdersPageDeliveryMethod;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListOrdersPageStatus = typeof AdminListOrdersPageStatus[keyof typeof AdminListOrdersPageStatus];
+
+
+export const AdminListOrdersPageStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  paid: 'paid',
+  processing: 'processing',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export type AdminListOrdersPagePaymentStatus = typeof AdminListOrdersPagePaymentStatus[keyof typeof AdminListOrdersPagePaymentStatus];
+
+
+export const AdminListOrdersPagePaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export type AdminListOrdersPageDeliveryMethod = typeof AdminListOrdersPageDeliveryMethod[keyof typeof AdminListOrdersPageDeliveryMethod];
+
+
+export const AdminListOrdersPageDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
 export type SaveEducationReactivationCourseSelection200 = { [key: string]: unknown };
 
 export type SelectEducationSubscriptionPlanBodyBillingCycle = typeof SelectEducationSubscriptionPlanBodyBillingCycle[keyof typeof SelectEducationSubscriptionPlanBodyBillingCycle];
@@ -15213,7 +15572,13 @@ export type ListEducationBundles200Item = { [key: string]: unknown };
 export type GetEducationBundle200 = { [key: string]: unknown };
 
 export type PurchaseEducationBundleHeaders = {
-'Idempotency-Key': string;
+/**
+ * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * @minLength 1
+ * @maxLength 200
+ * @pattern ^[!-~]+$
+ */
+'Idempotency-Key': IdempotencyKeyParameter;
 };
 
 export type PurchaseEducationBundleBodyTargetType = typeof PurchaseEducationBundleBodyTargetType[keyof typeof PurchaseEducationBundleBodyTargetType];
@@ -15389,6 +15754,7 @@ export type CreateEducationOperationalBookingHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15398,6 +15764,7 @@ export type SettleAdminEducationInstallmentHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15422,6 +15789,7 @@ export type RescheduleEducationOperationalBookingHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15431,6 +15799,7 @@ export type CommitEducationCourseRecurrenceHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15452,6 +15821,7 @@ export type EnrollInEducationCourseHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15461,6 +15831,7 @@ export type CreateEducationGroupEnrollmentsHeaders = {
  * Optional client-generated command identifier recorded on each created enrollment.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key'?: string;
 };
@@ -15720,6 +16091,7 @@ export type PurchaseEducationGiftVoucherHeaders = {
  * Client-generated command identifier; reuse it only to retry the identical booking payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key': IdempotencyKeyParameter;
 };
@@ -15768,6 +16140,23 @@ page?: number;
 pageSize?: number;
 };
 
+export type AdminListSalonsPageParams = {
+search?: string;
+city?: string;
+active?: boolean;
+featured?: boolean;
+subscriptionStatus?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
 export type AdminListUsersParams = {
 search?: string;
 role?: AdminListUsersRole;
@@ -15789,6 +16178,35 @@ export type AdminListUsersRole = typeof AdminListUsersRole[keyof typeof AdminLis
 
 
 export const AdminListUsersRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
+} as const;
+
+export type AdminListUsersPageParams = {
+search?: string;
+role?: AdminListUsersPageRole;
+active?: boolean;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListUsersPageRole = typeof AdminListUsersPageRole[keyof typeof AdminListUsersPageRole];
+
+
+export const AdminListUsersPageRole = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
@@ -16229,11 +16647,12 @@ employeeId?: string;
 
 export type CreateWidgetAppointmentHeaders = {
 /**
- * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * Required client-generated widget booking identifier; reuse it only to retry the identical payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
-'Idempotency-Key': IdempotencyKeyParameter;
+'Idempotency-Key': WidgetBookingIdempotencyKeyParameter;
 };
 
 export type CreateWidgetAppointment429 = BookingCapacityError | {
@@ -16242,11 +16661,12 @@ export type CreateWidgetAppointment429 = BookingCapacityError | {
 
 export type CreateWidgetBookingGroupHeaders = {
 /**
- * Client-generated command identifier; reuse it only to retry the identical booking payload.
+ * Required client-generated widget booking identifier; reuse it only to retry the identical payload.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
-'Idempotency-Key': IdempotencyKeyParameter;
+'Idempotency-Key': WidgetBookingIdempotencyKeyParameter;
 };
 
 export type CreateWidgetBookingGroup429 = BookingCapacityError | {
@@ -16717,6 +17137,46 @@ export type CreatePriceInquiry201 = {
   id: string;
   status: CreatePriceInquiry201Status;
   createdAt: string;
+};
+
+export type AdminListPriceInquiriesParams = {
+/**
+ * Case-insensitive customer name, email, product, or supplier search.
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * One-based result page in newest-first order.
+ * @minimum 1
+ * @maximum 100000
+ */
+page?: number;
+/**
+ * Maximum number of inquiries returned per page.
+ * @minimum 1
+ * @maximum 500
+ */
+pageSize?: number;
+};
+
+export type AdminListPriceInquiriesPageParams = {
+/**
+ * Case-insensitive customer name, email, product, or supplier search.
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * One-based result page in newest-first order.
+ * @minimum 1
+ * @maximum 100000
+ */
+page?: number;
+/**
+ * Maximum number of inquiries returned per page.
+ * @minimum 1
+ * @maximum 500
+ */
+pageSize?: number;
 };
 
 export type CreateShopQuoteBody = {
