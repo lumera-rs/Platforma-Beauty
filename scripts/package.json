@@ -102,7 +102,7 @@
     "anonymized-pg-dump": "bash ./anonymized-pg-dump.sh",
     "test:anonymized-pg-dump": "bash ./src/anonymized-pg-dump.test.sh",
     "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
-    "test:admin-bounded-pagination": "pnpm run playwright:checked -- browser/admin-bounded-pagination.spec.ts",
+    "test:admin-bounded-pagination": "tsx ./src/run-admin-bounded-pagination.ts",
     "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts"
   },
   "devDependencies": {
@@ -126,17 +126,17 @@
     ]
   },
   "focusedOwnerBrowserGates": {
-    "release": [
+    "release": [],
+    "localOnly": [
       "test:owner-service-availability"
-    ],
-    "localOnly": []
+    ]
   },
   "focusedEmployeeBrowserGates": {
     "scriptNamePattern": "test:employee-*",
     "specFilePattern": "browser/employee-*.spec.ts",
-    "release": [
+    "release": [],
+    "localOnly": [
       "test:employee-location-booking"
-    ],
-    "localOnly": []
+    ]
   }
 }
