@@ -15770,9 +15770,11 @@ export const CreateEducationGroupEnrollmentsParams = zod.object({
 export const createEducationGroupEnrollmentsHeaderIdempotencyKeyMax = 200;
 
 
+export const createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp = new RegExp('^[!-~]+$');
+
 
 export const CreateEducationGroupEnrollmentsHeader = zod.object({
-  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
+  "Idempotency-Key": zod.string().min(1).max(createEducationGroupEnrollmentsHeaderIdempotencyKeyMax).regex(createEducationGroupEnrollmentsHeaderIdempotencyKeyRegExp).optional().describe('Optional client-generated command identifier recorded on each created enrollment.')
 })
 
 

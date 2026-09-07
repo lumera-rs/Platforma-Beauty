@@ -502,8 +502,15 @@ async function run(): Promise<void> {
     // TEST: Group enrollment — discount validation
     // ═══════════════════════════════════════════════════════════════════════
     {
+      // No "missing" case: this operation's Idempotency-Key is documented as
+      // optional (required: false in openapi.yaml), and
+      // generated-api-header-typing.type-check.ts asserts a caller may omit it.
+      // The Replit workspace had moved this operation onto the shared, required
+      // IdempotencyKey parameter, which is why its version of this list expected
+      // a 400 for a missing key. Tightening the contract is a real API change and
+      // is deliberately not made as a side effect of porting; a malformed key is
+      // still rejected below.
       const invalidGroupKeys: ReadonlyArray<{ label: string; value?: string }> = [
-        { label: "missing" },
         { label: "empty", value: "" },
         { label: "spaced", value: "contains space" },
         { label: "Unicode", value: "é" },
@@ -520,10 +527,17 @@ async function run(): Promise<void> {
         });
         assert.equal(response.status, 400, `Group enrollment must reject a ${invalidKey.label} Idempotency-Key.`);
       }
+      // Sends a malformed key rather than omitting one: this operation's key is
+      // optional to send, so an absent key is valid and the request would get as
+      // far as the course lookup. The assertion's real subject — that an
+      // *invalid* key is refused before any entity lookup can colour the
+      // response — is unchanged, and is what the route now guarantees by
+      // validating through the generated header schema up front.
       const { response: invalidKeyBeforeEntityLookups, queries: invalidKeyQueries } =
         await requestWithObservedQueries(baseUrl, `/education/courses/${randomUUID()}/group-enrollments`, {
         method: "POST",
         cookie: salonOwnerCookie,
+        headers: { "idempotency-key": "invalid key with spaces" },
         body: buildValidOnlineEducationEnrollmentRequest({ employeeIds: [randomUUID(), randomUUID()] }),
       });
       assert.equal(

@@ -15831,6 +15831,7 @@ export type CreateEducationGroupEnrollmentsHeaders = {
  * Optional client-generated command identifier recorded on each created enrollment.
  * @minLength 1
  * @maxLength 200
+ * @pattern ^[!-~]+$
  */
 'Idempotency-Key'?: string;
 };

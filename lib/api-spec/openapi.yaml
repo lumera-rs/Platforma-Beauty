@@ -4748,7 +4748,10 @@ paths:
           in: header
           required: false
           description: Optional client-generated command identifier recorded on each created enrollment.
-          schema: { type: string, minLength: 1, maxLength: 200 }
+          # Optional to send, but validated exactly like the shared required
+          # parameter when it is sent: presence and well-formedness are separate
+          # questions, and a malformed key is a client bug either way.
+          schema: { type: string, minLength: 1, maxLength: 200, pattern: '^[!-~]+$' }
       requestBody:
         required: true
         content:

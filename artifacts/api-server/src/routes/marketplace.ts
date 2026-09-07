@@ -3176,6 +3176,7 @@ async function modulesForCourse(courseId: string, completedLessonIds = new Set<s
 }
 import { lockEducationScheduleResources } from "../lib/education-locks";
 import { educationEducatorHasAbsenceOverlap, educationLocalDatesTouched } from "../lib/education-availability-store";
+import { parseEducationIdempotencyKey } from "../lib/education-idempotency";
 
 async function sessionsForCourse(courseId: string, includeLocation = false) {
   const sessions = await db.select({ session: courseSessionsTable, educatorStaffId: educationSessionEducatorsTable.staffId })
@@ -23363,6 +23364,18 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   if (!params.success || !body.success) {
     res.status(400).json({ error: "Podaci grupne prijave nisu ispravni." }); return;
   }
+  // Validated through the generated header schema rather than by hand, so the
+  // spec stays the single source of truth: this operation's key is optional to
+  // send (unlike the other education commands, which use the shared required
+  // parameter), but a key that IS sent must be well formed. The previous
+  // `?.trim() || null` silently turned an empty or whitespace key into "absent"
+  // and only ever checked the length.
+  const parsedKey = parseEducationIdempotencyKey("createEducationGroupEnrollments", req.headers["idempotency-key"]);
+  if (!parsedKey.success) {
+    res.status(400).json({ error: "Idempotency-Key nije ispravan." }); return;
+  }
+  const idempotencyKey = parsedKey.key ?? null;
+
   const courseId = params.data.courseId;
   const access = await requireEducationAccess(req, res); if (!access) return;
   const salon = access.salon;
@@ -23413,11 +23426,6 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   }
   const effectiveDiscountPercent = (minGroup !== null && employeeIds.length >= minGroup) ? discountPercent : 0;
   const unitPrice = Math.max(0, Math.round(course.price * (1 - effectiveDiscountPercent / 100)));
-  const idempotencyKey = req.get("idempotency-key")?.trim() || null;
-  if (idempotencyKey && idempotencyKey.length > 200) {
-    res.status(400).json({ error: "Idempotency ključ je predugačak." }); return;
-  }
-
   let enrollments: (typeof courseEnrollmentsTable.$inferSelect)[];
   try {
     const isSalonInternal = course.salonId === salon.id && !course.centerId;
