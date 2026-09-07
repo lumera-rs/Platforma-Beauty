@@ -27,6 +27,10 @@ import { lockAppointmentResources } from "./appointment-locks";
 import { ensureBookingCommandSchema } from "./booking-command-schema";
 import { bookingPayloadFingerprint } from "./booking-command";
 
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Final booking hardening tests");
+
 type HttpResult = { status: number; body: unknown; replayed: boolean };
 
 async function request(

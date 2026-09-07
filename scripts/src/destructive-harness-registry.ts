@@ -138,6 +138,20 @@ export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistra
     guardContract: "typescript",
   },
   {
+    name: "anonymized dump shell",
+    sourcePath: "scripts/anonymized-pg-dump.sh",
+    launch: "bash",
+    verifyAllowed: false,
+    guardContract: "shell",
+  },
+  {
+    name: "anonymized dump shell tests",
+    sourcePath: "scripts/src/anonymized-pg-dump.test.sh",
+    launch: "bash",
+    verifyAllowed: false,
+    guardContract: "shell",
+  },
+  {
     name: "B2B catalog shell",
     sourcePath: "scripts/test-b2b-catalog.sh",
     launch: "bash",

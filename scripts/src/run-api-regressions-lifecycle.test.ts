@@ -314,7 +314,14 @@ void main();
     for (const sourcePath of discoveredSources) {
       if (!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(sourcePath)) continue;
       const source = await readFile(path.join(workspaceRoot, sourcePath), "utf8");
-      if (/from\s+["']@workspace\/db["']/.test(source)) {
+      // Importing @workspace/db is one way to be guarded — that module asserts
+      // the runtime for you on import. Calling the assert directly is the other,
+      // and is not weaker: it is the same guard, just named at the call site by
+      // a test that talks to PostgreSQL through `pg` instead of the db package.
+      if (
+        /from\s+["']@workspace\/db["']/.test(source)
+        || /assertDestructiveTestRuntimeAllowed\s*\(/.test(source)
+      ) {
         automaticallyGuardedDatabaseTests.push(sourcePath);
       }
     }

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/destructive-test-runtime.sh"
+assert_destructive_test_runtime_allowed "Anonymized dump"
+
 # Create a restore-ready, anonymized PostgreSQL custom-format dump.  The source
 # is only ever opened by pg_dump or a read-only psql session; all UPDATEs run in
 # a newly-created disposable database.

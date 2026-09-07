@@ -27,6 +27,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BUSINESS_GROWTH_SCHEMA_VERSION } from "./business-growth-schema";
 
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema boot regression tests");
+
 const execFileAsync = promisify(execFile);
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(thisDir, "..", "..", "..", "..");
