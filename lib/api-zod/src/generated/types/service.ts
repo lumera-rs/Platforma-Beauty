@@ -14,11 +14,11 @@ export interface Service {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
-  preProcessingMinutes: number;
+  preProcessingMinutes?: number;
   /** @minimum 0 */
-  processingMinutes: number;
+  processingMinutes?: number;
   /** @minimum 0 */
-  postProcessingMinutes: number;
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
   /**

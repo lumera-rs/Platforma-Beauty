@@ -1501,11 +1501,11 @@ export interface Service {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
-  preProcessingMinutes: number;
+  preProcessingMinutes?: number;
   /** @minimum 0 */
-  processingMinutes: number;
+  processingMinutes?: number;
   /** @minimum 0 */
-  postProcessingMinutes: number;
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
   /**
@@ -1805,11 +1805,11 @@ export interface SalonManagedService {
   description: string;
   durationMinutes: number;
   /** @minimum 0 */
-  preProcessingMinutes: number;
+  preProcessingMinutes?: number;
   /** @minimum 0 */
-  processingMinutes: number;
+  processingMinutes?: number;
   /** @minimum 0 */
-  postProcessingMinutes: number;
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes?: number;
   /**
@@ -2132,11 +2132,11 @@ export interface GroupedTreatmentSlot {
   startTime: string;
   endTime: string;
   /** @minimum 0 */
-  preProcessingMinutes: number;
+  preProcessingMinutes?: number;
   /** @minimum 0 */
-  processingMinutes: number;
+  processingMinutes?: number;
   /** @minimum 0 */
-  postProcessingMinutes: number;
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes: number;
   /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
@@ -2372,8 +2372,8 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
-  employeeIds: string[];
-  employeeNames: string[];
+  employeeIds?: string[];
+  employeeNames?: string[];
   /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
   score?: number;
   recommended?: boolean;
@@ -12168,7 +12168,7 @@ export type WidgetSalonServicesItem = {
      * @minimum 1
      * @maximum 20
      */
-  requiredEmployeeCount: number;
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;
@@ -12197,8 +12197,8 @@ export interface WidgetSlot {
   end: string;
   employeeId: string;
   employeeName: string;
-  employeeIds: string[];
-  employeeNames: string[];
+  employeeIds?: string[];
+  employeeNames?: string[];
 }
 
 export interface EmployeeTimeBlock {
@@ -12238,8 +12238,8 @@ export interface AvailabilitySearchSlot {
   endTime: string;
   employeeId: string;
   employeeName: string;
-  employeeIds: string[];
-  employeeNames: string[];
+  employeeIds?: string[];
+  employeeNames?: string[];
 }
 
 /**

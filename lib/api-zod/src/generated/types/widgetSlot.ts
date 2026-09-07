@@ -11,6 +11,6 @@ export interface WidgetSlot {
   end: string;
   employeeId: string;
   employeeName: string;
-  employeeIds: string[];
-  employeeNames: string[];
+  employeeIds?: string[];
+  employeeNames?: string[];
 }

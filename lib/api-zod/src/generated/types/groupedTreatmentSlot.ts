@@ -18,11 +18,11 @@ export interface GroupedTreatmentSlot {
   startTime: string;
   endTime: string;
   /** @minimum 0 */
-  preProcessingMinutes: number;
+  preProcessingMinutes?: number;
   /** @minimum 0 */
-  processingMinutes: number;
+  processingMinutes?: number;
   /** @minimum 0 */
-  postProcessingMinutes: number;
+  postProcessingMinutes?: number;
   /** @minimum 0 */
   bufferMinutes: number;
   /** Additive schedule-compaction score; never affects validity, identity, count, or order. */

@@ -14,7 +14,7 @@ export type WidgetSalonServicesItem = {
      * @minimum 1
      * @maximum 20
      */
-  requiredEmployeeCount: number;
+  requiredEmployeeCount?: number;
   price: number;
   /** @nullable */
   promoPrice?: number | null;

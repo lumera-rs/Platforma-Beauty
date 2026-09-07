@@ -23,8 +23,8 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
-  employeeIds: string[];
-  employeeNames: string[];
+  employeeIds?: string[];
+  employeeNames?: string[];
   /** Additive schedule-compaction score; never affects validity, identity, count, or order. */
   score?: number;
   recommended?: boolean;
