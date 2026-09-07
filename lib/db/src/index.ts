@@ -5,6 +5,7 @@ import {
   assertDestructiveTestRuntimeAllowed,
   isProductionOrDeploymentRuntime,
 } from "./destructive-test-runtime";
+export { databaseQueryObservationHeader } from "./query-observation";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
@@ -89,7 +90,6 @@ export type DatabaseQueryObservation = {
 type DatabaseQueryObserver = (query: DatabaseQueryObservation) => void;
 let databaseStatementCount = 0;
 
-export const databaseQueryObservationHeader = "x-database-query-observation";
 export function isDatabaseQueryObservationRuntimeAllowed(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {

@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
-    "./destructive-test-runtime": "./src/destructive-test-runtime.ts"
+    "./destructive-test-runtime": "./src/destructive-test-runtime.ts",
+    "./query-observation": "./src/query-observation.ts"
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",

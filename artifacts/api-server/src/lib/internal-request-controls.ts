@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { databaseQueryObservationHeader } from "@workspace/db";
+import { databaseQueryObservationHeader } from "@workspace/db/query-observation";
 import { isProductionOrDeploymentRuntime } from "@workspace/db/destructive-test-runtime";
 
 export type InternalRequestControlTransport =
