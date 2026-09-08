@@ -701,9 +701,11 @@ export const retailCartItemsTable = pgTable("retail_cart_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  unique("retail_cart_items_cart_product_variant_unique")
-    .on(table.cartId, table.productId, table.variantValue)
-    .nullsNotDistinct(),
+  // Drizzle's index builder cannot encode NULLS NOT DISTINCT. The native
+  // development reconciliation preserves that flag; the database release
+  // audit checks it. Keep this a standalone index, matching production.
+  uniqueIndex("retail_cart_items_cart_product_variant_unique")
+    .on(table.cartId, table.productId, table.variantValue),
   index("retail_cart_items_cart_idx").on(table.cartId),
   index("retail_cart_items_product_idx").on(table.productId),
   index("retail_cart_items_bundle_idx").on(table.bundleId),
