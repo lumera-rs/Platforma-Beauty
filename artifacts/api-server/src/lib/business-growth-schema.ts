@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 121;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 122;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -893,8 +893,55 @@ function tableStatements(s: string): string[] {
          END IF;
        END IF;
      END $$`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS retail_cart_items_cart_product_variant_unique
-       ON ${s}.retail_cart_items (cart_id, product_id, variant_value) NULLS NOT DISTINCT`,
+    // v122: the uniqueness lives in the Drizzle schema too
+    // (lib/db/src/schema/commerce.ts), which declares it as a UNIQUE *constraint*
+    // while this rollout used to create a bare unique *index*. Two owners, two
+    // catalog object kinds, one name: every schema diff wanted to drop the index
+    // and add the constraint, and the drop put the object back in the shape the
+    // repair above reacts to — so the repair deduplicated cart rows again on the
+    // next boot, and the diff came back on the publish after that. The rollout
+    // now produces the same object Drizzle declares, which ends the exchange.
+    //
+    // An index left by an earlier version is adopted with USING INDEX rather than
+    // dropped and rebuilt: it keeps NULLS NOT DISTINCT, costs no rewrite, and
+    // never leaves the table without the invariant in force.
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1
+         FROM pg_constraint constraint_definition
+         JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+         WHERE constraint_schema.nspname = current_schema()
+           AND constraint_definition.conname = 'retail_cart_items_cart_product_variant_unique'
+           AND constraint_definition.contype = 'u'
+       ) THEN
+         RETURN;
+       END IF;
+
+       IF EXISTS (
+         SELECT 1
+         FROM pg_class index_relation
+         JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+         WHERE index_schema.nspname = current_schema()
+           AND index_relation.relname = 'retail_cart_items_cart_product_variant_unique'
+           AND index_relation.relkind = 'i'
+       ) THEN
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE USING INDEX %I',
+           current_schema(),
+           'retail_cart_items',
+           'retail_cart_items_cart_product_variant_unique',
+           'retail_cart_items_cart_product_variant_unique'
+         );
+       ELSE
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE NULLS NOT DISTINCT (cart_id, product_id, variant_value)',
+           current_schema(),
+           'retail_cart_items',
+           'retail_cart_items_cart_product_variant_unique'
+         );
+       END IF;
+     END $$`,
     `CREATE INDEX IF NOT EXISTS retail_cart_items_cart_idx ON ${s}.retail_cart_items (cart_id)`,
     `CREATE INDEX IF NOT EXISTS retail_cart_items_product_idx ON ${s}.retail_cart_items (product_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_orders (
@@ -2551,8 +2598,47 @@ function tableStatements(s: string): string[] {
        product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
        variant_value text, created_at timestamptz NOT NULL DEFAULT now()
      )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS product_wishlists_user_product_variant_unique
-       ON ${s}.product_wishlists (user_id, product_id, variant_value) NULLS NOT DISTINCT`,
+    // v122: same split ownership as the retail cart uniqueness above — Drizzle
+    // declares this one as a constraint too (lib/db/src/schema/commerce.ts). It
+    // has not caused a diff yet only because nothing here forces the object back
+    // into an index; converged now so it never starts.
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1
+         FROM pg_constraint constraint_definition
+         JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+         WHERE constraint_schema.nspname = current_schema()
+           AND constraint_definition.conname = 'product_wishlists_user_product_variant_unique'
+           AND constraint_definition.contype = 'u'
+       ) THEN
+         RETURN;
+       END IF;
+
+       IF EXISTS (
+         SELECT 1
+         FROM pg_class index_relation
+         JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+         WHERE index_schema.nspname = current_schema()
+           AND index_relation.relname = 'product_wishlists_user_product_variant_unique'
+           AND index_relation.relkind = 'i'
+       ) THEN
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE USING INDEX %I',
+           current_schema(),
+           'product_wishlists',
+           'product_wishlists_user_product_variant_unique',
+           'product_wishlists_user_product_variant_unique'
+         );
+       ELSE
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE NULLS NOT DISTINCT (user_id, product_id, variant_value)',
+           current_schema(),
+           'product_wishlists',
+           'product_wishlists_user_product_variant_unique'
+         );
+       END IF;
+     END $$`,
     `CREATE INDEX IF NOT EXISTS product_wishlists_product_idx ON ${s}.product_wishlists (product_id)`,
     `CREATE INDEX IF NOT EXISTS product_wishlists_user_created_idx ON ${s}.product_wishlists (user_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.commerce_customer_notifications (
