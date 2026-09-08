@@ -375,7 +375,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 121, "v121 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 122, "v122 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -1424,6 +1424,87 @@ async function run() {
       true,
       "retail cart uniqueness treats a NULL variant value as a real cart-line key",
     );
+    // The same name is declared in the Drizzle schema as a UNIQUE constraint
+    // (lib/db/src/schema/commerce.ts). While this rollout produced a bare index
+    // instead, every schema diff wanted to swap one for the other, and applying
+    // that swap dropped NULLS NOT DISTINCT — which put the object back into the
+    // shape the v14 repair reacts to, so it deduplicated cart rows again on the
+    // next boot. The kind of the object is therefore part of the contract, not
+    // an implementation detail.
+    for (const [table, name] of [
+      ["retail_cart_items", "retail_cart_items_cart_product_variant_unique"],
+      ["product_wishlists", "product_wishlists_user_product_variant_unique"],
+    ] as const) {
+      const uniqueConstraint = (await q<{ contype: string }>(
+        `SELECT constraint_definition.contype
+         FROM pg_constraint constraint_definition
+         JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+         WHERE constraint_schema.nspname = $1 AND constraint_definition.conname = $2`,
+        [s, name],
+      )).rows[0];
+      assert.equal(
+        uniqueConstraint?.contype,
+        "u",
+        `${table}.${name} is a unique constraint, matching what the Drizzle schema declares`,
+      );
+    }
+    // Every database already running v121 holds these as bare unique indexes,
+    // so the upgrade path that matters in production is index → constraint. It
+    // must adopt the existing index rather than rebuild it: a drop-and-create
+    // would leave the table without the invariant for the length of the build,
+    // on a table that accepts writes.
+    const upgradeClient = await pool.connect();
+    try {
+    for (const [table, name, columns] of [
+      ["retail_cart_items", "retail_cart_items_cart_product_variant_unique",
+        "cart_id, product_id, variant_value"],
+      ["product_wishlists", "product_wishlists_user_product_variant_unique",
+        "user_id, product_id, variant_value"],
+    ] as const) {
+      await q(`ALTER TABLE "${s}".${table} DROP CONSTRAINT ${name}`);
+      await q(`CREATE UNIQUE INDEX ${name} ON "${s}".${table} (${columns}) NULLS NOT DISTINCT`);
+      const priorOid = (await q<{ oid: string }>(
+        `SELECT index_relation.oid::text AS oid
+         FROM pg_class index_relation
+         JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+         WHERE index_schema.nspname = $1 AND index_relation.relname = $2`,
+        [s, name],
+      )).rows[0]!;
+
+      // Exactly the state a deployed v121 database is in when it picks up v122.
+      await q(`UPDATE "${s}".business_growth_schema_rollout SET version = 121 WHERE singleton = true`);
+      await runBusinessGrowthSchemaDdl(upgradeClient, s);
+
+      const adopted = (await q<{ contype: string; oid: string; indnullsnotdistinct: boolean }>(
+        `SELECT constraint_definition.contype,
+                index_relation.oid::text AS oid,
+                index_definition.indnullsnotdistinct
+         FROM pg_constraint constraint_definition
+         JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+         JOIN pg_class index_relation ON index_relation.oid = constraint_definition.conindid
+         JOIN pg_index index_definition ON index_definition.indexrelid = index_relation.oid
+         WHERE constraint_schema.nspname = $1 AND constraint_definition.conname = $2`,
+        [s, name],
+      )).rows[0];
+      assert.equal(adopted?.contype, "u", `v121's ${name} index is upgraded to a constraint`);
+      assert.equal(adopted?.oid, priorOid.oid, `${name} adopts the existing index instead of rebuilding it`);
+      assert.equal(adopted?.indnullsnotdistinct, true, `${name} keeps NULLS NOT DISTINCT through the upgrade`);
+
+      // And the replay after the upgrade changes nothing — the exchange between
+      // this rollout and the schema diff is what broke publishing.
+      await runBusinessGrowthSchemaDdl(upgradeClient, s);
+      const afterReplay = (await q<{ oid: string }>(
+        `SELECT constraint_definition.conindid::text AS oid
+         FROM pg_constraint constraint_definition
+         JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+         WHERE constraint_schema.nspname = $1 AND constraint_definition.conname = $2`,
+        [s, name],
+      )).rows[0];
+      assert.equal(afterReplay?.oid, priorOid.oid, `replaying the rollout leaves ${name} untouched`);
+    }
+    } finally {
+      upgradeClient.release();
+    }
     await assert.rejects(
       q(
         `INSERT INTO "${s}".retail_cart_items
