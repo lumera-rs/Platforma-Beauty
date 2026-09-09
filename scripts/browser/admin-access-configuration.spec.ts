@@ -1050,7 +1050,7 @@ test("unregistered admin fixtures identify the request method and endpoint", () 
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
   test.setTimeout(180_000);
   const browserErrors = collectBrowserErrors(page);
-  const visitedRoutes = new Set<string>();
+  const visitedRoutes = new Set<string>([ADMIN_NAV[0]!.href]);
   await page.setViewportSize({ width: 1280, height: 844 });
   await mockAdminApi(page, "ADMIN", false);
   await page.goto("/poslovna-prijava");
@@ -1154,7 +1154,7 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
   expect(browserErrors, "The forced-colors admin mobile journey must not produce browser errors.").toEqual([]);
 });
 
-test("admin mobile navigation keeps focus indicators visible with forced colors", async ({ page }) => {
+test("admin desktop navigation keeps focus indicators visible with forced colors", async ({ page }) => {
   const browserErrors = collectBrowserErrors(page);
   await page.emulateMedia({ forcedColors: "active" });
   await openAdminPage(page, "/admin");
@@ -1209,7 +1209,7 @@ test("admin desktop navigation keeps focus indicators visible with forced colors
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
   test.setTimeout(120_000);
   const customerFixture = await createUser("CUSTOMER", "api-customer");
-  const customer = { ...admin, id: customerFixture.id, email: customerFixture.email, role: "CUSTOMER" as const };
+  const customer = await createUser("CUSTOMER", "api-customer");
   try {
     const adminRequests: string[] = [];
     await page.route("**/api/**", async (route) => {

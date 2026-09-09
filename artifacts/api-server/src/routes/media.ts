@@ -743,7 +743,7 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
     res.status(400).json({ error: "PDF/DOCX uploads are allowed only for product-document scope." });
     return;
   }
-  const authorization = await authorizeUploadScope(user, body.scope as MediaScope, body.resourceId);
+  const authorization = await authorizeUploadScope(user, ticket.scope as MediaScope, ticket.resourceId);
   if (!authorization) {
     res.status(403).json({ error: "Nemate pravo da postavite fotografiju za izabrani sadržaj." });
     return;
@@ -783,7 +783,7 @@ router.post("/media/uploads/:uploadId/finalize", async (req, res): Promise<void>
   if (!ticket) { res.status(404).json({ error: "Upload nije pronađen." }); return; }
   if (ticket.ownerUserId !== user.id) { res.status(403).json({ error: "Ovaj upload pripada drugom nalogu." }); return; }
   if (ticket.finalizedAssetId) {
-    const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ticket.finalizedAssetId)).limit(1);
+  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, params.data.assetId)).limit(1);
     if (asset) { res.json(mediaAssetResponse(asset)); return; }
   }
   if (ticket.expiresAt <= new Date()) { res.status(410).json({ error: "Upload je istekao. Izaberite fotografiju ponovo." }); return; }

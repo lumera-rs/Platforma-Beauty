@@ -240,6 +240,8 @@ export type DatabaseQueryObservation = {
 type DatabaseQueryObserver = (query: DatabaseQueryObservation) => void;
 let databaseStatementCount = 0;
 
+export const databaseQueryObservationHeader = "x-database-query-observation";
+
 export function isDatabaseQueryObservationRuntimeAllowed(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {

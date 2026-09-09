@@ -17233,6 +17233,7 @@ export type CreatePriceInquiry201 = {
   createdAt: string;
 };
 
+export type AdminListPriceInquiries200ItemStatus = typeof AdminListPriceInquiries200ItemStatus[keyof typeof AdminListPriceInquiries200ItemStatus];
 export type AdminListPriceInquiriesParams = {
 /**
  * Case-insensitive customer name, email, product, or supplier search.
@@ -17497,3 +17498,26 @@ export type AdminDeleteAutomaticXyPromotionParams = {
  */
 version: number;
 };
+
+export type AdminListPriceInquiries200Item = {
+  id: string;
+  supplierId: string;
+  productId: string;
+  productName: string;
+  supplierName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  message: string;
+  status: AdminListPriceInquiries200ItemStatus;
+  /** @nullable */
+  internalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const AdminListPriceInquiries200ItemStatus = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  CLOSED: 'CLOSED',
+} as const;

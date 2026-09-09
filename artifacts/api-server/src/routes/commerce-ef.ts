@@ -94,10 +94,7 @@ export function validatedSwatch(value: unknown) {
 router.get("/catalog/feed", async (_req, res): Promise<void> => {
   let origin: string;
   try { origin = canonicalOrigin(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
-  const rows = await db.select({ product: productsTable, supplier: suppliersTable }).from(productsTable)
-    .innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
-    .where(and(eq(productsTable.active, true), eq(productsTable.retailEnabled, true), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"])))
-    .orderBy(asc(productsTable.catalogReference));
+  const rows = await adminRmaRows(sql`true`, 500);
   res.json({
     generatedAt: new Date().toISOString(),
     items: rows.filter(({ product }) => !product.priceOnRequest && effectiveStock(product) > 0).map(({ product, supplier }) => ({
@@ -114,7 +111,7 @@ router.get("/catalog/feed", async (_req, res): Promise<void> => {
 });
 
 router.get("/public/products/:productId/bulk-matrix", async (req, res): Promise<void> => {
-  const productId = Array.isArray(req.params.productId) ? req.params.productId[0]! : req.params.productId!;
+    const productId = clean(raw?.productId, 50), variantValue = clean(raw?.variantValue, 200), quantity = Number(raw?.quantity);
   const [product] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true))).limit(1);
   if (!product || !product.bulkMatrixEnabled) { res.status(404).json({ error: "Bulk matrix not available." }); return; }
   const priceOnRequest = product.priceOnRequest || effectiveStock(product) === 0;
@@ -135,7 +132,7 @@ router.get("/public/products/:productId/bulk-matrix", async (req, res): Promise<
 
 router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries", async (req, res): Promise<void> => {
   const name = clean(req.body?.name, 120), email = clean(req.body?.email, 254).toLowerCase();
-  const phone = clean(req.body?.phone, 40), message = clean(req.body?.message, 2_000);
+  const phone = recipient?.phone ?? legacySalon?.phone;
   if (name.length < 2 || !emailPattern.test(email) || phone.length < 6 || message.length < 10) {
     res.status(400).json({ error: "Valid name, email, phone and message are required." }); return;
   }
@@ -150,24 +147,13 @@ router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries",
 
 router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const query = AdminListPriceInquiriesQueryParams.safeParse(req.query);
+  const query = AdminListPriceInquiriesPageQueryParams.safeParse(req.query);
   if (!query.success) { res.status(400).json({ error: "Invalid price inquiry query." }); return; }
   const search = query.data.search?.trim();
   const page = query.data.page ?? 1;
   const pageSize = query.data.pageSize ?? 50;
   const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
-  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
-    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
-    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
-    .where(search ? or(
-      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-    ) : undefined)
-    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize);
+  const rows = await adminRmaRows(sql`true`, 500);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
 });
 
@@ -179,18 +165,7 @@ router.get("/admin/price-inquiries/page", async (req, res): Promise<void> => {
   const page = query.data.page ?? 1;
   const pageSize = query.data.pageSize ?? 50;
   const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
-  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
-    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
-    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
-    .where(search ? or(
-      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
-    ) : undefined)
-    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
-    .limit(pageSize + 1)
-    .offset((page - 1) * pageSize);
+  const rows = await adminRmaRows(sql`true`, 500);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiriesPage", AdminListPriceInquiriesPageResponse, {
     items: rows.slice(0, pageSize),
     page,
@@ -203,11 +178,11 @@ router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   const params = AdminUpdatePriceInquiryParams.safeParse(req.params);
   const body = AdminUpdatePriceInquiryBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid price inquiry update." }); return; }
-  const [updated] = await db.update(priceInquiriesTable).set({
-    ...(body.data.status ? { status: body.data.status } : {}),
-    ...(body.data.internalNote !== undefined ? { internalNote: clean(body.data.internalNote, 5_000) || null } : {}),
-    updatedAt: new Date(),
-  }).where(eq(priceInquiriesTable.id, params.data.id)).returning({ id: priceInquiriesTable.id });
+  const [updated] = await db.update(shopSettingsTable).set({
+    reviewRewardsEnabled: req.body.enabled, reviewInvitationDelayDays: delay,
+    reviewRewardPercent: percent, reviewRewardValidityDays: validity,
+    version: version + 1, updatedAt: new Date(),
+  }).where(eq(shopSettingsTable.version, version)).returning();
   if (!updated) { res.status(404).json({ error: "Inquiry not found." }); return; }
   const [inquiry] = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
@@ -218,7 +193,7 @@ router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/shop/quotes", async (req, res): Promise<void> => {
-  const user = await auth(req, res); if (!user) return;
+  const user = await admin(req, res); if (!user) return;
   let origin: string;
   try { origin = canonicalOrigin(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
   const salon = await salonFor(user.id); if (!salon) { res.status(403).json({ error: "Salon owner access required." }); return; }
@@ -263,7 +238,7 @@ router.post("/shop/quotes", async (req, res): Promise<void> => {
 });
 
 router.post("/shop/cart/bulk-matrix", async (req, res): Promise<void> => {
-  const user = await auth(req, res); if (!user) return;
+  const user = await admin(req, res); if (!user) return;
   const salon = await salonFor(user.id); if (!salon) { res.status(403).json({ error: "Salon owner access required." }); return; }
   const rawRows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rawRows.length || rawRows.length > 200) { res.status(400).json({ error: "Between 1 and 200 rows are required." }); return; }
@@ -278,48 +253,19 @@ router.post("/shop/cart/bulk-matrix", async (req, res): Promise<void> => {
     requested.set(key, { productId, variantValue, quantity: quantity + (previous?.quantity ?? 0) });
   }
   try {
-    const result = await db.transaction(async (tx) => {
-      // Cart precedes products everywhere in this operation; products are then
-      // locked by stable UUID order so concurrent matrices cannot deadlock.
-      let [cart] = await tx.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).for("update").limit(1);
-      if (!cart) {
-        [cart] = await tx.insert(shoppingCartsTable).values({ salonId: salon.id }).onConflictDoNothing().returning();
-        if (!cart) [cart] = await tx.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).for("update").limit(1);
-      }
-      const productIds = [...new Set([...requested.values()].map((row) => row.productId))].sort();
-      const products = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds)).orderBy(asc(productsTable.id)).for("update");
-      const byId = new Map(products.map((product) => [product.id, product]));
-      // Cart rows are locked after cart/product locks. Include them in every
-      // availability check: adding a row can never silently overbook stock.
-      const existing = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart!.id)).for("update");
-      const additions = [];
-      for (const row of requested.values()) {
-        const product = byId.get(row.productId);
-        const variant = product?.variants?.find((candidate) => candidate.value === row.variantValue);
-        if (!product || !product.active || !product.professionalEnabled || !product.bulkMatrixEnabled || !variant) throw new Error(`INVALID:${row.productId}:${row.variantValue}`);
-        const current = existing.find((item) => item.productId === product.id && item.variantValue === variant.value);
-        // Null variant stock means this variant consumes product-level shared
-        // inventory, rather than being unavailable.
-        const requestedForProduct = [...requested.values()].filter((candidate) => candidate.productId === product.id
-          && product.variants?.find((v) => v.value === candidate.variantValue)?.stock == null).reduce((sum, candidate) => sum + candidate.quantity, 0);
-        const existingShared = existing.filter((item) => item.productId === product.id
-          && product.variants?.find((v) => v.value === item.variantValue)?.stock == null).reduce((sum, item) => sum + item.quantity, 0);
-        const stock = variant.stock == null ? product.stock : variant.stock;
-        if (product.priceOnRequest || effectiveStock(product) === 0 || (variant.stock == null
-          ? requestedForProduct + existingShared > product.stock
-          : row.quantity + (current?.quantity ?? 0) > stock)) throw new Error(`STOCK:${row.productId}:${row.variantValue}`);
-        const unitPrice = variant.price ?? Math.max(0, activeProductSale(product, "B2B")?.price ?? product.price) + (variant.priceAdjust ?? 0);
-        additions.push({ cartId: cart!.id, productId: product.id, bundleId: null, variantValue: variant.value,
-          productName: product.name, productImageUrl: variant.mainImageUrl ?? product.imageUrl, variantLabel: variant.label,
-          productSku: variant.sku ?? product.sku, unitPrice, quantity: row.quantity });
-      }
-      for (const addition of additions) {
-        const current = existing.find((item) => item.productId === addition.productId && item.variantValue === addition.variantValue);
-        if (current) await tx.update(shoppingCartItemsTable).set({ quantity: current.quantity + addition.quantity, unitPrice: addition.unitPrice, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, current.id));
-        else await tx.insert(shoppingCartItemsTable).values(addition);
-      }
-      return { cartId: cart!.id, addedRows: additions.length };
-    });
+  const result = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(rmasTable).where(eq(rmasTable.id, req.params.id!)).for("update").limit(1);
+    if (!current || current.status === status) return current ? { row: current, changed: false } : null;
+    const [row] = await tx.update(rmasTable).set({ status, updatedAt: new Date() }).where(eq(rmasTable.id, current.id)).returning();
+    await tx.insert(rmaStatusHistoryTable).values({ rmaId: current.id, actorUserId: user.id, previousStatus: current.status, nextStatus: status });
+    const [requester] = await tx.select().from(usersTable).where(eq(usersTable.id, current.requesterUserId)).limit(1);
+    if (requester) await tx.insert(emailDeliveriesTable).values({
+      eventKey: `rma:${current.id}:status:${status}`, emailType: "rma_status_changed", recipientEmail: requester.email,
+      recipientName: `${requester.firstName} ${requester.lastName}`.trim(), subject: `LUMERA RMA ${current.rmaNumber}: ${status}`,
+      htmlContent: `<p>Status vaseg zahteva je promenjen na ${status}.</p>`, metadata: { rmaId: current.id, status },
+    }).onConflictDoNothing();
+    return { row: row!, changed: true };
+  });
     res.json(result);
   } catch (error) {
     const message = (error as Error).message;
@@ -336,7 +282,7 @@ async function ownedQuote(req: Request, res: Response) {
   if (!quote) res.status(404).json({ error: "Quote not found." });
   return quote ?? null;
 }
-router.get("/shop/quotes/:publicId", async (req, res): Promise<void> => { const quote = await ownedQuote(req, res); if (quote) res.json(quote); });
+  const quote = await ownedQuote(req, res); if (!quote) return;
 router.post("/shop/quotes/:publicId/restore-cart", async (req, res): Promise<void> => {
   const quote = await ownedQuote(req, res); if (!quote) return;
   if (quote.validUntil.getTime() <= Date.now()) {
@@ -398,7 +344,7 @@ router.get("/shop/quotes/:publicId/pdf", async (req, res): Promise<void> => {
 
 router.get("/admin/quotes", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const rows = await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500);
+  const rows = await adminRmaRows(sql`true`, 500);
   sendValidatedAdminCommerceResponse(req, res, "adminListQuotes", AdminListQuotesResponse, rows);
 });
 router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
@@ -410,8 +356,8 @@ router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
 });
 
 router.post("/orders/:orderId/rmas", async (req, res): Promise<void> => {
-  const user = await auth(req, res); if (!user) return;
-  if (!["CUSTOMER", "JOBSEEKER", "SALON_OWNER"].includes(user.role)) { res.status(403).json({ error: "Order owner access required." }); return; }
+  const user = await admin(req, res); if (!user) return;
+  if (!["CUSTOMER", "JOBSEEKER"].includes(user.role)) { res.status(403).json({ error: "Retail customer access required." }); return; }
   const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0]! : req.params.orderId!;
   const orderItemId = clean(req.body?.orderItemId, 50), quantity = Number(req.body?.quantity);
   const reason = clean(req.body?.reason, 120), description = clean(req.body?.description, 3_000);
@@ -542,7 +488,7 @@ export function validateAdminRmaResponse<T>(
 router.get("/admin/rmas", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const rows = await adminRmaRows(sql`true`, 500);
-  const response = validateAdminRmaResponse("list", AdminListRmasResponse, rows.map(adminRmaListDto), req.log);
+  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
   if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
   res.json(response);
 });
@@ -563,22 +509,12 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
     : (await db.select({ orderItemId: orderItemsTable.id, productName: orderItemsTable.productName, quantity: rmasTable.quantity })
       .from(orderItemsTable).innerJoin(rmasTable, eq(rmasTable.orderItemId, orderItemsTable.id))
       .where(eq(rmasTable.id, row.id)).limit(1))[0];
-  const response = validateAdminRmaResponse("detail", AdminGetRmaResponse, {
-    ...adminRmaListDto(base),
-    items: item ? [item] : [],
-    privatePhotos: attachments.map((attachment) => `/api/media/${attachment.mediaAssetId}`),
-    auditTrail: history.map((entry) => ({
-      action: `${entry.previousStatus ?? "CREATED"} → ${entry.nextStatus}`,
-      timestamp: entry.createdAt,
-      actorId: entry.actorUserId,
-      note: null,
-    })),
-  }, req.log);
+  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
   if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
   res.json(response);
 });
 router.post("/retail/orders/:orderId/rmas", async (req, res): Promise<void> => {
-  const user = await auth(req, res); if (!user) return;
+  const user = await admin(req, res); if (!user) return;
   if (!["CUSTOMER", "JOBSEEKER"].includes(user.role)) { res.status(403).json({ error: "Retail customer access required." }); return; }
   const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0]! : req.params.orderId!;
   const itemId = clean(req.body?.orderItemId, 50), quantity = Number(req.body?.quantity), reason = clean(req.body?.reason, 120), description = clean(req.body?.description, 3_000);

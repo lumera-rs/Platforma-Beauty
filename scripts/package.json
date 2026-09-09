@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:browser": "tsx ./src/check-browser-spec-types.ts",
     "test:generated-api": "tsx ./src/generated-api-check.ts",
+    "test:internal-request-control-outputs": "tsx --test ./src/internal-request-control-output-check.test.ts && tsx ./src/internal-request-control-output-check.ts",
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
+    "test:backend-standards:static": "tsx ./src/test-backend-standards.ts --static-only",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",
     "test:frontend-standards": "tsx ./src/frontend-performance-standards.test.ts",
@@ -44,6 +46,8 @@
     "test:admin-salon-designations": "pnpm run playwright:checked -- browser/admin-salon-designations.spec.ts",
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
+    "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
+    "test:admin-bounded-pagination": "pnpm run playwright:checked -- browser/admin-bounded-pagination.spec.ts",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "test:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts",
     "test:safe-external-url-rendering-browser": "tsx ./src/run-safe-external-url-rendering-browser.ts",
@@ -76,6 +80,7 @@
     "test:business-guide-help": "pnpm run playwright:checked -- browser/business-guide-help-links.spec.ts",
     "test:multi-location": "pnpm run playwright:checked -- browser/multi-location-owner.spec.ts",
     "test:employee-location-booking": "pnpm run playwright:checked -- browser/employee-location-booking.spec.ts",
+    "test:employee-location-deactivation": "pnpm run playwright:checked -- browser/employee-location-deactivation.spec.ts",
     "test:education-gallery": "pnpm run playwright:checked -- browser/education-gallery.spec.ts",
     "test:social-oauth-return-to": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/social-oauth-return-to.test.ts && pnpm run playwright:checked -- browser/social-oauth-return-to.spec.ts",
     "test:retail-checkout-api": "tsx ./src/run-retail-checkout-api.ts",
@@ -108,8 +113,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@workspace/db": "workspace:*",
     "@types/node": "catalog:",
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "tsx": "catalog:",
     "@workspace/api-zod": "workspace:*"
@@ -137,7 +143,8 @@
     "specFilePattern": "browser/employee-*.spec.ts",
     "release": [],
     "localOnly": [
-      "test:employee-location-booking"
+      "test:employee-location-booking",
+      "test:employee-location-deactivation"
     ]
   }
 }

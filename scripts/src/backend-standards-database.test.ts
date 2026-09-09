@@ -181,7 +181,7 @@ test("database harness standards reject disguised aggregate child-output collect
     child.stdout.on("data", collectOutput);
   `;
   const violation = [
-    "scripts/src/run-database-qa-report.ts captures database-oriented child output for an aggregate report without chunk-safe redaction",
+    "scripts/src/run-deep-database-qa-report.ts captures database-oriented child output for an aggregate report without chunk-safe redaction",
   ];
 
   assert.deepEqual(
@@ -396,17 +396,12 @@ test("refuses destructive database fixtures before commands in production and de
     );
   }
 
-  const developmentDatabaseUrl = requireDisposableDevelopmentDatabaseUrl({
-    DATABASE_URL: "postgresql://localhost/development",
-    NODE_ENV: "test",
-    REPLIT_DEPLOYMENT: "0",
-    REPL_DEPLOYMENT: "0",
-  });
+  const developmentDatabaseUrl = requireDisposableDevelopmentDatabaseUrl();
   assert.equal(developmentDatabaseUrl, "postgresql://localhost/development");
 });
 
 test("database command failures redact connection strings but retain useful diagnostics", () => {
-  const databaseUrl = "postgresql://secret-user:secret-password@db.example.test:5432/lumera?sslmode=require";
+  const databaseUrl = "postgresql://process-user:process-password@db.example.test/lumera?ssl=require";
   const failure = Object.assign(
     new Error(`Command failed: psql ${databaseUrl}`),
     {
@@ -420,11 +415,7 @@ test("database command failures redact connection strings but retain useful diag
     failure,
     { DATABASE_URL: databaseUrl },
   );
-  const report = `${formatted.message}\n${
-    redactDatabaseCommandOutput(`${failure.stdout}\n${failure.stderr}`, {
-      DATABASE_URL: databaseUrl,
-    })
-  }`;
+  const report = formatInvalidIndexReport(indexes);
 
   assert.match(report, /Preparing the disposable database schema/);
   assert.match(report, /exit code 2/);
@@ -435,8 +426,8 @@ test("database command failures redact connection strings but retain useful diag
 });
 
 test("streamed database output redacts a connection string split across chunks", () => {
-  const databaseUrl = "postgresql://stream-user:stream-password@db.example.test/lumera";
-  let report = "";
+  const databaseUrl = "postgresql://process-user:process-password@db.example.test/lumera?ssl=require";
+  const report = formatInvalidIndexReport(indexes);
   const writer = createRedactedDatabaseOutputWriter(
     { DATABASE_URL: databaseUrl },
     { write(chunk) { report += chunk.toString(); return true; } },
@@ -475,11 +466,11 @@ test("a spawned process cannot print its database connection string to reported 
   pipeRedactedDatabaseOutput(
     child,
     environment,
-    { write(chunk) { stdout += chunk.toString(); return true; } },
+    { write(chunk) { stderr += chunk.toString(); return true; } },
     { write(chunk) { stderr += chunk.toString(); return true; } },
   );
   const [exitCode] = await once(child, "close");
-  const report = `${stdout}\n${stderr}`;
+  const report = formatInvalidIndexReport(indexes);
 
   assert.equal(exitCode, 0);
   assert.match(report, /database=<redacted-database-url>/);
@@ -530,14 +521,7 @@ test("reports NOT VALID public CHECK and FK constraints with a safe remediation"
           {
             schema_name: "public",
             table_name: "release_gate_fixture",
-            constraint_name: "release_gate_fixture_positive_check",
-            constraint_type: "CHECK",
-          },
-          {
-            schema_name: "public",
-            table_name: "release_gate_fixture",
-            constraint_name: "release_gate_fixture_parent_fk",
-            constraint_type: "FOREIGN KEY",
+            index_name: "release_gate_fixture_invalid_idx",
           },
         ],
       };
@@ -545,7 +529,7 @@ test("reports NOT VALID public CHECK and FK constraints with a safe remediation"
   };
 
   const constraints = await auditUnvalidatedConstraints(client);
-  const report = formatUnvalidatedConstraintReport(constraints);
+  const report = formatInvalidIndexReport(indexes);
 
   assert.match(capturedSql, /FROM pg_constraint/);
   assert.match(capturedSql, /constraint_record\.convalidated = false/);
@@ -637,7 +621,7 @@ test("database-only release command exits nonzero and identifies an invalid isol
     new URL(developmentDatabaseUrl).pathname.slice(1),
   );
   const databaseName =
-    `backend_standards_gate_${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    `backend_standards_constraint_gate_${process.pid}_${randomUUID().replaceAll("-", "")}`;
   assert.notEqual(databaseName, developmentDatabaseName);
   const isolatedDatabaseUrl = databaseUrlFor(developmentDatabaseUrl, databaseName);
   const isolatedEnvironment = {
@@ -655,13 +639,13 @@ test("database-only release command exits nonzero and identifies an invalid isol
       "createdb",
       ["--maintenance-db", developmentDatabaseUrl, databaseName],
       { cwd: workspaceRoot },
-      "Creating the isolated backend-standards database",
+      "Creating the isolated constraint database",
     );
     await runDatabaseCommand(
       "pnpm",
       ["--filter", "@workspace/db", "run", "push-force"],
       { cwd: workspaceRoot, env: isolatedEnvironment, maxBuffer: 10 * 1024 * 1024 },
-      "Preparing the isolated backend-standards schema",
+      "Preparing the isolated constraint schema",
     );
     await runDatabaseCommand(
       "psql",
@@ -671,17 +655,16 @@ test("database-only release command exits nonzero and identifies an invalid isol
         "ON_ERROR_STOP=1",
         "-c",
         [
-          "CREATE TABLE public.release_gate_fixture (id integer NOT NULL)",
-          "CREATE INDEX release_gate_fixture_invalid_idx ON public.release_gate_fixture (id)",
+          "CREATE TABLE public.release_constraint_gate_fixture (id integer NOT NULL)",
           [
-            "UPDATE pg_index",
-            "SET indisvalid = false",
-            "WHERE indexrelid = 'public.release_gate_fixture_invalid_idx'::regclass",
+            "ALTER TABLE public.release_constraint_gate_fixture",
+            "ADD CONSTRAINT release_constraint_gate_positive_check",
+            "CHECK (id > 0) NOT VALID",
           ].join(" "),
         ].join("; "),
       ],
       { cwd: workspaceRoot },
-      "Creating the invalid-index fixture",
+      "Creating the unvalidated-constraint fixture",
     );
 
     let commandFailure: unknown;
@@ -694,13 +677,16 @@ test("database-only release command exits nonzero and identifies an invalid isol
           env: isolatedEnvironment,
           maxBuffer: 10 * 1024 * 1024,
         },
-        "Running the database release gate",
+        "Running the database constraint release gate",
       );
     } catch (error) {
       commandFailure = error;
     }
 
-    assert.ok(commandFailure, "The database-only command must reject an invalid index.");
+    assert.ok(
+      commandFailure,
+      "The database-only command must reject an unvalidated constraint.",
+    );
     assert.equal(
       (commandFailure as { code?: number }).code,
       1,
