@@ -13,6 +13,9 @@ export type SeoPayload = {
   title: string;
   description: string;
   image?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageType?: string;
   indexable: boolean;
   canonicalPath?: string;
 };
@@ -30,6 +33,9 @@ export type SeoHeadMetadata = {
     url: string;
     image: string;
     imageAlt: string;
+    imageWidth?: number;
+    imageHeight?: number;
+    imageType?: string;
   };
   twitter: {
     title: string;
@@ -47,6 +53,7 @@ const defaultDescription = staticSeoByPath.get('/')?.description
   ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const defaultImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
 
+const defaultImageMetadata = { width: 1200, height: 630, type: 'image/svg+xml' };
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
@@ -58,6 +65,14 @@ function clip(value: string, limit = 158): string {
     : `${normalized.slice(0, limit - 1).trimEnd()}…`;
 }
 
+function imageTypeFromUrl(value: string): string | undefined {
+  try {
+    const extension = new URL(value, 'https://lumera.invalid').pathname.toLowerCase().match(/\.(avif|jpe?g|png|svg|webp)$/)?.[1];
+    return ({ avif: 'image/avif', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp' } as const)[extension as keyof typeof MIME_BY_EXTENSION];
+  } catch {
+    return undefined;
+  }
+}
 function isPublicRetailSupplier(value: any): boolean {
   return Boolean(value?.active && (value.scope === 'B2C' || value.scope === 'BOTH'));
 }
@@ -89,6 +104,13 @@ function setMeta(selector: string, attribute: 'name' | 'property', key: string, 
   node.content = content;
 }
 
+function setOptionalMeta(selector: string, attribute: 'name' | 'property', key: string, content?: string | number) {
+  if (content === undefined) {
+    document.head.querySelector(selector)?.remove();
+    return;
+  }
+  setMeta(selector, attribute, key, String(content));
+}
 export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string): SeoHeadMetadata {
   const publicPath = payload.canonicalPath ?? pathname;
   const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
@@ -97,6 +119,9 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   const title = clip(payload.title, 60);
   const description = clip(payload.description);
   const imageAlt = payload.image ? title : defaultImageAlt;
+  const imageWidth = payload.imageWidth ?? (!payload.image ? defaultImageMetadata.width : undefined);
+  const imageHeight = payload.imageHeight ?? (!payload.image ? defaultImageMetadata.height : undefined);
+  const imageType = payload.imageType ?? (!payload.image ? defaultImageMetadata.type : imageTypeFromUrl(payload.image));
   return {
     title,
     description,
@@ -104,12 +129,12 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
     robots: payload.indexable ? 'index, follow' : 'noindex, follow',
     image,
     imageAlt,
-    openGraph: { title, description, url: canonical, image, imageAlt },
+    openGraph: { title, description, url: canonical, image, imageAlt, imageWidth, imageHeight, imageType },
     twitter: { title, description, url: canonical, image, imageAlt },
   };
 }
 
-function applySeo(pathname: string, payload: SeoPayload) {
+export function applySeo(pathname: string, payload: SeoPayload) {
   const metadata = seoHeadMetadata(pathname, payload, window.location.origin);
   document.title = metadata.title;
   setMeta('meta[name="description"]', 'name', 'description', metadata.description);
@@ -119,6 +144,9 @@ function applySeo(pathname: string, payload: SeoPayload) {
   setMeta('meta[property="og:url"]', 'property', 'og:url', metadata.openGraph.url);
   setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.openGraph.image);
   setMeta('meta[property="og:image:alt"]', 'property', 'og:image:alt', metadata.openGraph.imageAlt);
+  setOptionalMeta('meta[property="og:image:width"]', 'property', 'og:image:width', metadata.openGraph.imageWidth);
+  setOptionalMeta('meta[property="og:image:height"]', 'property', 'og:image:height', metadata.openGraph.imageHeight);
+  setOptionalMeta('meta[property="og:image:type"]', 'property', 'og:image:type', metadata.openGraph.imageType);
   setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.twitter.title);
   setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.twitter.description);
   setMeta('meta[name="twitter:url"]', 'name', 'twitter:url', metadata.twitter.url);
@@ -363,3 +391,12 @@ export function ClientSeoMetadata() {
 
   return null;
 }
+
+const MIME_BY_EXTENSION = {
+  avif: 'image/avif',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+} as const;

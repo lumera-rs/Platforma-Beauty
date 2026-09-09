@@ -11,6 +11,7 @@ const distDir = path.join(here, 'dist', 'public');
 const fallbackDescription = staticPageDefinitions.find((page) => page.path === '/')?.description
   ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const fallbackImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
+const fallbackImageMetadata = { width: 1200, height: 630, type: 'image/svg+xml' };
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
 const staticPages = new Map(staticPageDefinitions.map((page) => [page.path, page]));
@@ -26,6 +27,15 @@ function clip(value, limit = 158) {
 
 function asAbsolute(origin, value) {
   try { return new URL(value || '/og-lumera.svg', origin).href; } catch { return `${origin}/og-lumera.svg`; }
+}
+
+function imageTypeFromUrl(value) {
+  try {
+    const extension = new URL(value, 'https://lumera.invalid').pathname.toLowerCase().match(/\.(avif|jpe?g|png|svg|webp)$/)?.[1];
+    return ({ avif: 'image/avif', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp' })[extension];
+  } catch {
+    return undefined;
+  }
 }
 
 function toLastmod(...values) {
@@ -111,12 +121,16 @@ function pageShell(meta, body, origin) {
 }
 
 function makeMeta(pathname, title, description, options = {}) {
+  const usesFallbackImage = !options.image;
   return {
     pathname,
     title: clip(title, 60),
     description: clip(description),
     image: options.image ?? '/og-lumera.svg',
     imageAlt: options.imageAlt ?? (options.image ? clip(title, 60) : fallbackImageAlt),
+    imageWidth: options.imageWidth ?? (usesFallbackImage ? fallbackImageMetadata.width : undefined),
+    imageHeight: options.imageHeight ?? (usesFallbackImage ? fallbackImageMetadata.height : undefined),
+    imageType: options.imageType ?? (usesFallbackImage ? fallbackImageMetadata.type : imageTypeFromUrl(options.image)),
     indexable: options.indexable ?? true,
     schema: options.schema,
     heroPreload: options.heroPreload,
@@ -676,7 +690,8 @@ async function renderPublicPage(req, pathname) {
 
 function injectDocument(template, page, origin) {
   const canonical = `${origin}${page.meta.pathname}`;
-  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}">${page.meta.heroPreload ? `<link rel="preload" as="image" href="${escapeHtml(page.meta.heroPreload)}" fetchpriority="high">` : ''}<meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta property="og:image:alt" content="${escapeHtml(page.meta.imageAlt)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:url" content="${escapeHtml(canonical)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:image:alt" content="${escapeHtml(page.meta.imageAlt)}">`;
+  const imageDetails = `${page.meta.imageWidth ? `<meta property="og:image:width" content="${escapeHtml(page.meta.imageWidth)}">` : ''}${page.meta.imageHeight ? `<meta property="og:image:height" content="${escapeHtml(page.meta.imageHeight)}">` : ''}${page.meta.imageType ? `<meta property="og:image:type" content="${escapeHtml(page.meta.imageType)}">` : ''}`;
+  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}">${page.meta.heroPreload ? `<link rel="preload" as="image" href="${escapeHtml(page.meta.heroPreload)}" fetchpriority="high">` : ''}<meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta property="og:image:alt" content="${escapeHtml(page.meta.imageAlt)}">${imageDetails}<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:url" content="${escapeHtml(canonical)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:image:alt" content="${escapeHtml(page.meta.imageAlt)}">`;
   const withoutDefaultMetadata = stripSeoMetadata(template);
   return withoutDefaultMetadata
     .replace('</head>', `${metadata}${page.meta.schema ? `<script type="application/ld+json">${JSON.stringify(page.meta.schema).replace(/</g, '\\u003c')}</script>` : ''}</head>`)

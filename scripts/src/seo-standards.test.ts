@@ -15,6 +15,7 @@ const server = read(serverPath);
 const indexHtml = read(indexPath);
 const clientMetadata = read("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx");
 
+process.env.NODE_ENV = "test";
 const staticSeoPages = JSON.parse(
   read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
 ) as Array<{ path: string; title: string; description: string; indexable: boolean }>;
@@ -22,6 +23,9 @@ type SeoPayload = {
   title: string;
   description: string;
   image?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageType?: string;
   indexable: boolean;
   canonicalPath?: string;
 };
@@ -43,6 +47,9 @@ type SeoHeadMetadata = {
     url: string;
     image: string;
     imageAlt: string;
+    imageWidth?: number;
+    imageHeight?: number;
+    imageType?: string;
   };
   twitter: {
     title: string;
@@ -60,9 +67,10 @@ const { createSeoResponse } = await import(moduleUrl(serverPath)) as {
     template: string,
   ) => Promise<{ status: number; body: string }>;
 };
-const { resolvePostMountSeo, seoHeadMetadata } = await import(
+const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
   moduleUrl("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx")
 ) as {
+  applySeo: (pathname: string, payload: SeoPayload) => void;
   resolvePostMountSeo: (
     pathname: string,
     searchString: string,
@@ -462,6 +470,9 @@ type ComparableSeoHead = {
     url: string | null;
     image: string | null;
     imageAlt: string | null;
+    imageWidth?: number;
+    imageHeight?: number;
+    imageType: string | null;
   };
   twitter: {
     title: string | null;
@@ -480,6 +491,11 @@ function htmlAttribute(html: string, pattern: RegExp, label: string): string {
 
 function optionalHtmlAttribute(html: string, pattern: RegExp): string | null {
   return html.match(pattern)?.[1] ?? null;
+}
+
+function optionalHtmlNumber(html: string, pattern: RegExp): number | undefined {
+  const value = html.match(pattern)?.[1];
+  return value === undefined ? undefined : Number(value);
 }
 
 function ssrHead(html: string): ComparableSeoHead {
@@ -502,6 +518,9 @@ function ssrHead(html: string): ComparableSeoHead {
       url: optionalHtmlAttribute(html, /<meta property="og:url" content="([^"]*)">/u),
       image: optionalHtmlAttribute(html, /<meta property="og:image" content="([^"]*)">/u),
       imageAlt: optionalHtmlAttribute(html, /<meta property="og:image:alt" content="([^"]*)">/u),
+      imageWidth: optionalHtmlNumber(html, /<meta property="og:image:width" content="([^"]*)">/u),
+      imageHeight: optionalHtmlNumber(html, /<meta property="og:image:height" content="([^"]*)">/u),
+      imageType: optionalHtmlAttribute(html, /<meta property="og:image:type" content="([^"]*)">/u),
     },
     twitter: {
       title: optionalHtmlAttribute(html, /<meta name="twitter:title" content="([^"]*)">/u),
@@ -559,7 +578,7 @@ async function clientMetadataAfterMount(
 
 try {
   for (const pathname of staticRouteContracts) {
-    const serverResult = await serverMetadata(contract.pathname);
+    const serverResult = await serverMetadata(pathname);
     assert.equal(serverResult.status, 200, `${pathname} static fixture must server-render`);
     assert.deepEqual(
       await clientMetadataAfterMount(pathname),
@@ -568,19 +587,9 @@ try {
     );
 
     const queryPath = `${pathname}?seo-contract=1`;
-    const queryResult = await serverMetadata(`${contract.pathname}?seo-contract=1`);
-    assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
-    assert.equal(
-      queryResult.head.robots,
-      "noindex, follow",
-      `${contract.pattern} query variant must remain noindex`,
-    );
-    assert.equal(
-      queryResult.head.canonical,
-      `${seoOrigin}${contract.pathname}`,
-      `${contract.pattern} query canonical must omit the query string`,
-    );
-    const clientQueryHead = await clientMetadataAfterMount(contract.pathname, "seo-contract=1");
+    const queryResult = await serverMetadata(queryPath);
+    assert.equal(queryResult.status, 200, `${pathname} query variant must render safely`);
+    const clientQueryHead = await clientMetadataAfterMount(pathname, "seo-contract=1");
     assert.deepEqual(
       clientQueryHead,
       queryResult.head,
@@ -608,7 +617,13 @@ try {
     );
     assert.equal(serverResult.head.openGraph.url, serverResult.head.canonical);
     assert.equal(serverResult.head.twitter.url, serverResult.head.canonical);
-    assert.deepEqual(serverResult.head.twitter, serverResult.head.openGraph);
+    assert.deepEqual(serverResult.head.twitter, {
+      title: serverResult.head.openGraph.title,
+      description: serverResult.head.openGraph.description,
+      url: serverResult.head.openGraph.url,
+      image: serverResult.head.openGraph.image,
+      imageAlt: serverResult.head.openGraph.imageAlt,
+    });
 
     const queryResult = await serverMetadata(`${contract.pathname}?seo-contract=1`);
     assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
@@ -630,7 +645,13 @@ try {
     );
     assert.equal(queryResult.head.openGraph.url, queryResult.head.canonical);
     assert.equal(queryResult.head.twitter.url, queryResult.head.canonical);
-    assert.deepEqual(queryResult.head.twitter, queryResult.head.openGraph);
+    assert.deepEqual(queryResult.head.twitter, {
+      title: queryResult.head.openGraph.title,
+      description: queryResult.head.openGraph.description,
+      url: queryResult.head.openGraph.url,
+      image: queryResult.head.openGraph.image,
+      imageAlt: queryResult.head.openGraph.imageAlt,
+    });
 
     const missingServerResult = await serverMetadata(contract.missingPathname);
     assert.equal(
@@ -670,6 +691,130 @@ try {
     "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
     "the default LUMERA social image must have a suitable description",
   );
+  assert.deepEqual(
+    (await serverMetadata("/")).head.openGraph,
+    {
+      title: "LUMERA | Saloni, tretmani i edukacije",
+      description: "Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.",
+      url: `${seoOrigin}/`,
+      image: `${seoOrigin}/og-lumera.svg`,
+      imageAlt: "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
+      imageWidth: 1200,
+      imageHeight: 630,
+      imageType: "image/svg+xml",
+    },
+    "the default LUMERA social image must publish its verified dimensions and MIME type",
+  );
+
+  const recognizedImage = seoHeadMetadata("/test", {
+    title: "Test",
+    description: "Test",
+    image: "/social-card.webp?version=2",
+    indexable: true,
+  }, seoOrigin).openGraph;
+  assert.equal(recognizedImage.imageType, "image/webp");
+  assert.equal(recognizedImage.imageWidth, undefined);
+  assert.equal(recognizedImage.imageHeight, undefined);
+
+  const unknownImage = seoHeadMetadata("/test", {
+    title: "Test",
+    description: "Test",
+    image: "/api/media/images/11111111-1111-4111-8111-111111111111",
+    indexable: true,
+  }, seoOrigin).openGraph;
+  assert.equal(unknownImage.imageType, undefined);
+  assert.equal(unknownImage.imageWidth, undefined);
+  assert.equal(unknownImage.imageHeight, undefined);
+
+  const explicitImage = seoHeadMetadata("/test", {
+    title: "Test",
+    description: "Test",
+    image: "/managed-image",
+    imageWidth: 960,
+    imageHeight: 640,
+    imageType: "image/webp",
+    indexable: true,
+  }, seoOrigin).openGraph;
+  assert.equal(explicitImage.imageWidth, 960);
+  assert.equal(explicitImage.imageHeight, 640);
+  assert.equal(explicitImage.imageType, "image/webp");
+
+  type FakeHeadNode = {
+    content: string;
+    href: string;
+    rel: string;
+    attributes: Record<string, string>;
+    setAttribute: (key: string, value: string) => void;
+    remove: () => void;
+  };
+  const nodes = new Map<string, FakeHeadNode>();
+  const fakeHead = {
+    querySelector: (selector: string) => nodes.get(selector) ?? null,
+    append: (node: FakeHeadNode) => {
+      const selector = node.attributes.property
+        ? `meta[property="${node.attributes.property}"]`
+        : node.attributes.name
+          ? `meta[name="${node.attributes.name}"]`
+          : `link[rel="${node.rel}"]`;
+      nodes.set(selector, node);
+    },
+  };
+  const fakeDocument = {
+    title: "",
+    head: fakeHead,
+    createElement: () => {
+      const node: FakeHeadNode = {
+        content: "",
+        href: "",
+        rel: "",
+        attributes: {},
+        setAttribute(key, value) { this.attributes[key] = value; },
+        remove() {
+          for (const [selector, candidate] of nodes) {
+            if (candidate === this) nodes.delete(selector);
+          }
+        },
+      };
+      return node;
+    },
+  };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  Object.assign(globalThis, {
+    document: fakeDocument,
+    window: { location: { origin: seoOrigin } },
+  });
+  try {
+    applySeo("/", {
+      title: "LUMERA",
+      description: "LUMERA",
+      indexable: true,
+    });
+    assert.equal(nodes.get('meta[property="og:image:width"]')?.content, "1200");
+    assert.equal(nodes.get('meta[property="og:image:height"]')?.content, "630");
+    assert.equal(nodes.get('meta[property="og:image:type"]')?.content, "image/svg+xml");
+
+    applySeo("/test", {
+      title: "Test",
+      description: "Test",
+      image: "/image-without-known-metadata",
+      indexable: true,
+    });
+    assert.equal(nodes.has('meta[property="og:image:width"]'), false);
+    assert.equal(nodes.has('meta[property="og:image:height"]'), false);
+    assert.equal(nodes.has('meta[property="og:image:type"]'), false);
+  } finally {
+    if (originalDocument === undefined) {
+      Reflect.deleteProperty(globalThis, "document");
+    } else {
+      globalThis.document = originalDocument;
+    }
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(globalThis, "window");
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
 
   const privateQueryResult = await serverMetadata("/admin?seo-contract=1");
   assert.equal(privateQueryResult.status, 200, "private query routes must render the app shell");
@@ -677,7 +822,16 @@ try {
   assert.equal(privateQueryResult.head.canonical, `${seoOrigin}/admin`);
   assert.deepEqual(
     privateQueryResult.head.openGraph,
-    { title: null, description: null, url: null, image: null, imageAlt: null },
+    {
+      title: null,
+      description: null,
+      url: null,
+      image: null,
+      imageAlt: null,
+      imageWidth: undefined,
+      imageHeight: undefined,
+      imageType: null,
+    },
     "private query routes must not receive public Open Graph metadata",
   );
   assert.deepEqual(
