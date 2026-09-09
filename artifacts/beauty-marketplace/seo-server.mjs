@@ -859,7 +859,7 @@ export async function createSeoResponse(req, template) {
   const hasQuery = url.search.length > 0;
   try {
     const page = await renderPublicPage(req, pathname);
-    if (page && hasQuery) page.meta.indexable = false;
+    if (page && hasQuery) page.meta = { ...page.meta, indexable: false };
     if (page) return { status: 200, type: 'text/html; charset=utf-8', body: injectDocument(template, page, origin) };
   } catch {
     // Fall through to the client app with a non-indexable response. Public API

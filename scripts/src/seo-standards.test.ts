@@ -623,16 +623,14 @@ try {
       `${contract.pattern} query canonical must omit the query string`,
     );
     const clientQueryHead = await clientMetadataAfterMount(contract.pathname, "seo-contract=1");
-    assert.equal(
-      clientQueryHead.robots,
-      "noindex, follow",
-      `${contract.pattern} query variant must remain noindex after mount`,
+    assert.deepEqual(
+      clientQueryHead,
+      queryResult.head,
+      `${contract.pattern} query variant must preserve SSR title, description, canonical, robots, Open Graph, and Twitter metadata after mount`,
     );
-    assert.equal(
-      clientQueryHead.canonical,
-      `${seoOrigin}${contract.pathname}`,
-      `${contract.pattern} client query canonical must omit the query string`,
-    );
+    assert.equal(queryResult.head.openGraph.url, queryResult.head.canonical);
+    assert.equal(queryResult.head.twitter.url, queryResult.head.canonical);
+    assert.deepEqual(queryResult.head.twitter, queryResult.head.openGraph);
 
     const missingServerResult = await serverMetadata(contract.missingPathname);
     assert.equal(
@@ -672,6 +670,21 @@ try {
     "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
     "the default LUMERA social image must have a suitable description",
   );
+
+  const privateQueryResult = await serverMetadata("/admin?seo-contract=1");
+  assert.equal(privateQueryResult.status, 200, "private query routes must render the app shell");
+  assert.equal(privateQueryResult.head.robots, "noindex, follow");
+  assert.equal(privateQueryResult.head.canonical, `${seoOrigin}/admin`);
+  assert.deepEqual(
+    privateQueryResult.head.openGraph,
+    { title: null, description: null, url: null, image: null, imageAlt: null },
+    "private query routes must not receive public Open Graph metadata",
+  );
+  assert.deepEqual(
+    privateQueryResult.head.twitter,
+    { title: null, description: null, url: null, image: null, imageAlt: null },
+    "private query routes must not receive public Twitter metadata",
+  );
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -690,7 +703,6 @@ assert.match(
   "server-rendered indexable pages must emit a description",
 );
 assert.match(server, /<title>\$\{escapeHtml\(page\.meta\.title\)\}<\/title>/u);
-
 const schemaContracts = [
   ["home listing", "if (pathname === '/')", "if (pathname === '/saloni')"],
   ["salon listing", "if (pathname === '/saloni')", "if (pathname === '/proizvodi')"],
