@@ -55,6 +55,75 @@ async function runCommand(
   });
 }
 
+type TimedCiJob = "database" | "browser";
+
+const successfulTimedCiJobInvocations: Record<TimedCiJob, string[]> = {
+  database: [
+    "run test:monitoring",
+    "run test:backend-standards:static",
+    "run validate:release:2-backend",
+    "run validate:release:3-api",
+  ],
+  browser: [
+    "run validate:release:4-isolated",
+    "run validate:release:5-final",
+  ],
+};
+
+async function assertSuccessfulTimedCiJobFailsWhenJsonReportCannotBeWritten(
+  job: TimedCiJob,
+): Promise<void> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), `lumera-ci-timings-${job}-json-report-failure-`));
+  const binDir = path.join(tempDir, "bin");
+  const reportDir = path.join(tempDir, "reports");
+  const reportName = `${job}-timings.json`;
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+
+  await mkdir(binDir);
+  await mkdir(reportDir);
+  await mkdir(path.join(reportDir, reportName));
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh"), job],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: reportDir,
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
+    },
+  );
+
+  assert.equal(
+    result.code,
+    1,
+    `A successful ${job} job must fail when its JSON report cannot be written. stderr: ${result.stderr}`,
+  );
+  assert.match(result.stderr, /Could not write JSON timing report/);
+  assert.match(
+    result.stderr,
+    /Build passed, but report writing failed \(exit code 1\)/,
+    "The final error must identify the successful job/report-writing policy.",
+  );
+
+  const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
+  assert.deepEqual(
+    invocations,
+    successfulTimedCiJobInvocations[job],
+    `The ${job} job must finish every phase before the JSON report failure is reported.`,
+  );
+}
+
 function extractWorkflowRunStep(workflow: string, stepName: string): string {
   const stepStart = workflow.indexOf(`      - name: ${stepName}\n`);
   assert.notEqual(stepStart, -1, `Workflow step ${stepName} must exist.`);
@@ -611,6 +680,14 @@ exit 0
     "run test:seo-standards",
     "run test:frontend-interactions",
   ]);
+});
+
+test("timed database CI job fails when a successful JSON timing report cannot be written", async () => {
+  await assertSuccessfulTimedCiJobFailsWhenJsonReportCannotBeWritten("database");
+});
+
+test("timed browser CI job fails when a successful JSON timing report cannot be written", async () => {
+  await assertSuccessfulTimedCiJobFailsWhenJsonReportCannotBeWritten("browser");
 });
 
 test("workflow syntax lint runs locally and in an independent database-free CI job", async () => {
