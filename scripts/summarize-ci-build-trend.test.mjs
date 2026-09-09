@@ -46,6 +46,20 @@ test("marks a slowdown only after enough consecutive confirmations", () => {
   assert.equal(trend[0].medianSeconds, 120);
 });
 
+test("carries the current baseline and warning threshold into the trend", () => {
+  const current = report("2026-09-09T12:00:00Z", false);
+  current.phases = current.phases.map((phase) => ({
+    ...phase,
+    baselineSeconds: 100,
+    warningThresholdSeconds: 150,
+  }));
+
+  const trend = buildTrend(current, [], 3);
+
+  assert.equal(trend[0].baselineSeconds, 100);
+  assert.equal(trend[0].warningThresholdSeconds, 150);
+});
+
 test("uses the database and browser phase sets without mixing job histories", () => {
   const database = {
     job: "database",

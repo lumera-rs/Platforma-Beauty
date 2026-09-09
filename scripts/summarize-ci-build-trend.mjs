@@ -62,6 +62,12 @@ export function buildTrend(currentReport, historicalReports, sustainedSlowdownRu
       name,
       observations: observations.length,
       medianSeconds: median(observations.map((phase) => phase.durationSeconds)),
+      baselineSeconds: Number.isFinite(phaseReports[0]?.baselineSeconds)
+        ? phaseReports[0].baselineSeconds
+        : null,
+      warningThresholdSeconds: Number.isFinite(phaseReports[0]?.warningThresholdSeconds)
+        ? phaseReports[0].warningThresholdSeconds
+        : null,
       consecutiveSlowdowns,
       sustainedSlowdown: consecutiveSlowdowns >= sustainedSlowdownRuns,
     };
@@ -103,11 +109,11 @@ export function main(argv = process.argv.slice(2)) {
     "",
     `Using the current successful ${job} run and up to ${config.historyLimit} previous successful main-branch reports for this job. Historical reports found: ${history.length}.`,
     "",
-    "| Phase | Recent median | Observations | Consecutive slow results | Trend |",
-    "| --- | ---: | ---: | ---: | --- |",
-    ...trend.map((phase) => `| ${phase.name} | ${formatSeconds(phase.medianSeconds)} | ${phase.observations} | ${phase.consecutiveSlowdowns} | ${phase.sustainedSlowdown ? "⚠️ Sustained slowdown" : "No sustained slowdown"} |`),
+    "| Phase | Recent median | Baseline | Warning threshold | Observations | Consecutive slow results | Trend |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...trend.map((phase) => `| ${phase.name} | ${formatSeconds(phase.medianSeconds)} | ${formatSeconds(phase.baselineSeconds)} | ${formatSeconds(phase.warningThresholdSeconds)} | ${phase.observations} | ${phase.consecutiveSlowdowns} | ${phase.sustainedSlowdown ? "⚠️ Sustained slowdown" : "No sustained slowdown"} |`),
     "",
-    `A sustained warning requires ${config.sustainedSlowdownRuns} consecutive results above the existing per-phase warning threshold. Missing history never blocks the build.`,
+    `Warning threshold per phase is the greater of ${config.warningMultiplier}× baseline or baseline + ${config.warningMinimumIncreaseSeconds}s, rounded up. A sustained warning requires ${config.sustainedSlowdownRuns} consecutive successful results above that threshold; missing history never blocks the build.`,
   ];
   fs.appendFileSync(summaryPath, `${lines.join("\n")}\n`);
 
