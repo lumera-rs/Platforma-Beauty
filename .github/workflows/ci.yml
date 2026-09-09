@@ -303,11 +303,29 @@ jobs:
           mkdir -p ci-timings/history
           default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          history_count=0
+          run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file" "$runs_json_file"
+          }
+          trap cleanup EXIT
           gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch="$default_branch" -f status=success -f per_page="$history_limit" \
-            --jq '.workflow_runs[].id' |
-          while read -r run_id; do
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --slurp > "$runs_json_file"
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_started_at != null)
+              | {id, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+          while IFS=$'\t' read -r run_id _started_at; do
             [ -n "$run_id" ] || continue
+            [ "$history_count" -lt "$history_limit" ] || break
             artifact_id="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
                 --jq '.artifacts | map(select(.expired == false and (.name | startswith("database-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
@@ -315,10 +333,50 @@ jobs:
             [ -n "$artifact_id" ] || continue
             destination="ci-timings/history/${run_id}"
             mkdir -p "$destination"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" &&
-              unzip -q "$destination/artifact.zip" -d "$destination" &&
-              rm "$destination/artifact.zip"
-          done
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" ||
+              ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            report_path="$(find "$destination" -type f -name database-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "database:test:monitoring",
+            "database:test:backend-standards:static",
+            "database:release:2-backend",
+            "database:release:3-api",
+            "validate:ci:database:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "database" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
       - name: Run database checks
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
@@ -393,11 +451,29 @@ jobs:
           mkdir -p ci-timings/history
           default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          history_count=0
+          run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file" "$runs_json_file"
+          }
+          trap cleanup EXIT
           gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch="$default_branch" -f status=success -f per_page="$history_limit" \
-            --jq '.workflow_runs[].id' |
-          while read -r run_id; do
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --slurp > "$runs_json_file"
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_started_at != null)
+              | {id, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+          while IFS=$'\t' read -r run_id _started_at; do
             [ -n "$run_id" ] || continue
+            [ "$history_count" -lt "$history_limit" ] || break
             artifact_id="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
                 --jq '.artifacts | map(select(.expired == false and (.name | startswith("browser-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
@@ -405,10 +481,48 @@ jobs:
             [ -n "$artifact_id" ] || continue
             destination="ci-timings/history/${run_id}"
             mkdir -p "$destination"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" &&
-              unzip -q "$destination/artifact.zip" -d "$destination" &&
-              rm "$destination/artifact.zip"
-          done
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" ||
+              ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            report_path="$(find "$destination" -type f -name browser-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "browser:release:4-isolated",
+            "browser:release:5-final",
+            "validate:ci:browser:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "browser" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
       - name: Run browser user journeys
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
