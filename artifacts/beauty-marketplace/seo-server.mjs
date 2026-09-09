@@ -3,36 +3,17 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
+import staticPageDefinitions from './src/lib/static-seo-pages.json' with { type: 'json' };
 import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
-const fallbackDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+const fallbackDescription = staticPageDefinitions.find((page) => page.path === '/')?.description
+  ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const fallbackImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
-const staticPages = new Map([
-  ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
-  ['/za-biznise', ['LUMERA Biznis Hub | Poslovna platforma', 'Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.', 'LUMERA Biznis Hub']],
-  ['/za-biznise/saloni', ['LUMERA za salone | Operativni sistem', 'Sve što vam je potrebno za vođenje i rast vašeg beauty salona.', 'LUMERA za salone']],
-  ['/za-biznise/edukativni-centri', ['LUMERA za edukativne centre | Infrastruktura', 'Infrastruktura za organizaciju i prodaju beauty edukacija.', 'LUMERA za edukativne centre']],
-  ['/za-biznise/poslovi', ['LUMERA Poslovi za biznise | Zapošljavanje', 'Pronađite najbolje talente za vaš salon ili edukativni centar.', 'LUMERA Poslovi za biznise']],
-  ['/za-biznise/edukacije', ['LUMERA Edukacije za biznise | Usavršavanje tima', 'Unapredite veštine svog tima kroz B2B beauty edukacije.', 'LUMERA Edukacije za biznise']],
-  ['/pridruzi-se-edukativni-centar', ['Registracija Edukativnog Centra | LUMERA', 'Registrujte svoj edukativni centar na LUMERA platformi.', 'Registracija Edukativnog Centra']],
-  ['/saloni', ['Saloni i beauty tretmani | LUMERA', 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', 'Pronađite salon i tretman koji vam odgovaraju.']],
-  ['/proizvodi', ['Beauty proizvodi za kupce | LUMERA', 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', 'Beauty proizvodi za kupce']],
-  ['/poslovi', ['Beauty poslovi i oglasi | LUMERA', 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', 'Beauty poslovi, angažmani i iznajmljivanje']],
-  ['/inspiracija', ['Beauty inspiracija | LUMERA vodič', 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', 'Inspiracija za sledeći beauty termin.']],
-  ['/recnik', ['Rečnik beauty pojmova | LUMERA', 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', 'Jasna objašnjenja beauty pojmova.']],
-  ['/brendovi', ['Profesionalni beauty brendovi | LUMERA', 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', 'Profesionalni brendovi koje koriste LUMERA saloni.']],
-  ['/edukacije', ['Beauty edukacije i kursevi | LUMERA', 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.', 'Stručni kursevi i beauty edukacije.']],
-  ['/uslovi-koriscenja', ['Uslovi korišćenja | LUMERA', 'Uslovi korišćenja LUMERA platforme.', 'Uslovi korišćenja']],
-  ['/politika-privatnosti', ['Politika privatnosti | LUMERA', 'Kako LUMERA obrađuje i štiti podatke korisnika.', 'Kako štitimo privatnost korisnika.']],
-  ['/politika-kolacica', ['Politika kolačića | LUMERA', 'Informacije o korišćenju kolačića na LUMERA platformi.', 'Informacije o kolačićima.']],
-  ['/uslovi-kupovine', ['Uslovi kupovine | LUMERA', 'Uslovi kupovine edukacija i usluga putem LUMERA platforme.', 'Uslovi kupovine na LUMERA platformi.']],
-  ['/otkazivanje-termina', ['Otkazivanje termina | LUMERA', 'Pravila i smernice za otkazivanje zakazanih termina.', 'Pravila otkazivanja termina.']],
-  ['/povracaj-sredstava', ['Povraćaj sredstava | LUMERA', 'Informacije o refundacijama i zaštiti kupovine na LUMERA platformi.', 'Informacije o povraćaju sredstava.']],
-]);
+const staticPages = new Map(staticPageDefinitions.map((page) => [page.path, page]));
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -238,7 +219,7 @@ async function renderPublicPage(req, pathname) {
   const origin = requestOrigin(req);
   const staticPage = staticPages.get(pathname);
   if (staticPage) {
-    const [title, description, heading = title.replace(/\s*\|\s*LUMERA$/, '')] = staticPage;
+    const { title, description, indexable, heading = title.replace(/\s*\|\s*LUMERA$/, '') } = staticPage;
     if (pathname === '/') {
       const salons = await getJson(req, '/api/salons?page=1&pageSize=6') ?? [];
       const salonCards = salons.slice(0, 6).map((salon) => card({ href: `/saloni/${salon.slug}`, title: salon.name, description: salon.shortDescription, image: salon.imageUrl, detail: `${salon.city} · Ocena ${salon.rating}` })).join('');
@@ -368,7 +349,7 @@ async function renderPublicPage(req, pathname) {
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Sadržaj vodiča</h2><div class="seo-grid">${cards || '<p>Vodič je trenutno prazan.</p>'}</div></section>`, origin) };
     }
     const legalPage = legalPageByPath.get(pathname);
-    const meta = makeMeta(pathname, title, description, { indexable: pathname !== '/pridruzi-se-edukativni-centar' });
+    const meta = makeMeta(pathname, title, description, { indexable });
     if (legalPage) {
       const sections = legalPage.sections.map((section) => `<section><h2>${escapeHtml(section.title)}</h2>${section.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</section>`).join('');
       return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(legalPage.title)}</h1><p>${escapeHtml(legalPage.lead)}</p><p><strong>Poslednje ažuriranje:</strong> ${escapeHtml(legalPage.lastUpdated)}</p><p><strong>Radna pravna verzija:</strong> tekst mora biti potvrđen od strane odgovornog pravnog lica i pravnog savetnika pre komercijalnog lansiranja.</p>${sections}</article>`, origin) };
@@ -716,8 +697,10 @@ function sitemapXml(origin, entries) {
 
 async function buildSitemap(req) {
   const origin = requestOrigin(req);
-  const entries = [...staticPages.keys(), ...categoryPages.keys()]
-    .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
+  const entries = [
+    ...[...staticPages.values()].filter((page) => page.indexable).map((page) => page.path),
+    ...categoryPages.keys(),
+  ]
     .map((pathname) => ({
       pathname,
       lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated),
@@ -866,8 +849,9 @@ export async function createSeoResponse(req, template) {
   if (pathname === '/sitemap.xml') {
     try { return { status: 200, type: 'application/xml; charset=utf-8', body: await buildSitemap(req) }; }
     catch {
-      const staticEntries = [...staticPages.keys()]
-        .filter((item) => item !== '/pridruzi-se-edukativni-centar')
+      const staticEntries = [...staticPages.values()]
+        .filter((page) => page.indexable)
+        .map((page) => page.path)
         .map((pathname) => ({ pathname, lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated) }));
       return { status: 503, type: 'application/xml; charset=utf-8', body: sitemapXml(origin, staticEntries) };
     }

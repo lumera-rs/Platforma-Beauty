@@ -1,0 +1,156 @@
+[
+  {
+    "path": "/",
+    "title": "LUMERA | Saloni, tretmani i edukacije",
+    "description": "Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.",
+    "heading": "Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.",
+    "indexable": true
+  },
+  {
+    "path": "/za-biznise",
+    "title": "LUMERA Biznis Hub | Poslovna platforma",
+    "description": "Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.",
+    "heading": "LUMERA Biznis Hub",
+    "indexable": true
+  },
+  {
+    "path": "/za-biznise/saloni",
+    "title": "LUMERA za salone | Operativni sistem",
+    "description": "Sve što vam je potrebno za vođenje i rast vašeg beauty salona.",
+    "heading": "LUMERA za salone",
+    "indexable": true
+  },
+  {
+    "path": "/za-biznise/edukativni-centri",
+    "title": "LUMERA za edukativne centre | Infrastruktura",
+    "description": "Infrastruktura za organizaciju i prodaju beauty edukacija.",
+    "heading": "LUMERA za edukativne centre",
+    "indexable": true
+  },
+  {
+    "path": "/za-biznise/poslovi",
+    "title": "LUMERA Poslovi za biznise | Zapošljavanje",
+    "description": "Pronađite najbolje talente za vaš salon ili edukativni centar.",
+    "heading": "LUMERA Poslovi za biznise",
+    "indexable": true
+  },
+  {
+    "path": "/za-biznise/edukacije",
+    "title": "LUMERA Edukacije za biznise | Usavršavanje tima",
+    "description": "Unapredite veštine svog tima kroz B2B beauty edukacije.",
+    "heading": "LUMERA Edukacije za biznise",
+    "indexable": true
+  },
+  {
+    "path": "/pridruzi-se-edukativni-centar",
+    "title": "Registracija Edukativnog Centra | LUMERA",
+    "description": "Registrujte svoj edukativni centar na LUMERA platformi.",
+    "heading": "Registracija Edukativnog Centra",
+    "indexable": false
+  },
+  {
+    "path": "/saloni",
+    "title": "Saloni i beauty tretmani | LUMERA",
+    "description": "Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.",
+    "heading": "Pronađite salon i tretman koji vam odgovaraju.",
+    "indexable": true
+  },
+  {
+    "path": "/proizvodi",
+    "title": "Beauty proizvodi za kupce | LUMERA",
+    "description": "Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.",
+    "heading": "Beauty proizvodi za kupce",
+    "indexable": true
+  },
+  {
+    "path": "/poslovi",
+    "title": "Beauty poslovi i oglasi | LUMERA",
+    "description": "Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.",
+    "heading": "Beauty poslovi, angažmani i iznajmljivanje",
+    "indexable": true
+  },
+  {
+    "path": "/inspiracija",
+    "title": "Beauty inspiracija | LUMERA vodič",
+    "description": "Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.",
+    "heading": "Inspiracija za sledeći beauty termin.",
+    "indexable": true
+  },
+  {
+    "path": "/recnik",
+    "title": "Rečnik beauty pojmova | LUMERA",
+    "description": "Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.",
+    "heading": "Jasna objašnjenja beauty pojmova.",
+    "indexable": true
+  },
+  {
+    "path": "/brendovi",
+    "title": "Profesionalni beauty brendovi | LUMERA",
+    "description": "Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.",
+    "heading": "Profesionalni brendovi koje koriste LUMERA saloni.",
+    "indexable": true
+  },
+  {
+    "path": "/edukacije",
+    "title": "Beauty edukacije i kursevi | LUMERA",
+    "description": "Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.",
+    "heading": "Stručni kursevi i beauty edukacije.",
+    "indexable": true
+  },
+  {
+    "path": "/provera-statusa",
+    "title": "Provera statusa porudžbine | LUMERA",
+    "description": "Pratite status vaše porudžbine i saznajte kada stiže.",
+    "heading": "Provera statusa porudžbine",
+    "indexable": false
+  },
+  {
+    "path": "/porudzbina/pracenje",
+    "title": "Praćenje porudžbine | LUMERA",
+    "description": "Pratite status vaše porudžbine.",
+    "heading": "Praćenje porudžbine",
+    "indexable": false
+  },
+  {
+    "path": "/uslovi-koriscenja",
+    "title": "Uslovi korišćenja | LUMERA",
+    "description": "Uslovi korišćenja LUMERA platforme.",
+    "heading": "Uslovi korišćenja",
+    "indexable": true
+  },
+  {
+    "path": "/politika-privatnosti",
+    "title": "Politika privatnosti | LUMERA",
+    "description": "Kako LUMERA obrađuje i štiti podatke korisnika.",
+    "heading": "Kako štitimo privatnost korisnika.",
+    "indexable": true
+  },
+  {
+    "path": "/politika-kolacica",
+    "title": "Politika kolačića | LUMERA",
+    "description": "Informacije o korišćenju kolačića na LUMERA platformi.",
+    "heading": "Informacije o kolačićima.",
+    "indexable": true
+  },
+  {
+    "path": "/uslovi-kupovine",
+    "title": "Uslovi kupovine | LUMERA",
+    "description": "Uslovi kupovine edukacija i usluga putem LUMERA platforme.",
+    "heading": "Uslovi kupovine na LUMERA platformi.",
+    "indexable": true
+  },
+  {
+    "path": "/otkazivanje-termina",
+    "title": "Otkazivanje termina | LUMERA",
+    "description": "Pravila i smernice za otkazivanje zakazanih termina.",
+    "heading": "Pravila otkazivanja termina.",
+    "indexable": true
+  },
+  {
+    "path": "/povracaj-sredstava",
+    "title": "Povraćaj sredstava | LUMERA",
+    "description": "Informacije o refundacijama i zaštiti kupovine na LUMERA platformi.",
+    "heading": "Informacije o povraćaju sredstava.",
+    "indexable": true
+  }
+]

@@ -15,7 +15,9 @@ const server = read(serverPath);
 const indexHtml = read(indexPath);
 const clientMetadata = read("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx");
 
-process.env.NODE_ENV = "test";
+const staticSeoPages = JSON.parse(
+  read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
+) as Array<{ path: string; title: string; description: string; indexable: boolean }>;
 type SeoPayload = {
   title: string;
   description: string;
@@ -150,12 +152,7 @@ function serverPathMatchers(source: string): RegExp[] {
   }
   return matchers;
 }
-
-const staticPagesSource =
-  server.match(/const staticPages = new Map\(\[([\s\S]*?)\]\);/u)?.[1] ?? "";
-const staticPaths = new Set(
-  [...staticPagesSource.matchAll(/\[\s*'([^']+)'\s*,/gu)].map((match) => match[1]),
-);
+const staticPaths = new Set(staticSeoPages.map(({ path: routePath }) => routePath));
 const dynamicMatchers = serverPathMatchers(server);
 const categoryPaths = (
   JSON.parse(read("artifacts/beauty-marketplace/src/lib/public-category-pages.json")) as
@@ -236,6 +233,13 @@ assert.deepEqual(
   publicStaticPatterns,
   "every public static React route must have an SSR/client metadata contract fixture",
 );
+assert.deepEqual(
+  staticSeoPages.filter(({ indexable }) => indexable).map(({ path: routePath }) => routePath).sort(),
+  publicStaticPatterns,
+  "the shared static SEO catalog must match every indexable static React route",
+);
+assert.match(server, /staticPageDefinitions/u, "the SEO server must consume the shared static SEO catalog");
+assert.match(clientMetadata, /staticSeoPages/u, "the client must consume the shared static SEO catalog");
 
 const courseId = "11111111-1111-4111-8111-111111111111";
 const dynamicRouteContracts: DynamicRouteContract[] = [
@@ -555,7 +559,7 @@ async function clientMetadataAfterMount(
 
 try {
   for (const pathname of staticRouteContracts) {
-    const serverResult = await serverMetadata(pathname);
+    const serverResult = await serverMetadata(contract.pathname);
     assert.equal(serverResult.status, 200, `${pathname} static fixture must server-render`);
     assert.deepEqual(
       await clientMetadataAfterMount(pathname),
@@ -564,9 +568,19 @@ try {
     );
 
     const queryPath = `${pathname}?seo-contract=1`;
-    const queryResult = await serverMetadata(queryPath);
-    assert.equal(queryResult.status, 200, `${pathname} query variant must render safely`);
-    const clientQueryHead = await clientMetadataAfterMount(pathname, "seo-contract=1");
+    const queryResult = await serverMetadata(`${contract.pathname}?seo-contract=1`);
+    assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
+    assert.equal(
+      queryResult.head.robots,
+      "noindex, follow",
+      `${contract.pattern} query variant must remain noindex`,
+    );
+    assert.equal(
+      queryResult.head.canonical,
+      `${seoOrigin}${contract.pathname}`,
+      `${contract.pattern} query canonical must omit the query string`,
+    );
+    const clientQueryHead = await clientMetadataAfterMount(contract.pathname, "seo-contract=1");
     assert.deepEqual(
       clientQueryHead,
       queryResult.head,

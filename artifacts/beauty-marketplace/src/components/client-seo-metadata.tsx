@@ -3,6 +3,7 @@ import { useLocation, useSearch } from 'wouter';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
 import { getPublicCategoryPage } from '@/lib/public-category-pages';
+import staticSeoPages from '@/lib/static-seo-pages.json';
 import {
   isRetryableBeautyJobDetailError,
   shouldRetryBeautyJobDetail,
@@ -40,7 +41,10 @@ export type SeoHeadMetadata = {
 };
 
 const APP_NAME = 'LUMERA';
-const defaultDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+
+const staticSeoByPath = new Map(staticSeoPages.map((page) => [page.path, page]));
+const defaultDescription = staticSeoByPath.get('/')?.description
+  ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const defaultImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
 
 function text(value: unknown, fallback = ''): string {
@@ -69,31 +73,10 @@ function staticMetadata(pathname: string): SeoPayload | null {
     };
   }
 
-  const pages: Record<string, SeoPayload> = {
-    '/': { title: 'LUMERA | Saloni, tretmani i edukacije', description: defaultDescription, indexable: true },
-    '/za-biznise': { title: 'LUMERA Biznis Hub | Poslovna platforma', description: 'Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.', indexable: true },
-    '/za-biznise/saloni': { title: 'LUMERA za salone | Operativni sistem', description: 'Sve što vam je potrebno za vođenje i rast vašeg beauty salona.', indexable: true },
-    '/za-biznise/edukativni-centri': { title: 'LUMERA za edukativne centre | Infrastruktura', description: 'Infrastruktura za organizaciju i prodaju beauty edukacija.', indexable: true },
-    '/za-biznise/poslovi': { title: 'LUMERA Poslovi za biznise | Zapošljavanje', description: 'Pronađite najbolje talente za vaš salon ili edukativni centar.', indexable: true },
-    '/za-biznise/edukacije': { title: 'LUMERA Edukacije za biznise | Usavršavanje tima', description: 'Unapredite veštine svog tima kroz B2B beauty edukacije.', indexable: true },
-    '/pridruzi-se-edukativni-centar': { title: 'Registracija Edukativnog Centra | LUMERA', description: 'Registrujte svoj edukativni centar na LUMERA platformi.', indexable: false },
-    '/saloni': { title: 'Saloni i beauty tretmani | LUMERA', description: 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', indexable: true },
-    '/proizvodi': { title: 'Beauty proizvodi za kupce | LUMERA', description: 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', indexable: true },
-    '/poslovi': { title: 'Beauty poslovi i oglasi | LUMERA', description: 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', indexable: true },
-    '/inspiracija': { title: 'Beauty inspiracija | LUMERA vodič', description: 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', indexable: true },
-    '/recnik': { title: 'Rečnik beauty pojmova | LUMERA', description: 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', indexable: true },
-    '/brendovi': { title: 'Profesionalni beauty brendovi | LUMERA', description: 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', indexable: true },
-    '/edukacije': { title: 'Beauty edukacije i kursevi | LUMERA', description: 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.', indexable: true },
-    '/provera-statusa': { title: 'Provera statusa porudžbine | LUMERA', description: 'Pratite status vaše porudžbine i saznajte kada stiže.', indexable: false },
-    '/porudzbina/pracenje': { title: 'Praćenje porudžbine | LUMERA', description: 'Pratite status vaše porudžbine.', indexable: false },
-    '/uslovi-koriscenja': { title: 'Uslovi korišćenja | LUMERA', description: 'Uslovi korišćenja LUMERA platforme.', indexable: true },
-    '/politika-privatnosti': { title: 'Politika privatnosti | LUMERA', description: 'Kako LUMERA obrađuje i štiti podatke korisnika.', indexable: true },
-    '/politika-kolacica': { title: 'Politika kolačića | LUMERA', description: 'Informacije o korišćenju kolačića na LUMERA platformi.', indexable: true },
-    '/uslovi-kupovine': { title: 'Uslovi kupovine | LUMERA', description: 'Uslovi kupovine edukacija i usluga putem LUMERA platforme.', indexable: true },
-    '/otkazivanje-termina': { title: 'Otkazivanje termina | LUMERA', description: 'Pravila i smernice za otkazivanje zakazanih termina.', indexable: true },
-    '/povracaj-sredstava': { title: 'Povraćaj sredstava | LUMERA', description: 'Informacije o refundacijama i zaštiti kupovine na LUMERA platformi.', indexable: true },
-  };
-  return pages[pathname] ?? null;
+  const page = staticSeoByPath.get(pathname);
+  return page
+    ? { title: page.title, description: page.description, indexable: page.indexable }
+    : null;
 }
 
 function setMeta(selector: string, attribute: 'name' | 'property', key: string, content: string) {
