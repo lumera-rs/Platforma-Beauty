@@ -47,8 +47,11 @@ import {
   GetPublicSupplierResponse,
   GetShopApprovalRequestResponse,
   GetSupplierPublicProductResponse,
+  ListPublicSuppliersResponse,
   ListMyShopApprovalRequestsResponseItem,
   ListShopApprovalRequestsResponseItem,
+  ListSupplierProductsResponse,
+  ListSupplierPublicProductsResponse,
   RejectShopApprovalRequestResponse,
 } from "@workspace/api-zod";
 
@@ -575,6 +578,131 @@ test("canonical public supplier detail, history, and reviews follow supplier sco
 
   await db.update(suppliersTable).set({ active: true }).where(eq(suppliersTable.id, supplier.id));
   await assertPublic();
+});
+
+test("public supplier catalog hides inactive products and categories without changing B2B eligibility", async () => {
+  const [inactiveProductCategory, categoryProductCategory, b2bOnlyCategory] = await db.insert(productCategoriesTable).values([
+    {
+      supplierId: supplierA.id,
+      name: `${marker} inactive product category`,
+      slug: `${marker}-inactive-product-category`,
+    },
+    {
+      supplierId: supplierA.id,
+      name: `${marker} category deactivation`,
+      slug: `${marker}-category-deactivation`,
+    },
+    {
+      supplierId: supplierA.id,
+      name: `${marker} B2B-only category`,
+      slug: `${marker}-b2b-only-category`,
+    },
+  ]).returning();
+  assert.ok(inactiveProductCategory);
+  assert.ok(categoryProductCategory);
+  assert.ok(b2bOnlyCategory);
+  categoryIds.push(inactiveProductCategory.id, categoryProductCategory.id, b2bOnlyCategory.id);
+
+  const [inactiveProduct, categoryProduct, b2bOnlyProduct] = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id,
+      categoryId: inactiveProductCategory.id,
+      categoryName: inactiveProductCategory.name,
+      name: `${marker} inactive product`,
+      description: `${marker} inactive product wholesale`,
+      publicDescription: `${marker} inactive product public`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_100,
+      publicPrice: 1_600,
+      professionalEnabled: true,
+      retailEnabled: true,
+      stock: 5,
+      sku: `${marker}-inactive-product`,
+      unit: "kom",
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: categoryProductCategory.id,
+      categoryName: categoryProductCategory.name,
+      name: `${marker} category product`,
+      description: `${marker} category product wholesale`,
+      publicDescription: `${marker} category product public`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_200,
+      publicPrice: 1_700,
+      professionalEnabled: true,
+      retailEnabled: true,
+      stock: 5,
+      sku: `${marker}-category-product`,
+      unit: "kom",
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: b2bOnlyCategory.id,
+      categoryName: b2bOnlyCategory.name,
+      name: `${marker} B2B-only product`,
+      description: `${marker} B2B-only description`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_300,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 5,
+      sku: `${marker}-b2b-only-product`,
+      unit: "kom",
+    },
+  ]).returning();
+  assert.ok(inactiveProduct);
+  assert.ok(categoryProduct);
+  assert.ok(b2bOnlyProduct);
+  productIds.push(inactiveProduct.id, categoryProduct.id, b2bOnlyProduct.id);
+
+  const publicListPath = `/suppliers/${supplierA.slug}/public-products`;
+  const b2bListPath = `/suppliers/${supplierA.slug}/products`;
+  const publicDetail = (productId: string) => `${publicListPath}/${productId}`;
+  const b2bDetail = (productId: string) => `${b2bListPath}/${productId}`;
+
+  const initialPublicResponse = await api(publicListPath);
+  assert.equal(initialPublicResponse.status, 200, await initialPublicResponse.clone().text());
+  const initialPublic = ListSupplierPublicProductsResponse.parse(await initialPublicResponse.json());
+  assert.ok(initialPublic.items.some((item) => item.id === inactiveProduct.id));
+  assert.ok(initialPublic.items.some((item) => item.id === categoryProduct.id));
+  assert.ok(!initialPublic.items.some((item) => item.id === b2bOnlyProduct.id));
+
+  const initialB2bResponse = await api(b2bListPath, ownerCookie);
+  assert.equal(initialB2bResponse.status, 200, await initialB2bResponse.clone().text());
+  const initialB2b = ListSupplierProductsResponse.parse(await initialB2bResponse.json());
+  assert.ok(initialB2b.items.some((item) => item.id === b2bOnlyProduct.id));
+
+  const publicProduct = await api(publicDetail(inactiveProduct.id));
+  assert.equal(publicProduct.status, 200, await publicProduct.text());
+  const b2bProduct = await api(b2bDetail(b2bOnlyProduct.id), ownerCookie);
+  assert.equal(b2bProduct.status, 200, await b2bProduct.text());
+
+  await db.update(productsTable).set({ active: false }).where(eq(productsTable.id, inactiveProduct.id));
+  const afterProductResponse = await api(publicListPath);
+  assert.equal(afterProductResponse.status, 200, await afterProductResponse.clone().text());
+  const afterProductDeactivation = ListSupplierPublicProductsResponse.parse(await afterProductResponse.json());
+  assert.ok(!afterProductDeactivation.items.some((item) => item.id === inactiveProduct.id));
+  const hiddenProduct = await api(publicDetail(inactiveProduct.id));
+  assert.equal(hiddenProduct.status, 404);
+  assert.deepEqual(await hiddenProduct.json(), { error: "Product not found." });
+
+  await db.update(productCategoriesTable).set({ active: false })
+    .where(eq(productCategoriesTable.id, categoryProductCategory.id));
+  const afterCategoryResponse = await api(publicListPath);
+  assert.equal(afterCategoryResponse.status, 200, await afterCategoryResponse.clone().text());
+  const afterCategoryDeactivation = ListSupplierPublicProductsResponse.parse(await afterCategoryResponse.json());
+  assert.ok(!afterCategoryDeactivation.items.some((item) => item.id === categoryProduct.id));
+  const hiddenCategoryProduct = await api(publicDetail(categoryProduct.id));
+  assert.equal(hiddenCategoryProduct.status, 404);
+  assert.deepEqual(await hiddenCategoryProduct.json(), { error: "Product not found." });
+
+  const b2bAfterResponse = await api(b2bListPath, ownerCookie);
+  assert.equal(b2bAfterResponse.status, 200, await b2bAfterResponse.clone().text());
+  const b2bAfterB2cChanges = ListSupplierProductsResponse.parse(await b2bAfterResponse.json());
+  assert.ok(b2bAfterB2cChanges.items.some((item) => item.id === b2bOnlyProduct.id));
+  const b2bDetailAfterB2cChanges = await api(b2bDetail(b2bOnlyProduct.id), ownerCookie);
+  assert.equal(b2bDetailAfterB2cChanges.status, 200);
 });
 
 test("public supplier and retail product details expose managed social image metadata and keep legacy URLs unverified", async () => {
