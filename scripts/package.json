@@ -32,6 +32,9 @@
     "test:carousel": "pnpm run playwright:checked -- browser/carousel-regression.spec.ts",
     "test:review-photo-privacy": "pnpm run playwright:checked -- browser/review-photo-privacy.spec.ts",
     "test:admin-review-feedback": "pnpm run playwright:checked -- browser/admin-review-feedback.spec.ts",
+    "test:admin-category-reorder": "pnpm run playwright:checked -- browser/admin-category-reorder.spec.ts",
+    "test:admin-duplicate-actions": "pnpm run playwright:checked -- browser/admin-duplicate-actions.spec.ts",
+    "test:admin-integrations-response-validation": "pnpm run playwright:checked -- browser/admin-integrations-response-validation.spec.ts",
     "test:retention-conflict": "pnpm run playwright:checked -- browser/retention-conflict.spec.ts",
     "test:retention-identical-save": "pnpm run playwright:checked -- browser/retention-identical-save.spec.ts",
     "test:retention-preview": "tsx ./src/run-retention-preview.ts",
@@ -111,7 +114,10 @@
     "test:anonymized-pg-dump": "bash ./src/anonymized-pg-dump.test.sh",
     "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
     "test:admin-bounded-pagination": "tsx ./src/run-admin-bounded-pagination.ts",
-    "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts"
+    "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts",
+    "test:owner-appointment-employee-regression": "pnpm run playwright:checked -- browser/owner-appointment-employee-regression.spec.ts",
+    "test:owner-automation-b2b-order": "pnpm run playwright:checked -- browser/owner-automation-b2b-order.spec.ts",
+    "test:owner-loyalty-packages": "pnpm run playwright:checked -- browser/owner-loyalty-packages.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -123,6 +129,8 @@
     "@workspace/api-zod": "workspace:*"
   },
   "focusedAdministratorBrowserGates": {
+    "scriptNamePattern": "test:admin-*",
+    "specFilePattern": "browser/admin-*.spec.ts",
     "release": [
       "test:admin-access-configuration",
       "test:admin-bounded-pagination",
@@ -131,13 +139,21 @@
     ],
     "localOnly": [
       "test:admin-review-feedback",
-      "test:admin-salon-designations"
+      "test:admin-salon-designations",
+      "test:admin-category-reorder",
+      "test:admin-duplicate-actions",
+      "test:admin-integrations-response-validation"
     ]
   },
   "focusedOwnerBrowserGates": {
+    "scriptNamePattern": "test:owner-*",
+    "specFilePattern": "browser/owner-*.spec.ts",
     "release": [],
     "localOnly": [
-      "test:owner-service-availability"
+      "test:owner-service-availability",
+      "test:owner-appointment-employee-regression",
+      "test:owner-automation-b2b-order",
+      "test:owner-loyalty-packages"
     ]
   },
   "focusedEmployeeBrowserGates": {

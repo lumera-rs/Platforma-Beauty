@@ -149,11 +149,15 @@ function chainedPnpmScripts(command: string): string[] {
 }
 
 type FocusedAdministratorBrowserGateInventory = {
+  scriptNamePattern?: string;
+  specFilePattern?: string;
   release?: string[];
   localOnly?: string[];
 };
 
 type FocusedOwnerBrowserGateInventory = {
+  scriptNamePattern?: string;
+  specFilePattern?: string;
   release?: string[];
   localOnly?: string[];
 };
@@ -165,30 +169,57 @@ type FocusedEmployeeBrowserGateInventory = {
   localOnly?: string[];
 };
 
-function focusedAdministratorBrowserCommands(
+type FocusedBrowserCommand = {
+  scriptName: string;
+  specFile: string;
+};
+
+function focusedAdministratorBrowserCommandEntries(
   packageScripts: Record<string, string>,
-): string[] {
+): FocusedBrowserCommand[] {
   return Object.entries(packageScripts)
-    .filter(([scriptName, command]) =>
-      scriptName.startsWith("test:admin-") &&
-      (
-        command.includes("playwright:checked") ||
-        /tsx \.\/src\/run-admin-[\w-]+\.ts(?: |$)/.test(command)
-      )
-    )
-    .map(([scriptName]) => scriptName)
-    .sort();
+    .flatMap(([scriptName, command]) => {
+      if (!scriptName.startsWith("test:admin-")) {
+        return [];
+      }
+      const directMatch =
+        /^pnpm run playwright:checked -- (browser\/admin-[\w-]+\.spec\.ts)(?: --[\s\S]*)?$/
+          .exec(command);
+      if (directMatch) {
+        return [{ scriptName, specFile: directMatch[1] }];
+      }
+      const runnerMatch = /^tsx \.\/src\/run-(admin-[\w-]+)\.ts(?: --[\s\S]*)?$/
+        .exec(command);
+      return runnerMatch
+        ? [{ scriptName, specFile: `browser/${runnerMatch[1]}.spec.ts` }]
+        : [];
+    })
+    .sort((left, right) => left.scriptName.localeCompare(right.scriptName));
 }
 
 function validateFocusedAdministratorBrowserGateInventory(
   packageScripts: Record<string, string>,
   inventory: FocusedAdministratorBrowserGateInventory,
   isolatedPhaseCommand: string,
+  administratorSpecFiles: string[],
 ): void {
+  assert.equal(
+    inventory.scriptNamePattern,
+    "test:admin-*",
+    "Focused administrator browser commands must follow the documented test:admin-* package-script naming convention.",
+  );
+  assert.equal(
+    inventory.specFilePattern,
+    "browser/admin-*.spec.ts",
+    "Focused administrator browser commands must target the documented browser/admin-*.spec.ts naming convention.",
+  );
+
   const releaseScripts = inventory.release ?? [];
   const localOnlyScripts = inventory.localOnly ?? [];
   const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
-  const discoveredScripts = focusedAdministratorBrowserCommands(packageScripts);
+  const discoveredCommands =
+    focusedAdministratorBrowserCommandEntries(packageScripts);
+  const discoveredScripts = discoveredCommands.map(({ scriptName }) => scriptName);
 
   assert.equal(
     new Set(classifiedScripts).size,
@@ -200,6 +231,11 @@ function validateFocusedAdministratorBrowserGateInventory(
     discoveredScripts,
     "Every test:admin-* browser command must be classified in scripts/package.json focusedAdministratorBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
   );
+  assert.deepEqual(
+    discoveredCommands.map(({ specFile }) => specFile).sort(),
+    [...administratorSpecFiles].sort(),
+    "Every browser/admin-*.spec.ts file must be referenced by exactly one convention-compliant test:admin-* command.",
+  );
 
   for (const scriptName of releaseScripts) {
     assert.match(
@@ -210,27 +246,44 @@ function validateFocusedAdministratorBrowserGateInventory(
   }
 }
 
-function focusedOwnerBrowserCommands(
+function focusedOwnerBrowserCommandEntries(
   packageScripts: Record<string, string>,
-): string[] {
+): FocusedBrowserCommand[] {
   return Object.entries(packageScripts)
-    .filter(([scriptName, command]) =>
-      scriptName.startsWith("test:owner-") &&
-      command.includes("playwright:checked")
-    )
-    .map(([scriptName]) => scriptName)
-    .sort();
+    .flatMap(([scriptName, command]) => {
+      if (!scriptName.startsWith("test:owner-")) {
+        return [];
+      }
+      const match =
+        /^pnpm run playwright:checked -- (browser\/owner-[\w-]+\.spec\.ts)(?: --[\s\S]*)?$/
+          .exec(command);
+      return match ? [{ scriptName, specFile: match[1] }] : [];
+    })
+    .sort((left, right) => left.scriptName.localeCompare(right.scriptName));
 }
 
 function validateFocusedOwnerBrowserGateInventory(
   packageScripts: Record<string, string>,
   inventory: FocusedOwnerBrowserGateInventory,
   isolatedPhaseCommand: string,
+  ownerSpecFiles: string[],
 ): void {
+  assert.equal(
+    inventory.scriptNamePattern,
+    "test:owner-*",
+    "Focused salon-owner browser commands must follow the documented test:owner-* package-script naming convention.",
+  );
+  assert.equal(
+    inventory.specFilePattern,
+    "browser/owner-*.spec.ts",
+    "Focused salon-owner browser commands must target the documented browser/owner-*.spec.ts naming convention.",
+  );
+
   const releaseScripts = inventory.release ?? [];
   const localOnlyScripts = inventory.localOnly ?? [];
   const classifiedScripts = [...releaseScripts, ...localOnlyScripts];
-  const discoveredScripts = focusedOwnerBrowserCommands(packageScripts);
+  const discoveredCommands = focusedOwnerBrowserCommandEntries(packageScripts);
+  const discoveredScripts = discoveredCommands.map(({ scriptName }) => scriptName);
 
   assert.equal(
     new Set(classifiedScripts).size,
@@ -242,6 +295,11 @@ function validateFocusedOwnerBrowserGateInventory(
     discoveredScripts,
     "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly. Add release checks to the release inventory, or explicitly mark diagnostics as localOnly.",
   );
+  assert.deepEqual(
+    discoveredCommands.map(({ specFile }) => specFile).sort(),
+    [...ownerSpecFiles].sort(),
+    "Every browser/owner-*.spec.ts file must be referenced by exactly one convention-compliant test:owner-* command.",
+  );
 
   for (const scriptName of releaseScripts) {
     assert.match(
@@ -252,14 +310,9 @@ function validateFocusedOwnerBrowserGateInventory(
   }
 }
 
-type FocusedEmployeeBrowserCommand = {
-  scriptName: string;
-  specFile: string;
-};
-
 function focusedEmployeeBrowserCommandEntries(
   packageScripts: Record<string, string>,
-): FocusedEmployeeBrowserCommand[] {
+): FocusedBrowserCommand[] {
   return Object.entries(packageScripts)
     .flatMap(([scriptName, command]) => {
       if (!scriptName.startsWith("test:employee-")) {
@@ -1161,32 +1214,36 @@ test("release validation phases preserve the full gate and print safe continuati
 });
 
 test("focused administrator browser inventory remains wired into the release gate", async () => {
-  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
+  const [rootPackageJson, scriptsPackageJson, browserEntries] = await Promise.all([
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+    readdir(path.join(workspaceRoot, "scripts", "browser"), {
+      withFileTypes: true,
+    }),
   ]);
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
   const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
     scripts?: Record<string, string>;
-    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
+    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
   };
-  const packageScripts: Record<string, string> = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
-  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+  const administratorSpecFiles = browserEntries
+    .filter((entry) => entry.isFile() && /^admin-[\w-]+\.spec\.ts$/.test(entry.name))
+    .map((entry) => `browser/${entry.name}`);
 
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
   assert.ok(
     inventory,
-    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
+    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory for focused administrator browser commands.",
   );
 
-  validateFocusedEmployeeBrowserGateInventory(
+  validateFocusedAdministratorBrowserGateInventory(
     packageScripts,
     inventory,
     isolatedPhaseCommand,
+    administratorSpecFiles,
   );
 
   for (const scriptName of inventory.release ?? []) {
@@ -1200,52 +1257,88 @@ test("focused administrator browser inventory remains wired into the release gat
   }
 });
 
-test("a new focused employee browser command must be released or explicitly local-only", () => {
+test("an administrator browser spec without a runnable command fails validation", () => {
   const packageScripts: Record<string, string> = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+    "test:admin-existing": "pnpm run playwright:checked -- browser/admin-existing.spec.ts",
+  };
+  const inventory = {
+    scriptNamePattern: "test:admin-*",
+    specFilePattern: "browser/admin-*.spec.ts",
+    release: ["test:admin-existing"],
+    localOnly: [],
+  };
+
+  assert.throws(
+    () =>
+      validateFocusedAdministratorBrowserGateInventory(
+        packageScripts,
+        inventory,
+        "pnpm run test:admin-existing",
+        ["browser/admin-existing.spec.ts", "browser/admin-unreferenced.spec.ts"],
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every browser/admin-*.spec.ts file must be referenced by exactly one convention-compliant test:admin-* command.",
+      ),
+  );
+});
+
+test("focused salon-owner browser inventory remains wired into the release gate", async () => {
+  const [rootPackageJson, scriptsPackageJson, browserEntries] = await Promise.all([
+    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
+    readdir(path.join(workspaceRoot, "scripts", "browser"), { withFileTypes: true }),
+  ]);
+  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
+  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
+    scripts?: Record<string, string>;
+    focusedOwnerBrowserGates?: FocusedOwnerBrowserGateInventory;
+  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedOwnerBrowserGates;
+  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
+  const ownerSpecFiles = browserEntries
+    .filter((entry) => entry.isFile() && /^owner-[\w-]+\.spec\.ts$/.test(entry.name))
+    .map((entry) => `browser/${entry.name}`);
+
+  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
+  assert.ok(
+    inventory,
+    "scripts/package.json must define focusedOwnerBrowserGates as the authoritative release/local-only inventory for focused salon-owner browser commands.",
+  );
+
+  validateFocusedOwnerBrowserGateInventory(
+    packageScripts,
+    inventory,
+    isolatedPhaseCommand,
+    ownerSpecFiles,
+  );
+});
+
+test("a salon-owner browser spec without a runnable command fails validation", () => {
+  const packageScripts = {
+    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
   };
 
   assert.throws(
     () =>
       validateFocusedOwnerBrowserGateInventory(
         packageScripts,
-        { release: ["test:owner-existing"], localOnly: [] },
-        "pnpm run test:owner-existing",
-      ),
-    (error: unknown) =>
-      error instanceof assert.AssertionError &&
-      error.message.startsWith(
-        "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly.",
-      ),
-  );
-
-  assert.throws(
-    () =>
-      validateFocusedOwnerBrowserGateInventory(
-        packageScripts,
         {
-          release: ["test:owner-existing", "test:owner-new-regression"],
+          scriptNamePattern: "test:owner-*",
+          specFilePattern: "browser/owner-*.spec.ts",
+          release: ["test:owner-existing"],
           localOnly: [],
         },
         "pnpm run test:owner-existing",
+        ["browser/owner-existing.spec.ts", "browser/owner-unreferenced.spec.ts"],
       ),
     (error: unknown) =>
       error instanceof assert.AssertionError &&
       error.message.startsWith(
-        `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command test:owner-new-regression.`,
+        "Every browser/owner-*.spec.ts file must be referenced by exactly one convention-compliant test:owner-* command.",
       ),
-  );
-
-  assert.doesNotThrow(() =>
-    validateFocusedOwnerBrowserGateInventory(
-      packageScripts,
-      {
-        release: ["test:owner-existing"],
-        localOnly: ["test:owner-new-regression"],
-      },
-      "pnpm run test:owner-existing",
-    )
   );
 });
 
