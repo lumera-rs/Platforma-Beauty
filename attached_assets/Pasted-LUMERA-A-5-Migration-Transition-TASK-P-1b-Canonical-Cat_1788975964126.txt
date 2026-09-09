@@ -1,0 +1,306 @@
+LUMERA — A-5 Migration Transition
+TASK P.1b — Canonical Catalog Fingerprint
+
+Task #921 / P.1a has passed independent review.
+
+This task is ONLY P.1b.
+
+NO MIGRATIONS.
+NO DATABASE WRITES.
+NO BASELINE ADOPTION.
+NO RUNNER.
+NO LEDGER.
+NO SCHEMA CHANGES.
+
+==================================================
+PURPOSE
+==================================================
+
+Extend the already reviewed Task 1 schema-drift tooling with a stable,
+deterministic SHA-256 fingerprint of a normalized PostgreSQL catalog
+snapshot.
+
+This fingerprint will later be used by baseline eligibility tooling to
+prove that an existing database is exactly the expected database shape
+before metadata adoption is allowed.
+
+This task must remain READ ONLY.
+
+==================================================
+1. FINGERPRINT INPUT
+==================================================
+
+Use the existing normalized catalog model from the schema-drift audit.
+
+Fingerprint must cover structural database properties relevant to
+application schema identity, including at minimum:
+
+- schema name
+- table name
+- column name/order
+- data type
+- nullability
+- defaults
+- generated expressions
+- primary keys
+- unique constraints
+- foreign keys
+- FK column ordering
+- FK referenced columns
+- ON DELETE / ON UPDATE actions
+- CHECK definitions
+- indexes
+- index columns/order
+- expression indexes
+- predicates
+- uniqueness
+- index method
+
+Also include explicitly owned application objects already represented
+by the audit model.
+
+Do NOT fingerprint:
+
+- row counts
+- table statistics
+- VACUUM/ANALYZE state
+- object OIDs
+- creation timestamps
+- physical file locations
+- query planner statistics
+- database connection details
+- secrets
+- volatile metadata that can change without schema meaning changing
+
+==================================================
+2. NORMALIZATION
+==================================================
+
+The same logical schema must always generate the same fingerprint.
+
+Therefore:
+
+- use deterministic object ordering
+- deterministic property ordering
+- stable UTF-8 serialization
+- no filesystem ordering dependency
+- no locale-dependent sorting
+- no timestamps
+- no whitespace-sensitive SQL differences where the existing
+  normalization already proves semantic equivalence
+
+Do NOT invent a second schema normalization implementation.
+
+Reuse the existing schema-drift normalized representation.
+
+==================================================
+3. PHYSICAL NAMES
+==================================================
+
+Important architecture decision:
+
+Fresh and adopted Lumera databases are intended to preserve the same
+physical object names wherever migration history may later reference
+those objects literally.
+
+Therefore produce TWO explicit hashes if technically appropriate:
+
+A. structuralFingerprint
+   - normalized semantic structure
+
+B. physicalFingerprint
+   - same structure plus physical constraint/index/object names
+
+Do not silently mix these meanings into one undocumented hash.
+
+Explain exactly what each fingerprint proves.
+
+If the existing audit model makes a two-fingerprint design materially
+safer, implement it.
+
+==================================================
+4. OWNERSHIP EXCEPTIONS
+==================================================
+
+Handle known external/temporary ownership explicitly.
+
+Examples include:
+
+- education_salon_cleanup_reports
+- spatial_ref_sys if present
+
+Do not silently exclude arbitrary EXTRA_IN_DB objects.
+
+Fingerprint generation must state which ownership exceptions were
+excluded or represented.
+
+Unknown objects must remain visible to future eligibility logic.
+
+Do NOT implement eligibility decisions in this task.
+
+==================================================
+5. HASH FORMAT
+==================================================
+
+Use SHA-256.
+
+Output should be stable lowercase hexadecimal.
+
+Also expose the normalized serialized payload or a debug representation
+that allows a reviewer to determine WHY two fingerprints differ.
+
+Do not store secrets or data rows.
+
+==================================================
+6. CLI / MACHINE OUTPUT
+==================================================
+
+Extend the existing schema-drift tooling cleanly.
+
+Provide a machine-readable command/output containing at minimum:
+
+- fingerprint algorithm/version
+- structuralFingerprint
+- physicalFingerprint if implemented
+- normalized object count
+- ownership exceptions
+- tool/schema format version
+
+stdout/stderr behavior must remain deterministic and documented.
+
+Do not break the existing schema-drift JSON interface.
+
+==================================================
+7. READ-ONLY SAFETY
+==================================================
+
+Reuse the existing PostgreSQL READ ONLY execution path.
+
+Do not add any:
+
+INSERT
+UPDATE
+DELETE
+MERGE
+CREATE
+ALTER
+DROP
+TRUNCATE
+
+Do not call:
+
+drizzle-kit push
+migration runner
+bootstrap repair
+
+All live catalog reads must remain inside the already-reviewed
+read-only mechanism.
+
+==================================================
+8. TESTS
+==================================================
+
+Add tests proving:
+
+PASS:
+- identical normalized snapshot → identical hash
+- same snapshot with different input ordering → identical hash
+- repeated runs → identical hash
+
+DIFFERENT HASH:
+- column type changes
+- nullability changes
+- default changes
+- CHECK changes
+- FK action changes
+- index predicate changes
+- unique/non-unique change
+- physical name change affects physical fingerprint
+
+SEMANTIC STABILITY:
+- known normalization-equivalent SQL remains same structural fingerprint
+
+OWNERSHIP:
+- known ownership exceptions handled deterministically
+- unknown extra application object is not silently ignored
+
+Also test serialization determinism explicitly.
+
+==================================================
+9. LIVE READ-ONLY VERIFICATION
+==================================================
+
+Run the fingerprint command against the current development DB
+READ ONLY.
+
+Run it multiple times.
+
+Confirm:
+
+structural fingerprint run 1 == run 2 == run 3
+
+and physical fingerprint likewise if implemented.
+
+Capture the hash values in the final report.
+
+Do NOT write them into a migration manifest or ledger yet.
+
+==================================================
+10. SCOPE
+==================================================
+
+Expected changes should be restricted to:
+
+scripts/src/schema-drift/*
+scripts/src/audit-schema-drift.ts if necessary
+scripts/package.json
+root package.json only if needed
+tests/documentation
+
+Do NOT modify:
+
+lib/db/migrations contract from #921 except documentation if strictly
+necessary
+lib/db/src/schema/*
+production application code
+bootstrap modules
+Education B2B
+retail review FK
+deployment/CI release chain
+
+Do NOT wire into validate:release yet.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact files changed
+2. Fingerprint model
+3. What structuralFingerprint includes
+4. What physicalFingerprint includes
+5. Canonical serialization format
+6. Ownership-exception behavior
+7. Read-only safety proof
+8. Test matrix/results
+9. Live fingerprint values from repeated runs
+10. Determinism proof
+11. Git diff scope
+12. HEAD/git status
+13. Remaining limitations
+
+Then:
+
+TASK P.1b VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+STOP.
+
+Do not begin baseline eligibility.
+Do not create baseline SQL.
+Do not create migration runner.
+Do not create ledger.
+Do not modify the database.
