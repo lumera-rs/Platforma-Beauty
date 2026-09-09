@@ -6,10 +6,12 @@ import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import {
   db,
+  employeeClockEntriesTable,
   employeeLocationAssignmentsTable,
   employeesTable,
   imageAssetsTable,
   mediaAssetsTable,
+  mediaUploadTicketsTable,
   mediaVariantsTable,
   salonsTable,
   usersTable,
@@ -19,6 +21,10 @@ import { hashPassword, sessionCookieName } from "./auth";
 import { deletePrivateObject } from "./image-storage";
 import { ensureMediaSchema } from "./media-schema";
 import { attachReadyImageAssets, publicSocialImage } from "../routes/image-media";
+import {
+  cleanupMediaRouteRegressionUploads,
+  enableMediaRouteRegressionUploadMarking,
+} from "../routes/media";
 
 const password = "image-pipeline-test-password";
 const email = `image-pipeline-${randomUUID()}@example.test`;
@@ -304,6 +310,148 @@ async function run(): Promise<void> {
     assert.equal(publicEmployeeImage.status, 200);
     assert.equal(publicEmployeeImage.headers.get("cache-control"), "public, max-age=31536000, immutable");
 
+    type EmployeePortalProbe = {
+      label: string;
+      method: "GET" | "POST" | "PATCH" | "PUT";
+      path: string;
+      body?: unknown;
+      idempotencyKey?: boolean;
+      expectedWithAssignment?: number;
+    };
+    const employeePortalProbes: EmployeePortalProbe[] = [
+      { label: "locations", method: "GET", path: "/api/employee/locations", expectedWithAssignment: 200 },
+      { label: "portal", method: "GET", path: "/api/employee/portal", expectedWithAssignment: 200 },
+      {
+        label: "availability validation",
+        method: "GET",
+        path: "/api/employee/availability/search?startDate=not-a-date",
+        expectedWithAssignment: 400,
+      },
+      { label: "clock read", method: "GET", path: "/api/employee/clock", expectedWithAssignment: 200 },
+      { label: "shift swaps read", method: "GET", path: "/api/employee/shift-swaps", expectedWithAssignment: 200 },
+      {
+        label: "treatment photos read",
+        method: "GET",
+        path: "/api/employee/appointments/not-a-uuid/treatment-photos",
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "active location mutation",
+        method: "PATCH",
+        path: "/api/employee/active-location",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment notes mutation",
+        method: "PATCH",
+        path: "/api/employee/appointments/not-a-uuid",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "profile mutation",
+        method: "PUT",
+        path: "/api/employee/profile",
+        body: {
+          bio: "Must not be saved without an active assignment",
+          avatarUrl: finalized.imageUrl,
+          phone: "+381611111111",
+        },
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "leave request mutation",
+        method: "POST",
+        path: "/api/employee/leave-requests",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment series preview",
+        method: "POST",
+        path: "/api/employee/appointment-series/preview",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment series mutation",
+        method: "POST",
+        path: "/api/employee/appointment-series",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment mutation",
+        method: "POST",
+        path: "/api/employee/appointments",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "booking group mutation",
+        method: "POST",
+        path: "/api/employee/booking-groups",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "treatment photo mutation",
+        method: "POST",
+        path: "/api/employee/appointments/not-a-uuid/treatment-photos",
+        body: {},
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "clock-out mutation",
+        method: "POST",
+        path: "/api/employee/clock-out",
+        expectedWithAssignment: 409,
+      },
+      {
+        label: "shift swap mutation",
+        method: "POST",
+        path: "/api/employee/shift-swaps",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "shift swap response",
+        method: "POST",
+        path: "/api/employee/shift-swaps/not-a-uuid/respond",
+        body: {},
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "shift swap cancellation",
+        method: "POST",
+        path: "/api/employee/shift-swaps/not-a-uuid/cancel",
+        expectedWithAssignment: 404,
+      },
+    ];
+    const probeEmployeePortal = async (hasActiveAssignment: boolean) => {
+      for (const probe of employeePortalProbes) {
+        const headers: Record<string, string> = { cookie: employeeCookie };
+        if (probe.body !== undefined) headers["content-type"] = "application/json";
+        if (probe.idempotencyKey) headers["Idempotency-Key"] = `image-pipeline-${randomUUID()}`;
+        const response = await fetch(`${first.baseUrl}${probe.path}`, {
+          method: probe.method,
+          headers,
+          body: probe.body === undefined ? undefined : JSON.stringify(probe.body),
+        });
+        const expected = hasActiveAssignment ? probe.expectedWithAssignment : 403;
+        assert.equal(
+          response.status,
+          expected,
+          `${probe.method} ${probe.path} (${probe.label}) must return ${expected} when assignment is ${hasActiveAssignment ? "active" : "inactive"}`,
+        );
+        await response.arrayBuffer();
+      }
+    };
+
     const [employeeBeforeAssignmentExpiry] = await db.select({
       bio: employeesTable.bio,
       avatarUrl: employeesTable.avatarUrl,
@@ -315,16 +463,7 @@ async function run(): Promise<void> {
       eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
       eq(employeeLocationAssignmentsTable.salonId, salon!.id),
     ));
-    const rejectedWithoutAssignment = await fetch(`${first.baseUrl}/api/employee/profile`, {
-      method: "PUT",
-      headers: { "content-type": "application/json", cookie: employeeCookie },
-      body: JSON.stringify({
-        bio: "Must not be saved without an active assignment",
-        avatarUrl: finalized.imageUrl,
-        phone: "+381611111111",
-      }),
-    });
-    assert.equal(rejectedWithoutAssignment.status, 403, "an employee without an active assignment must be rejected before profile validation");
+    await probeEmployeePortal(false);
     const [employeeAfterAssignmentExpiry] = await db.select({
       bio: employeesTable.bio,
       avatarUrl: employeesTable.avatarUrl,
@@ -339,17 +478,25 @@ async function run(): Promise<void> {
       eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
       eq(employeeLocationAssignmentsTable.salonId, salon!.id),
     ));
-    const rejectedEmployeeUpdate = await fetch(`${first.baseUrl}/api/employee/profile`, {
-      method: "PUT",
-      headers: { "content-type": "application/json", cookie: employeeCookie },
-      body: JSON.stringify({ avatarUrl: finalized.imageUrl }),
-    });
-    assert.equal(rejectedEmployeeUpdate.status, 400, "an authorized employee must get the image ownership validation response");
+    await probeEmployeePortal(true);
     const [employeeAfterRejectedUpdate] = await db.select({ avatarUrl: employeesTable.avatarUrl })
       .from(employeesTable)
       .where(eq(employeesTable.id, employee!.id))
       .limit(1);
     assert.equal(employeeAfterRejectedUpdate?.avatarUrl, originalEmployeeAvatarUrl);
+
+    const clockIn = await fetch(`${first.baseUrl}/api/employee/clock-in`, {
+      method: "POST",
+      headers: { cookie: employeeCookie },
+    });
+    assert.equal(clockIn.status, 201, "an employee with an active assignment must be able to clock in");
+    await clockIn.arrayBuffer();
+    const clockOut = await fetch(`${first.baseUrl}/api/employee/clock-out`, {
+      method: "POST",
+      headers: { cookie: employeeCookie },
+    });
+    assert.equal(clockOut.status, 200, "an employee with an active assignment must be able to clock out");
+    await clockOut.arrayBuffer();
 
     const uploadEmployeeMediaImage = async (name: string) => {
       const uploadRequest = await fetch(`${first.baseUrl}/api/media/uploads`, {
@@ -495,6 +642,7 @@ async function run(): Promise<void> {
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, legacyManagedAssetId));
     }
     if (employee) {
+      await db.delete(employeeClockEntriesTable).where(eq(employeeClockEntriesTable.employeeId, employee.id));
       await db.delete(employeeLocationAssignmentsTable).where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
     }
     if (employee) await db.delete(employeesTable).where(eq(employeesTable.id, employee.id));
