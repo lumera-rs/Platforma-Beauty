@@ -46,6 +46,30 @@ function asAbsolute(origin, value) {
   try { return new URL(value || '/og-lumera.svg', origin).href; } catch { return `${origin}/og-lumera.svg`; }
 }
 
+function toLastmod(...values) {
+  for (const value of values) {
+    if (!value) continue;
+    const localized = String(value).trim().match(/^(\d{1,2})\.\s*(januar|februar|mart|april|maj|jun|jul|avgust|septembar|oktobar|novembar|decembar)\s+(\d{4})\.$/i);
+    if (localized) {
+      const months = ['januar', 'februar', 'mart', 'april', 'maj', 'jun', 'jul', 'avgust', 'septembar', 'oktobar', 'novembar', 'decembar'];
+      const month = months.indexOf(localized[2].toLowerCase()) + 1;
+      return `${localized[3]}-${String(month).padStart(2, '0')}-${String(localized[1]).padStart(2, '0')}`;
+    }
+    const date = new Date(value);
+    if (!Number.isNaN(date.valueOf())) return date.toISOString().slice(0, 10);
+  }
+  return undefined;
+}
+
+function entityLastmod(entity) {
+  return toLastmod(entity?.updatedAt, entity?.modifiedAt, entity?.publishedAt, entity?.createdAt);
+}
+
+function latestLastmod(entities) {
+  const dates = (entities ?? []).map(entityLastmod).filter(Boolean).sort();
+  return dates.at(-1);
+}
+
 function requestOrigin(req) {
   const configured = process.env.LUMERA_PUBLIC_URL;
   if (configured) {
@@ -112,6 +136,7 @@ function makeMeta(pathname, title, description, options = {}) {
     image: options.image ?? '/og-lumera.svg',
     indexable: options.indexable ?? true,
     schema: options.schema,
+    heroPreload: options.heroPreload,
   };
 }
 
@@ -215,7 +240,37 @@ async function renderPublicPage(req, pathname) {
     if (pathname === '/') {
       const salons = await getJson(req, '/api/salons?page=1&pageSize=6') ?? [];
       const salonCards = salons.slice(0, 6).map((salon) => card({ href: `/saloni/${salon.slug}`, title: salon.name, description: salon.shortDescription, image: salon.imageUrl, detail: `${salon.city} · Ocena ${salon.rating}` })).join('');
-      const meta = makeMeta(pathname, title, description, { schema: { '@context': 'https://schema.org', '@type': 'WebSite', name: 'LUMERA', url: origin, description } });
+      const meta = makeMeta(pathname, title, description, {
+        heroPreload: '/hero-bg.jpg',
+        schema: {
+          '@context': 'https://schema.org',
+          '@graph': [
+            {
+              '@type': 'Organization',
+              '@id': `${origin}/#organization`,
+              name: 'LUMERA',
+              url: `${origin}/`,
+              logo: asAbsolute(origin, '/og-lumera.svg'),
+            },
+            {
+              '@type': 'WebSite',
+              '@id': `${origin}/#website`,
+              name: 'LUMERA',
+              url: `${origin}/`,
+              description,
+              publisher: { '@id': `${origin}/#organization` },
+              potentialAction: {
+                '@type': 'SearchAction',
+                target: {
+                  '@type': 'EntryPoint',
+                  urlTemplate: `${origin}/saloni?category={search_term_string}`,
+                },
+                'query-input': 'required name=search_term_string',
+              },
+            },
+          ],
+        },
+      });
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p><p><a href="/saloni">Istražite sve salone i tretmane</a> · <a href="/edukacije">Pogledajte beauty edukacije</a></p></section><section><h2>Izdvojeni saloni</h2><div class="seo-grid">${salonCards || '<p>Saloni će uskoro biti dostupni.</p>'}</div></section>`, origin) };
     }
     if (pathname === '/saloni') {
@@ -274,7 +329,19 @@ async function renderPublicPage(req, pathname) {
     }
     if (pathname === '/edukacije') {
       const courses = await getJson(req, '/api/education/public/courses?page=1&pageSize=24') ?? [];
-      const meta = makeMeta(pathname, title, description);
+      const meta = makeMeta(pathname, title, description, {
+        schema: {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: 'LUMERA beauty edukacije',
+          itemListElement: courses.map((course, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/edukacije/${encodeURIComponent(course.id)}`,
+            name: course.title,
+          })),
+        },
+      });
       const cards = courses.map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description || `${course.category} · ${course.duration}`, image: course.imageUrl, detail: `${course.publisher} · ${course.price} RSD` })).join('');
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupne edukacije</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih edukacija.</p>'}</div></section>`, origin) };
     }
@@ -282,7 +349,20 @@ async function renderPublicPage(req, pathname) {
       const endpoint = pathname === '/inspiracija' ? '/api/inspiracija' : pathname === '/recnik' ? '/api/recnik' : '/api/brendovi';
       const items = await getJson(req, endpoint) ?? [];
       const cards = items.slice(0, 30).map((item) => card({ href: item.salon?.slug ? `/saloni/${item.salon.slug}` : '/saloni', title: item.title ?? item.term ?? item.name, description: item.definition ?? item.description, image: pathname === '/inspiracija' ? item.imageUrl : undefined, detail: item.salon?.name ?? item.category })).join('');
-      const meta = makeMeta(pathname, title, description);
+      const guideItems = items.slice(0, 30);
+      const meta = makeMeta(pathname, title, description, {
+        schema: {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: heading,
+          itemListElement: guideItems.map((item, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: item.title ?? item.term ?? item.name,
+            ...(item.salon?.slug ? { url: `${origin}/saloni/${encodeURIComponent(item.salon.slug)}` } : {}),
+          })),
+        },
+      });
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Sadržaj vodiča</h2><div class="seo-grid">${cards || '<p>Vodič je trenutno prazan.</p>'}</div></section>`, origin) };
     }
     const legalPage = legalPageByPath.get(pathname);
@@ -532,13 +612,58 @@ async function renderPublicPage(req, pathname) {
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(course.title)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
 
+  const bundleMatch = pathname.match(/^\/edukacije\/paketi\/([a-zA-Z0-9-]+)$/);
+  if (bundleMatch) {
+    const bundle = await getJson(req, `/api/education/bundles/${encodeURIComponent(bundleMatch[1])}`);
+    if (!bundle) return null;
+    const name = bundle.name || bundle.title || 'Paket edukacija';
+    const description = bundle.description || `${name} — paket stručnih beauty edukacija na LUMERA platformi.`;
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name,
+        description,
+        category: 'Paket beauty edukacija',
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'RSD',
+          price: String(bundle.price),
+          availability: 'https://schema.org/InStock',
+          url: `${origin}${pathname}`,
+        },
+        hasPart: (bundle.courses ?? []).map((course) => ({
+          '@type': 'Course',
+          name: course.title,
+          description: course.description,
+        })),
+      },
+    });
+    const courses = (bundle.courses ?? []).map((course) =>
+      `<li><a href="/edukacije/${escapeHtml(encodeURIComponent(course.courseId))}">${escapeHtml(course.title)}</a>${course.duration ? ` · ${escapeHtml(course.duration)}` : ''}</li>`).join('');
+    return {
+      meta,
+      html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><p><strong>${escapeHtml(bundle.price)} RSD</strong></p><section><h2>Kursevi u paketu</h2>${courses ? `<ul>${courses}</ul>` : '<p>Trenutno nema javnih kurseva u paketu.</p>'}</section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin),
+    };
+  }
+
   const centerMatch = pathname.match(/^\/edukacije\/centri\/([a-zA-Z0-9-]+)$/);
   if (centerMatch) {
     const center = await getJson(req, `/api/education/public/centers/${encodeURIComponent(centerMatch[1])}`);
     if (!center) return null;
     const name = center.name || 'Edukativni centar';
     const description = center.description || `Kursevi i edukacije centra ${name}.`;
-    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, { image: center.imageUrl });
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      image: center.imageUrl,
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'EducationalOrganization',
+        name,
+        description,
+        image: asAbsolute(origin, center.imageUrl),
+        url: `${origin}${pathname}`,
+      },
+    });
     const courses = (center.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Programi centra</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
@@ -549,7 +674,17 @@ async function renderPublicPage(req, pathname) {
     if (!instructor) return null;
     const name = instructor.name || 'Instruktor';
     const description = instructor.biography || `Upoznajte instruktora ${name} i dostupne beauty edukacije.`;
-    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, { image: instructor.photoUrl });
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      image: instructor.photoUrl,
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        name,
+        description,
+        image: asAbsolute(origin, instructor.photoUrl),
+        url: `${origin}${pathname}`,
+      },
+    });
     const courses = (instructor.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Edukacije instruktora</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
@@ -558,7 +693,7 @@ async function renderPublicPage(req, pathname) {
 
 function injectDocument(template, page, origin) {
   const canonical = `${origin}${page.meta.pathname}`;
-  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}"><meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}">`;
+  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}">${page.meta.heroPreload ? `<link rel="preload" as="image" href="${escapeHtml(page.meta.heroPreload)}" fetchpriority="high">` : ''}<meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}">`;
   const withoutDefaultMetadata = stripSeoMetadata(template);
   return withoutDefaultMetadata
     .replace('</head>', `${metadata}${page.meta.schema ? `<script type="application/ld+json">${JSON.stringify(page.meta.schema).replace(/</g, '\\u003c')}</script>` : ''}</head>`)
@@ -581,25 +716,54 @@ async function buildSitemap(req) {
   const origin = requestOrigin(req);
   const entries = [...staticPages.keys(), ...categoryPages.keys()]
     .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
-    .map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
-  const [salons, courses, suppliers, beautyJobs, taxonomy] = await Promise.all([
+    .map((pathname) => ({
+      pathname,
+      lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated),
+      priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7',
+    }));
+  const [salons, courses, bundles, suppliers, beautyJobs, taxonomy, inspiration, glossary, brands] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
+    getJson(req, '/api/education/bundles'),
     getJson(req, '/api/suppliers'),
     listAll(req, '/api/beauty-jobs', 100),
     getJson(req, '/api/education/public/taxonomy'),
+    getJson(req, '/api/inspiracija'),
+    getJson(req, '/api/recnik'),
+    getJson(req, '/api/brendovi'),
   ]);
+  const setCollectionLastmod = (pathname, entities) => {
+    const entry = entries.find((item) => item.pathname === pathname);
+    if (entry) entry.lastmod = latestLastmod(entities) ?? entry.lastmod;
+  };
+  setCollectionLastmod('/', salons);
+  setCollectionLastmod('/saloni', salons);
+  setCollectionLastmod('/edukacije', [...courses, ...(bundles ?? [])]);
+  setCollectionLastmod('/proizvodi', suppliers);
+  setCollectionLastmod('/poslovi', beautyJobs);
+  setCollectionLastmod('/inspiracija', inspiration);
+  setCollectionLastmod('/recnik', glossary);
+  setCollectionLastmod('/brendovi', brands);
   const seenCenters = new Set();
   const seenInstructors = new Set();
-  for (const salon of salons) entries.push({ pathname: `/saloni/${encodeURIComponent(salon.slug)}`, lastmod: salon.createdAt ? new Date(salon.createdAt).toISOString().slice(0, 10) : undefined, priority: '0.8' });
+  for (const salon of salons) entries.push({ pathname: `/saloni/${encodeURIComponent(salon.slug)}`, lastmod: entityLastmod(salon), priority: '0.8' });
   for (const course of courses) {
-    entries.push({ pathname: `/edukacije/${encodeURIComponent(course.id)}`, priority: '0.8' });
+    const lastmod = entityLastmod(course);
+    entries.push({ pathname: `/edukacije/${encodeURIComponent(course.id)}`, lastmod, priority: '0.8' });
     if (course.centerId && !seenCenters.has(course.centerId)) { seenCenters.add(course.centerId); entries.push({ pathname: `/edukacije/centri/${encodeURIComponent(course.centerId)}`, priority: '0.6' }); }
     if (course.instructorProfileId && !seenInstructors.has(course.instructorProfileId)) { seenInstructors.add(course.instructorProfileId); entries.push({ pathname: `/edukacije/instruktori/${encodeURIComponent(course.instructorProfileId)}`, priority: '0.6' }); }
   }
+  for (const bundle of bundles ?? []) {
+    entries.push({
+      pathname: `/edukacije/paketi/${encodeURIComponent(bundle.id)}`,
+      lastmod: entityLastmod(bundle),
+      priority: '0.7',
+    });
+  }
   for (const supplier of (suppliers ?? []).filter(isPublicRetailSupplier)) {
     const supplierPath = `/shop/${encodeURIComponent(supplier.slug)}`;
-    entries.push({ pathname: supplierPath, priority: '0.8' });
+    const supplierLastmod = entityLastmod(supplier);
+    entries.push({ pathname: supplierPath, lastmod: supplierLastmod, priority: '0.8' });
     const [categories, products] = await Promise.all([
       getJson(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/categories`),
       listAll(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/public-products`, 100),
@@ -607,24 +771,27 @@ async function buildSitemap(req) {
     for (const category of categories ?? []) {
       if (category.active) entries.push({
         pathname: `${supplierPath}/${category.path.split('/').map(encodeURIComponent).join('/')}`,
+        lastmod: entityLastmod(category),
         priority: '0.7',
       });
     }
     for (const product of products) {
-      entries.push({ pathname: `${supplierPath}/proizvod/${encodeURIComponent(product.id)}`, priority: '0.7' });
+      entries.push({ pathname: `${supplierPath}/proizvod/${encodeURIComponent(product.id)}`, lastmod: entityLastmod(product), priority: '0.7' });
     }
   }
   for (const job of beautyJobs) {
-    entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
+    entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: entityLastmod(job), priority: '0.7' });
   }
 
   if (Array.isArray(taxonomy)) {
     for (const section of taxonomy) {
-      entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}`, priority: '0.7' });
+      const sectionLastmod = entityLastmod(section);
+      entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}`, lastmod: sectionLastmod, priority: '0.7' });
       for (const category of (section.categories || [])) {
-        entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}`, priority: '0.6' });
+        const taxonomyCategoryLastmod = entityLastmod(category);
+        entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}`, lastmod: taxonomyCategoryLastmod, priority: '0.6' });
         for (const sub of (category.subcategories || [])) {
-          entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(sub.slug)}`, priority: '0.5' });
+          entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(sub.slug)}`, lastmod: entityLastmod(sub), priority: '0.5' });
         }
       }
     }
@@ -636,6 +803,11 @@ async function buildSitemap(req) {
 function privateDocument(pathname, origin) {
   const meta = makeMeta(pathname, 'LUMERA | Privatna stranica', fallbackDescription, { indexable: false });
   return pageShell(meta, '<article><h1>LUMERA</h1><p>Ova stranica je dostupna u aplikaciji i nije namenjena indeksiranju pretraživača.</p><p><a href="/">Povratak na početnu</a></p></article>', origin);
+}
+
+function notFoundDocument(pathname, origin) {
+  const meta = makeMeta(pathname, 'Stranica nije pronađena | LUMERA', 'Tražena LUMERA stranica nije pronađena.', { indexable: false });
+  return pageShell(meta, '<article><h1>Stranica nije pronađena</h1><p>Proverite adresu ili nastavite pretragu javnog LUMERA sadržaja.</p><form action="/saloni" method="get" role="search"><label for="seo-search">Pretražite salone i tretmane</label><p><input id="seo-search" name="category" type="search" autocomplete="off"> <button type="submit">Pretraži</button></p></form><p><a href="/saloni">Svi saloni</a> · <a href="/edukacije">Beauty edukacije</a> · <a href="/inspiracija">Inspiracija</a> · <a href="/">Početna</a></p></article>', origin);
 }
 
 export async function createSeoResponse(req, template) {
@@ -694,7 +866,7 @@ export async function createSeoResponse(req, template) {
     catch {
       const staticEntries = [...staticPages.keys()]
         .filter((item) => item !== '/pridruzi-se-edukativni-centar')
-        .map((item) => ({ pathname: item }));
+        .map((pathname) => ({ pathname, lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated) }));
       return { status: 503, type: 'application/xml; charset=utf-8', body: sitemapXml(origin, staticEntries) };
     }
   }
@@ -710,9 +882,10 @@ export async function createSeoResponse(req, template) {
     ? `<link rel="canonical" href="${escapeHtml(`${origin}${pathname}`)}">`
     : '';
   const privateHead = `<title>LUMERA | Privatna stranica</title><meta name="description" content="${escapeHtml(fallbackDescription)}"><meta name="robots" content="noindex, follow">${queryCanonical}`;
+  const fallbackDocument = hasQuery ? privateDocument(pathname, origin) : notFoundDocument(pathname, origin);
   const html = stripSeoMetadata(template)
     .replace('</head>', `${privateHead}</head>`)
-    .replace('<div id="root"></div>', `${privateDocument(pathname, origin)}<div id="root"></div>`);
+    .replace('<div id="root"></div>', `${fallbackDocument}<div id="root"></div>`);
   return { status: hasQuery ? 200 : 404, type: 'text/html; charset=utf-8', body: html };
 }
 
