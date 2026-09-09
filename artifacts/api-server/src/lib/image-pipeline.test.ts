@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import {
   db,
@@ -300,6 +300,41 @@ async function run(): Promise<void> {
     assert.equal(publicEmployeeImage.status, 200);
     assert.equal(publicEmployeeImage.headers.get("cache-control"), "public, max-age=31536000, immutable");
 
+    const [employeeBeforeAssignmentExpiry] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+    }).from(employeesTable).where(eq(employeesTable.id, employee!.id)).limit(1);
+    const [userBeforeAssignmentExpiry] = await db.select({
+      phone: usersTable.phone,
+    }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)).limit(1);
+    await db.update(employeeLocationAssignmentsTable).set({ active: false }).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
+      eq(employeeLocationAssignmentsTable.salonId, salon!.id),
+    ));
+    const rejectedWithoutAssignment = await fetch(`${first.baseUrl}/api/employee/profile`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: employeeCookie },
+      body: JSON.stringify({
+        bio: "Must not be saved without an active assignment",
+        avatarUrl: finalized.imageUrl,
+        phone: "+381611111111",
+      }),
+    });
+    assert.equal(rejectedWithoutAssignment.status, 403, "an employee without an active assignment must be rejected before profile validation");
+    const [employeeAfterAssignmentExpiry] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+    }).from(employeesTable).where(eq(employeesTable.id, employee!.id)).limit(1);
+    const [userAfterAssignmentExpiry] = await db.select({
+      phone: usersTable.phone,
+    }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)).limit(1);
+    assert.deepEqual(employeeAfterAssignmentExpiry, employeeBeforeAssignmentExpiry);
+    assert.deepEqual(userAfterAssignmentExpiry, userBeforeAssignmentExpiry);
+
+    await db.update(employeeLocationAssignmentsTable).set({ active: true }).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
+      eq(employeeLocationAssignmentsTable.salonId, salon!.id),
+    ));
     const rejectedEmployeeUpdate = await fetch(`${first.baseUrl}/api/employee/profile`, {
       method: "PUT",
       headers: { "content-type": "application/json", cookie: employeeCookie },
