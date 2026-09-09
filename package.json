@@ -28,6 +28,7 @@
     "test:browser-specs-typecheck": "pnpm --filter @workspace/scripts run typecheck:browser",
     "test:generated-api": "pnpm --filter @workspace/scripts run test:generated-api",
     "schema-drift:audit": "pnpm --filter @workspace/scripts run schema-drift:audit",
+    "schema-drift:fingerprint": "pnpm --filter @workspace/scripts run schema-drift:fingerprint",
     "test:schema-drift": "pnpm --filter @workspace/scripts run test:schema-drift",
     "test:schema-drift:integration": "pnpm --filter @workspace/scripts run test:schema-drift:integration",
     "test:migration-contract": "pnpm --filter @workspace/scripts run test:migration-contract",

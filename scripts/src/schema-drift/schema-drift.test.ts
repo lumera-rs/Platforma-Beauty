@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { buildCanonicalSnapshot } from "./canonical";
 import { readPostgresSnapshot } from "./catalog";
 import { compareSchemas, serializeReport } from "./compare";
+import { fingerprintSnapshot } from "./fingerprint";
 import { normalizeSql } from "./model";
 import type { OwnershipException, SchemaSnapshot, TableDefinition } from "./model";
 import { readOnlyQueryLayer } from "./read-only-query";
@@ -13,9 +14,9 @@ function table(): TableDefinition {
   return {
     schema: "public", name: "orders",
     columns: [
-      { name: "id", type: "uuid", nullable: false, default: "gen_random_uuid()", generated: null },
-      { name: "tenant_id", type: "uuid", nullable: false, default: null, generated: null },
-      { name: "amount", type: "integer", nullable: false, default: "0", generated: null },
+      { position: 1, name: "id", type: "uuid", nullable: false, default: "gen_random_uuid()", generated: null },
+      { position: 2, name: "tenant_id", type: "uuid", nullable: false, default: null, generated: null },
+      { position: 3, name: "amount", type: "integer", nullable: false, default: "0", generated: null },
     ],
     primaryKey: { name: "orders_pkey", columns: ["id"] },
     uniques: [{ name: "orders_tenant_unique", columns: ["tenant_id", "id"] }],
@@ -39,7 +40,7 @@ test("detects missing and extra columns", () => {
   const missing = clone(); missing.tables[0]!.columns.pop();
   assert.deepEqual(categories(missing), ["MISSING_IN_DB:COLUMN:amount"]);
   const extra = clone(); extra.tables[0]!.columns.push({
-    name: "legacy", type: "text", nullable: true, default: null, generated: null,
+    position: 4, name: "legacy", type: "text", nullable: true, default: null, generated: null,
   });
   assert.deepEqual(categories(extra), ["EXTRA_IN_DB:COLUMN:legacy"]);
 });
@@ -107,6 +108,18 @@ test("compares PK and unique constraints semantically rather than only by name",
 
 test("normalizeSql preserves semantics while normalizing PostgreSQL renderings", () => {
   assert.equal(normalizeSql("now() + interval '180 days'"), normalizeSql("now() + '180 days'::interval"));
+  assert.notEqual(normalizeSql("'ACTIVE'"), normalizeSql("'active'"));
+  assert.notEqual(normalizeSql("(a+b)*c"), normalizeSql("a+b*c"));
+  assert.notEqual(normalizeSql("schema_a.make_value()"), normalizeSql("schema_b.make_value()"));
+  assert.notEqual(normalizeSql("value::bigint"), normalizeSql("value"));
+  assert.notEqual(normalizeSql(`'\"active\"'`), normalizeSql("'active'"));
+  assert.notEqual(normalizeSql(`"foo""bar"`), normalizeSql(`"foobar"`));
+  assert.notEqual(normalizeSql(`"a'X'b"`), normalizeSql(`"a'Y'b"`));
+  assert.notEqual(normalizeSql("abs(1)"), normalizeSql("abs1"));
+  assert.notEqual(
+    normalizeSql("not (a > 0 and b > 0) or c > 0"),
+    normalizeSql("not a > 0 and b > 0 or c > 0"),
+  );
   assert.notEqual(normalizeSql("interval '180 days'"), normalizeSql("interval '181 days'"));
   assert.notEqual(normalizeSql("now() + interval '180 days'"), normalizeSql("now() - interval '180 days'"));
   assert.equal(normalizeSql("value BETWEEN -1 AND 5"), "value>=-1 and value<=5");
@@ -164,19 +177,32 @@ test("catalog extraction excludes all constraint backing indexes and preserves c
   const results = [
     { rows: [{ schema_name: "public", table_name: "fixture" }] },
     { rows: [
-      { schema_name: "public", table_name: "fixture", column_name: "a", data_type: "integer",
+      { schema_name: "public", table_name: "fixture", column_position: 1, column_name: "a", data_type: "integer",
         nullable: false, column_default: null, generated: null },
-      { schema_name: "public", table_name: "fixture", column_name: "b", data_type: "integer",
+      { schema_name: "public", table_name: "fixture", column_position: 2, column_name: "b", data_type: "integer",
         nullable: false, column_default: null, generated: null },
     ] },
-    { rows: [{
-      schema_name: "public", table_name: "fixture", conname: "fixture_fk", contype: "f",
-      columns: "{b,a}", foreign_schema: "public", foreign_table: "parent",
-      foreign_columns: "{y,x}", on_delete: "restrict", on_update: "cascade",
-    }] },
+    { rows: [
+      {
+        schema_name: "public", table_name: "fixture", conname: "fixture_fk", contype: "f",
+        columns: "{b,a}", foreign_schema: "public", foreign_table: "parent",
+        foreign_columns: "{y,x}", on_delete: "restrict", on_update: "cascade",
+        match_type: "simple", delete_set_columns: ["a"], no_inherit: false,
+      },
+      {
+        schema_name: "public", table_name: "fixture", conname: "fixture_no_overlap", contype: "x",
+        columns: "{a,b}", exclusion_definition: "EXCLUDE USING gist (a WITH =, b WITH &&)",
+        index_method: "gist", index_include_expressions: ["b"], index_key_options: [0, 0],
+        index_collations: ["", "pg_catalog.default"],
+        index_opclasses: ["pg_catalog.int4_ops", "pg_catalog.int4_ops"],
+        index_valid: true, index_ready: true,
+      },
+    ] },
     { rows: [{
       schema_name: "public", table_name: "fixture", index_name: "fixture_expression_partial",
       is_unique: false, method: "gist", expressions: "{lower(a::text)}", predicate: "b > 0",
+      key_options: [3], collations: ["pg_catalog.default"],
+      opclasses: ["pg_catalog.text_ops"],
     }] },
   ];
   const client = { async query(query: string) {
@@ -185,11 +211,177 @@ test("catalog extraction excludes all constraint backing indexes and preserves c
   } };
   const extracted = await readPostgresSnapshot(client);
   assert.match(queries[1]!, /NOT a\.attisdropped/);
+  assert.match(queries[2]!, /indnullsnotdistinct/);
+  assert.match(queries[2]!, /condeferrable/);
+  assert.doesNotMatch(queries[2]!, /con\.contype IN/);
+  assert.match(queries[2]!, /pg_get_constraintdef/);
   assert.match(queries[3]!, /con\.contype IN \('p','u','x'\)/);
+  assert.match(queries[3]!, /indnatts/);
+  assert.match(queries[3]!, /indisvalid/);
+  assert.match(queries[3]!, /indoption/);
+  assert.match(queries[3]!, /indcollation/);
+  assert.match(queries[3]!, /indclass/);
   assert.deepEqual(extracted.tables[0]?.foreignKeys[0]?.columns, ["b", "a"]);
   assert.deepEqual(extracted.tables[0]?.foreignKeys[0]?.foreignColumns, ["y", "x"]);
+  assert.deepEqual(extracted.tables[0]?.foreignKeys[0]?.deleteSetColumns, ["a"]);
   assert.equal(extracted.tables[0]?.indexes[0]?.method, "gist");
   assert.equal(extracted.tables[0]?.indexes[0]?.predicate, "b > 0");
+  assert.deepEqual(extracted.tables[0]?.indexes[0]?.keyOptions, [3]);
+  assert.deepEqual(extracted.tables[0]?.indexes[0]?.collations, ["pg_catalog.default"]);
+  assert.deepEqual(extracted.tables[0]?.indexes[0]?.opclasses, ["pg_catalog.text_ops"]);
+  assert.equal(extracted.tables[0]?.exclusions?.[0]?.name, "fixture_no_overlap");
+  assert.match(extracted.tables[0]?.exclusions?.[0]?.definition ?? "", /EXCLUDE USING gist/);
+  assert.deepEqual(extracted.tables[0]?.exclusions?.[0]?.indexKeyOptions, [0, 0]);
+  assert.deepEqual(extracted.tables[0]?.exclusions?.[0]?.indexIncludeExpressions, ["b"]);
+});
+
+test("catalog-extracted index vectors and quoted types affect fingerprints", async () => {
+  const extract = async ({
+    type = `"Status"`,
+    identity = null,
+    columnCollation = "pg_catalog.default",
+    option = 0,
+    collation = "pg_catalog.default",
+    opclass = "pg_catalog.text_ops",
+  }: {
+    type?: string;
+    identity?: string | null;
+    columnCollation?: string | null;
+    option?: number;
+    collation?: string;
+    opclass?: string;
+  } = {}) => {
+    const results = [
+      { rows: [{ schema_name: "public", table_name: "fixture" }] },
+      { rows: [{
+        schema_name: "public", table_name: "fixture", column_position: 1,
+        column_name: "status", data_type: type, nullable: false,
+        column_default: null, generated: null, generated_mode: null,
+        identity_mode: identity, column_collation: columnCollation,
+      }] },
+      { rows: [] },
+      { rows: [{
+        schema_name: "public", table_name: "fixture", index_name: "fixture_status_idx",
+        is_unique: false, method: "btree", expressions: ["status"],
+        include_expressions: [], predicate: null, nulls_not_distinct: false,
+        is_valid: true, is_ready: true, key_options: [option],
+        collations: [collation], opclasses: [opclass],
+      }] },
+    ];
+    let index = 0;
+    return fingerprintSnapshot(await readPostgresSnapshot({
+      async query() { return results[index++]!; },
+    }));
+  };
+  const original = await extract();
+  for (const changed of [
+    await extract({ option: 1 }),
+    await extract({ collation: "public.custom_collation" }),
+    await extract({ opclass: "public.custom_ops" }),
+    await extract({ type: `"STATUS"` }),
+    await extract({ identity: "always" }),
+    await extract({ columnCollation: "public.custom_collation" }),
+  ]) {
+    assert.notEqual(changed.structuralFingerprint, original.structuralFingerprint);
+    assert.notEqual(changed.physicalFingerprint, original.physicalFingerprint);
+  }
+});
+
+test("catalog-extracted UNIQUE backing-index INCLUDE changes both fingerprints", async () => {
+  const extract = async (includeColumn: "included_a" | "included_b") => {
+    const results = [
+      { rows: [{ schema_name: "public", table_name: "fixture" }] },
+      { rows: ["key", "included_a", "included_b"].map((column_name, index) => ({
+        schema_name: "public", table_name: "fixture", column_position: index + 1,
+        column_name, data_type: "text", nullable: false,
+        column_default: null, generated: null,
+      })) },
+      { rows: [{
+        schema_name: "public", table_name: "fixture", conname: "fixture_key_unique",
+        contype: "u", columns: ["key"], deferrable: false,
+        initially_deferred: false, validated: true, nulls_not_distinct: false,
+        index_method: "btree", index_include_expressions: [includeColumn],
+        index_key_options: [0], index_collations: ["pg_catalog.default"],
+        index_opclasses: ["pg_catalog.text_ops"], index_valid: true, index_ready: true,
+      }] },
+      { rows: [] },
+    ];
+    let index = 0;
+    return fingerprintSnapshot(await readPostgresSnapshot({
+      async query() { return results[index++]!; },
+    }));
+  };
+  const first = await extract("included_a");
+  const second = await extract("included_b");
+  assert.notEqual(first.structuralFingerprint, second.structuralFingerprint);
+  assert.notEqual(first.physicalFingerprint, second.physicalFingerprint);
+});
+
+test("catalog-extracted FK SET targets and CHECK inheritance affect fingerprints", async () => {
+  const extract = async ({
+    deleteSetColumns = ["tenant_id", "item_id"],
+    noInherit = false,
+  }: {
+    deleteSetColumns?: string[];
+    noInherit?: boolean;
+  } = {}) => {
+    const results = [
+      { rows: [{ schema_name: "public", table_name: "fixture" }] },
+      { rows: ["tenant_id", "item_id"].map((column_name, index) => ({
+        schema_name: "public", table_name: "fixture", column_position: index + 1,
+        column_name, data_type: "uuid", nullable: true,
+        column_default: null, generated: null,
+      })) },
+      { rows: [
+        {
+          schema_name: "public", table_name: "fixture", conname: "fixture_parent_fk",
+          contype: "f", columns: ["tenant_id", "item_id"],
+          foreign_schema: "public", foreign_table: "parent",
+          foreign_columns: ["tenant_id", "item_id"], on_delete: "set null",
+          on_update: "no action", match_type: "simple",
+          delete_set_columns: deleteSetColumns, deferrable: false,
+          initially_deferred: false, validated: true,
+        },
+        {
+          schema_name: "public", table_name: "fixture", conname: "fixture_item_check",
+          contype: "c", columns: ["item_id"], expression: "item_id is not null",
+          no_inherit: noInherit, deferrable: false,
+          initially_deferred: false, validated: true,
+        },
+      ] },
+      { rows: [] },
+    ];
+    let index = 0;
+    return fingerprintSnapshot(await readPostgresSnapshot({
+      async query() { return results[index++]!; },
+    }));
+  };
+  const original = await extract();
+  for (const changed of [
+    await extract({ deleteSetColumns: ["item_id"] }),
+    await extract({ noInherit: true }),
+  ]) {
+    assert.notEqual(changed.structuralFingerprint, original.structuralFingerprint);
+    assert.notEqual(changed.physicalFingerprint, original.physicalFingerprint);
+  }
+});
+
+test("catalog extraction fails when a child row has no table snapshot", async () => {
+  const results = [
+    { rows: [] },
+    { rows: [{
+      schema_name: "public", table_name: "missing", column_position: 1,
+      column_name: "id", data_type: "uuid", nullable: false,
+      column_default: null, generated: null,
+    }] },
+    { rows: [] },
+    { rows: [] },
+  ];
+  let index = 0;
+  await assert.rejects(
+    () => readPostgresSnapshot({ async query() { return results[index++]!; } }),
+    /child object for unknown table/,
+  );
 });
 
 test("read-only query layer rejects a mutating CTE before touching its client", async () => {
@@ -268,13 +460,31 @@ test("normalizes SQL formatting and produces deterministic sorted JSON", () => {
   assert.deepEqual(categories(actual), []);
   const withExtras = clone();
   withExtras.tables[0]!.columns.push(
-    { name: "z", type: "text", nullable: true, default: null, generated: null },
-    { name: "a", type: "text", nullable: true, default: null, generated: null },
+    { position: 4, name: "z", type: "text", nullable: true, default: null, generated: null },
+    { position: 5, name: "a", type: "text", nullable: true, default: null, generated: null },
   );
   const first = serializeReport(compareSchemas(snapshot(), withExtras));
   withExtras.tables[0]!.columns.reverse();
   assert.equal(serializeReport(compareSchemas(snapshot(), withExtras)), first);
   assert.ok(first.indexOf("public.orders.a") < first.indexOf("public.orders.z"));
+});
+
+test("legacy audit JSON does not expose fingerprint-only catalog fields", () => {
+  const actual = clone();
+  actual.tables[0]!.columns[2]!.type = "bigint";
+  actual.tables[0]!.uniques[0]!.nullsNotDistinct = true;
+  actual.tables[0]!.indexes[0]!.includeExpressions = ["tenant_id"];
+  const serialized = serializeReport(compareSchemas(snapshot(), actual));
+  assert.equal(serialized.includes('"position"'), false);
+  assert.equal(serialized.includes('"nullsNotDistinct"'), false);
+  assert.equal(serialized.includes('"includeExpressions"'), false);
+  assert.equal(serialized.includes('"generatedMode"'), false);
+  assert.equal(serialized.includes('"identity"'), false);
+  assert.equal(serialized.includes('"collation"'), false);
+  assert.equal(serialized.includes('"deleteSetColumns"'), false);
+  assert.equal(serialized.includes('"noInherit"'), false);
+  assert.equal(serialized.includes('"exclusions"'), false);
+  assert.match(serialized, /^\{\n  "formatVersion": 1,/);
 });
 
 test("never removes boolean grouping that changes AND/OR precedence", () => {

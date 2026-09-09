@@ -1,12 +1,12 @@
 import {
-  type AuditReport, type EnforcementDirection, type Finding, type ObjectType, type OwnershipException,
-  type SchemaSnapshot, normalizeSnapshot,
+  compareCodeUnits, type AuditReport, type EnforcementDirection, type Finding, type ObjectType,
+  type OwnershipException, type SchemaSnapshot, normalizeSnapshot,
 } from "./model";
 
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+    return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
       .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(",")}}`;
   }
   return JSON.stringify(value);
@@ -82,8 +82,8 @@ export function compareSchemas(
   actualInput: SchemaSnapshot,
   registry: OwnershipException[] = [],
 ): AuditReport {
-  const desired = normalizeSnapshot(desiredInput);
-  const actual = normalizeSnapshot(actualInput);
+  const desired = auditSnapshot(desiredInput);
+  const actual = auditSnapshot(actualInput);
   const findings: Finding[] = [];
   const add = (
     category: Finding["category"], objectType: ObjectType, schema: string,
@@ -183,9 +183,9 @@ export function compareSchemas(
     add("EXTRA_IN_DB", "TABLE", table.schema, undefined, table.name, null, table);
   }
   findings.sort((a, b) =>
-    a.objectPath.localeCompare(b.objectPath)
-    || a.objectType.localeCompare(b.objectType)
-    || a.category.localeCompare(b.category));
+    (a.objectPath < b.objectPath ? -1 : a.objectPath > b.objectPath ? 1 : 0)
+    || (a.objectType < b.objectType ? -1 : a.objectType > b.objectType ? 1 : 0)
+    || (a.category < b.category ? -1 : a.category > b.category ? 1 : 0));
   const counts: AuditReport["counts"] = {
     MISSING_IN_DB: 0, EXTRA_IN_DB: 0, DEFINITION_MISMATCH: 0,
     SEMANTIC_MATCH_DIFFERENT_NAME: 0, DESIGN_DIFFERENCE: 0, OWNERSHIP_EXCEPTION: 0,
@@ -198,6 +198,82 @@ export function compareSchemas(
     counts,
     findings,
   };
+}
+
+function auditSnapshot(input: SchemaSnapshot): SchemaSnapshot {
+  const normalized = normalizeSnapshot(input, { preserveQuotedIdentifiers: false });
+  return {
+    tables: normalized.tables.map(({ exclusions: _exclusions, ...table }) => ({
+      ...table,
+      columns: table.columns.map(({
+        position: _position,
+        generatedMode: _generatedMode,
+        identity: _identity,
+        collation: _collation,
+        ...column
+      }) => column)
+        .sort((left, right) => compareCodeUnits(left.name, right.name)),
+      primaryKey: legacyKey(table.primaryKey),
+      uniques: table.uniques.map((key) => legacyKey(key)!),
+      foreignKeys: table.foreignKeys.map(({
+        matchType: _matchType,
+        nullsNotDistinct: _nullsNotDistinct,
+        deferrable: _deferrable,
+        initiallyDeferred: _initiallyDeferred,
+        validated: _validated,
+        deleteSetColumns: _deleteSetColumns,
+        ...foreignKey
+      }) => foreignKey),
+      checks: table.checks.map(({
+        validated: _validated,
+        noInherit: _noInherit,
+        ...check
+      }) => check),
+      indexes: table.indexes.map(({
+        includeExpressions: _includeExpressions,
+        keyOptions: _keyOptions,
+        collations: _collations,
+        opclasses: _opclasses,
+        nullsNotDistinct: _nullsNotDistinct,
+        valid: _valid,
+        ready: _ready,
+        ...index
+      }) => index),
+    })),
+  };
+}
+
+function legacyKey<T extends {
+  name: string;
+  columns: string[];
+  nullsNotDistinct?: boolean;
+  indexMethod?: string | null;
+  indexIncludeExpressions?: string[];
+  indexKeyOptions?: number[];
+  indexCollations?: string[];
+  indexOpclasses?: string[];
+  indexValid?: boolean;
+  indexReady?: boolean;
+  deferrable?: boolean;
+  initiallyDeferred?: boolean;
+  validated?: boolean;
+}>(key: T | null): T | null {
+  if (!key) return null;
+  const {
+    nullsNotDistinct: _nullsNotDistinct,
+    indexMethod: _indexMethod,
+    indexIncludeExpressions: _indexIncludeExpressions,
+    indexKeyOptions: _indexKeyOptions,
+    indexCollations: _indexCollations,
+    indexOpclasses: _indexOpclasses,
+    indexValid: _indexValid,
+    indexReady: _indexReady,
+    deferrable: _deferrable,
+    initiallyDeferred: _initiallyDeferred,
+    validated: _validated,
+    ...legacy
+  } = key;
+  return legacy as T;
 }
 
 type Add = (

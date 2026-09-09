@@ -49,7 +49,8 @@ export function buildCanonicalSnapshot(exportsToRead: unknown[] = Object.values(
     tables.push({
       schema,
       name: config.name,
-      columns: config.columns.map((column) => ({
+      columns: config.columns.map((column, position) => ({
+        position: position + 1,
         name: column.name,
         type: column.getSQLType(),
         nullable: !column.notNull,
@@ -57,10 +58,19 @@ export function buildCanonicalSnapshot(exportsToRead: unknown[] = Object.values(
         generated: column.generated
           ? sqlText((column.generated as { as: unknown }).as)
           : null,
+        generatedMode: column.generated
+          ? String((column.generated as { type?: unknown }).type ?? "stored")
+          : null,
+        identity: null,
+        collation: null,
       })),
       primaryKey: primaryColumns.length ? {
         name: configuredPrimary?.getName() ?? `${config.name}_pkey`,
         columns: primaryColumns.map((column) => column.name),
+        nullsNotDistinct: false,
+        deferrable: false,
+        initiallyDeferred: false,
+        validated: true,
       } : null,
       uniques,
       foreignKeys: config.foreignKeys.map((foreignKey) => {
@@ -74,18 +84,30 @@ export function buildCanonicalSnapshot(exportsToRead: unknown[] = Object.values(
           foreignColumns: reference.foreignColumns.map((column) => column.name),
           onDelete: foreignKey.onDelete ?? "no action",
           onUpdate: foreignKey.onUpdate ?? "no action",
+          matchType: "simple",
+          deleteSetColumns: [],
+          deferrable: false,
+          initiallyDeferred: false,
+          validated: true,
         };
       }),
       checks: config.checks.map((check) => ({
         name: check.name,
         expression: sqlText(check.value),
+        validated: true,
+        noInherit: false,
       })),
+      exclusions: [],
       indexes: config.indexes.map((index): IndexDefinition => ({
         name: index.config.name!,
         expressions: index.config.columns.map(indexExpression),
         unique: index.config.unique,
         predicate: index.config.where ? sqlText(index.config.where) : null,
         method: index.config.method ?? "btree",
+        includeExpressions: [],
+        nullsNotDistinct: false,
+        valid: true,
+        ready: true,
       })),
     });
   }
