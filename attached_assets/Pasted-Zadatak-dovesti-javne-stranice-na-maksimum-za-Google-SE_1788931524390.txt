@@ -1,0 +1,83 @@
+Zadatak: dovesti javne stranice na maksimum za Google SEO, i zapisati to kao pravilo
+koje važi za sve buduće izmene.
+
+TVRDE GRANICE (prekršaj bilo koje = zadatak nije uspeo):
+- NE menjaj: lib/db/src/schema/**, artifacts/api-server/src/lib/business-growth-schema.ts
+  (na GitHub-u je otvoren PR koji dira taj fajl — sudarićete se)
+- NE uvodi novi framework, ne prelazi na Next.js, ne pravi drugi sistem za render.
+  Sav SEO render već postoji u artifacts/beauty-marketplace/seo-server.mjs — nadograđuj njega.
+- Prerender i React aplikacija MORAJU prikazivati isti sadržaj. Ako se raziđu, Google to
+  čita kao cloaking i kažnjava.
+- Radi na novoj grani "seo-max". NE commit-uj na main. Na kraju: git push github seo-max
+
+═══ DEO A: POPRAVKE ═══
+
+1. lastmod u sitemap-u. Sada ga ima samo 24 od 269 URL-ova. Dodaj ga za svaki URL, iz
+   stvarnog updatedAt/createdAt sa API-ja, u W3C formatu. Ako entitet nema datum, izostavi
+   lastmod za taj URL — nemoj izmišljati datum.
+
+2. index.html: obriši "maximum-scale=1" iz meta viewport. Blokira zumiranje prstima i
+   Lighthouse ga prijavljuje kao grešku pristupačnosti.
+
+3. Structured data nedostaje na tri rute (ostale je već imaju):
+   - /edukacije → ItemList, isto kao što /saloni već ima
+   - /inspiracija i /recnik → ItemList ili CollectionPage
+   - / (početna) → dodaj Organization (naziv, logo, url, sameAs) uz postojeći WebSite;
+     ako postoji pretraga, dodaj i WebSite.potentialAction = SearchAction
+
+4. og:image po entitetu. Na listing stranicama sada pada na /og-lumera.svg. Na detaljnim
+   stranicama koristi sliku samog entiteta (makeMeta već prima opciju image); URL uvek apsolutan.
+
+5. Canonical za query rute: /saloni?grad=Beograd i slične filtrirane rute moraju imati
+   canonical na čistu rutu, da se ne indeksiraju kao duplikati.
+
+6. Performanse javnih stranica (Core Web Vitals su faktor rangiranja):
+   - <link rel="preload"> i fetchpriority="high" na LCP sliku (hero)
+   - self-host Inter font umesto fonts.googleapis.com — uklanja third-party DNS+TLS korak;
+     zadrži font-display: swap
+   - proveri da javne rute ne povlače teške admin chunk-ove (LineChart je 105 KB gzip)
+
+7. 404 stranica: status je već ispravan (404) — dodaj joj koristan sadržaj: linkove na
+   /saloni, /edukacije i pretragu.
+
+═══ DEO B: DA PRAVILA OSTANU ═══
+
+Ovo je jednako važno kao Deo A. Dokument koji niko ne čita nije pravilo. U ovom repou
+pravilo je test koji pada. Uradi sve troje:
+
+8. Napravi scripts/src/seo-standards.test.ts, po ugledu na postojeći
+   scripts/src/frontend-performance-standards.test.ts. Mora da obori build ako:
+   - postoji javna ruta u React ruteru koja NEMA odgovarajući unos u seo-server.mjs
+     (ovo je najvažnija provera — sprečava da buduća stranica bude nevidljiva Google-u)
+   - neka indeksabilna ruta nema title, description ili canonical
+   - neka listing ili detaljna ruta nema JSON-LD
+   - neki URL u sitemap-u nema lastmod
+   - index.html sadrži maximum-scale
+   - index.html povlači font sa third-party domena
+   Dodaj skriptu "test:seo-standards" u package.json i ubaci je u "validate:publish",
+   pored postojećeg test:frontend-standards.
+
+9. U replit.md, u sekciju "Architecture decisions", dodaj pravila kao kratke tvrdnje.
+   Piši ih tako da su proverive, ne kao savete. Na primer:
+   - Svaka nova javna ruta mora imati unos u seo-server.mjs pre nego što se spoji; ruta koja
+     postoji samo u React ruteru je za Google nevidljiva.
+   - Prerenderovani sadržaj i ono što SPA prikaže moraju biti ista priča; razilaženje je cloaking.
+   - Svaki URL u sitemap-u nosi lastmod iz stvarnog datuma izmene entiteta.
+   - Javne stranice ne učitavaju third-party fontove ni skripte.
+   - Privatne rute ostaju u robots.txt disallow listi i nose noindex.
+
+10. Napiši docs/seo.md: tabela koje su rute indeksabilne, koji schema tip nosi koja ruta,
+    šta ulazi u sitemap. Kratko.
+
+NE RADI:
+- ne menjaj disallow listu u robots.txt
+- ne dodaj noindex nigde gde ga sada nema
+- ne prepisuj postojeće title/description tekstove osim ako su prazni
+
+VERIFIKACIJA — bez ovoga zadatak nije gotov:
+- za SVAKU tačku iz Dela A napiši test u artifacts/beauty-marketplace/seo-server.test.mjs
+- pnpm run test:seo mora proći u celosti (sada ima 21 test, očekujem više)
+- pnpm run test:seo-standards mora proći
+- pnpm run validate:publish mora proći, sa novom proverom u lancu
+- dokaži da nova provera radi: privremeno pokvari nešto (npr. vrati maximum-scale),
+  pokaži da test pada, pa vrati nazad

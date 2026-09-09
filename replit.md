@@ -6,7 +6,7 @@
 - `pnpm run validate:release` — full release gate: build + bundle budget + DB/query/cache/archive/admin validation regressions
 - `pnpm run bundle:check` — compatibility command for a production frontend build plus the legacy manifest report
 - `pnpm run test:bundle-budget` — run the frontend bundle budget gate in isolation (requires a prior build)
-- `pnpm run test:frontend-standards && pnpm run test:frontend-interactions` — enforce lazy routes, shared debounce, serialized optimistic updates, and rollback behavior
+- `pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions` — enforce frontend performance, public SEO, and interaction standards
 - `pnpm run test:monitoring` — verify slow-request privacy, safe 500 responses, and fatal-process shutdown handling
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
@@ -44,6 +44,9 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 - Text inputs that trigger server requests or expensive filtering use the shared 300 ms debounce. Reset pagination when a debounced criterion changes; selects, checkboxes, and other discrete filters remain immediate.
 - Reversible favorites, B2B cart changes, and read-notification actions use serialized optimistic cache updates with exact rollback and server reconciliation. Checkout, payment, escrow, and other financial actions remain server-authoritative.
 - Slow API events contain only request ID, method, query-free pathname, status, and duration. Process-level failures use the shared logger without request bodies, query values, auth/cookies, raw provider responses, database details, or arbitrary error payloads.
+- Every indexable React route must have matching `seo-server.mjs` rendering with a unique title, description, canonical URL, and meaningful HTML; private, authenticated, transactional, redirect, and query-only routes stay `noindex` and out of the sitemap.
+- Public catalog/listing and entity/detail routes must emit appropriate JSON-LD. Every sitemap URL must include an authentic `lastmod`; never invent timestamps merely to satisfy the schema.
+- Keep browser zoom enabled and serve approved webfonts locally. Do not add viewport scale locks or runtime dependencies on third-party font hosts.
 
 ## Public SEO and discoverability
 
@@ -91,7 +94,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Keep generated API schemas compatible with Zod v3: represent whole numbers as `type: number` plus `multipleOf: 1`, then run codegen and its duplicate-export/EOF normalization checks.
 - Catalog mutations must invalidate every affected cache namespace; PostgreSQL notifications are cross-process wakeups, while the database remains the source of truth.
 - Any schema/query/cache/admin mutation change must keep `pnpm run test:backend-standards` and `pnpm run validate:release` passing.
-- New frontend routes, text filters, optimistic mutations, or monitoring changes must keep `pnpm run test:frontend-standards`, `pnpm run test:frontend-interactions`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
+- New frontend routes, SEO rendering, text filters, optimistic mutations, or monitoring changes must keep `pnpm run test:frontend-standards`, `pnpm run test:seo-standards`, `pnpm run test:frontend-interactions`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
 - Business user guide ("Pomoć", `/biznis/vodic` + `/api/business/guide[.pdf]`): content lives in `artifacts/api-server/src/lib/business-guide-content.ts` (versioned; bump `version`/`updatedAt` on edits). When business menus, modules, routes, or role permissions change, update the guide content too. PDF is generated with pdfkit (kept external in `build.mjs`, DejaVu fonts under `artifacts/api-server/assets/fonts/`). Owner/employee only; keep it out of sitemap and noindex.
 ## Pointers
 

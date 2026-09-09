@@ -1,4 +1,4 @@
-import { lazy, type ReactNode, Suspense, useEffect } from 'react';
+import { lazy, type FormEvent, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGetCurrentUser, type UserRole } from '@workspace/api-client-react';
 import { Loader2 } from 'lucide-react';
@@ -155,15 +155,40 @@ const ShopQuotePage = lazy(() => import('./pages/shop-quote'));
 const queryClient = new QueryClient();
 
 function NotFound() {
+  const [, setLocation] = useLocation();
+  const [search, setSearch] = useState('');
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = search.trim();
+    setLocation(query ? `/saloni?category=${encodeURIComponent(query)}` : '/saloni');
+  };
+
   return (
     <Layout>
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-muted/20">
         <h1 className="text-6xl font-serif font-bold text-primary mb-4">404</h1>
         <h2 className="text-2xl font-bold mb-2">Stranica nije pronađena</h2>
-        <p className="text-muted-foreground mb-8">Tražena stranica ne postoji ili je premeštena.</p>
-        <Link href="/" className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-          Nazad na početnu
-        </Link>
+        <p className="text-muted-foreground mb-6">Tražena stranica ne postoji ili je premeštena.</p>
+        <form onSubmit={submitSearch} role="search" className="mb-6 flex w-full max-w-md gap-2">
+          <label htmlFor="not-found-search" className="sr-only">Pretražite usluge i salone</label>
+          <input
+            id="not-found-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Koju uslugu tražite?"
+            className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button type="submit" className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
+            Pretraži
+          </button>
+        </form>
+        <nav aria-label="Korisne stranice" className="flex flex-wrap items-center justify-center gap-3">
+          <Link href="/" className="text-sm font-medium text-primary underline-offset-4 hover:underline">Početna</Link>
+          <Link href="/saloni" className="text-sm font-medium text-primary underline-offset-4 hover:underline">Saloni</Link>
+          <Link href="/edukacije" className="text-sm font-medium text-primary underline-offset-4 hover:underline">Edukacije</Link>
+        </nav>
       </div>
     </Layout>
   );
