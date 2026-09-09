@@ -197,7 +197,12 @@ async function run() {
     mediaRegressionRequestHeaders = marking.requestHeaders;
     const legacyImmutableMediaCache = createLegacyImmutableMediaCache();
     const cachePurgeRequests: Array<{ assetIds: string[]; pathPrefixes: string[]; surrogateKeys: string[] }> = [];
+    let failNextMediaCachePurge = false;
     const purgeControl = enableMediaCachePurgeForTesting(async (request) => {
+      if (failNextMediaCachePurge) {
+        failNextMediaCachePurge = false;
+        throw new Error("forced employee avatar cache purge failure");
+      }
       cachePurgeRequests.push({
         assetIds: request.assetIds,
         pathPrefixes: request.pathPrefixes,
@@ -624,6 +629,7 @@ async function run() {
 
     const ownerReplacementOldAvatar = await uploadAsset("employee-avatar", session, "employee-owner-replacement-old.jpg");
     const ownerReplacementNewAvatar = await uploadAsset("employee-avatar", session, "employee-owner-replacement-new.jpg");
+    const ownerReplacementConflictAvatar = await uploadAsset("employee-avatar", session, "employee-owner-replacement-conflict.jpg");
     const ownerReplacementEmployeeName = `Media owner replacement employee ${randomUUID()}`;
     const ownerReplacementEmployee = await jsonRequest<{ id: string }>(
       activeServer.baseUrl,
@@ -650,6 +656,80 @@ async function run() {
       .where(eq(mediaUploadTicketsTable.id, ownerReplacementOldAvatar.id))
       .limit(1);
     assert.ok(oldReplacementTicket, "The old owner-managed avatar should retain its upload ticket before cleanup.");
+
+    failNextMediaCachePurge = true;
+    const ownerAvatarPurgeFailure = await jsonRequest<{ error: string }>(
+      activeServer.baseUrl,
+      `/salon/employees/${ownerReplacementEmployee.body.id}`,
+      session,
+      "PATCH",
+      { avatarUrl: ownerReplacementNewAvatar.imageUrl },
+    );
+    assert.equal(ownerAvatarPurgeFailure.status, 503, "A replacement must fail before its transaction when the old avatar cache cannot be purged.");
+    const [employeeAfterPurgeFailure] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable).where(eq(employeesTable.id, ownerReplacementEmployee.body.id)).limit(1);
+    assert.equal(employeeAfterPurgeFailure?.avatarUrl, ownerReplacementOldAvatar.imageUrl);
+    const [oldAvatarAfterPurgeFailure] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementOldAvatar.id)).limit(1);
+    assert.deepEqual(
+      oldAvatarAfterPurgeFailure,
+      { resourceId: ownerReplacementEmployee.body.id, visibility: "public" },
+      "A pre-transaction purge failure must preserve the old employee avatar claim and visibility.",
+    );
+    const [newAvatarAfterPurgeFailure] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementNewAvatar.id)).limit(1);
+    assert.deepEqual(
+      newAvatarAfterPurgeFailure,
+      { resourceId: null, visibility: "private" },
+      "A pre-transaction purge failure must leave the replacement asset unclaimed for cleanup.",
+    );
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(ownerReplacementOldAvatarUrl),
+      { status: 200, fromCache: true },
+      "A failed purge must leave the old public employee avatar readable from the existing cache.",
+    );
+
+    const ownerAvatarClaimFailure = await forceEndpointClaimConflict(
+      ownerReplacementConflictAvatar.id,
+      () => jsonRequest<{ error: string }>(
+        activeServer!.baseUrl,
+        `/salon/employees/${ownerReplacementEmployee.body.id}`,
+        session,
+        "PATCH",
+        { avatarUrl: ownerReplacementConflictAvatar.imageUrl },
+      ),
+    );
+    assert.equal(ownerAvatarClaimFailure.status, 409, "A replacement must roll back when the new avatar claim loses the race.");
+    const [employeeAfterClaimFailure] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable).where(eq(employeesTable.id, ownerReplacementEmployee.body.id)).limit(1);
+    assert.equal(employeeAfterClaimFailure?.avatarUrl, ownerReplacementOldAvatar.imageUrl);
+    const [oldAvatarAfterClaimFailure] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementOldAvatar.id)).limit(1);
+    assert.deepEqual(
+      oldAvatarAfterClaimFailure,
+      { resourceId: ownerReplacementEmployee.body.id, visibility: "public" },
+      "A transactional claim failure must roll back release and privatization of the old employee avatar.",
+    );
+    const [newAvatarAfterClaimFailure] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementConflictAvatar.id)).limit(1);
+    assert.deepEqual(
+      newAvatarAfterClaimFailure,
+      { resourceId: null, visibility: "private" },
+      "A failed transactional claim must leave the replacement asset unclaimed for cleanup.",
+    );
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(ownerReplacementOldAvatarUrl),
+      { status: 200, fromCache: false },
+      "After a successful purge followed by claim rollback, the still-public old avatar must be readable from origin.",
+    );
 
     const ownerAvatarReplacement = await jsonRequest<{ id: string }>(
       activeServer.baseUrl,
