@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "schema-drift:audit": "tsx ./src/audit-schema-drift.ts",
+    "test:schema-drift": "tsx --test ./src/schema-drift/schema-drift.test.ts",
+    "test:schema-drift:integration": "tsx --test ./src/schema-drift/schema-drift.integration.test.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
@@ -123,9 +126,11 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "catalog:",
+    "@types/pg": "^8.20.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
+    "pg": "^8.23.0",
     "tsx": "catalog:"
   },
   "focusedAdministratorBrowserGates": {

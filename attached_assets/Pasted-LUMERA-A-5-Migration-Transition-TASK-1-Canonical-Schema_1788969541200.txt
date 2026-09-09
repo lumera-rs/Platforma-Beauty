@@ -1,0 +1,349 @@
+LUMERA — A-5 Migration Transition
+TASK 1 — Canonical Schema Drift Inventory
+
+ARCHITECTURE DECISION APPROVED:
+
+1. Drizzle-generated/versioned migrations will become the
+   authoritative production schema migration system.
+
+2. Existing databases will be adopted using a baseline/ledger
+   strategy.
+
+3. Historical migrations must NOT be blindly replayed against
+   existing databases.
+
+4. Custom startup bootstrap remains temporarily during transition.
+   Do NOT remove or redesign it in this task.
+
+This is TASK 1 ONLY.
+
+Do NOT begin:
+- migration baseline implementation
+- Education B2B migration
+- constraint reconciliation
+- predeploy migration runner
+- bootstrap removal
+
+==================================================
+GOAL
+==================================================
+
+Build a deterministic READ-ONLY schema drift audit mechanism that
+can compare the canonical application schema with an existing
+PostgreSQL database.
+
+We need this before creating the migration baseline.
+
+The audit must detect schema drift without modifying the target
+database.
+
+==================================================
+SAFETY REQUIREMENTS
+==================================================
+
+The drift audit must be READ-ONLY against the target database.
+
+It must NOT:
+
+- CREATE
+- ALTER
+- DROP
+- INSERT
+- UPDATE
+- DELETE
+- TRUNCATE
+- run drizzle-kit push
+- run drizzle-kit push --force
+- run migrations
+- execute startup schema repair
+- automatically reconcile drift
+
+It may query PostgreSQL system catalogs / information_schema.
+
+If the audit detects drift, it reports it and exits appropriately.
+It must never repair it automatically.
+
+==================================================
+1. DEFINE CANONICAL COMPARISON
+==================================================
+
+Use the current Drizzle schema definitions as the desired application
+schema where appropriate.
+
+However, account explicitly for known bootstrap-owned objects that
+currently do not have Drizzle declarations.
+
+Do NOT simply report every bootstrap-only object as an error.
+
+Create an explicit, reviewable ownership/exclusion mechanism for
+objects intentionally outside Drizzle ownership.
+
+Do not silently ignore them.
+
+Every excluded/bootstrap-owned object must have:
+- object name
+- owner/mechanism
+- reason
+- whether it is temporary during migration transition
+
+==================================================
+2. COMPARE DATABASE CATALOG
+==================================================
+
+At minimum compare:
+
+TABLES
+- table name
+- schema
+
+COLUMNS
+- name
+- PostgreSQL type
+- nullability
+- default
+- generated status/expression where relevant
+
+PRIMARY KEYS
+
+UNIQUE CONSTRAINTS
+
+FOREIGN KEYS
+- referenced table/column
+- ON DELETE
+- ON UPDATE where relevant
+
+CHECK CONSTRAINTS
+- normalized definition
+
+INDEXES
+- columns/expressions
+- uniqueness
+- partial predicate
+- index method where relevant
+
+Do not rely only on object names.
+
+For indexes and constraints, compare semantic definitions so that:
+
+same name + different definition
+
+is detected as drift.
+
+==================================================
+3. CLASSIFY DIFFERENCES
+==================================================
+
+Report differences as:
+
+MISSING_IN_DB
+EXTRA_IN_DB
+DEFINITION_MISMATCH
+OWNERSHIP_EXCEPTION
+
+Also classify severity:
+
+P0
+P1
+P2
+P3
+
+The tool itself should use deterministic classification rules where
+possible.
+
+Do not make deployment changes based on severity.
+
+==================================================
+4. EDUCATION B2B MUST BE DETECTED
+==================================================
+
+The audit MUST currently detect at least the already-confirmed drift
+on education_b2b_orders:
+
+missing:
+- idempotency_key
+- idempotency_fingerprint
+- education_b2b_orders_center_idempotency_unique
+
+and the three confirmed missing check constraints.
+
+This is our known-positive test case.
+
+If the tool does not detect these objects, it is not sufficient.
+
+==================================================
+5. FIND OTHER DRIFT
+==================================================
+
+Run the completed audit against the current development database.
+
+Report ALL detected drift.
+
+Do not assume Education B2B is the only issue.
+
+Investigate every detected difference and distinguish:
+
+- real schema drift
+- intentional bootstrap ownership
+- representation/normalization difference
+- false positive in the audit tool
+
+Fix false positives in the audit logic, NOT in the database.
+
+==================================================
+6. DETERMINISM
+==================================================
+
+The same database/schema state must produce the same normalized
+output.
+
+Sort output deterministically.
+
+Normalize PostgreSQL-generated formatting differences where needed.
+
+Do not hide meaningful semantic differences merely to make output
+stable.
+
+==================================================
+7. MACHINE-READABLE OUTPUT
+==================================================
+
+Provide machine-readable output suitable for future CI use.
+
+Prefer structured JSON plus a concise human-readable summary.
+
+Each finding should contain enough information to identify:
+
+- object
+- object type
+- expected definition
+- actual definition
+- drift category
+- severity
+- ownership status
+
+Do not include secrets or DATABASE_URL.
+
+==================================================
+8. EXIT CODES
+==================================================
+
+Design explicit exit behavior suitable for CI.
+
+For example:
+
+0 = no actionable drift
+non-zero = actionable drift detected
+different non-zero = audit execution failure
+
+Document the chosen contract.
+
+Ownership exceptions must not cause the same failure state as
+unexpected actionable drift.
+
+==================================================
+9. TESTS
+==================================================
+
+Add tests proving detection of:
+
+- missing column
+- extra column
+- wrong type
+- wrong nullability
+- wrong default
+- missing FK
+- wrong FK delete behavior
+- missing check
+- changed check expression
+- missing index
+- changed index columns/expression
+- wrong unique property
+- wrong partial-index predicate
+- intentional ownership exception
+
+Also test deterministic ordering/output.
+
+Most importantly:
+
+Create an integration/regression test proving that the current
+Education B2B drift is detected.
+
+Do NOT fix that drift.
+
+==================================================
+10. CI PREPARATION
+==================================================
+
+Prepare the tool so it CAN later be wired into CI.
+
+But do NOT make it a mandatory production/release gate yet if the
+current development database intentionally contains known drift.
+
+We first need Task 2 baseline/adoption and Task 3 Education repair.
+
+You may add a non-destructive test of the audit implementation itself.
+
+Do not create a gate that permanently fails every CI run because of
+known unresolved drift.
+
+==================================================
+11. PORTABILITY
+==================================================
+
+The audit tool must work with standard PostgreSQL via DATABASE_URL.
+
+Do not depend on:
+
+- Replit-specific APIs
+- Replit database UI
+- Replit deployment metadata
+
+It must remain usable if LUMERA moves to another hosting provider.
+
+==================================================
+12. VERIFY ITSELF
+==================================================
+
+After implementation:
+
+- run typecheck
+- run its unit tests
+- run its integration tests
+- run it READ-ONLY against the current development database
+- independently verify a sample of its reported findings using direct
+  read-only PostgreSQL catalog queries
+
+Do not trust the tool's own output without spot-checking it.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Files changed.
+2. Architecture of the drift audit.
+3. Exact ownership/exclusion mechanism.
+4. Exit-code contract.
+5. Tests added.
+6. Test results.
+7. Full drift summary from the current development database.
+8. Education B2B findings detected.
+9. Any additional unexpected drift discovered.
+10. False positives discovered and how audit normalization handled them.
+11. Confirmation that no database mutation occurred.
+12. Current HEAD SHA and git status.
+
+Then give:
+
+TASK 1 VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+STOP.
+
+Do not begin Task 2.
+Do not create the migration baseline.
+Do not fix Education B2B.
+Do not modify the database.
