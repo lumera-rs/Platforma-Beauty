@@ -130,11 +130,15 @@ async function run(): Promise<void> {
   let assetId: string | undefined;
   let legacyManagedAssetId: string | undefined;
   const additionalAssetIds: string[] = [];
+  const employeeMediaAssetIds: string[] = [];
   let server: Server | undefined;
+  let disableMediaRegressionUploadMarking: (() => void) | undefined;
 
   try {
     const first = await startServer();
     server = first.server;
+    const mediaRegressionMarking = enableMediaRouteRegressionUploadMarking();
+    disableMediaRegressionUploadMarking = mediaRegressionMarking.disable;
 
     const unauthenticated = await fetch(`${first.baseUrl}/api/media/uploads/request-url`, {
       method: "POST",
@@ -347,6 +351,87 @@ async function run(): Promise<void> {
       .limit(1);
     assert.equal(employeeAfterRejectedUpdate?.avatarUrl, originalEmployeeAvatarUrl);
 
+    const uploadEmployeeMediaImage = async (name: string) => {
+      const uploadRequest = await fetch(`${first.baseUrl}/api/media/uploads`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: employeeCookie,
+          ...mediaRegressionMarking.requestHeaders,
+        },
+        body: JSON.stringify({
+          scope: "employee-avatar",
+          resourceId: employee!.id,
+          name,
+          size: original.length,
+          contentType: "image/png",
+        }),
+      });
+      assert.equal(uploadRequest.status, 200);
+      const uploadIntent = await uploadRequest.json() as { uploadId: string; uploadUrl: string };
+      employeeMediaAssetIds.push(uploadIntent.uploadId);
+      const directUpload = await fetch(uploadIntent.uploadUrl, {
+        method: "PUT",
+        headers: { "content-type": "image/png" },
+        body: original,
+      });
+      assert.ok(directUpload.ok, `Direct App Storage upload failed with ${directUpload.status}.`);
+      const finalizedResponse = await fetch(`${first.baseUrl}/api/media/uploads/${uploadIntent.uploadId}/finalize`, {
+        method: "POST",
+        headers: { cookie: employeeCookie },
+      });
+      assert.equal(finalizedResponse.status, 201);
+      return await finalizedResponse.json() as {
+        id: string;
+        imageUrl: string;
+        width: number;
+        height: number;
+        contentHash: string;
+      };
+    };
+
+    const firstEmployeeMediaImage = await uploadEmployeeMediaImage("employee-avatar-first.png");
+    const firstEmployeeProfileSave = await fetch(`${first.baseUrl}/api/employee/profile`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: employeeCookie },
+      body: JSON.stringify({ avatarUrl: firstEmployeeMediaImage.imageUrl }),
+    });
+    assert.equal(firstEmployeeProfileSave.status, 200, "an employee must be able to save their own finalized avatar");
+    const [savedFirstEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(savedFirstEmployeeProfile?.avatarUrl, firstEmployeeMediaImage.imageUrl);
+    const firstEmployeeMediaPublic = await fetch(`${first.baseUrl}${firstEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(firstEmployeeMediaPublic.status, 200);
+
+    const replacementEmployeeMediaImage = await uploadEmployeeMediaImage("employee-avatar-replacement.png");
+    const replacementEmployeeProfileSave = await fetch(`${first.baseUrl}/api/employee/profile`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: employeeCookie },
+      body: JSON.stringify({ avatarUrl: replacementEmployeeMediaImage.imageUrl }),
+    });
+    assert.equal(replacementEmployeeProfileSave.status, 200, "an employee must be able to replace their own finalized avatar");
+    const [savedReplacementEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(savedReplacementEmployeeProfile?.avatarUrl, replacementEmployeeMediaImage.imageUrl);
+
+    const [revokedEmployeeMediaImage] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, firstEmployeeMediaImage.id)).limit(1);
+    assert.deepEqual(revokedEmployeeMediaImage, {
+      resourceId: null,
+      visibility: "private",
+    });
+    const revokedEmployeeMediaResponse = await fetch(`${first.baseUrl}${firstEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(revokedEmployeeMediaResponse.status, 403);
+    assert.equal(revokedEmployeeMediaResponse.headers.get("cache-control"), "private, no-store");
+    const replacementEmployeeMediaPublic = await fetch(`${first.baseUrl}${replacementEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(replacementEmployeeMediaPublic.status, 200);
+
     const mediumWebp = await fetch(`${first.baseUrl}${finalized.imageUrl}?size=medium&format=webp`);
     assert.equal(mediumWebp.status, 200);
     const mediumWebpEtag = mediumWebp.headers.get("etag");
@@ -389,6 +474,22 @@ async function run(): Promise<void> {
         : [];
       await Promise.allSettled(objectPaths.map((path) => deletePrivateObject(path)));
       await db.delete(imageAssetsTable).where(eq(imageAssetsTable.id, cleanupAssetId));
+    }
+    disableMediaRegressionUploadMarking?.();
+    await cleanupMediaRouteRegressionUploads();
+    for (const employeeMediaAssetId of employeeMediaAssetIds) {
+      assert.equal(
+        (await db.select({ id: mediaUploadTicketsTable.id }).from(mediaUploadTicketsTable)
+          .where(eq(mediaUploadTicketsTable.id, employeeMediaAssetId))).length,
+        0,
+        "Employee avatar upload tickets must be removed by test cleanup.",
+      );
+      assert.equal(
+        (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+          .where(eq(mediaAssetsTable.id, employeeMediaAssetId))).length,
+        0,
+        "Employee avatar media claims must be removed by test cleanup.",
+      );
     }
     if (legacyManagedAssetId) {
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, legacyManagedAssetId));
