@@ -30,6 +30,7 @@
     "schema-drift:audit": "pnpm --filter @workspace/scripts run schema-drift:audit",
     "test:schema-drift": "pnpm --filter @workspace/scripts run test:schema-drift",
     "test:schema-drift:integration": "pnpm --filter @workspace/scripts run test:schema-drift:integration",
+    "test:migration-contract": "pnpm --filter @workspace/scripts run test:migration-contract",
     "test:browser-fixtures": "pnpm --filter @workspace/scripts run test:browser-fixtures",
     "test:b2b-catalog": "bash scripts/test-b2b-catalog.sh",
     "test:attributed-appointments-returning": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-returning.test.ts",
