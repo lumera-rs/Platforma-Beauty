@@ -470,6 +470,72 @@ exit 0
   );
 });
 
+test("timed CI build fails when a successful JSON timing report cannot be written", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-json-report-failure-"));
+  const binDir = path.join(tempDir, "bin");
+  const reportDir = path.join(tempDir, "reports");
+  const blockedReportPath = path.join(reportDir, "build-timings.json");
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+
+  await mkdir(binDir);
+  await mkdir(reportDir);
+  await mkdir(blockedReportPath);
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: reportDir,
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
+    },
+  );
+
+  assert.equal(
+    result.code,
+    1,
+    `A successful build must fail when its JSON report cannot be written. stderr: ${result.stderr}`,
+  );
+  assert.match(result.stderr, /Could not write JSON timing report/);
+  assert.match(
+    result.stderr,
+    /Build passed, but report writing failed \(exit code 1\)/,
+    "The final error must identify the successful build/report-writing policy.",
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /controlled build failure/,
+    "The controlled fake pnpm must complete every build phase successfully.",
+  );
+
+  const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
+  assert.deepEqual(invocations, [
+    "run build:release",
+    "--filter @workspace/scripts run typecheck",
+    "run test:internal-request-control-outputs",
+    "run test:beauty-marketplace-typecheck",
+    "run test:frontend-generated-typecheck",
+    "run test:api-server-typecheck",
+    "run test:browser-specs-typecheck",
+    "run test:browser-fixtures",
+    "run test:bundle-budget",
+    "run test:frontend-standards",
+    "run test:seo-standards",
+    "run test:frontend-interactions",
+  ]);
+});
+
 test("workflow syntax lint runs locally and in an independent database-free CI job", async () => {
   const [workflow, packageJsonSource] = await Promise.all([
     readFile(workflowLintPath, "utf8"),
