@@ -176,6 +176,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Controlled build timing history probe found exactly $actual expected report(s)."
       - name: Run build and database-free publish checks
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: env -u DATABASE_URL pnpm run validate:ci:build
       - name: Upload build timing history
         if: ${{ always() }}
@@ -184,6 +186,17 @@ jobs:
         with:
           name: build-timings-${{ github.run_attempt }}
           path: ci-timings/build-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback build timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
           if-no-files-found: warn
           retention-days: 90
       - name: Verify current build timing artifact and redirect download
@@ -295,6 +308,8 @@ jobs:
               rm "$destination/artifact.zip"
           done
       - name: Run database checks
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:database
       - name: Upload database timing history
         if: ${{ always() }}
@@ -303,6 +318,17 @@ jobs:
         with:
           name: database-timings-${{ github.run_attempt }}
           path: ci-timings/database-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback database timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/database-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
           if-no-files-found: warn
           retention-days: 90
 
@@ -372,6 +398,8 @@ jobs:
               rm "$destination/artifact.zip"
           done
       - name: Run browser user journeys
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:browser
       - name: Upload browser timing history
         if: ${{ always() }}
@@ -380,6 +408,17 @@ jobs:
         with:
           name: browser-timings-${{ github.run_attempt }}
           path: ci-timings/browser-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback browser timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/browser-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
           if-no-files-found: warn
           retention-days: 90
       - name: Upload browser failure diagnostics

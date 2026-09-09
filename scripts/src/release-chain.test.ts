@@ -776,6 +776,20 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(buildJob, /name: build-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(buildJob, /path: ci-timings\/build-timings\.json/);
   assert.match(buildJob, /retention-days: 90/);
+  assert.match(
+    buildJob,
+    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
+    "The build timing runner must use a stable runner-temp fallback directory so the upload step can find reports.",
+  );
+  assert.match(buildJob, /name: Upload fallback build timing reports/);
+  assert.match(
+    buildJob,
+    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
+    "Fallback reports must upload after failures without exposing fork pull requests.",
+  );
+  assert.match(buildJob, /name: build-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(buildJob, /lumera-ci-timing-fallback\/build-timings\.json/);
+  assert.match(buildJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.doesNotMatch(buildJob, /\$\{\{\s*secrets\./);
   assert.match(
     workflow,
@@ -836,6 +850,18 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(databaseJob, /name: database-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(databaseJob, /path: ci-timings\/database-timings\.json/);
   assert.match(databaseJob, /retention-days: 90/);
+  assert.match(
+    databaseJob,
+    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
+  );
+  assert.match(databaseJob, /name: Upload fallback database timing reports/);
+  assert.match(
+    databaseJob,
+    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
+  );
+  assert.match(databaseJob, /name: database-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(databaseJob, /lumera-ci-timing-fallback\/database-timings\.json/);
+  assert.match(databaseJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.doesNotMatch(
     databaseJob,
     /\$\{\{\s*secrets\./,
@@ -857,6 +883,18 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(browserJob, /name: browser-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(browserJob, /path: ci-timings\/browser-timings\.json/);
   assert.match(browserJob, /retention-days: 90/);
+  assert.match(
+    browserJob,
+    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
+  );
+  assert.match(browserJob, /name: Upload fallback browser timing reports/);
+  assert.match(
+    browserJob,
+    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
+  );
+  assert.match(browserJob, /name: browser-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(browserJob, /lumera-ci-timing-fallback\/browser-timings\.json/);
+  assert.match(browserJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.match(
     browserJob,
     /if: \$\{\{ failure\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
