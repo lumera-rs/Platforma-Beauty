@@ -34,6 +34,18 @@ type SeoHeadMetadata = {
   canonical: string;
   robots: string;
   image: string;
+  openGraph: {
+    title: string;
+    description: string;
+    url: string;
+    image: string;
+  };
+  twitter: {
+    title: string;
+    description: string;
+    url: string;
+    image: string;
+  };
 };
 const moduleUrl = (relativePath: string) =>
   pathToFileURL(path.join(root, relativePath)).href;
@@ -308,7 +320,7 @@ const supplier = {
   description: "Profesionalni proizvodi za negu.",
   active: true,
   scope: "B2C",
-  logoUrl: "/glow-supply.jpg",
+  logoUrl: "https://cdn.example/glow-supply.jpg",
 };
 const product = {
   id: "glow-product",
@@ -437,12 +449,28 @@ type ComparableSeoHead = {
   description: string;
   canonical: string | null;
   robots: string;
+  openGraph: {
+    title: string | null;
+    description: string | null;
+    url: string | null;
+    image: string | null;
+  };
+  twitter: {
+    title: string | null;
+    description: string | null;
+    url: string | null;
+    image: string | null;
+  };
 };
 
 function htmlAttribute(html: string, pattern: RegExp, label: string): string {
   const value = html.match(pattern)?.[1];
   assert.ok(value, `SSR document must contain ${label}`);
   return value;
+}
+
+function optionalHtmlAttribute(html: string, pattern: RegExp): string | null {
+  return html.match(pattern)?.[1] ?? null;
 }
 
 function ssrHead(html: string): ComparableSeoHead {
@@ -459,6 +487,18 @@ function ssrHead(html: string): ComparableSeoHead {
       /<meta name="robots" content="([^"]*)">/u,
       "a robots directive",
     ),
+    openGraph: {
+      title: optionalHtmlAttribute(html, /<meta property="og:title" content="([^"]*)">/u),
+      description: optionalHtmlAttribute(html, /<meta property="og:description" content="([^"]*)">/u),
+      url: optionalHtmlAttribute(html, /<meta property="og:url" content="([^"]*)">/u),
+      image: optionalHtmlAttribute(html, /<meta property="og:image" content="([^"]*)">/u),
+    },
+    twitter: {
+      title: optionalHtmlAttribute(html, /<meta name="twitter:title" content="([^"]*)">/u),
+      description: optionalHtmlAttribute(html, /<meta name="twitter:description" content="([^"]*)">/u),
+      url: optionalHtmlAttribute(html, /<meta name="twitter:url" content="([^"]*)">/u),
+      image: optionalHtmlAttribute(html, /<meta name="twitter:image" content="([^"]*)">/u),
+    },
   };
 }
 
@@ -501,6 +541,8 @@ async function clientMetadataAfterMount(
     description: head.description,
     canonical: head.canonical,
     robots: head.robots,
+    openGraph: head.openGraph,
+    twitter: head.twitter,
   };
 }
 
@@ -541,8 +583,11 @@ try {
     assert.deepEqual(
       await clientMetadataAfterMount(contract.pathname),
       serverResult.head,
-      `${contract.pattern} must preserve SSR title, description, canonical, and robots after mount`,
+      `${contract.pattern} must preserve SSR title, description, canonical, robots, Open Graph, and Twitter metadata after mount`,
     );
+    assert.equal(serverResult.head.openGraph.url, serverResult.head.canonical);
+    assert.equal(serverResult.head.twitter.url, serverResult.head.canonical);
+    assert.deepEqual(serverResult.head.twitter, serverResult.head.openGraph);
 
     const queryResult = await serverMetadata(`${contract.pathname}?seo-contract=1`);
     assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
@@ -585,6 +630,17 @@ try {
       `${contract.pattern} missing fixture must remain noindex after mount`,
     );
   }
+
+  assert.equal(
+    (await serverMetadata("/saloni/glow-studio")).head.openGraph.image,
+    `${seoOrigin}/glow-studio.jpg`,
+    "relative social images must resolve against the public origin",
+  );
+  assert.equal(
+    (await serverMetadata("/shop/glow-supply")).head.openGraph.image,
+    supplier.logoUrl,
+    "absolute social images must remain unchanged",
+  );
 } finally {
   globalThis.fetch = originalFetch;
 }

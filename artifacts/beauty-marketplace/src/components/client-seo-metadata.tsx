@@ -22,6 +22,18 @@ export type SeoHeadMetadata = {
   canonical: string;
   robots: 'index, follow' | 'noindex, follow';
   image: string;
+  openGraph: {
+    title: string;
+    description: string;
+    url: string;
+    image: string;
+  };
+  twitter: {
+    title: string;
+    description: string;
+    url: string;
+    image: string;
+  };
 };
 
 const APP_NAME = 'LUMERA';
@@ -91,15 +103,20 @@ function setMeta(selector: string, attribute: 'name' | 'property', key: string, 
 }
 
 export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string): SeoHeadMetadata {
-  const cleanPathname = pathname !== '/' ? pathname.replace(/\/+$/, '') : pathname;
-  const canonical = `${origin}${payload.canonicalPath ?? cleanPathname}`;
+  const publicPath = payload.canonicalPath ?? pathname;
+  const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
+  const canonical = new URL(cleanPublicPath, origin).href;
   const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.svg`;
+  const title = clip(payload.title, 60);
+  const description = clip(payload.description);
   return {
-    title: clip(payload.title, 60),
-    description: clip(payload.description),
+    title,
+    description,
     canonical,
     robots: payload.indexable ? 'index, follow' : 'noindex, follow',
     image,
+    openGraph: { title, description, url: canonical, image },
+    twitter: { title, description, url: canonical, image },
   };
 }
 
@@ -108,13 +125,14 @@ function applySeo(pathname: string, payload: SeoPayload) {
   document.title = metadata.title;
   setMeta('meta[name="description"]', 'name', 'description', metadata.description);
   setMeta('meta[name="robots"]', 'name', 'robots', metadata.robots);
-  setMeta('meta[property="og:title"]', 'property', 'og:title', metadata.title);
-  setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.description);
-  setMeta('meta[property="og:url"]', 'property', 'og:url', metadata.canonical);
-  setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.image);
-  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.title);
-  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.description);
-  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', metadata.image);
+  setMeta('meta[property="og:title"]', 'property', 'og:title', metadata.openGraph.title);
+  setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.openGraph.description);
+  setMeta('meta[property="og:url"]', 'property', 'og:url', metadata.openGraph.url);
+  setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.openGraph.image);
+  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.twitter.title);
+  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.twitter.description);
+  setMeta('meta[name="twitter:url"]', 'name', 'twitter:url', metadata.twitter.url);
+  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', metadata.twitter.image);
   let link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!link) {
     link = document.createElement('link');
