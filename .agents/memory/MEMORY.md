@@ -150,3 +150,4 @@
 - [Declaration inventory parsing](declaration-inventory-parsing.md) — use the TypeScript AST for declaration shape checks; hand-written scanners cannot safely model nested template substitutions.
 - [Public social image metadata](public-social-image-metadata.md) — pin OG metadata to an explicit managed variant; URL-only legacy images must never gain inferred dimensions or MIME.
 - [CI timing calibration](ci-timing-calibration.md) — pre-instrumentation Actions runs provide provisional job totals, not phase observations; recalibrate after timing artifacts accumulate.
+- [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.

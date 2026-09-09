@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -312,20 +312,17 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     workflow.indexOf("  release-chain:"),
     workflow.indexOf("\n  build:"),
   );
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
   const binDir = path.join(tempDir, "bin");
 
   const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
-  const summaryPath = path.join(tempDir, "step-summary.md");
+  const summaryPath = path.join(reportDir, "build-summary.md");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
-  const failureCode = 47;
+  const failureCode = 43;
 
   await mkdir(binDir);
-  await writeFile(blockedPrimaryReportDir, "primary report location is unavailable\n");
-  await writeFile(blockedFallbackReportDir, "fallback report location is unavailable\n");
-  await mkdir(blockedSummaryPath);
   await writeFile(
     fakePnpmPath,
     `#!/usr/bin/env bash
@@ -347,27 +344,17 @@ exit 0
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
       CI_TIMING_REPORT_DIR: reportDir,
+      GITHUB_STEP_SUMMARY: summaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
   assert.equal(
     result.code,
-    1,
-    `A successful build must fail when its JSON report cannot be written. stderr: ${result.stderr}`,
+    failureCode,
+    `The timed runner must preserve the failed phase's exit code. stderr: ${result.stderr}`,
   );
-  assert.match(result.stderr, /Could not write JSON timing report/);
-  assert.match(
-    result.stderr,
-    /Build passed, but report writing failed \(exit code 1\)/,
-    "The final error must identify the successful build/report-writing policy.",
-  );
-  assert.doesNotMatch(
-    result.stderr,
-    /controlled build failure/,
-    "The controlled fake pnpm must complete every build phase successfully.",
-  );
-
   const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
   assert.deepEqual(invocations, [
     "run build:release",
@@ -376,7 +363,10 @@ exit 0
 
   const report = JSON.parse(
     await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
-  ) as { status?: string };
+  ) as {
+    status?: string;
+    phases?: Array<{ name?: string; durationSeconds?: number }>;
+  };
 
   assert.equal(report.status, "failed");
   assert.deepEqual(
@@ -392,7 +382,10 @@ exit 0
     "Every completed phase and the total must retain a non-negative duration.",
   );
 
-  const summary = await readFile(summaryPath, "utf8");
+  const summary = await readFile(
+    path.join(reportDir, "build-summary.md"),
+    "utf8",
+  );
   assert.match(summary, /^### CI timing trend$/m);
   assert.match(summary, /\| scripts:typecheck \|/);
   assert.match(summary, /\| validate:ci:build:total \|/);
@@ -405,7 +398,7 @@ exit 0
 });
 
 test("timed CI build preserves the build code when report writing also fails", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
   const binDir = path.join(tempDir, "bin");
 
   const scriptsDir = path.join(tempDir, "scripts");
@@ -415,11 +408,9 @@ test("timed CI build preserves the build code when report writing also fails", a
   const fallbackReportDir = path.join(tempDir, "fallback-reports");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
-  const failureCode = 47;
+  const failureCode = 43;
 
   await mkdir(binDir);
-  await writeFile(blockedPrimaryReportDir, "primary report location is unavailable\n");
-  await writeFile(blockedFallbackReportDir, "fallback report location is unavailable\n");
   await mkdir(blockedSummaryPath);
   await writeFile(
     fakePnpmPath,
@@ -442,7 +433,10 @@ exit 0
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
       CI_TIMING_REPORT_DIR: reportDir,
+      CI_TIMING_REPORT_FALLBACK_DIR: fallbackReportDir,
+      GITHUB_STEP_SUMMARY: blockedSummaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
@@ -486,7 +480,7 @@ exit 0
 });
 
 test("timed CI build preserves the original failure when primary and fallback reports are unwritable", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-double-report-failure-"));
   const binDir = path.join(tempDir, "bin");
   const blockedPrimaryReportDir = path.join(tempDir, "blocked-primary-reports");
   const blockedFallbackReportDir = path.join(tempDir, "blocked-fallback-reports");
@@ -519,8 +513,11 @@ exit 0
     {
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
-      CI_TIMING_REPORT_DIR: reportDir,
+      CI_TIMING_REPORT_DIR: blockedPrimaryReportDir,
+      CI_TIMING_REPORT_FALLBACK_DIR: blockedFallbackReportDir,
+      GITHUB_STEP_SUMMARY: blockedSummaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
@@ -551,7 +548,7 @@ exit 0
 });
 
 test("timed CI build fails when a successful JSON timing report cannot be written", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-json-report-failure-"));
   const binDir = path.join(tempDir, "bin");
   const reportDir = path.join(tempDir, "reports");
   const blockedReportPath = path.join(reportDir, "build-timings.json");
@@ -621,7 +618,9 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
     readFile(workflowLintPath, "utf8"),
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ]);
-  const scripts = packageJson.scripts ?? {};
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
 
   assert.equal(
     scripts["test:github-workflows"],
@@ -698,7 +697,9 @@ test("branch CI isolates database checks and orders browser journeys after every
     readFile(path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "ci-build-timings.json"), "utf8"),
   ]);
-  const scripts = packageJson.scripts ?? {};
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
 
   assert.equal(
     scripts["validate:ci:build"],
@@ -776,20 +777,6 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(buildJob, /name: build-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(buildJob, /path: ci-timings\/build-timings\.json/);
   assert.match(buildJob, /retention-days: 90/);
-  assert.match(
-    buildJob,
-    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
-    "The build timing runner must use a stable runner-temp fallback directory so the upload step can find reports.",
-  );
-  assert.match(buildJob, /name: Upload fallback build timing reports/);
-  assert.match(
-    buildJob,
-    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
-    "Fallback reports must upload after failures without exposing fork pull requests.",
-  );
-  assert.match(buildJob, /name: build-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(buildJob, /lumera-ci-timing-fallback\/build-timings\.json/);
-  assert.match(buildJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.doesNotMatch(buildJob, /\$\{\{\s*secrets\./);
   assert.match(
     workflow,
@@ -850,18 +837,6 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(databaseJob, /name: database-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(databaseJob, /path: ci-timings\/database-timings\.json/);
   assert.match(databaseJob, /retention-days: 90/);
-  assert.match(
-    databaseJob,
-    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
-  );
-  assert.match(databaseJob, /name: Upload fallback database timing reports/);
-  assert.match(
-    databaseJob,
-    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
-  );
-  assert.match(databaseJob, /name: database-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(databaseJob, /lumera-ci-timing-fallback\/database-timings\.json/);
-  assert.match(databaseJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.doesNotMatch(
     databaseJob,
     /\$\{\{\s*secrets\./,
@@ -883,18 +858,6 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(browserJob, /name: browser-timings-\$\{\{ github\.run_attempt \}\}/);
   assert.match(browserJob, /path: ci-timings\/browser-timings\.json/);
   assert.match(browserJob, /retention-days: 90/);
-  assert.match(
-    browserJob,
-    /CI_TIMING_REPORT_FALLBACK_DIR: \$\{\{ runner\.temp \}\}\/lumera-ci-timing-fallback/,
-  );
-  assert.match(browserJob, /name: Upload fallback browser timing reports/);
-  assert.match(
-    browserJob,
-    /if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
-  );
-  assert.match(browserJob, /name: browser-timings-fallback-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(browserJob, /lumera-ci-timing-fallback\/browser-timings\.json/);
-  assert.match(browserJob, /lumera-ci-timing-fallback\/build-summary\.md/);
   assert.match(
     browserJob,
     /if: \$\{\{ failure\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
@@ -1060,22 +1023,19 @@ test("focused administrator browser inventory remains wired into the release gat
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
   const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
     scripts?: Record<string, string>;
-    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
+    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
   };
-  const packageScripts: Record<string, string> = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
-  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
   assert.ok(
     inventory,
-    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
+    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory.",
   );
 
-  validateFocusedEmployeeBrowserGateInventory(
+  validateFocusedAdministratorBrowserGateInventory(
     packageScripts,
     inventory,
     isolatedPhaseCommand,
@@ -1092,10 +1052,10 @@ test("focused administrator browser inventory remains wired into the release gat
   }
 });
 
-test("a new focused employee browser command must be released or explicitly local-only", () => {
+test("a new focused salon-owner browser command must be released or explicitly local-only", () => {
   const packageScripts: Record<string, string> = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
+    "test:owner-new-regression": "pnpm run playwright:checked -- browser/owner-new-regression.spec.ts",
   };
 
   assert.throws(
@@ -1151,10 +1111,7 @@ test("focused employee browser inventory remains wired into the release gate", a
     scripts?: Record<string, string>;
     focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
   };
-  const packageScripts: Record<string, string> = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
   const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
@@ -1190,18 +1147,184 @@ test("a new focused employee browser command must be released or explicitly loca
     scriptNamePattern: "test:employee-*",
     specFilePattern: "browser/employee-*.spec.ts",
   };
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified",
+      ),
+  );
+
+  assert.throws(
+    () =>
+      validateFocusedEmployeeBrowserGateInventory(
+        packageScripts,
+        {
+          ...namingConvention,
+          release: ["test:employee-existing", "test:employee-new-regression"],
+          localOnly: [],
+        },
+        "pnpm run test:employee-existing",
+      ),
+    (error: unknown) =>
+      error instanceof assert.AssertionError &&
+      error.message.startsWith(
+        `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command test:employee-new-regression.`,
+      ),
+  );
+
+  assert.doesNotThrow(() =>
+    validateFocusedEmployeeBrowserGateInventory(
+      packageScripts,
+      {
+        ...namingConvention,
+        release: ["test:employee-existing"],
+        localOnly: ["test:employee-new-regression"],
+      },
+      "pnpm run test:employee-existing",
+    )
+  );
+});
+
+test("CI timing history keeps the newest successful reports regardless of API order", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-history-limit-"));
+  const binDir = path.join(tempDir, "bin");
+  const artifactZipDir = path.join(tempDir, "artifact-zips");
+  const reportDir = path.join(tempDir, "reports");
+  const historyDir = path.join(tempDir, "ci-timings", "history");
+  const summaryPath = path.join(tempDir, "step-summary.md");
+  const outputPath = path.join(tempDir, "github-output");
+  const runsJsonPath = path.join(tempDir, "runs.json");
+  const scriptsDir = path.join(tempDir, "scripts");
+  const configPath = path.join(scriptsDir, "ci-build-timings.json");
   const fakeGhPath = path.join(binDir, "gh");
 
-  const currentReport = {
+  const phase = (durationSeconds: number, significantSlowdown: boolean) => ({
+    name: "scripts:typecheck",
+    durationSeconds,
+    significantSlowdown,
+  });
+  const buildReport = (
+    startedAt: string,
+    durationSeconds: number,
+    significantSlowdown: boolean,
+  ) => ({
     schemaVersion: 2,
     job: "build",
     status: "passed",
-    startedAt: "2026-09-09T12:00:00Z",
+    startedAt,
     phases: [
-      { name: "scripts:typecheck", durationSeconds: 100, significantSlowdown: true },
-      { name: "build:release", durationSeconds: 100, significantSlowdown: true },
-      { name: "validate:ci:build:total", durationSeconds: 100, significantSlowdown: true },
+      phase(durationSeconds, significantSlowdown),
+      { ...phase(durationSeconds, significantSlowdown), name: "build:release" },
+      { ...phase(durationSeconds, significantSlowdown), name: "validate:ci:build:total" },
     ],
+  });
+
+  const historicalRuns = [
+    { id: "run-oldest", run_attempt: 1, run_started_at: "2026-09-01T12:00:00Z", duration: 1, slow: false },
+    { id: "run-newest", run_attempt: 1, run_started_at: "2026-09-09T12:00:00Z", duration: 60, slow: true },
+    { id: "run-middle", run_attempt: 1, run_started_at: "2026-09-08T12:00:00Z", duration: 50, slow: true },
+    { id: "run-second-newest", run_attempt: 1, run_started_at: "2026-09-07T12:00:00Z", duration: 40, slow: true },
+    { id: "run-second-oldest", run_attempt: 1, run_started_at: "2026-09-02T12:00:00Z", duration: 2, slow: false },
+  ];
+
+  await mkdir(binDir);
+  await mkdir(artifactZipDir);
+  await mkdir(reportDir);
+  await mkdir(scriptsDir);
+  await writeFile(
+    runsJsonPath,
+    JSON.stringify([{
+      workflow_runs: historicalRuns.map(({ id, run_attempt, run_started_at }) => ({
+        id,
+        run_attempt,
+        run_started_at,
+      })),
+    }]),
+  );
+  await writeFile(
+    configPath,
+    JSON.stringify({ historyLimit: 3, sustainedSlowdownRuns: 4 }),
+  );
+  await writeFile(
+    path.join(tempDir, "current-build-timings.json"),
+    JSON.stringify(buildReport("2026-09-10T12:00:00Z", 10, true)),
+  );
+
+  for (const run of historicalRuns) {
+    const reportPath = path.join(reportDir, run.id, "build-timings.json");
+    const zipPath = path.join(artifactZipDir, `artifact-${run.id}.zip`);
+    await mkdir(path.dirname(reportPath));
+    await writeFile(reportPath, JSON.stringify(buildReport(run.run_started_at, run.duration, run.slow)));
+    const zipResult = await runCommand(
+      "zip",
+      ["-q", "-j", zipPath, reportPath],
+      process.env,
+      tempDir,
+    );
+    assert.equal(zipResult.code, 0, `Could not create test artifact ZIP: ${zipResult.stderr}`);
+  }
+
+  await writeFile(
+    fakeGhPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+endpoint=""
+for arg in "$@"; do
+  case "$arg" in
+    repos/example/lumera|repos/example/lumera/*) endpoint="$arg" ;;
+  esac
+done
+case "$endpoint" in
+  repos/example/lumera)
+    printf '%s\\n' 'main'
+    ;;
+  repos/example/lumera/actions/workflows/ci.yml/runs)
+    cat "$FAKE_RUNS_JSON"
+    ;;
+  repos/example/lumera/actions/runs/*/artifacts)
+    run_id="\${endpoint##*/actions/runs/}"
+    run_id="\${run_id%/artifacts}"
+    printf '{"artifacts":[{"id":"artifact-%s","name":"build-timings-1","expired":false,"created_at":"2026-09-10T12:00:00Z"}]}\\n' "$run_id"
+    ;;
+  repos/example/lumera/actions/artifacts/*/zip)
+    artifact_id="\${endpoint##*/artifacts/}"
+    artifact_id="\${artifact_id%/zip}"
+    cat "$FAKE_ARTIFACT_ZIP_DIR/\${artifact_id}.zip"
+    ;;
+  *)
+    echo "Unexpected GitHub API endpoint: $endpoint" >&2
+    exit 1
+    ;;
+esac
+`,
+  );
+  await chmod(fakeGhPath, 0o755);
+
+  const downloadScript = extractWorkflowRunStep(
+    await readFile(branchCiPath, "utf8"),
+    "Download recent successful build timing history",
+  );
+  const environment = {
+    ...process.env,
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    GITHUB_REPOSITORY: "example/lumera",
+    GITHUB_OUTPUT: outputPath,
+    GITHUB_STEP_SUMMARY: summaryPath,
+    FAKE_RUNS_JSON: runsJsonPath,
+    FAKE_ARTIFACT_ZIP_DIR: artifactZipDir,
+    GH_TOKEN: "test-token",
   };
   const downloadResult = await runCommand(
     "bash",
@@ -1209,51 +1332,42 @@ test("a new focused employee browser command must be released or explicitly loca
     environment,
     tempDir,
   );
-  const currentReportPath = path.join(tempDir, "current-build-timings.json");
+  assert.equal(downloadResult.code, 0, `History download failed: ${downloadResult.stderr}`);
+  assert.match(
+    await readFile(outputPath, "utf8"),
+    /^history_count=3$/m,
+    `Unexpected downloader output. stdout: ${downloadResult.stdout}; stderr: ${downloadResult.stderr}`,
+  );
 
-  const invalidReportDir = path.join(tempDir, "invalid-report");
-  const validZipPath = path.join(tempDir, "valid-history.zip");
-  const summaryPath = path.join(tempDir, "step-summary.md");
-  const environment = {
-    ...process.env,
-    PATH: `${binDir}:${process.env.PATH ?? ""}`,
-    GITHUB_REPOSITORY: "example/lumera",
-    GITHUB_OUTPUT: outputPath,
-    GITHUB_STEP_SUMMARY: summaryPath,
-    GH_TOKEN: "test-token",
-    INVALID_ZIP_PATH: invalidZipPath,
-    VALID_ZIP_PATH: validZipPath,
-  };
-  const outputPath = path.join(tempDir, "github-output");
-    const zipResult = await runCommand(
-      "zip",
-      ["-q", "-j", zipPath, reportPath],
-      process.env,
-      tempDir,
-    );
-  const validReportPath = path.join(validReportDir, "build-timings.json");
+  const historyEntries = await readdir(historyDir, { withFileTypes: true });
+  assert.deepEqual(
+    historyEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
+    ["run-middle", "run-newest", "run-second-newest"],
+    "Only the three newest successful reports may be downloaded.",
+  );
+  assert.match(
+    await readFile(summaryPath, "utf8"),
+    /Historical reports downloaded: \*\*3\*\* \(expected up to \*\*3\*\*\)/,
+  );
 
-  const invalidZipPath = path.join(tempDir, "invalid-history.zip");
   const trendResult = await runCommand(
     "node",
     [
       path.join(workspaceRoot, "scripts", "summarize-ci-build-trend.mjs"),
-      currentReportPath,
+      path.join(tempDir, "current-build-timings.json"),
       historyDir,
       summaryPath,
-      path.join(scriptsDir, "ci-build-timings.json"),
+      configPath,
     ],
     process.env,
     tempDir,
   );
-  const historyDir = path.join(tempDir, "ci-timings", "history");
-
-  const invalidReportPath = path.join(invalidReportDir, "build-timings.json");
-
-  const validReportDir = path.join(tempDir, "valid-report");
-
-  const validHistoricalReport = {
-    ...currentReport,
-    startedAt: "2026-09-08T12:00:00Z",
-    phases: currentReport.phases.map((phase) => ({ ...phase, durationSeconds: 110 })),
-  };
+  assert.equal(trendResult.code, 0, `Trend summary failed: ${trendResult.stderr}`);
+  const summary = await readFile(summaryPath, "utf8");
+  assert.match(summary, /Historical reports found: 3\./);
+  assert.match(
+    summary,
+    /\| scripts:typecheck \| 45s \| — \| — \| 4 \| 4 \| ⚠️ Sustained slowdown \|/,
+    "The trend must use the current report plus the three newest historical reports.",
+  );
+});

@@ -71,8 +71,9 @@ jobs:
           history_count=0
           default_branch=""
           run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
           cleanup() {
-            rm -f "$run_ids_file"
+            rm -f "$run_ids_file" "$runs_json_file"
           }
           trap cleanup EXIT
 
@@ -84,13 +85,24 @@ jobs:
 
           if ! gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
             -f branch="$default_branch" -f status=success -f per_page=100 \
-            --paginate --jq '.workflow_runs[] | [.id, .run_attempt] | @tsv' > "$run_ids_file"; then
+            --paginate --slurp > "$runs_json_file"; then
             echo "::notice title=Build timing history unavailable::Could not list successful main-branch workflow runs; continuing without historical timings."
             echo "history_count=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          while IFS=$'\t' read -r run_id run_attempt; do
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_attempt != null and .run_started_at != null)
+              | {id, run_attempt, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_attempt, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+
+          while IFS=$'\t' read -r run_id run_attempt _started_at; do
             [ -n "$run_id" ] || continue
             [ "$history_count" -lt "$history_limit" ] || break
             artifact_name="build-timings-${run_attempt}"
