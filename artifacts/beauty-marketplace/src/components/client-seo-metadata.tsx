@@ -67,7 +67,7 @@ function staticMetadata(pathname: string): SeoPayload | null {
     '/inspiracija': { title: 'Beauty inspiracija | LUMERA vodič', description: 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', indexable: true },
     '/recnik': { title: 'Rečnik beauty pojmova | LUMERA', description: 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', indexable: true },
     '/brendovi': { title: 'Profesionalni beauty brendovi | LUMERA', description: 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', indexable: true },
-    '/edukacije': { title: 'Beauty edukacije i kursevi | LUMERA', description: 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programs.', indexable: true },
+    '/edukacije': { title: 'Beauty edukacije i kursevi | LUMERA', description: 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.', indexable: true },
     '/provera-statusa': { title: 'Provera statusa porudžbine | LUMERA', description: 'Pratite status vaše porudžbine i saznajte kada stiže.', indexable: false },
     '/porudzbina/pracenje': { title: 'Praćenje porudžbine | LUMERA', description: 'Pratite status vaše porudžbine.', indexable: false },
     '/uslovi-koriscenja': { title: 'Uslovi korišćenja | LUMERA', description: 'Uslovi korišćenja LUMERA platforme.', indexable: true },

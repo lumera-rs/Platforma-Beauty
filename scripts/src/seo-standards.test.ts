@@ -190,6 +190,38 @@ type DynamicRouteContract = {
   missingPathname: string;
 };
 
+const staticRouteContracts = [
+  "/",
+  "/za-biznise",
+  "/za-biznise/saloni",
+  "/za-biznise/edukativni-centri",
+  "/za-biznise/poslovi",
+  "/za-biznise/edukacije",
+  "/saloni",
+  "/poslovi",
+  "/proizvodi",
+  "/inspiracija",
+  "/recnik",
+  "/brendovi",
+  "/edukacije",
+  "/uslovi-koriscenja",
+  "/politika-privatnosti",
+  "/politika-kolacica",
+  "/uslovi-kupovine",
+  "/otkazivanje-termina",
+  "/povracaj-sredstava",
+] as const;
+
+const publicStaticPatterns = publicRoutes
+  .filter(({ pattern }) => !pattern.includes(":") && !pattern.includes("*"))
+  .map(({ pattern }) => pattern)
+  .sort();
+assert.deepEqual(
+  [...staticRouteContracts].sort(),
+  publicStaticPatterns,
+  "every public static React route must have an SSR/client metadata contract fixture",
+);
+
 const courseId = "11111111-1111-4111-8111-111111111111";
 const dynamicRouteContracts: DynamicRouteContract[] = [
   {
@@ -473,6 +505,32 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  for (const pathname of staticRouteContracts) {
+    const serverResult = await serverMetadata(pathname);
+    assert.equal(serverResult.status, 200, `${pathname} static fixture must server-render`);
+    assert.deepEqual(
+      await clientMetadataAfterMount(pathname),
+      serverResult.head,
+      `${pathname} must preserve SSR title, description, canonical, and robots after mount`,
+    );
+
+    const queryPath = `${pathname}?seo-contract=1`;
+    const queryResult = await serverMetadata(queryPath);
+    assert.equal(queryResult.status, 200, `${pathname} query variant must render safely`);
+    const clientQueryHead = await clientMetadataAfterMount(pathname, "seo-contract=1");
+    assert.deepEqual(
+      clientQueryHead,
+      queryResult.head,
+      `${pathname} query variant must preserve SSR metadata after mount`,
+    );
+    assert.equal(queryResult.head.robots, "noindex, follow");
+    assert.equal(
+      queryResult.head.canonical,
+      `${seoOrigin}${pathname}`,
+      `${pathname} query canonical must omit the query string`,
+    );
+  }
+
   for (const contract of dynamicRouteContracts) {
     const serverResult = await serverMetadata(contract.pathname);
     assert.equal(
