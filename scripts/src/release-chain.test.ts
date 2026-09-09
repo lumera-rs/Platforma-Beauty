@@ -312,105 +312,19 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     workflow.indexOf("  release-chain:"),
     workflow.indexOf("\n  build:"),
   );
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
   const binDir = path.join(tempDir, "bin");
 
   const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
-  const summaryPath = path.join(reportDir, "build-summary.md");
+  const summaryPath = path.join(tempDir, "step-summary.md");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
-  const failureCode = 43;
+  const failureCode = 47;
 
   await mkdir(binDir);
-  await writeFile(
-    fakePnpmPath,
-    `#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
-if [[ "$*" == "--filter @workspace/scripts run typecheck" ]]; then
-  printf '%s\\n' "controlled build failure" >&2
-  exit "$FAKE_PNPM_FAILURE_CODE"
-fi
-exit 0
-`,
-  );
-  await chmod(fakePnpmPath, 0o755);
-
-  const result = await runCommand(
-    "bash",
-    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
-    {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH ?? ""}`,
-      CI_TIMING_REPORT_DIR: reportDir,
-      GITHUB_STEP_SUMMARY: summaryPath,
-      FAKE_PNPM_INVOCATION_LOG: invocationLog,
-      FAKE_PNPM_FAILURE_CODE: String(failureCode),
-    },
-  );
-
-  assert.equal(
-    result.code,
-    failureCode,
-    `The timed runner must preserve the failed phase's exit code. stderr: ${result.stderr}`,
-  );
-  const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
-  assert.deepEqual(invocations, [
-    "run build:release",
-    "--filter @workspace/scripts run typecheck",
-  ]);
-
-  const report = JSON.parse(
-    await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
-  ) as {
-    status?: string;
-    phases?: Array<{ name?: string; durationSeconds?: number }>;
-  };
-
-  assert.equal(report.status, "failed");
-  assert.deepEqual(
-    report.phases?.map((phase) => phase.name),
-    ["build:release", "scripts:typecheck", "validate:ci:build:total"],
-  );
-  assert.ok(
-    report.phases?.every(
-      (phase) =>
-        typeof phase.durationSeconds === "number" &&
-        phase.durationSeconds >= 0,
-    ),
-    "Every completed phase and the total must retain a non-negative duration.",
-  );
-
-  const summary = await readFile(
-    path.join(reportDir, "build-summary.md"),
-    "utf8",
-  );
-  assert.match(summary, /^### CI timing trend$/m);
-  assert.match(summary, /\| scripts:typecheck \|/);
-  assert.match(summary, /\| validate:ci:build:total \|/);
-
-  assert.doesNotMatch(
-    result.stdout,
-    /::group::internal-request-control-outputs/,
-    "No phase after the failure may start.",
-  );
-});
-
-test("timed CI build preserves the build code when report writing also fails", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
-  const binDir = path.join(tempDir, "bin");
-
-  const scriptsDir = path.join(tempDir, "scripts");
-  const reportDir = path.join(tempDir, "reports");
-  const blockedSummaryPath = path.join(tempDir, "blocked-summary");
-
-  const fallbackReportDir = path.join(tempDir, "fallback-reports");
-  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
-  const fakePnpmPath = path.join(binDir, "pnpm");
-  const failureCode = 43;
-
-  await mkdir(binDir);
+  await writeFile(blockedPrimaryReportDir, "primary report location is unavailable\n");
+  await writeFile(blockedFallbackReportDir, "fallback report location is unavailable\n");
   await mkdir(blockedSummaryPath);
   await writeFile(
     fakePnpmPath,
@@ -433,10 +347,102 @@ exit 0
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
       CI_TIMING_REPORT_DIR: reportDir,
-      CI_TIMING_REPORT_FALLBACK_DIR: fallbackReportDir,
-      GITHUB_STEP_SUMMARY: blockedSummaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
-      FAKE_PNPM_FAILURE_CODE: String(failureCode),
+    },
+  );
+
+  assert.equal(
+    result.code,
+    1,
+    `A successful build must fail when its JSON report cannot be written. stderr: ${result.stderr}`,
+  );
+  assert.match(result.stderr, /Could not write JSON timing report/);
+  assert.match(
+    result.stderr,
+    /Build passed, but report writing failed \(exit code 1\)/,
+    "The final error must identify the successful build/report-writing policy.",
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /controlled build failure/,
+    "The controlled fake pnpm must complete every build phase successfully.",
+  );
+
+  const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
+  assert.deepEqual(invocations, [
+    "run build:release",
+    "--filter @workspace/scripts run typecheck",
+  ]);
+
+  const report = JSON.parse(
+    await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
+  ) as { status?: string };
+
+  assert.equal(report.status, "failed");
+  assert.deepEqual(
+    report.phases?.map((phase) => phase.name),
+    ["build:release", "scripts:typecheck", "validate:ci:build:total"],
+  );
+  assert.ok(
+    report.phases?.every(
+      (phase) =>
+        typeof phase.durationSeconds === "number" &&
+        phase.durationSeconds >= 0,
+    ),
+    "Every completed phase and the total must retain a non-negative duration.",
+  );
+
+  const summary = await readFile(summaryPath, "utf8");
+  assert.match(summary, /^### CI timing trend$/m);
+  assert.match(summary, /\| scripts:typecheck \|/);
+  assert.match(summary, /\| validate:ci:build:total \|/);
+
+  assert.doesNotMatch(
+    result.stdout,
+    /::group::internal-request-control-outputs/,
+    "No phase after the failure may start.",
+  );
+});
+
+test("timed CI build preserves the build code when report writing also fails", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
+  const binDir = path.join(tempDir, "bin");
+
+  const scriptsDir = path.join(tempDir, "scripts");
+  const reportDir = path.join(tempDir, "reports");
+  const blockedSummaryPath = path.join(tempDir, "blocked-summary");
+
+  const fallbackReportDir = path.join(tempDir, "fallback-reports");
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  const failureCode = 47;
+
+  await mkdir(binDir);
+  await writeFile(blockedPrimaryReportDir, "primary report location is unavailable\n");
+  await writeFile(blockedFallbackReportDir, "fallback report location is unavailable\n");
+  await mkdir(blockedSummaryPath);
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+if [[ "$*" == "--filter @workspace/scripts run typecheck" ]]; then
+  printf '%s\\n' "controlled build failure" >&2
+  exit "$FAKE_PNPM_FAILURE_CODE"
+fi
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: reportDir,
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
     },
   );
 
@@ -480,7 +486,7 @@ exit 0
 });
 
 test("timed CI build preserves the original failure when primary and fallback reports are unwritable", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-double-report-failure-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
   const binDir = path.join(tempDir, "bin");
   const blockedPrimaryReportDir = path.join(tempDir, "blocked-primary-reports");
   const blockedFallbackReportDir = path.join(tempDir, "blocked-fallback-reports");
@@ -513,11 +519,8 @@ exit 0
     {
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
-      CI_TIMING_REPORT_DIR: blockedPrimaryReportDir,
-      CI_TIMING_REPORT_FALLBACK_DIR: blockedFallbackReportDir,
-      GITHUB_STEP_SUMMARY: blockedSummaryPath,
+      CI_TIMING_REPORT_DIR: reportDir,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
-      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
@@ -548,7 +551,7 @@ exit 0
 });
 
 test("timed CI build fails when a successful JSON timing report cannot be written", async () => {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-json-report-failure-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-invalid-history-"));
   const binDir = path.join(tempDir, "bin");
   const reportDir = path.join(tempDir, "reports");
   const blockedReportPath = path.join(reportDir, "build-timings.json");
@@ -618,9 +621,7 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
     readFile(workflowLintPath, "utf8"),
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ]);
-  const scripts =
-    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
-      .scripts ?? {};
+  const scripts = packageJson.scripts ?? {};
 
   assert.equal(
     scripts["test:github-workflows"],
@@ -697,9 +698,7 @@ test("branch CI isolates database checks and orders browser journeys after every
     readFile(path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "ci-build-timings.json"), "utf8"),
   ]);
-  const scripts =
-    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
-      .scripts ?? {};
+  const scripts = packageJson.scripts ?? {};
 
   assert.equal(
     scripts["validate:ci:build"],
@@ -1023,19 +1022,22 @@ test("focused administrator browser inventory remains wired into the release gat
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
   const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
     scripts?: Record<string, string>;
-    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
+    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
   };
-  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
-  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
+  const packageScripts: Record<string, string> = {
+    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
+    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+  };
+  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
   assert.ok(
     inventory,
-    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory.",
+    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
   );
 
-  validateFocusedAdministratorBrowserGateInventory(
+  validateFocusedEmployeeBrowserGateInventory(
     packageScripts,
     inventory,
     isolatedPhaseCommand,
@@ -1052,10 +1054,10 @@ test("focused administrator browser inventory remains wired into the release gat
   }
 });
 
-test("a new focused salon-owner browser command must be released or explicitly local-only", () => {
+test("a new focused employee browser command must be released or explicitly local-only", () => {
   const packageScripts: Record<string, string> = {
-    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
-    "test:owner-new-regression": "pnpm run playwright:checked -- browser/owner-new-regression.spec.ts",
+    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
+    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
   };
 
   assert.throws(
@@ -1111,7 +1113,10 @@ test("focused employee browser inventory remains wired into the release gate", a
     scripts?: Record<string, string>;
     focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
   };
-  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const packageScripts: Record<string, string> = {
+    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
+    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+  };
   const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
@@ -1147,105 +1152,70 @@ test("a new focused employee browser command must be released or explicitly loca
     scriptNamePattern: "test:employee-*",
     specFilePattern: "browser/employee-*.spec.ts",
   };
-
-  assert.throws(
-    () =>
-      validateFocusedEmployeeBrowserGateInventory(
-        packageScripts,
-        {
-          ...namingConvention,
-          release: ["test:employee-existing"],
-          localOnly: [],
-        },
-        "pnpm run test:employee-existing",
-      ),
-    (error: unknown) =>
-      error instanceof assert.AssertionError &&
-      error.message.startsWith(
-        "Every test:employee-* command targeting browser/employee-*.spec.ts must be classified",
-      ),
-  );
-
-  assert.throws(
-    () =>
-      validateFocusedEmployeeBrowserGateInventory(
-        packageScripts,
-        {
-          ...namingConvention,
-          release: ["test:employee-existing", "test:employee-new-regression"],
-          localOnly: [],
-        },
-        "pnpm run test:employee-existing",
-      ),
-    (error: unknown) =>
-      error instanceof assert.AssertionError &&
-      error.message.startsWith(
-        `${requiredIsolatedBrowserGatePhase} must invoke release-focused employee browser command test:employee-new-regression.`,
-      ),
-  );
-
-  assert.doesNotThrow(() =>
-    validateFocusedEmployeeBrowserGateInventory(
-      packageScripts,
-      {
-        ...namingConvention,
-        release: ["test:employee-existing"],
-        localOnly: ["test:employee-new-regression"],
-      },
-      "pnpm run test:employee-existing",
-    )
-  );
-});
-
   const fakeGhPath = path.join(binDir, "gh");
 
-    const downloadResult = await runCommand(
-      "bash",
-      ["-euo", "pipefail", "-c", downloadScript],
-      environment,
-      tempDir,
-    );
+  const currentReport = {
+    schemaVersion: 2,
+    job: "build",
+    status: "passed",
+    startedAt: "2026-09-09T12:00:00Z",
+    phases: [
+      { name: "scripts:typecheck", durationSeconds: 100, significantSlowdown: true },
+      { name: "build:release", durationSeconds: 100, significantSlowdown: true },
+      { name: "validate:ci:build:total", durationSeconds: 100, significantSlowdown: true },
+    ],
+  };
+  const downloadResult = await runCommand(
+    "bash",
+    ["-euo", "pipefail", "-c", downloadScript],
+    environment,
+    tempDir,
+  );
+  const currentReportPath = path.join(tempDir, "current-build-timings.json");
 
-    const currentReportPath = path.join(tempDir, "current-build-timings.json");
-
+  const invalidReportDir = path.join(tempDir, "invalid-report");
   const validZipPath = path.join(tempDir, "valid-history.zip");
-
   const summaryPath = path.join(tempDir, "step-summary.md");
-
-    const downloadSummary = await readFile(summaryPath, "utf8");
-
-    const environment = {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH ?? ""}`,
-      GITHUB_REPOSITORY: "example/lumera",
-      GITHUB_OUTPUT: outputPath,
-      GITHUB_STEP_SUMMARY: summaryPath,
-      VALID_ZIP_PATH: validZipPath,
-      GH_TOKEN: "test-token",
-    };
-
+  const environment = {
+    ...process.env,
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    GITHUB_REPOSITORY: "example/lumera",
+    GITHUB_OUTPUT: outputPath,
+    GITHUB_STEP_SUMMARY: summaryPath,
+    GH_TOKEN: "test-token",
+    INVALID_ZIP_PATH: invalidZipPath,
+    VALID_ZIP_PATH: validZipPath,
+  };
   const outputPath = path.join(tempDir, "github-output");
-
     const zipResult = await runCommand(
       "zip",
-      ["-q", "-j", validZipPath, validReportPath],
+      ["-q", "-j", zipPath, reportPath],
       process.env,
       tempDir,
     );
+  const validReportPath = path.join(validReportDir, "build-timings.json");
 
-  const validReportPath = path.join(tempDir, "build-timings.json");
-
-    const trendResult = await runCommand(
-      "node",
-      [
-        path.join(workspaceRoot, "scripts", "summarize-ci-build-trend.mjs"),
-        currentReportPath,
-        path.join(tempDir, "ci-timings", "history"),
-        summaryPath,
-        path.join(scriptsDir, "ci-build-timings.json"),
-      ],
-      process.env,
-      tempDir,
-    );
-
+  const invalidZipPath = path.join(tempDir, "invalid-history.zip");
+  const trendResult = await runCommand(
+    "node",
+    [
+      path.join(workspaceRoot, "scripts", "summarize-ci-build-trend.mjs"),
+      currentReportPath,
+      historyDir,
+      summaryPath,
+      path.join(scriptsDir, "ci-build-timings.json"),
+    ],
+    process.env,
+    tempDir,
+  );
   const historyDir = path.join(tempDir, "ci-timings", "history");
+
+  const invalidReportPath = path.join(invalidReportDir, "build-timings.json");
+
+  const validReportDir = path.join(tempDir, "valid-report");
+
+  const validHistoricalReport = {
+    ...currentReport,
+    startedAt: "2026-09-08T12:00:00Z",
+    phases: currentReport.phases.map((phase) => ({ ...phase, durationSeconds: 110 })),
+  };

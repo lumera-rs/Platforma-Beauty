@@ -114,7 +114,37 @@ jobs:
               continue
             fi
             rm "$destination/artifact.zip"
-            if find "$destination" -type f -name build-timings.json -print -quit | grep -q .; then
+            report_path="$(find "$destination" -type f -name build-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "scripts:typecheck",
+            "build:release",
+            "validate:ci:build:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "build" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
               history_count=$((history_count + 1))
             else
               rm -rf "$destination"

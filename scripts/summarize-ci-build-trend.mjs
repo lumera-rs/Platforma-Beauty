@@ -31,6 +31,33 @@ function reportJob(report) {
   return report?.job ?? "build";
 }
 
+function isUsableHistoricalReport(report, job) {
+  if (
+    !report ||
+    typeof report !== "object" ||
+    report.schemaVersion !== 2 ||
+    report.status !== "passed" ||
+    reportJob(report) !== job ||
+    typeof report.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(report.startedAt)) ||
+    !Array.isArray(report.phases)
+  ) {
+    return false;
+  }
+
+  const requiredPhaseNames = TREND_PHASES_BY_JOB[job] ?? [];
+  const phasesByName = new Map(
+    report.phases
+      .filter((phase) => phase && typeof phase === "object")
+      .map((phase) => [phase.name, phase]),
+  );
+
+  return requiredPhaseNames.every((name) => {
+    const phase = phasesByName.get(name);
+    return typeof phase?.name === "string" && Number.isFinite(phase.durationSeconds);
+  });
+}
+
 export function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -85,7 +112,7 @@ function readReports(historyDir, limit, job) {
         return null;
       }
     })
-    .filter((report) => report?.status === "passed" && reportJob(report) === job)
+    .filter((report) => isUsableHistoricalReport(report, job))
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
     .slice(0, limit);
 }
