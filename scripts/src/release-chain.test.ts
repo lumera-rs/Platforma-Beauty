@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -24,6 +26,33 @@ const rulesetAuditScriptPath = path.join(
   "scripts",
   "verify-github-ruleset.sh",
 );
+
+async function runCommand(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: workspaceRoot,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
 
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
@@ -269,6 +298,88 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     workflow,
     /\n  build:\n {4}name: .*\n {4}needs: release-chain\n/,
     "Slower CI work must depend on the release-chain job.",
+  );
+});
+
+test("timed CI build preserves failure details and reports before exiting", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-"));
+  const binDir = path.join(tempDir, "bin");
+  const reportDir = path.join(tempDir, "reports");
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  const failureCode = 37;
+
+  await mkdir(binDir);
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+if [[ "$*" == "--filter @workspace/scripts run typecheck" ]]; then
+  exit "$FAKE_PNPM_FAILURE_CODE"
+fi
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: reportDir,
+      GITHUB_STEP_SUMMARY: path.join(reportDir, "build-summary.md"),
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
+    },
+  );
+
+  assert.equal(
+    result.code,
+    failureCode,
+    `The timed runner must preserve the failed phase's exit code. stderr: ${result.stderr}`,
+  );
+
+  const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
+  assert.deepEqual(invocations, [
+    "run build:release",
+    "--filter @workspace/scripts run typecheck",
+  ]);
+
+  const report = JSON.parse(
+    await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
+  ) as {
+    status?: string;
+    phases?: Array<{ name?: string; durationSeconds?: number }>;
+  };
+  assert.equal(report.status, "failed");
+  assert.deepEqual(
+    report.phases?.map((phase) => phase.name),
+    ["build:release", "scripts:typecheck", "validate:ci:build:total"],
+  );
+  assert.ok(
+    report.phases?.every(
+      (phase) =>
+        typeof phase.durationSeconds === "number" &&
+        phase.durationSeconds >= 0,
+    ),
+    "Every completed phase and the total must retain a non-negative duration.",
+  );
+
+  const summary = await readFile(
+    path.join(reportDir, "build-summary.md"),
+    "utf8",
+  );
+  assert.match(summary, /^### Build timing trend$/m);
+  assert.match(summary, /\| scripts:typecheck \|/);
+  assert.match(summary, /\| validate:ci:build:total \|/);
+
+  assert.doesNotMatch(
+    result.stdout,
+    /::group::internal-request-control-outputs/,
+    "No phase after the failure may start.",
   );
 });
 
