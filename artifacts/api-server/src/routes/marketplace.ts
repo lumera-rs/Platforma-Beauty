@@ -12025,6 +12025,14 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   }
   try {
     await db.transaction(async (tx) => {
+      const [lockedEmployee] = await tx.select({ avatarUrl: employeesTable.avatarUrl })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, employee.id))
+        .for("update")
+        .limit(1);
+      if (!lockedEmployee || lockedEmployee.avatarUrl !== employee.avatarUrl) {
+        throw new MediaClaimConflictError();
+      }
       if (nextAvatarUrl && mediaAssetIdFromUrl(nextAvatarUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: nextAvatarUrl,
@@ -12403,6 +12411,14 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
   }
   try {
     await db.transaction(async (tx) => {
+      const [lockedEmployee] = await tx.select({ avatarUrl: employeesTable.avatarUrl })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, access.employee.id))
+        .for("update")
+        .limit(1);
+      if (!lockedEmployee || lockedEmployee.avatarUrl !== access.employee.avatarUrl) {
+        throw new MediaClaimConflictError();
+      }
       if (avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: avatarUrl,

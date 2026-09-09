@@ -579,6 +579,72 @@ async function run(): Promise<void> {
     const replacementEmployeeMediaPublic = await fetch(`${first.baseUrl}${replacementEmployeeMediaImage.imageUrl}&size=thumbnail`);
     assert.equal(replacementEmployeeMediaPublic.status, 200);
 
+    const parallelEmployeeMediaImages = await Promise.all([
+      uploadEmployeeMediaImage("employee-avatar-parallel-a.png"),
+      uploadEmployeeMediaImage("employee-avatar-parallel-b.png"),
+    ]);
+    const parallelEmployeeProfileSaves = await Promise.all(parallelEmployeeMediaImages.map((image) =>
+      fetch(`${first.baseUrl}/api/employee/profile`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: employeeCookie },
+        body: JSON.stringify({ avatarUrl: image.imageUrl }),
+      }),
+    ));
+    assert.equal(
+      parallelEmployeeProfileSaves.filter((response) => response.status === 200).length,
+      1,
+      "exactly one parallel employee avatar save must win",
+    );
+    assert.equal(
+      parallelEmployeeProfileSaves.filter((response) => response.status === 409).length,
+      1,
+      "the stale parallel employee avatar save must be rejected",
+    );
+    const winningParallelIndex = parallelEmployeeProfileSaves.findIndex((response) => response.status === 200);
+    assert.notEqual(winningParallelIndex, -1);
+    const winningParallelEmployeeImage = parallelEmployeeMediaImages[winningParallelIndex]!;
+    const losingParallelEmployeeImage = parallelEmployeeMediaImages[winningParallelIndex === 0 ? 1 : 0]!;
+    const [parallelEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(
+      parallelEmployeeProfile?.avatarUrl,
+      winningParallelEmployeeImage.imageUrl,
+      "the employee profile must point at the transaction that won the row lock",
+    );
+    const parallelAssetRows = await db.select({
+      id: mediaAssetsTable.id,
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.scope, "employee-avatar"),
+      eq(mediaAssetsTable.ownerUserId, employeeUser!.id),
+    ));
+    const parallelAssetsById = new Map(parallelAssetRows.map((asset) => [asset.id, asset]));
+    assert.deepEqual(parallelAssetsById.get(winningParallelEmployeeImage.id), {
+      id: winningParallelEmployeeImage.id,
+      resourceId: employee!.id,
+      visibility: "public",
+    });
+    assert.deepEqual(parallelAssetsById.get(losingParallelEmployeeImage.id), {
+      id: losingParallelEmployeeImage.id,
+      resourceId: null,
+      visibility: "private",
+    });
+    assert.equal(
+      parallelAssetRows.filter((asset) => asset.visibility === "public" && asset.resourceId === employee!.id)
+        .filter((asset) => asset.id !== winningParallelEmployeeImage.id).length,
+      0,
+      "no stale public employee-avatar claim may remain after the parallel save",
+    );
+    assert.equal(
+      parallelAssetRows.filter((asset) => asset.resourceId === employee!.id)
+        .filter((asset) => asset.id !== winningParallelEmployeeImage.id).length,
+      0,
+      "no dangling employee-avatar claim may remain after the parallel save",
+    );
+
     const mediumWebp = await fetch(`${first.baseUrl}${finalized.imageUrl}?size=medium&format=webp`);
     assert.equal(mediumWebp.status, 200);
     const mediumWebpEtag = mediumWebp.headers.get("etag");
