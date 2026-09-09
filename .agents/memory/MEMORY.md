@@ -152,4 +152,4 @@
 - [CI timing calibration](ci-timing-calibration.md) — pre-instrumentation Actions runs provide provisional job totals, not phase observations; recalibrate after timing artifacts accumulate.
 - [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.
 - [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
-- [Authoritative schema migrations](authoritative-schema-migrations.md) — adopt existing databases by baseline ledger; future production schema changes use versioned Drizzle migrations.
+- [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.

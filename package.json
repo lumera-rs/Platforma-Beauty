@@ -29,7 +29,7 @@
     "test:generated-api": "pnpm --filter @workspace/scripts run test:generated-api",
     "schema-drift:audit": "pnpm --filter @workspace/scripts run schema-drift:audit",
     "schema-drift:fingerprint": "pnpm --filter @workspace/scripts run schema-drift:fingerprint",
-    "schema-drift:eligibility-adoption": "pnpm --filter @workspace/scripts run schema-drift:eligibility-adoption",
+    "schema-drift:eligibility": "pnpm --filter @workspace/scripts run schema-drift:eligibility",
     "test:schema-drift": "pnpm --filter @workspace/scripts run test:schema-drift",
     "test:schema-drift:integration": "pnpm --filter @workspace/scripts run test:schema-drift:integration",
     "test:schema-drift:golden-fixture": "pnpm --filter @workspace/scripts run test:schema-drift:golden-fixture",

@@ -62,7 +62,7 @@ function expected(
     schemaFormatVersion: value.schemaFormatVersion,
     structuralFingerprint: value.structuralFingerprint,
     physicalFingerprint: value.physicalFingerprint,
-    physicalSnapshot: { tables: structuredClone(value.physicalPayload.tables as TableDefinition[]) },
+    physicalSnapshot: structuredClone(value.physicalPayload) as SchemaSnapshot,
   };
 }
 
@@ -105,6 +105,52 @@ test("fresh, partial, and wrong databases have distinct fail-closed results", ()
     classifyBaselineEligibility(fingerprint(snapshot("unrelated")), expectedLegacy).code,
     "WRONG_DATABASE",
   );
+});
+
+test("fresh database requires every application-owned identity collection to be empty", () => {
+  const legacy = fingerprint(snapshot("users"));
+  const expectedLegacy = manifest(expected("legacy-v1", "LEGACY", legacy));
+  const enumOnly = fingerprint({
+    tables: [],
+    enums: [{ schema: "public", name: "status", labels: [] }],
+  });
+  const schemaOnly = fingerprint({
+    tables: [],
+    unmodelled: {
+      views: [], materializedViews: [], foreignTables: [], sequences: [],
+      applicationSchemas: ["tenant_tools"], rlsTables: [], policies: [], extensions: [],
+    },
+  });
+  assert.notEqual(
+    classifyBaselineEligibility(enumOnly, expectedLegacy).code,
+    "FRESH_DATABASE",
+  );
+  assert.notEqual(
+    classifyBaselineEligibility(schemaOnly, expectedLegacy).code,
+    "FRESH_DATABASE",
+  );
+});
+
+test("catalogs containing only ownership-excluded objects are explicit and fail closed", () => {
+  const registry = [{
+    objectType: "TABLE" as const,
+    schema: "public",
+    name: "spatial_ref_sys",
+    owner: "PostGIS",
+    mechanism: "extension",
+    reason: "extension-owned",
+    temporary: false,
+  }];
+  const excludedOnly = fingerprint(snapshot("spatial_ref_sys"), registry);
+  const result = classifyBaselineEligibility(excludedOnly, manifest());
+  assert.equal(result.code, "ONLY_EXCLUDED_OBJECTS");
+  assert.equal(result.eligibleForMetadataAdoption, false);
+});
+
+test("an empty approved manifest never manufactures known legacy authority", () => {
+  const result = classifyBaselineEligibility(fingerprint(snapshot("users")), manifest());
+  assert.equal(result.code, "UNKNOWN_FINGERPRINT");
+  assert.equal(result.eligibleForMetadataAdoption, false);
 });
 
 test("unknown P0/P1 drift is reported and never eligible", () => {
@@ -169,19 +215,31 @@ test("exact ownership exclusions are harmless but unknown extras prevent adoptio
   assert.notEqual(rejected.code, "KNOWN_LEGACY");
 });
 
-test("malformed and version-incompatible manifests fail closed", () => {
+test("malformed and version-incompatible manifest entries fail closed", () => {
   const legacy = fingerprint(snapshot("users"));
   const candidate = expected("legacy-v1", "LEGACY", legacy);
-  assert.throws(
-    () => classifyBaselineEligibility(legacy, { formatVersion: 1, expected: [] }),
-    /no expected fingerprints/,
-  );
   assert.throws(
     () => classifyBaselineEligibility(legacy, manifest({
       ...candidate,
       fingerprintVersion: 1 as never,
     })),
     /Incompatible expected fingerprint version/,
+  );
+  for (const state of ["OTHER", undefined, null]) {
+    assert.throws(
+      () => classifyBaselineEligibility(legacy, manifest({
+        ...candidate,
+        state,
+      } as never)),
+      /Invalid expected fingerprint state/,
+    );
+  }
+  assert.throws(
+    () => classifyBaselineEligibility(legacy, {
+      formatVersion: 1,
+      expected: null,
+    } as never),
+    /Malformed baseline eligibility manifest/,
   );
 });
 

@@ -35,6 +35,7 @@ export interface BaselineEligibilityManifest {
 
 export type BaselineEligibilityCode =
   | "FRESH_DATABASE"
+  | "ONLY_EXCLUDED_OBJECTS"
   | "ALREADY_CURRENT"
   | "KNOWN_LEGACY"
   | "PARTIAL_SCHEMA"
@@ -91,7 +92,8 @@ export function classifyBaselineEligibility(
     comparison,
   });
 
-  if ((live.physicalPayload.tables as SchemaSnapshot["tables"]).length === 0) {
+  if (!hasApplicationOwnedSchemaIdentity(live)) {
+    if (live.ownershipExceptions.length > 0) return result("ONLY_EXCLUDED_OBJECTS");
     return result("FRESH_DATABASE");
   }
 
@@ -121,7 +123,8 @@ export function classifyBaselineEligibility(
     right.sharedTableCount - left.sharedTableCount
     || compareCodeUnits(left.expectedId, right.expectedId));
   const closest = comparisons[0] ?? null;
-  if (!closest || closest.sharedTableCount === 0) return result("WRONG_DATABASE", null, closest);
+  if (!closest) return result("UNKNOWN_FINGERPRINT");
+  if (closest.sharedTableCount === 0) return result("WRONG_DATABASE", null, closest);
   if (closest.sharedTableCount < closest.expectedTableCount) {
     return result("PARTIAL_SCHEMA", null, closest);
   }
@@ -135,15 +138,29 @@ function validateManifest(
   manifest: BaselineEligibilityManifest,
   postgresCompatibility: PostgresFingerprintCompatibility,
 ): void {
+  if (!manifest || typeof manifest !== "object" || !Array.isArray(manifest.expected)) {
+    throw new Error("Malformed baseline eligibility manifest");
+  }
   if (manifest.formatVersion !== BASELINE_ELIGIBILITY_FORMAT_VERSION) {
     throw new Error(`Unsupported baseline eligibility manifest version: ${manifest.formatVersion}`);
   }
-  if (manifest.expected.length === 0) throw new Error("Baseline eligibility manifest has no expected fingerprints");
   const ids = new Set<string>();
   const fingerprintPairs = new Set<string>();
   for (const candidate of manifest.expected) {
-    if (!candidate.id.trim() || ids.has(candidate.id)) throw new Error(`Invalid or duplicate expected fingerprint id: ${candidate.id}`);
+    if (!candidate || typeof candidate !== "object") {
+      throw new Error("Malformed expected fingerprint entry");
+    }
+    if (
+      typeof candidate.id !== "string"
+      || !candidate.id.trim()
+      || ids.has(candidate.id)
+    ) {
+      throw new Error(`Invalid or duplicate expected fingerprint id: ${String(candidate.id)}`);
+    }
     ids.add(candidate.id);
+    if (candidate.state !== "CURRENT" && candidate.state !== "LEGACY") {
+      throw new Error(`Invalid expected fingerprint state: ${candidate.id}`);
+    }
     if (
       candidate.formatVersion !== FINGERPRINT_FORMAT_VERSION
       || candidate.algorithm !== FINGERPRINT_ALGORITHM
@@ -170,6 +187,21 @@ function validateManifest(
       throw new Error(`Expected fingerprint does not match physical snapshot: ${candidate.id}`);
     }
   }
+}
+
+function hasApplicationOwnedSchemaIdentity(live: CatalogFingerprintResult): boolean {
+  const payload = live.physicalPayload;
+  const census = payload.unmodelled;
+  return payload.tables.length > 0
+    || payload.enums.length > 0
+    || payload.triggers.length > 0
+    || census.views.length > 0
+    || census.materializedViews.length > 0
+    || census.foreignTables.length > 0
+    || census.sequences.length > 0
+    || census.applicationSchemas.length > 0
+    || census.rlsTables.length > 0
+    || census.policies.length > 0;
 }
 
 export function serializeBaselineEligibility(result: BaselineEligibilityResult): string {

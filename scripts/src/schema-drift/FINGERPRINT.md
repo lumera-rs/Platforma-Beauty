@@ -15,10 +15,15 @@ comparing defaults and expressions (for example, an enum literal or `jsonb`
 literal). That tolerance is scoped to audit normalization. Version-3
 fingerprints retain casts and remain strict.
 
-The fingerprint CLI accepts no eligibility or adoption arguments and has no
-imports from those modules. Eligibility/adoption work from #925 remains isolated
-behind `schema-drift:eligibility-adoption` and its own test commands. It is
-**present but not part of #924 sign-off** and must receive independent review.
+The fingerprint CLI accepts no eligibility arguments and has no imports from
+the eligibility module. Read-only eligibility classification is exposed
+separately as `schema-drift:eligibility`. It accepts no CLI arguments and reads
+only the fixed repository-owned `baseline-manifest.json` beside its source.
+The checked-in manifest intentionally has no approved entries, so there is
+currently no approved LEGACY baseline and no live catalog can be classified as
+`KNOWN_LEGACY` by the CLI. `eligibleForMetadataAdoption` is retained only as a
+read-only classifier compatibility field; there is no executable
+baseline-adoption path.
 
 ## Fingerprints
 
@@ -67,6 +72,19 @@ unmodelled-object census for views, materialized views, foreign tables,
 sequences, non-public application schemas, RLS state and policy definitions,
 and installed extensions. These objects are detected and hashed, but are not
 claimed to have full migration support.
+
+Future migration metadata namespaces are tool-owned metadata, not application
+schema identity. No such namespace exists today. P.2 must define an explicit,
+reviewed catalog-ownership policy before creating one; it must not silently add
+a tool-owned namespace to or remove one from the application census.
+
+P.2 must also design and review, rather than inherit from the removed adoption
+path: verified database identity (`current_database`, system identifier, and
+expected environment), a dedicated adoption command, a repeatable-read write
+transaction without all-table `ACCESS EXCLUSIVE` locking, migration-role
+privilege separation, an immutable migration ledger, baseline as ledger row
+zero, backup/restore-point evidence, the migration frontier, and convergence of
+fresh and adopted databases.
 
 The JSON result exposes both normalized payloads, enum/trigger counts, and the
 unmodelled census for review and diffing.

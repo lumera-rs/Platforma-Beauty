@@ -28,16 +28,18 @@ are valid catalog states and must not disappear from exact identity evidence.
 definition with quote-aware parsing, hash trigger and function definitions under
 the pinned deparser contract, and enumerate enum types independently of labels.
 
-Baseline adoption must acquire the shared schema-management advisory lock before
-starting its verification transaction. During verification it must also lock the
-relation catalog against writes and lock all existing application tables through
-the metadata commit or rollback.
+Baseline adoption is classification-only until a separately reviewed P.2
+architecture restores any write capability. Repository eligibility authority may
+remain intentionally empty; an operator-supplied manifest never establishes
+legacy truth.
 
-**Why:** Existing-table locks alone do not block a concurrent new table or index,
-and acquiring a transaction lock after the transaction starts can leave
-verification on a snapshot from before a waiting schema writer committed.
+**Why:** The removed adoption path trusted self-authored manifests, lacked
+database/environment identity proof, changed its own fingerprint by creating
+metadata, and used broad catalog/table locks. Its integration path could commit
+against an insufficiently guarded database.
 
-**How to apply:** Future migration and schema-management writers must use the
-same advisory lock. Adoption additionally uses a write-conflicting
-`pg_catalog.pg_class` lock plus relation locks so even uncoordinated relation DDL
-cannot split exact fingerprint verification from the audit-ledger write.
+**How to apply:** Keep eligibility transactions read-only and fixed to
+repository-owned authority. Do not restore adoption writes until P.2 defines
+verified database identity, least-privilege roles, immutable ledger semantics,
+backup evidence, migration frontier/convergence, and a bounded serialization
+strategy.
