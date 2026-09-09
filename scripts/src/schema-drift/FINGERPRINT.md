@@ -34,6 +34,43 @@ than permissive fallbacks. Each digest pair is unique, cannot receive conflictin
 before classification. P0/P1 findings are returned for review but never authorize
 adoption.
 
+
+## Controlled baseline adoption
+
+Adoption is an explicit write operation:
+
+```bash
+pnpm --silent run schema-drift:fingerprint -- \
+  --eligibility-manifest=path/to/reviewed-manifest.json \
+  --adopt-known-legacy=reviewed-legacy-id \
+  --adoption-actor=operator-or-automation-identity
+```
+
+The command acquires Lumera's session-scoped PostgreSQL advisory migration lock
+before starting the write transaction or taking a catalog snapshot. It then
+takes a write-conflicting lock on PostgreSQL's relation catalog, followed by
+`ACCESS EXCLUSIVE` locks on the existing public tables. This blocks both new
+relations and changes to approved existing relations while it reads and
+classifies the catalog again inside the same read-write transaction. It writes
+metadata only when the fresh result is
+exactly `KNOWN_LEGACY` and its reviewed manifest ID equals the operator-supplied
+ID. Every other eligibility code, a different legacy ID, malformed manifest, or
+ledger conflict rolls the transaction back without a metadata write.
+
+The audit row is stored in
+`lumera_migrations.baseline_adoptions`. It records the baseline ID, both schema
+fingerprints and their format versions, the exact manifest file SHA-256,
+PostgreSQL server version and pinned deparser format, operator identity, database
+name, and database-generated adoption time. Repeating
+the command with the same evidence is idempotent and returns
+`ALREADY_ADOPTED`; reuse of an ID with different evidence fails closed. All
+Lumera migration and schema-adoption writers must use the same advisory lock, so
+schema verification and metadata adoption cannot be separated by a competing
+managed schema change. Existing-table locks additionally prevent uncoordinated
+DDL against the approved legacy tables, while the relation-catalog lock prevents
+uncoordinated creation of a new public table or index during verification and
+adoption.
+
 ## Fingerprints
 
 Both hashes use SHA-256 over a versioned, locale-neutral canonical UTF-8 JSON

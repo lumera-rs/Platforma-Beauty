@@ -13,6 +13,7 @@ import { fingerprintSnapshot, serializeFingerprint } from "./schema-drift/finger
 import { beginFingerprintTransaction } from "./schema-drift/fingerprint-transaction";
 import { ownershipExceptions } from "./schema-drift/ownership";
 import { readOnlyQueryLayer } from "./schema-drift/read-only-query";
+import { adoptKnownLegacyBaseline } from "./schema-drift/adoption";
 
 const { Pool } = pg;
 
@@ -22,10 +23,31 @@ async function main(): Promise<void> {
     argument.startsWith("--eligibility-manifest="));
   const manifestPath = manifestArgument?.slice("--eligibility-manifest=".length);
   if (manifestArgument && !manifestPath) throw new Error("Eligibility manifest path is required");
+  const adoptionArgument = process.argv.find((argument) =>
+    argument.startsWith("--adopt-known-legacy="));
+  const expectedId = adoptionArgument?.slice("--adopt-known-legacy=".length);
+  const actorArgument = process.argv.find((argument) => argument.startsWith("--adoption-actor="));
+  const actor = actorArgument?.slice("--adoption-actor=".length);
+  if (adoptionArgument && !expectedId) throw new Error("Expected legacy fingerprint id is required");
+  if (adoptionArgument && !manifestPath) throw new Error("Adoption requires --eligibility-manifest");
+  if (adoptionArgument && !actor) throw new Error("Adoption requires --adoption-actor");
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
   try {
     const client = await pool.connect();
     try {
+      if (expectedId && actor && manifestPath) {
+        const manifestBytes = await readFile(manifestPath, "utf8");
+        const adoption = await adoptKnownLegacyBaseline(client, {
+          expectedId,
+          actor,
+          manifestBytes,
+        });
+        process.stdout.write(`${JSON.stringify(adoption, null, 2)}\n`);
+        process.stderr.write(
+          `Baseline adoption: ${adoption.outcome}; expected id ${adoption.expectedId}.\n`,
+        );
+        return;
+      }
       await beginFingerprintTransaction(client);
       const readOnlyClient = readOnlyQueryLayer(client);
       const postgresCompatibility = await readPostgresFingerprintCompatibility(readOnlyClient);

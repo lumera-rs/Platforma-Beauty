@@ -9,7 +9,7 @@
     "schema-drift:audit:json-file": "tsx ./src/audit-schema-drift.ts --json-file=schema-drift-report.json",
     "schema-drift:fingerprint": "tsx ./src/fingerprint-schema.ts",
     "test:schema-drift": "tsx --test ./src/schema-drift/schema-drift.test.ts ./src/schema-drift/fingerprint.test.ts ./src/schema-drift/eligibility.test.ts",
-    "test:schema-drift:integration": "tsx --test ./src/schema-drift/schema-drift.integration.test.ts ./src/schema-drift/fingerprint.integration.test.ts",
+    "test:schema-drift:integration": "tsx --test ./src/schema-drift/schema-drift.integration.test.ts ./src/schema-drift/fingerprint.integration.test.ts ./src/schema-drift/adoption.integration.test.ts",
     "test:migration-contract": "tsx --test ./src/migration-contract/migration-contract.test.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",

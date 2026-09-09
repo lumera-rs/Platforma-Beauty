@@ -14,3 +14,17 @@ Catalog fingerprints used for adoption evidence must be fail-closed, come from o
 **Why:** Broad SQL text normalization created collisions between different literals, arithmetic grouping, casts, and function schemas; session search paths changed deparser output; per-column index deparsing omitted option, collation, and opclass details; omitted exclusion and advanced constraint semantics hid active Lumera invariants.
 
 **How to apply:** Pin the PostgreSQL deparser GUCs, read index semantic vectors explicitly, normalize only proven equivalences, preserve literal and resolved object identity, expose structural and physical payloads for review, and make unknown catalog object types fail instead of disappearing.
+
+Baseline adoption must acquire the shared schema-management advisory lock before
+starting its verification transaction. During verification it must also lock the
+relation catalog against writes and lock all existing application tables through
+the metadata commit or rollback.
+
+**Why:** Existing-table locks alone do not block a concurrent new table or index,
+and acquiring a transaction lock after the transaction starts can leave
+verification on a snapshot from before a waiting schema writer committed.
+
+**How to apply:** Future migration and schema-management writers must use the
+same advisory lock. Adoption additionally uses a write-conflicting
+`pg_catalog.pg_class` lock plus relation locks so even uncoordinated relation DDL
+cannot split exact fingerprint verification from the audit-ledger write.
