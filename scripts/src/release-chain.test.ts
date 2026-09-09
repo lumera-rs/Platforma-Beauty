@@ -746,9 +746,45 @@ test("branch CI isolates database checks and orders browser journeys after every
     warningMultiplier?: number;
     warningMinimumIncreaseSeconds?: number;
   };
-  assert.ok((timingBaselines.baselinesSeconds?.["build:release"] ?? 0) > 0);
-  assert.ok((timingBaselines.baselinesSeconds?.["scripts:typecheck"] ?? 0) > 0);
-  assert.ok((timingBaselines.baselinesSeconds?.["validate:ci:build:total"] ?? 0) > 0);
+  const emittedPhasesByJob = Object.fromEntries(
+    ["build", "database", "browser"].map((job) => {
+      const jobBlock = Array.from(
+        buildTimingScript.matchAll(
+          new RegExp(`^  ${job}\\)\\n([\\s\\S]*?)^    ;;$`, "gm"),
+        ),
+        (match) => match[1],
+      ).find((block) => block.includes("run_phase "));
+      assert.ok(jobBlock, `The timed CI runner must define the ${job} job.`);
+
+      return [
+        job,
+        [
+          ...Array.from(
+            jobBlock.matchAll(/^\s+run_phase "([^"]+)"/gm),
+            (match) => match[1],
+          ),
+          `validate:ci:${job}:total`,
+        ],
+      ];
+    }),
+  ) as Record<"build" | "database" | "browser", string[]>;
+  const emittedPhases = Object.values(emittedPhasesByJob).flat().sort();
+  const baselinePhases = Object.keys(timingBaselines.baselinesSeconds ?? {}).sort();
+
+  assert.deepEqual(
+    baselinePhases,
+    emittedPhases,
+    "Every phase emitted by the build, database, and browser timing reports must have exactly one baseline, with no stale baseline keys.",
+  );
+  for (const [job, phases] of Object.entries(emittedPhasesByJob)) {
+    assert.ok(phases.length > 1, `The ${job} timing report must include phases and its total.`);
+    for (const phase of phases) {
+      assert.ok(
+        (timingBaselines.baselinesSeconds?.[phase] ?? 0) > 0,
+        `The ${job} timing report phase ${phase} must have a positive baseline.`,
+      );
+    }
+  }
   assert.ok((timingBaselines.warningMultiplier ?? 0) > 1);
   assert.ok((timingBaselines.warningMinimumIncreaseSeconds ?? 0) > 0);
   assert.equal(
