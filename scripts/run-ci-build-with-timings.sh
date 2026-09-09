@@ -5,6 +5,7 @@ workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 baseline_file="$workspace_root/scripts/ci-build-timings.json"
 report_dir="${CI_TIMING_REPORT_DIR:-$workspace_root/ci-timings}"
 report_file="$report_dir/build-timings.json"
+history_dir="${CI_TIMING_HISTORY_DIR:-$report_dir/history}"
 summary_file="${GITHUB_STEP_SUMMARY:-$report_dir/build-summary.md}"
 mkdir -p "$report_dir"
 
@@ -101,8 +102,14 @@ for (const phase of report.phases) {
 }
 NODE
     echo
-    echo "Timing warnings are informational and never change the validation result. Download the build-timings artifact to compare runs."
+    echo "Timing warnings are informational and never change the validation result."
   } >> "$summary_file"
+
+  if [ "$status" = "passed" ]; then
+    node "$workspace_root/scripts/summarize-ci-build-trend.mjs" \
+      "$report_file" "$history_dir" "$summary_file" "$baseline_file" \
+      || echo "::notice title=Build timing history unavailable::Could not summarize previous build timings. This does not block the build."
+  fi
 }
 
 status="passed"

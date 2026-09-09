@@ -2,6 +2,8 @@
   "schemaVersion": 1,
   "warningMultiplier": 1.5,
   "warningMinimumIncreaseSeconds": 30,
+  "historyLimit": 5,
+  "sustainedSlowdownRuns": 3,
   "baselinesSeconds": {
     "build:release": 85,
     "scripts:typecheck": 25,

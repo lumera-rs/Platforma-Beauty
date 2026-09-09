@@ -12,6 +12,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -49,6 +50,30 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Download recent successful build timing history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-timings/history
+          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
+          history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="$default_branch" -f status=success -f per_page="$history_limit" \
+            --jq '.workflow_runs[].id' |
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            artifact_id="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                --jq '.artifacts | map(select(.expired == false and (.name | startswith("build-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
+            )"
+            [ -n "$artifact_id" ] || continue
+            destination="ci-timings/history/${run_id}"
+            mkdir -p "$destination"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" &&
+              unzip -q "$destination/artifact.zip" -d "$destination" &&
+              rm "$destination/artifact.zip"
+          done
       - name: Run build and database-free publish checks
         run: env -u DATABASE_URL pnpm run validate:ci:build
       - name: Upload build timing history
