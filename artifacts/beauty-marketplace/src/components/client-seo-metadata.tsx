@@ -22,22 +22,26 @@ export type SeoHeadMetadata = {
   canonical: string;
   robots: 'index, follow' | 'noindex, follow';
   image: string;
+  imageAlt: string;
   openGraph: {
     title: string;
     description: string;
     url: string;
     image: string;
+    imageAlt: string;
   };
   twitter: {
     title: string;
     description: string;
     url: string;
     image: string;
+    imageAlt: string;
   };
 };
 
 const APP_NAME = 'LUMERA';
 const defaultDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+const defaultImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
 
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -109,14 +113,16 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.svg`;
   const title = clip(payload.title, 60);
   const description = clip(payload.description);
+  const imageAlt = payload.image ? title : defaultImageAlt;
   return {
     title,
     description,
     canonical,
     robots: payload.indexable ? 'index, follow' : 'noindex, follow',
     image,
-    openGraph: { title, description, url: canonical, image },
-    twitter: { title, description, url: canonical, image },
+    imageAlt,
+    openGraph: { title, description, url: canonical, image, imageAlt },
+    twitter: { title, description, url: canonical, image, imageAlt },
   };
 }
 
@@ -129,10 +135,12 @@ function applySeo(pathname: string, payload: SeoPayload) {
   setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.openGraph.description);
   setMeta('meta[property="og:url"]', 'property', 'og:url', metadata.openGraph.url);
   setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.openGraph.image);
+  setMeta('meta[property="og:image:alt"]', 'property', 'og:image:alt', metadata.openGraph.imageAlt);
   setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.twitter.title);
   setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.twitter.description);
   setMeta('meta[name="twitter:url"]', 'name', 'twitter:url', metadata.twitter.url);
   setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', metadata.twitter.image);
+  setMeta('meta[name="twitter:image:alt"]', 'name', 'twitter:image:alt', metadata.twitter.imageAlt);
   let link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!link) {
     link = document.createElement('link');

@@ -34,17 +34,20 @@ type SeoHeadMetadata = {
   canonical: string;
   robots: string;
   image: string;
+  imageAlt: string;
   openGraph: {
     title: string;
     description: string;
     url: string;
     image: string;
+    imageAlt: string;
   };
   twitter: {
     title: string;
     description: string;
     url: string;
     image: string;
+    imageAlt: string;
   };
 };
 const moduleUrl = (relativePath: string) =>
@@ -454,12 +457,14 @@ type ComparableSeoHead = {
     description: string | null;
     url: string | null;
     image: string | null;
+    imageAlt: string | null;
   };
   twitter: {
     title: string | null;
     description: string | null;
     url: string | null;
     image: string | null;
+    imageAlt: string | null;
   };
 };
 
@@ -492,12 +497,14 @@ function ssrHead(html: string): ComparableSeoHead {
       description: optionalHtmlAttribute(html, /<meta property="og:description" content="([^"]*)">/u),
       url: optionalHtmlAttribute(html, /<meta property="og:url" content="([^"]*)">/u),
       image: optionalHtmlAttribute(html, /<meta property="og:image" content="([^"]*)">/u),
+      imageAlt: optionalHtmlAttribute(html, /<meta property="og:image:alt" content="([^"]*)">/u),
     },
     twitter: {
       title: optionalHtmlAttribute(html, /<meta name="twitter:title" content="([^"]*)">/u),
       description: optionalHtmlAttribute(html, /<meta name="twitter:description" content="([^"]*)">/u),
       url: optionalHtmlAttribute(html, /<meta name="twitter:url" content="([^"]*)">/u),
       image: optionalHtmlAttribute(html, /<meta name="twitter:image" content="([^"]*)">/u),
+      imageAlt: optionalHtmlAttribute(html, /<meta name="twitter:image:alt" content="([^"]*)">/u),
     },
   };
 }
@@ -640,6 +647,16 @@ try {
     (await serverMetadata("/shop/glow-supply")).head.openGraph.image,
     supplier.logoUrl,
     "absolute social images must remain unchanged",
+  );
+  assert.equal(
+    (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt,
+    "Glow Studio u Beograd | LUMERA",
+    "dynamic social images must describe their public content",
+  );
+  assert.equal(
+    (await serverMetadata("/")).head.openGraph.imageAlt,
+    "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
+    "the default LUMERA social image must have a suitable description",
   );
 } finally {
   globalThis.fetch = originalFetch;
