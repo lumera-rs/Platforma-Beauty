@@ -153,3 +153,4 @@
 - [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.
 - [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
 - [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
+- [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.

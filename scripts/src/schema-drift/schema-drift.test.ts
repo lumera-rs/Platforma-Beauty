@@ -141,12 +141,21 @@ test("normalizeSql preserves semantics while normalizing PostgreSQL renderings",
 });
 
 test("legacy audit strips catalog casts without weakening fingerprint normalization", () => {
-  for (const [plain, catalog] of [
-    ["'QUEUED'", "'QUEUED'::aftercare_delivery_status"],
-    ["'{}'", "'{}'::jsonb"],
+  for (const [plain, catalog, type] of [
+    ["'QUEUED'", "'QUEUED'::aftercare_delivery_status", "aftercare_delivery_status"],
+    ["'{}'", "'{}'::jsonb", "jsonb"],
+    ["'name'", "'name'::character varying", "varchar"],
+    ["'1.5'", "'1.5'::double precision", "double precision"],
+    ["'2026-09-09 12:00:00'", "'2026-09-09 12:00:00'::timestamp without time zone", "timestamp without time zone"],
+    ["'2026-09-09 12:00:00+02'", "'2026-09-09 12:00:00+02'::timestamp with time zone", "timestamp with time zone"],
+    ["'12:00:00'", "'12:00:00'::time without time zone", "time without time zone"],
+    ["'12:00:00+02'", "'12:00:00+02'::time with time zone", "time with time zone"],
+    ["'101'", "'101'::bit varying", "bit varying"],
   ]) {
     const desired = clone();
     const actual = clone();
+    desired.tables[0]!.columns[2]!.type = type;
+    actual.tables[0]!.columns[2]!.type = type;
     desired.tables[0]!.columns[2]!.default = plain;
     actual.tables[0]!.columns[2]!.default = catalog;
     assert.deepEqual(compareSchemas(desired, actual).findings, []);
@@ -156,6 +165,207 @@ test("legacy audit strips catalog casts without weakening fingerprint normalizat
   const actual = clone();
   desired.tables[0]!.columns[2]!.default = "'QUEUED'";
   actual.tables[0]!.columns[2]!.default = "'DONE'::aftercare_delivery_status";
+  assert.equal(compareSchemas(desired, actual).findings.length, 1);
+  assert.notEqual(
+    normalizeSql("value", undefined, { stripCasts: true }),
+    normalizeSql("value::character varying", undefined, { stripCasts: true }),
+  );
+  assert.notEqual(
+    normalizeSql("lower(value)", undefined, { stripCasts: true }),
+    normalizeSql("lower(value)::text", undefined, { stripCasts: true }),
+  );
+  assert.notEqual(
+    normalizeSql(`"value"`, undefined, { stripCasts: true }),
+    normalizeSql(`"value"::text`, undefined, { stripCasts: true }),
+  );
+  assert.notEqual(
+    normalizeSql("5/2", undefined, { stripCasts: true }),
+    normalizeSql("5/2::numeric", undefined, { stripCasts: true }),
+  );
+  assert.notEqual(
+    normalizeSql("'long'", undefined, {
+      stripCasts: true,
+      auditCastTargetType: "varchar",
+    }),
+    normalizeSql("'long'::character varying(1)", undefined, {
+      stripCasts: true,
+      auditCastTargetType: "varchar",
+    }),
+  );
+  const desiredCheck = clone();
+  const actualCheck = clone();
+  desiredCheck.tables[0]!.columns[2]!.type = "aftercare_delivery_status";
+  actualCheck.tables[0]!.columns[2]!.type = "aftercare_delivery_status";
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "amount in ('QUEUED','DONE') or amount='FAILED'";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "amount=any (array['QUEUED'::aftercare_delivery_status,'DONE'::aftercare_delivery_status])"
+    + " or amount='FAILED'::aftercare_delivery_status";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "amount='FAILED'::aftercare_delivery_status||'OTHER'";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.columns[2]!.type = "jsonb";
+  actualCheck.tables[0]!.columns[2]!.type = "jsonb";
+  desiredCheck.tables[0]!.checks[0]!.expression = "jsonb_typeof(amount)='array'";
+  actualCheck.tables[0]!.checks[0]!.expression = "jsonb_typeof(amount)='array'::text";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "amount->>'reference' is not null";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "(amount->>'reference'::text) is not null";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.columns[1]!.type = "text";
+  actualCheck.tables[0]!.columns[1]!.type = "text";
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "case when tenant_id ~~ '0%' then true else false end";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "case when tenant_id ~~ '0%'::text then true else false end";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "case when regexp_replace(tenant_id,'x','') ~~ '0%' then true else false end";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "case when regexp_replace(tenant_id,'x'::text,''::text) ~~ '0%'::text"
+    + " then true else false end";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "case when tenant_id ~~ '0%' then '381'||substring(tenant_id from 2)"
+    + " else tenant_id end <> ''";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "case when tenant_id ~~ '0%'::text then '381'::text"
+    + "||substring(tenant_id from 2) else tenant_id end <> ''::text";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.columns[1]!.generated =
+    "coalesce(tenant_id::text,'none')";
+  actualCheck.tables[0]!.columns[1]!.generated =
+    "coalesce(tenant_id::text,'none'::text)";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.columns[1]!.generated = null;
+  actualCheck.tables[0]!.columns[1]!.generated = null;
+  desiredCheck.tables[0]!.columns[1]!.default =
+    "'ID-' || upper(substr(replace(tenant_id::text,'-',''),1,12))";
+  actualCheck.tables[0]!.columns[1]!.default =
+    "'ID-'::text || upper(substr("
+    + "replace(tenant_id::text,'-'::text,''::text),1,12))";
+  assert.deepEqual(compareSchemas(desiredCheck, actualCheck).findings, []);
+  desiredCheck.tables[0]!.columns[1]!.default = null;
+  actualCheck.tables[0]!.columns[1]!.default = null;
+  desiredCheck.tables[0]!.checks[0]!.expression = "tenant_id='x'";
+  actualCheck.tables[0]!.checks[0]!.expression = "tenant_id=custom('x'::text)";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.columns[1]!.type = "integer";
+  actualCheck.tables[0]!.columns[1]!.type = "integer";
+  desiredCheck.tables[0]!.columns[2]!.type = "numeric";
+  actualCheck.tables[0]!.columns[2]!.type = "numeric";
+  desiredCheck.tables[0]!.checks[0]!.expression = "tenant_id/'2'=amount";
+  actualCheck.tables[0]!.checks[0]!.expression = "tenant_id/'2'::numeric=amount";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression = "amount=any(array['5'/2])";
+  actualCheck.tables[0]!.checks[0]!.expression = "amount=any(array['5'::numeric/2])";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "amount=any(array[custom(0,'5',0)])";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "amount=any(array[custom(0,'5'::numeric,0)])";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "('{}'||lower('{b}')::text[])=array['b']";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "('{}'::text||lower('{b}')::text[])=array['b']";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'||substring(decode('62','hex'),1))=2";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'::text||substring(decode('62','hex'),1))=2";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'||substr(decode('62','hex'),1))=2";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'::text||substr(decode('62','hex'),1))=2";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'||btrim(decode('62','hex'),decode('63','hex')))=2";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "octet_length('a'::text||btrim(decode('62','hex'),decode('63','hex')))=2";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression = "tenant_id is not null";
+  actualCheck.tables[0]!.checks[0]!.expression = "tenant_id is not null";
+  desiredCheck.tables[0]!.columns[1]!.default = "custom.replace()||'a'";
+  actualCheck.tables[0]!.columns[1]!.default = "custom.replace()||'a'::text";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.columns[1]!.default = `"custom".replace()||'a'`;
+  actualCheck.tables[0]!.columns[1]!.default = `"custom".replace()||'a'::text`;
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.columns[1]!.default = null;
+  actualCheck.tables[0]!.columns[1]!.default = null;
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "custom.replace('a')=tenant_id";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "custom.replace('a'::text)=tenant_id";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "custom_blob operator(custom.||) tenant_id='x'";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "custom_blob operator(custom.||) tenant_id='x'::text";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+  desiredCheck.tables[0]!.checks[0]!.expression =
+    "custom_numeric operator(custom.+) amount=any(array['5'])";
+  actualCheck.tables[0]!.checks[0]!.expression =
+    "custom_numeric operator(custom.+) amount=any(array['5'::numeric])";
+  assert.equal(compareSchemas(desiredCheck, actualCheck).findings.length, 1);
+});
+
+test("legacy audit removes only precedence-redundant expression parentheses", () => {
+  const audit = (value: string) =>
+    normalizeSql(value, undefined, { preserveQuotedIdentifiers: false, stripCasts: true });
+  for (const [left, right] of [
+    ["(a=1)", "a=1"],
+    ["(((a=1)))", "a=1"],
+    ["(a=1 and b=2) or (c=3 and d=4)", "a=1 and b=2 or c=3 and d=4"],
+    ["a=1 or (b=2 and c=3)", "a=1 or b=2 and c=3"],
+    ["total=a+b", "total=(a+b)"],
+    ["a+b<=total", "(a+b)<=total"],
+  ]) {
+    assert.equal(audit(left), audit(right), `${left} vs ${right}`);
+  }
+  for (const [left, right] of [
+    ["(a or b) and c", "a or b and c"],
+    ["(a+b)*c", "a+b*c"],
+    ["a*(b+c)", "a*b+c"],
+    ["not (a and b)", "not a and b"],
+    ["f(a)", "f a"],
+    ["case when a then b else c end", "case when a then c else b end"],
+    ["row(a,b)", "row(a)"],
+    ["array[a,b]", "array[a]"],
+    ["a in (1,2)", "a in (1,3)"],
+    ["a between low and high", "a between low and other"],
+    ["x=(a+b)*c", "x=a+b*c"],
+    ["abs(a)>0", "absa>0"],
+    ["a*(b+c)>0", "a*b+c>0"],
+    ["(a<b)<c", "a<(b<c)"],
+  ]) {
+    assert.notEqual(audit(left), audit(right), `${left} vs ${right}`);
+  }
+  const desired = clone();
+  const actual = clone();
+  desired.tables[0]!.checks[0]!.expression = "(amount>0 and tenant_id is not null)";
+  actual.tables[0]!.checks[0]!.expression = "amount>1 and tenant_id is not null";
+  assert.deepEqual(
+    compareSchemas(desired, actual).findings.map((finding) =>
+      `${finding.category}:${finding.objectType}:${finding.objectName}`),
+    ["DEFINITION_MISMATCH:CHECK:orders_amount_check"],
+  );
+});
+
+test("legacy audit ignores only insignificant whitespace in typed JSON defaults", () => {
+  const desired = clone();
+  const actual = clone();
+  desired.tables[0]!.columns[2]!.type = "jsonb";
+  actual.tables[0]!.columns[2]!.type = "jsonb";
+  desired.tables[0]!.columns[2]!.default = `'["A","B C",{"value":"x y"}]'`;
+  actual.tables[0]!.columns[2]!.default = `'[ "A", "B C", { "value" : "x y" } ]'`;
+  assert.deepEqual(compareSchemas(desired, actual).findings, []);
+  actual.tables[0]!.columns[2]!.default = `'["A","BC",{"value":"x y"}]'`;
   assert.equal(compareSchemas(desired, actual).findings.length, 1);
 });
 

@@ -214,7 +214,10 @@ function auditSnapshot(input: SchemaSnapshot): SchemaSnapshot {
         identity: _identity,
         collation: _collation,
         ...column
-      }) => column)
+      }) => ({
+        ...column,
+        default: normalizeAuditJsonDefault(column.type, column.default),
+      }))
         .sort((left, right) => compareCodeUnits(left.name, right.name)),
       primaryKey: legacyKey(table.primaryKey),
       uniques: table.uniques.map((key) => legacyKey(key)!),
@@ -244,6 +247,37 @@ function auditSnapshot(input: SchemaSnapshot): SchemaSnapshot {
       }) => index),
     })),
   };
+}
+
+function normalizeAuditJsonDefault(
+  type: string,
+  value: string | null,
+): string | null {
+  if ((type !== "json" && type !== "jsonb") || value === null) return value;
+  if (!/^'(?:[^']|'')*'$/s.test(value)) return value;
+  const json = value.slice(1, -1).replace(/''/g, "'");
+  try {
+    JSON.parse(json);
+  } catch {
+    return value;
+  }
+  let compact = "";
+  let inString = false;
+  let escaped = false;
+  for (const character of json) {
+    if (inString) {
+      compact += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+    } else if (character === '"') {
+      compact += character;
+      inString = true;
+    } else if (!/\s/.test(character)) {
+      compact += character;
+    }
+  }
+  return `'${compact.replace(/'/g, "''")}'`;
 }
 
 function legacyKey<T extends {
