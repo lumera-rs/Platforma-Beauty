@@ -38,6 +38,8 @@ const isolatedEducationGroupOnlineConsentBrowserTest =
   "1";
 const isolatedBookingSettingsBrowserTest =
   process.env.LUMERA_ISOLATED_BOOKING_SETTINGS_BROWSER_TEST === "1";
+const isolatedCoverImageDescriptionBrowserTest =
+  process.env.LUMERA_ISOLATED_COVER_IMAGE_DESCRIPTION_BROWSER_TEST === "1";
 const releaseBrowserTest = process.env.LUMERA_RELEASE_BROWSER_TEST === "1";
 const ciDiagnosticsProbe = process.env.LUMERA_CI_DIAGNOSTICS_PROBE === "1";
 
@@ -72,7 +74,8 @@ const isolatedBrowserTest =
   isolatedInfobipRegistrationBrowserTest ||
   isolatedBeautyJobsBrowserTest ||
   isolatedEducationGroupOnlineConsentBrowserTest ||
-  isolatedBookingSettingsBrowserTest;
+  isolatedBookingSettingsBrowserTest ||
+  isolatedCoverImageDescriptionBrowserTest;
 
 if (
   [
@@ -85,6 +88,7 @@ if (
     isolatedBeautyJobsBrowserTest,
     isolatedEducationGroupOnlineConsentBrowserTest,
     isolatedBookingSettingsBrowserTest,
+    isolatedCoverImageDescriptionBrowserTest,
   ].filter(Boolean).length > 1
 ) {
   throw new Error("Only one isolated browser suite may run in a harness process.");
@@ -108,7 +112,9 @@ if (isolatedBrowserTest) {
                 ? /^lumera_bjobs_\d+_[a-f0-9]{32}$/
                 : isolatedEducationGroupOnlineConsentBrowserTest
                   ? /^lumera_education_group_browser_\d+_[a-f0-9]{32}$/
-                  : /^lumera_booking_settings_browser_\d+_[a-f0-9]{32}$/;
+                  : isolatedCoverImageDescriptionBrowserTest
+                    ? /^lumera_cover_\d+_[a-f0-9]{32}$/
+                    : /^lumera_booking_settings_browser_\d+_[a-f0-9]{32}$/;
   if (
     !testDatabaseUrl
     || process.env.DATABASE_URL !== testDatabaseUrl
