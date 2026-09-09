@@ -893,7 +893,7 @@ export async function createSeoResponse(req, template) {
 
 const mimeTypes = { '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
 
-async function start() {
+export async function startSeoServer() {
   const template = await fs.readFile(path.join(distDir, 'index.html'), 'utf8');
   const port = Number(process.env.PORT ?? 23561);
   createServer(async (req, res) => {
@@ -916,4 +916,7 @@ async function start() {
   }).listen(port, '0.0.0.0');
 }
 
-if (process.env.NODE_ENV !== 'test') void start();
+const isMainModule = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMainModule) void startSeoServer();

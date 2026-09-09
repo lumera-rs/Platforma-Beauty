@@ -319,6 +319,16 @@ assert.deepEqual(
 );
 assert.match(server, /staticPageDefinitions/u, "the SEO server must consume the shared static SEO catalog");
 assert.match(clientMetadata, /staticSeoPages/u, "the client must consume the shared static SEO catalog");
+assert.match(
+  server,
+  /path\.resolve\(process\.argv\[1\]\)\s*===\s*fileURLToPath\(import\.meta\.url\)/u,
+  "the SEO server must only open its HTTP listener when run as the process entry point",
+);
+assert.doesNotMatch(
+  server,
+  /process\.env\.NODE_ENV\s*!==\s*['"]test['"]/u,
+  "import safety must not depend on callers setting NODE_ENV=test",
+);
 
 const courseId = "11111111-1111-4111-8111-111111111111";
 const dynamicRouteContracts: DynamicRouteContract[] = [
