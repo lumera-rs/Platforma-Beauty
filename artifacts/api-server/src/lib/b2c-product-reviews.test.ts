@@ -7,7 +7,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   db, productCategoriesTable, productsTable, retailCartsTable, retailOrderItemsTable,
   retailOrdersTable, retailProductReviewModerationAuditsTable, retailProductReviewReportsTable,
-  retailProductReviewsTable, suppliersTable, usersTable,
+  retailProductReviewsTable, reviewRewardIssuancesTable, suppliersTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -65,6 +65,7 @@ test.after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await db.delete(retailProductReviewModerationAuditsTable).where(inArray(retailProductReviewModerationAuditsTable.moderatorUserId, users));
   await db.delete(retailProductReviewReportsTable).where(inArray(retailProductReviewReportsTable.reporterUserId, users));
+  await db.delete(reviewRewardIssuancesTable).where(inArray(reviewRewardIssuancesTable.orderId, orders));
   await db.delete(retailProductReviewsTable).where(inArray(retailProductReviewsTable.userId, users));
   await db.delete(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, orders));
   await db.delete(retailOrdersTable).where(inArray(retailOrdersTable.id, orders));
@@ -123,4 +124,59 @@ test("verified B2C review lifecycle, moderation and aggregate parity", async () 
     eq(retailProductReviewsTable.moderationStatus, "PUBLISHED"),
   ));
   assert.equal(product!.reviewCount, published.length, "aggregate matches the serialized concurrent result");
+});
+
+test("legacy public reviews disappear when their supplier is not publicly retail-visible", async () => {
+  const session = await cookie(other);
+  const created = await api(`/customer/retail-products/${otherProductId}/reviews`, session, {
+    method: "POST",
+    body: JSON.stringify({ rating: 5, comment: "Legacy visibility fixture" }),
+  });
+  assert.equal(created.status, 201, await created.clone().text());
+  const review = await created.json() as { id: string };
+  const path = `/retail/products/${otherProductId}/reviews`;
+  const assertPublic = async () => {
+    const response = await api(path);
+    assert.equal(response.status, 200, await response.clone().text());
+    const body = await response.json() as Array<Record<string, unknown>>;
+    assert.equal(body.length, 1);
+    assert.equal(body[0]!.id, review.id);
+    assert.equal(body[0]!.comment, "Legacy visibility fixture");
+    assert.equal(body[0]!.verifiedPurchase, true);
+    assert.deepEqual(
+      Object.keys(body[0]!).sort(),
+      ["comment", "createdAt", "id", "rating", "reviewerName", "updatedAt", "verifiedPurchase"].sort(),
+    );
+  };
+  const assertHidden = async () => {
+    const response = await api(path);
+    assert.equal(response.status, 404, await response.clone().text());
+    assert.deepEqual(await response.json(), { error: "Proizvod nije pronađen." });
+  };
+
+  try {
+    await assertPublic();
+
+    // Supplier scope invariants require the retail channel to be disabled
+    // before a supplier can become B2B-only.
+    await db.update(productsTable).set({ retailEnabled: false }).where(inArray(productsTable.id, [productId, otherProductId]));
+    await db.update(suppliersTable).set({ scope: "B2B" }).where(eq(suppliersTable.id, supplierId));
+    try {
+      await assertHidden();
+    } finally {
+      await db.update(suppliersTable).set({ scope: "BOTH" }).where(eq(suppliersTable.id, supplierId));
+      await db.update(productsTable).set({ retailEnabled: true }).where(inArray(productsTable.id, [productId, otherProductId]));
+    }
+    await assertPublic();
+
+    await db.update(suppliersTable).set({ active: false }).where(eq(suppliersTable.id, supplierId));
+    try {
+      await assertHidden();
+    } finally {
+      await db.update(suppliersTable).set({ active: true }).where(eq(suppliersTable.id, supplierId));
+    }
+    await assertPublic();
+  } finally {
+    await db.delete(retailProductReviewsTable).where(eq(retailProductReviewsTable.id, review.id));
+  }
 });
