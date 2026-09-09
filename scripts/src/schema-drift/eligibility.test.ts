@@ -6,7 +6,24 @@ import {
   type ExpectedFingerprint,
 } from "./eligibility";
 import { fingerprintSnapshot, type CatalogFingerprintResult } from "./fingerprint";
-import type { SchemaSnapshot, TableDefinition } from "./model";
+import type {
+  OwnershipException,
+  SchemaSnapshot,
+  TableDefinition,
+} from "./model";
+
+const POSTGRES_16 = {
+  serverVersionNum: 160010,
+  serverMajorVersion: 16,
+  deparserFormat: "postgresql-16-deparser-v1",
+} as const;
+
+function fingerprint(
+  value: SchemaSnapshot,
+  registry: OwnershipException[] = [],
+): CatalogFingerprintResult {
+  return fingerprintSnapshot(value, registry, POSTGRES_16);
+}
 
 function table(name: string): TableDefinition {
   return {
@@ -54,8 +71,8 @@ function manifest(...values: ExpectedFingerprint[]): BaselineEligibilityManifest
 }
 
 test("only an exact known legacy fingerprint is eligible for metadata adoption", () => {
-  const legacy = fingerprintSnapshot(snapshot("users", "salons"));
-  const current = fingerprintSnapshot(snapshot("users", "salons", "appointments"));
+  const legacy = fingerprint(snapshot("users", "salons"));
+  const current = fingerprint(snapshot("users", "salons", "appointments"));
   const knownLegacy = classifyBaselineEligibility(
     legacy,
     manifest(expected("current-v1", "CURRENT", current), expected("legacy-v1", "LEGACY", legacy)),
@@ -73,29 +90,29 @@ test("only an exact known legacy fingerprint is eligible for metadata adoption",
 });
 
 test("fresh, partial, and wrong databases have distinct fail-closed results", () => {
-  const legacy = fingerprintSnapshot(snapshot("users", "salons"));
+  const legacy = fingerprint(snapshot("users", "salons"));
   const expectedLegacy = manifest(expected("legacy-v1", "LEGACY", legacy));
 
   assert.equal(
-    classifyBaselineEligibility(fingerprintSnapshot(snapshot()), expectedLegacy).code,
+    classifyBaselineEligibility(fingerprint(snapshot()), expectedLegacy).code,
     "FRESH_DATABASE",
   );
   assert.equal(
-    classifyBaselineEligibility(fingerprintSnapshot(snapshot("users")), expectedLegacy).code,
+    classifyBaselineEligibility(fingerprint(snapshot("users")), expectedLegacy).code,
     "PARTIAL_SCHEMA",
   );
   assert.equal(
-    classifyBaselineEligibility(fingerprintSnapshot(snapshot("unrelated")), expectedLegacy).code,
+    classifyBaselineEligibility(fingerprint(snapshot("unrelated")), expectedLegacy).code,
     "WRONG_DATABASE",
   );
 });
 
 test("unknown P0/P1 drift is reported and never eligible", () => {
-  const legacy = fingerprintSnapshot(snapshot("users", "salons"));
+  const legacy = fingerprint(snapshot("users", "salons"));
   const driftedSnapshot = snapshot("users", "salons");
   driftedSnapshot.tables[0]!.columns = [];
   const classified = classifyBaselineEligibility(
-    fingerprintSnapshot(driftedSnapshot),
+    fingerprint(driftedSnapshot),
     manifest(expected("legacy-v1", "LEGACY", legacy)),
   );
   assert.equal(classified.code, "UNEXPECTED_P0_P1_DRIFT");
@@ -119,15 +136,15 @@ test("physical-only unknown drift remains fail-closed", () => {
   const renamed = structuredClone(legacySnapshot);
   renamed.tables[0]!.indexes[0]!.name = "renamed_users_id_idx";
   const classified = classifyBaselineEligibility(
-    fingerprintSnapshot(renamed),
-    manifest(expected("legacy-v1", "LEGACY", fingerprintSnapshot(legacySnapshot))),
+    fingerprint(renamed),
+    manifest(expected("legacy-v1", "LEGACY", fingerprint(legacySnapshot))),
   );
   assert.equal(classified.code, "UNKNOWN_FINGERPRINT");
   assert.equal(classified.eligibleForMetadataAdoption, false);
 });
 
 test("exact ownership exclusions are harmless but unknown extras prevent adoption", () => {
-  const legacy = fingerprintSnapshot(snapshot("users"));
+  const legacy = fingerprint(snapshot("users"));
   const registry = [{
     objectType: "TABLE" as const,
     schema: "public",
@@ -137,13 +154,13 @@ test("exact ownership exclusions are harmless but unknown extras prevent adoptio
     reason: "extension-owned",
     temporary: false,
   }];
-  const withOwned = fingerprintSnapshot(snapshot("users", "spatial_ref_sys"), registry);
+  const withOwned = fingerprint(snapshot("users", "spatial_ref_sys"), registry);
   assert.equal(
     classifyBaselineEligibility(withOwned, manifest(expected("legacy-v1", "LEGACY", legacy))).code,
     "KNOWN_LEGACY",
   );
 
-  const withUnknown = fingerprintSnapshot(snapshot("users", "unknown_extra"), registry);
+  const withUnknown = fingerprint(snapshot("users", "unknown_extra"), registry);
   const rejected = classifyBaselineEligibility(
     withUnknown,
     manifest(expected("legacy-v1", "LEGACY", legacy)),
@@ -153,7 +170,7 @@ test("exact ownership exclusions are harmless but unknown extras prevent adoptio
 });
 
 test("malformed and version-incompatible manifests fail closed", () => {
-  const legacy = fingerprintSnapshot(snapshot("users"));
+  const legacy = fingerprint(snapshot("users"));
   const candidate = expected("legacy-v1", "LEGACY", legacy);
   assert.throws(
     () => classifyBaselineEligibility(legacy, { formatVersion: 1, expected: [] }),
@@ -162,14 +179,14 @@ test("malformed and version-incompatible manifests fail closed", () => {
   assert.throws(
     () => classifyBaselineEligibility(legacy, manifest({
       ...candidate,
-      fingerprintVersion: 2 as never,
+      fingerprintVersion: 1 as never,
     })),
     /Incompatible expected fingerprint version/,
   );
 });
 
 test("conflicting CURRENT and LEGACY assignments fail closed in either order", () => {
-  const value = fingerprintSnapshot(snapshot("users"));
+  const value = fingerprint(snapshot("users"));
   const current = expected("current-v1", "CURRENT", value);
   const legacy = expected("legacy-v1", "LEGACY", value);
   for (const candidates of [[current, legacy], [legacy, current]]) {
@@ -181,7 +198,7 @@ test("conflicting CURRENT and LEGACY assignments fail closed in either order", (
 });
 
 test("manifest digests must describe the reviewed physical snapshot", () => {
-  const users = fingerprintSnapshot(snapshot("users"));
+  const users = fingerprint(snapshot("users"));
   const inconsistent = {
     ...expected("legacy-v1", "LEGACY", users),
     physicalSnapshot: snapshot("unrelated"),

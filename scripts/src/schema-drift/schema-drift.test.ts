@@ -10,6 +10,12 @@ import { normalizeSql } from "./model";
 import type { OwnershipException, SchemaSnapshot, TableDefinition } from "./model";
 import { readOnlyQueryLayer } from "./read-only-query";
 
+const POSTGRES_16 = {
+  serverVersionNum: 160010,
+  serverMajorVersion: 16,
+  deparserFormat: "postgresql-16-deparser-v1",
+} as const;
+
 function table(): TableDefinition {
   return {
     schema: "public", name: "orders",
@@ -271,7 +277,7 @@ test("catalog-extracted index vectors and quoted types affect fingerprints", asy
     let index = 0;
     return fingerprintSnapshot(await readPostgresSnapshot({
       async query() { return results[index++]!; },
-    }));
+    }), [], POSTGRES_16);
   };
   const original = await extract();
   for (const changed of [
@@ -309,7 +315,7 @@ test("catalog-extracted UNIQUE backing-index INCLUDE changes both fingerprints",
     let index = 0;
     return fingerprintSnapshot(await readPostgresSnapshot({
       async query() { return results[index++]!; },
-    }));
+    }), [], POSTGRES_16);
   };
   const first = await extract("included_a");
   const second = await extract("included_b");
@@ -354,7 +360,7 @@ test("catalog-extracted FK SET targets and CHECK inheritance affect fingerprints
     let index = 0;
     return fingerprintSnapshot(await readPostgresSnapshot({
       async query() { return results[index++]!; },
-    }));
+    }), [], POSTGRES_16);
   };
   const original = await extract();
   for (const changed of [

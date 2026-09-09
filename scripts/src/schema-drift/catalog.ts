@@ -2,7 +2,11 @@ import type { DatabaseClient } from "../backend-standards-database";
 import type {
   BackingIndexDetails, CheckDefinition, ColumnDefinition, ExclusionDefinition,
   ForeignKeyDefinition, IndexDefinition,
-  KeyDefinition, SchemaSnapshot, TableDefinition,
+  KeyDefinition, PostgresFingerprintCompatibility, SchemaSnapshot, TableDefinition,
+} from "./model";
+import {
+  POSTGRES_DEPARSE_FORMAT,
+  SUPPORTED_POSTGRES_MAJOR_VERSIONS,
 } from "./model";
 
 type Row = Record<string, unknown>;
@@ -20,6 +24,35 @@ const numbers = (value: unknown): number[] => {
   if (Array.isArray(value)) return value.map(Number);
   return strings(value).map(Number);
 };
+
+export function postgresFingerprintCompatibility(
+  serverVersionNumInput: string | number,
+): PostgresFingerprintCompatibility {
+  const serverVersionNum = Number(serverVersionNumInput);
+  if (!Number.isInteger(serverVersionNum) || serverVersionNum < 10000) {
+    throw new Error(`Invalid PostgreSQL server_version_num: ${String(serverVersionNumInput)}`);
+  }
+  const serverMajorVersion = Math.floor(serverVersionNum / 10000);
+  if (!(SUPPORTED_POSTGRES_MAJOR_VERSIONS as readonly number[]).includes(serverMajorVersion)) {
+    throw new Error(
+      `Unsupported PostgreSQL ${serverMajorVersion} deparser format; `
+      + `supported major version(s): ${SUPPORTED_POSTGRES_MAJOR_VERSIONS.join(", ")}`,
+    );
+  }
+  return { serverVersionNum, serverMajorVersion, deparserFormat: POSTGRES_DEPARSE_FORMAT };
+}
+
+export async function readPostgresFingerprintCompatibility(
+  client: DatabaseClient,
+): Promise<PostgresFingerprintCompatibility> {
+  const result = await client.query(
+    "SELECT pg_catalog.current_setting('server_version_num') AS server_version_num",
+  );
+  if (result.rows.length !== 1) {
+    throw new Error("PostgreSQL server version query returned an unexpected row count");
+  }
+  return postgresFingerprintCompatibility(result.rows[0]?.["server_version_num"] as string | number);
+}
 
 export async function readPostgresSnapshot(client: DatabaseClient): Promise<SchemaSnapshot> {
   const tablesResult = await client.query(`

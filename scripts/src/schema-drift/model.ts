@@ -92,6 +92,13 @@ export interface TableDefinition {
   indexes: IndexDefinition[];
 }
 export interface SchemaSnapshot { tables: TableDefinition[] }
+export const SUPPORTED_POSTGRES_MAJOR_VERSIONS = [16] as const;
+export const POSTGRES_DEPARSE_FORMAT = "postgresql-16-deparser-v1" as const;
+export interface PostgresFingerprintCompatibility {
+  serverVersionNum: number;
+  serverMajorVersion: number;
+  deparserFormat: typeof POSTGRES_DEPARSE_FORMAT;
+}
 
 export interface OwnershipException {
   objectType: ObjectType;

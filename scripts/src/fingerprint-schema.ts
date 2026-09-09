@@ -1,6 +1,9 @@
 import pg from "pg";
 import { readFile } from "node:fs/promises";
-import { readPostgresSnapshot } from "./schema-drift/catalog";
+import {
+  readPostgresFingerprintCompatibility,
+  readPostgresSnapshot,
+} from "./schema-drift/catalog";
 import {
   classifyBaselineEligibility,
   serializeBaselineEligibility,
@@ -24,22 +27,25 @@ async function main(): Promise<void> {
     const client = await pool.connect();
     try {
       await beginFingerprintTransaction(client);
-       const result = fingerprintSnapshot(
-        await readPostgresSnapshot(readOnlyQueryLayer(client)),
+      const readOnlyClient = readOnlyQueryLayer(client);
+      const postgresCompatibility = await readPostgresFingerprintCompatibility(readOnlyClient);
+      const result = fingerprintSnapshot(
+        await readPostgresSnapshot(readOnlyClient),
         ownershipExceptions,
+        postgresCompatibility,
       );
       await client.query("COMMIT");
-       if (manifestPath) {
-         const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as BaselineEligibilityManifest;
-         const eligibility = classifyBaselineEligibility(result, manifest);
-         process.stdout.write(serializeBaselineEligibility(eligibility));
-         process.stderr.write(
-           `Baseline eligibility: ${eligibility.code}; metadata adoption `
-           + `${eligibility.eligibleForMetadataAdoption ? "allowed" : "refused"}.\n`,
-         );
-       } else {
-         process.stdout.write(serializeFingerprint(result));
-       }
+      if (manifestPath) {
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as BaselineEligibilityManifest;
+        const eligibility = classifyBaselineEligibility(result, manifest);
+        process.stdout.write(serializeBaselineEligibility(eligibility));
+        process.stderr.write(
+          `Baseline eligibility: ${eligibility.code}; metadata adoption `
+          + `${eligibility.eligibleForMetadataAdoption ? "allowed" : "refused"}.\n`,
+        );
+      } else {
+        process.stdout.write(serializeFingerprint(result));
+      }
       process.stderr.write(
         `Schema fingerprint: ${result.normalizedObjectCount} normalized object(s), `
         + `${result.ownershipExceptions.length} ownership exception(s) excluded.\n`,

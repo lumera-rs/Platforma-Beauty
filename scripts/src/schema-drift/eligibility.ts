@@ -7,7 +7,12 @@ import {
   fingerprintSnapshot,
   type CatalogFingerprintResult,
 } from "./fingerprint";
-import { compareCodeUnits, type Finding, type SchemaSnapshot } from "./model";
+import {
+  compareCodeUnits,
+  type Finding,
+  type PostgresFingerprintCompatibility,
+  type SchemaSnapshot,
+} from "./model";
 
 export const BASELINE_ELIGIBILITY_FORMAT_VERSION = 1 as const;
 
@@ -45,7 +50,7 @@ export interface BaselineEligibilityResult {
   live: Pick<CatalogFingerprintResult,
     "formatVersion" | "algorithm" | "fingerprintVersion" | "schemaFormatVersion"
     | "structuralFingerprint" | "physicalFingerprint" | "normalizedObjectCount"
-    | "ownershipExceptions">;
+    | "ownershipExceptions" | "postgresCompatibility">;
   comparison: {
     expectedId: string;
     sharedTableCount: number;
@@ -61,12 +66,13 @@ export function classifyBaselineEligibility(
   live: CatalogFingerprintResult,
   manifest: BaselineEligibilityManifest,
 ): BaselineEligibilityResult {
-  validateManifest(manifest);
+  validateManifest(manifest, live.postgresCompatibility);
   const liveSummary: BaselineEligibilityResult["live"] = {
     formatVersion: live.formatVersion,
     algorithm: live.algorithm,
     fingerprintVersion: live.fingerprintVersion,
     schemaFormatVersion: live.schemaFormatVersion,
+    postgresCompatibility: live.postgresCompatibility,
     structuralFingerprint: live.structuralFingerprint,
     physicalFingerprint: live.physicalFingerprint,
     normalizedObjectCount: live.normalizedObjectCount,
@@ -125,7 +131,10 @@ export function classifyBaselineEligibility(
   return result("UNKNOWN_FINGERPRINT", null, closest);
 }
 
-function validateManifest(manifest: BaselineEligibilityManifest): void {
+function validateManifest(
+  manifest: BaselineEligibilityManifest,
+  postgresCompatibility: PostgresFingerprintCompatibility,
+): void {
   if (manifest.formatVersion !== BASELINE_ELIGIBILITY_FORMAT_VERSION) {
     throw new Error(`Unsupported baseline eligibility manifest version: ${manifest.formatVersion}`);
   }
@@ -153,7 +162,7 @@ function validateManifest(manifest: BaselineEligibilityManifest): void {
       throw new Error(`Duplicate or conflicting expected fingerprint pair: ${candidate.id}`);
     }
     fingerprintPairs.add(pair);
-    const computed = fingerprintSnapshot(candidate.physicalSnapshot);
+    const computed = fingerprintSnapshot(candidate.physicalSnapshot, [], postgresCompatibility);
     if (
       computed.structuralFingerprint !== candidate.structuralFingerprint
       || computed.physicalFingerprint !== candidate.physicalFingerprint

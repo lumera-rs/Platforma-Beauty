@@ -2,14 +2,17 @@ import { createHash } from "node:crypto";
 import {
   compareCodeUnits,
   normalizeSnapshot,
+  POSTGRES_DEPARSE_FORMAT,
+  SUPPORTED_POSTGRES_MAJOR_VERSIONS,
   type OwnershipException,
+  type PostgresFingerprintCompatibility,
   type SchemaSnapshot,
   type TableDefinition,
 } from "./model";
 
 export const FINGERPRINT_ALGORITHM = "sha256" as const;
-export const FINGERPRINT_VERSION = 1 as const;
-export const FINGERPRINT_FORMAT_VERSION = 1 as const;
+export const FINGERPRINT_VERSION = 2 as const;
+export const FINGERPRINT_FORMAT_VERSION = 2 as const;
 export const SCHEMA_FORMAT_VERSION = 1 as const;
 
 interface StructuralKey {
@@ -79,6 +82,7 @@ export interface StructuralTable {
 export interface FingerprintPayload {
   fingerprintVersion: typeof FINGERPRINT_VERSION;
   schemaFormatVersion: typeof SCHEMA_FORMAT_VERSION;
+  postgresDeparserFormat: typeof POSTGRES_DEPARSE_FORMAT;
   tables: StructuralTable[] | TableDefinition[];
 }
 
@@ -91,6 +95,7 @@ export interface CatalogFingerprintResult {
   algorithm: typeof FINGERPRINT_ALGORITHM;
   fingerprintVersion: typeof FINGERPRINT_VERSION;
   schemaFormatVersion: typeof SCHEMA_FORMAT_VERSION;
+  postgresCompatibility: PostgresFingerprintCompatibility;
   structuralFingerprint: string;
   physicalFingerprint: string;
   normalizedObjectCount: number;
@@ -187,7 +192,9 @@ function digest(payload: FingerprintPayload): string {
 export function fingerprintSnapshot(
   snapshot: SchemaSnapshot,
   registry: OwnershipException[] = [],
+  postgresCompatibility: PostgresFingerprintCompatibility,
 ): CatalogFingerprintResult {
+  validatePostgresCompatibility(postgresCompatibility);
   validateSnapshot(snapshot, registry);
   const normalized = normalizeSnapshot(snapshot);
   const ownershipExceptions = appliedOwnershipExceptions(normalized, registry);
@@ -195,11 +202,13 @@ export function fingerprintSnapshot(
   const structuralPayload: FingerprintPayload = {
     fingerprintVersion: FINGERPRINT_VERSION,
     schemaFormatVersion: SCHEMA_FORMAT_VERSION,
+    postgresDeparserFormat: postgresCompatibility.deparserFormat,
     tables: included.tables.map(structuralTable),
   };
   const physicalPayload: FingerprintPayload = {
     fingerprintVersion: FINGERPRINT_VERSION,
     schemaFormatVersion: SCHEMA_FORMAT_VERSION,
+    postgresDeparserFormat: postgresCompatibility.deparserFormat,
     tables: included.tables,
   };
   return {
@@ -207,6 +216,7 @@ export function fingerprintSnapshot(
     algorithm: FINGERPRINT_ALGORITHM,
     fingerprintVersion: FINGERPRINT_VERSION,
     schemaFormatVersion: SCHEMA_FORMAT_VERSION,
+    postgresCompatibility: { ...postgresCompatibility },
     structuralFingerprint: digest(structuralPayload),
     physicalFingerprint: digest(physicalPayload),
     normalizedObjectCount: objectCount(included),
@@ -214,6 +224,18 @@ export function fingerprintSnapshot(
     structuralPayload,
     physicalPayload,
   };
+}
+
+function validatePostgresCompatibility(value: PostgresFingerprintCompatibility): void {
+  if (
+    !Number.isInteger(value.serverVersionNum)
+    || !Number.isInteger(value.serverMajorVersion)
+    || Math.floor(value.serverVersionNum / 10000) !== value.serverMajorVersion
+    || !(SUPPORTED_POSTGRES_MAJOR_VERSIONS as readonly number[]).includes(value.serverMajorVersion)
+    || value.deparserFormat !== POSTGRES_DEPARSE_FORMAT
+  ) {
+    throw new Error("Invalid PostgreSQL fingerprint compatibility metadata");
+  }
 }
 
 function validateSnapshot(snapshot: SchemaSnapshot, registry: OwnershipException[]): void {

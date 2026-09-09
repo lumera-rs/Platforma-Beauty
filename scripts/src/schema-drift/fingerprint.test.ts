@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  postgresFingerprintCompatibility,
+  readPostgresFingerprintCompatibility,
+} from "./catalog";
+import {
   fingerprintSnapshot,
   serializeFingerprint,
   type CatalogFingerprintResult,
 } from "./fingerprint";
-import type { OwnershipException, SchemaSnapshot, TableDefinition } from "./model";
+import type {
+  OwnershipException,
+  PostgresFingerprintCompatibility,
+  SchemaSnapshot,
+  TableDefinition,
+} from "./model";
+
+const POSTGRES_16: PostgresFingerprintCompatibility = {
+  serverVersionNum: 160010,
+  serverMajorVersion: 16,
+  deparserFormat: "postgresql-16-deparser-v1",
+};
 
 function table(name = "orders"): TableDefinition {
   return {
@@ -83,10 +98,18 @@ const snapshot = (): SchemaSnapshot => ({
 
 const clone = (): SchemaSnapshot => structuredClone(snapshot());
 
+function goldenCatalogSnapshot(): SchemaSnapshot {
+  const fixture = table("catalog_fixture");
+  fixture.columns[2]!.default = "nextval('catalog_fixture_amount_seq'::regclass)";
+  fixture.uniques[0]!.nullsNotDistinct = true;
+  fixture.indexes[0]!.includeExpressions = ["id"];
+  return { tables: [fixture] };
+}
+
 function fingerprints(value: SchemaSnapshot): Pick<
 CatalogFingerprintResult, "structuralFingerprint" | "physicalFingerprint"
 > {
-  const result = fingerprintSnapshot(value);
+  const result = fingerprintSnapshot(value, [], POSTGRES_16);
   return {
     structuralFingerprint: result.structuralFingerprint,
     physicalFingerprint: result.physicalFingerprint,
@@ -104,9 +127,9 @@ test("identical, reordered, and repeated snapshots have byte-stable fingerprints
     current.checks.reverse();
     current.indexes.reverse();
   }
-  const first = fingerprintSnapshot(original);
-  const second = fingerprintSnapshot(reordered);
-  const third = fingerprintSnapshot(original);
+  const first = fingerprintSnapshot(original, [], POSTGRES_16);
+  const second = fingerprintSnapshot(reordered, [], POSTGRES_16);
+  const third = fingerprintSnapshot(original, [], POSTGRES_16);
   assert.deepEqual(fingerprints(reordered), fingerprints(original));
   assert.deepEqual(fingerprints(original), fingerprints(original));
   assert.equal(serializeFingerprint(first), serializeFingerprint(second));
@@ -114,8 +137,88 @@ test("identical, reordered, and repeated snapshots have byte-stable fingerprints
   assert.match(first.structuralFingerprint, /^[a-f0-9]{64}$/);
   assert.match(first.physicalFingerprint, /^[a-f0-9]{64}$/);
   assert.equal(first.algorithm, "sha256");
-  assert.equal(first.fingerprintVersion, 1);
+  assert.equal(first.formatVersion, 2);
+  assert.equal(first.fingerprintVersion, 2);
   assert.equal(first.schemaFormatVersion, 1);
+  assert.deepEqual(first.postgresCompatibility, POSTGRES_16);
+  assert.equal(first.structuralPayload.postgresDeparserFormat, "postgresql-16-deparser-v1");
+});
+
+test("PostgreSQL 16 golden catalog fixture locks all deparser-sensitive output", () => {
+  const result = fingerprintSnapshot(goldenCatalogSnapshot(), [], POSTGRES_16);
+  assert.equal(
+    result.structuralFingerprint,
+    "c5e33f1f10b0dcb42cd9196d129b87db0f69ca2556aeec5bc10ec4663d3dd515",
+  );
+  assert.equal(
+    result.physicalFingerprint,
+    "c5db65d0c1f2aa59f466f42dafdb0d2ba3e954e503cf59d25088bf4b434677e8",
+  );
+
+  const goldenTable = result.physicalPayload.tables[0]!;
+  assert.equal(goldenTable.columns[2]!.default, "nextval('catalog_fixture_amount_seq'::regclass)");
+  assert.equal(goldenTable.checks[0]!.expression, "amount>=0");
+  assert.deepEqual(goldenTable.indexes[0]!.expressions, ["amount", "lower((tenant_id)::text)"]);
+  assert.deepEqual(goldenTable.indexes[0]!.includeExpressions, ["id"]);
+  assert.equal(
+    goldenTable.uniques.find((unique) =>
+      unique.name === "catalog_fixture_tenant_id_unique")?.nullsNotDistinct,
+    true,
+  );
+  assert.equal(
+    goldenTable.exclusions![0]!.definition,
+    "exclude using gist (tenant_id with=,amount with=) where (amount>0)",
+  );
+});
+
+test("harmless PostgreSQL 16 deparser rendering changes normalize without hiding schema drift", () => {
+  const harmlessRenderingChange = goldenCatalogSnapshot();
+  harmlessRenderingChange.tables[0]!.checks[0]!.expression =
+    "((catalog_fixture.amount) >= (0))";
+  harmlessRenderingChange.tables[0]!.indexes[0]!.predicate =
+    "catalog_fixture.amount > 0";
+  assert.deepEqual(
+    fingerprints(harmlessRenderingChange),
+    fingerprints(goldenCatalogSnapshot()),
+  );
+
+  const schemaChange = goldenCatalogSnapshot();
+  schemaChange.tables[0]!.checks[0]!.expression = "amount > 0";
+  assert.notDeepEqual(fingerprints(schemaChange), fingerprints(goldenCatalogSnapshot()));
+});
+
+test("PostgreSQL patch metadata is visible while the reviewed deparser family controls hashes", () => {
+  const previousPatch = postgresFingerprintCompatibility(160009);
+  const currentPatch = postgresFingerprintCompatibility("160010");
+  const previous = fingerprintSnapshot(goldenCatalogSnapshot(), [], previousPatch);
+  const current = fingerprintSnapshot(goldenCatalogSnapshot(), [], currentPatch);
+  assert.deepEqual(fingerprints(goldenCatalogSnapshot()), {
+    structuralFingerprint: current.structuralFingerprint,
+    physicalFingerprint: current.physicalFingerprint,
+  });
+  assert.equal(previous.structuralFingerprint, current.structuralFingerprint);
+  assert.equal(previous.physicalFingerprint, current.physicalFingerprint);
+  assert.notEqual(previous.postgresCompatibility.serverVersionNum, current.postgresCompatibility.serverVersionNum);
+});
+
+test("unsupported PostgreSQL versions and unreviewed deparser formats fail closed", async () => {
+  assert.throws(
+    () => postgresFingerprintCompatibility(170000),
+    /Unsupported PostgreSQL 17 deparser format/,
+  );
+  assert.throws(
+    () => fingerprintSnapshot(goldenCatalogSnapshot(), [], {
+      ...POSTGRES_16,
+      deparserFormat: "postgresql-16-deparser-v2",
+    } as unknown as PostgresFingerprintCompatibility),
+    /Invalid PostgreSQL fingerprint compatibility metadata/,
+  );
+  await assert.rejects(
+    () => readPostgresFingerprintCompatibility({
+      async query() { return { rows: [{ server_version_num: "170000" }] }; },
+    }),
+    /Unsupported PostgreSQL 17 deparser format/,
+  );
 });
 
 for (const [label, mutate] of [
@@ -308,8 +411,8 @@ test("preserves apostrophes inside complete quoted identifiers", () => {
   }
   firstColumn.tables[0]!.checks[0]!.expression = `"a'X'b" > 0`;
   secondColumn.tables[0]!.checks[0]!.expression = `"a'Y'b" > 0`;
-  const first = fingerprintSnapshot(firstColumn);
-  const second = fingerprintSnapshot(secondColumn);
+  const first = fingerprintSnapshot(firstColumn, [], POSTGRES_16);
+  const second = fingerprintSnapshot(secondColumn, [], POSTGRES_16);
   assert.notEqual(first.structuralFingerprint, second.structuralFingerprint);
   assert.notEqual(first.physicalFingerprint, second.physicalFingerprint);
   const payload = JSON.stringify(first.structuralPayload);
@@ -325,7 +428,7 @@ test("dropped-column ordinal gaps normalize to contiguous logical positions", ()
   withGaps.tables[0]!.columns[2]!.position = 8;
   assert.deepEqual(fingerprints(withGaps), fingerprints(snapshot()));
   assert.deepEqual(
-    fingerprintSnapshot(withGaps).physicalPayload.tables[1]!.columns.map((column) => column.position),
+    fingerprintSnapshot(withGaps, [], POSTGRES_16).physicalPayload.tables[1]!.columns.map((column) => column.position),
     [1, 2, 3],
   );
 });
@@ -333,19 +436,19 @@ test("dropped-column ordinal gaps normalize to contiguous logical positions", ()
 test("fails closed for malformed or duplicate catalog identity", () => {
   const duplicateTable = clone();
   duplicateTable.tables.push(structuredClone(duplicateTable.tables[0]!));
-  assert.throws(() => fingerprintSnapshot(duplicateTable), /Duplicate catalog table/);
+  assert.throws(() => fingerprintSnapshot(duplicateTable, [], POSTGRES_16), /Duplicate catalog table/);
 
   const duplicatePosition = clone();
   duplicatePosition.tables[0]!.columns[1]!.position = 1;
-  assert.throws(() => fingerprintSnapshot(duplicatePosition), /Duplicate catalog column position/);
+  assert.throws(() => fingerprintSnapshot(duplicatePosition, [], POSTGRES_16), /Duplicate catalog column position/);
 
   const missingPosition = clone();
   delete missingPosition.tables[0]!.columns[0]!.position;
-  assert.throws(() => fingerprintSnapshot(missingPosition), /Invalid catalog column position/);
+  assert.throws(() => fingerprintSnapshot(missingPosition, [], POSTGRES_16), /Invalid catalog column position/);
 
   const duplicateIndex = clone();
   duplicateIndex.tables[0]!.indexes.push(structuredClone(duplicateIndex.tables[0]!.indexes[0]!));
-  assert.throws(() => fingerprintSnapshot(duplicateIndex), /Duplicate .* index/);
+  assert.throws(() => fingerprintSnapshot(duplicateIndex, [], POSTGRES_16), /Duplicate .* index/);
 });
 
 test("ownership exceptions are exact, explicit, sorted, and excluded", () => {
@@ -361,7 +464,7 @@ test("ownership exceptions are exact, explicit, sorted, and excluded", () => {
     reason: "extension owned",
     temporary: false,
   }];
-  const result = fingerprintSnapshot(input, registry);
+  const result = fingerprintSnapshot(input, registry, POSTGRES_16);
   assert.deepEqual(result.ownershipExceptions, [{ ...registry[0], handling: "EXCLUDED" }]);
   assert.equal(result.structuralPayload.tables.some((item) => item.name === "spatial_ref_sys"), false);
   assert.equal(result.physicalPayload.tables.some((item) => item.name === "spatial_ref_sys"), false);
@@ -383,5 +486,5 @@ test("absent ownership registry entries are not reported as applied", () => {
     reason: "extension owned",
     temporary: false,
   }];
-  assert.deepEqual(fingerprintSnapshot(snapshot(), registry).ownershipExceptions, []);
+  assert.deepEqual(fingerprintSnapshot(snapshot(), registry, POSTGRES_16).ownershipExceptions, []);
 });

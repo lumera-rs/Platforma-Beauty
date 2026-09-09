@@ -39,6 +39,19 @@ adoption.
 Both hashes use SHA-256 over a versioned, locale-neutral canonical UTF-8 JSON
 payload:
 
+Fingerprint result format 2 and fingerprint payload version 2 support
+PostgreSQL 16. The result records the exact
+`serverVersionNum`, the parsed major version, and deparser family
+`postgresql-16-deparser-v1`. The deparser family is part of both hash payloads;
+the patch version is visible metadata but does not by itself change the hashes.
+Any unsupported major version, malformed version response, or missing
+compatibility metadata fails closed before a fingerprint can be produced.
+Adding support for another PostgreSQL major requires a reviewed deparser-format
+identifier and updated golden catalog fixtures. The integration suite creates
+its representative fixture inside a transaction and rolls it back after
+verifying real server output for defaults, checks, expression/INCLUDE indexes,
+NULLS NOT DISTINCT, and exclusion constraints.
+
 - `structuralFingerprint` proves the semantic schema structure, including
   schema/table/column identity and column order, types, column collations,
   nullability, defaults, identity/generated modes and generated expressions,
@@ -51,7 +64,8 @@ payload:
   are represented. Physical
   constraint and index names are omitted.
 - `physicalFingerprint` proves the same normalized structure and additionally
-  includes physical primary-key, unique, foreign-key, check, and index names.
+  includes physical primary-key, unique, foreign-key, check, exclusion, and
+  index names.
 
 The JSON result exposes both normalized payloads for review and diffing.
 Payload ordering is independent of input table, constraint, check, and index
