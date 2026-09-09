@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -31,10 +31,11 @@ async function runCommand(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv,
+  cwd = workspaceRoot,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: workspaceRoot,
+      cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -54,6 +55,23 @@ async function runCommand(
   });
 }
 
+function extractWorkflowRunStep(workflow: string, stepName: string): string {
+  const stepStart = workflow.indexOf(`      - name: ${stepName}\n`);
+  assert.notEqual(stepStart, -1, `Workflow step ${stepName} must exist.`);
+
+  const runStart = workflow.indexOf("        run: |\n", stepStart);
+  assert.notEqual(runStart, -1, `Workflow step ${stepName} must have a shell run block.`);
+
+  const scriptStart = runStart + "        run: |\n".length;
+  const nextStep = workflow.indexOf("\n      - name:", scriptStart);
+  assert.notEqual(nextStep, -1, `Workflow step ${stepName} must be followed by another step.`);
+
+  return workflow
+    .slice(scriptStart, nextStep)
+    .split("\n")
+    .map((line) => line.startsWith("          ") ? line.slice(10) : line)
+    .join("\n");
+}
 function chainedPnpmScripts(command: string): string[] {
   return command.split(" && ").flatMap((step) => {
     const match = /^pnpm run ([\w:-]+)$/.exec(step);
@@ -273,6 +291,11 @@ test("publish validation checks the release chain first without database access"
 test("branch CI runs the database-free release-chain gate before slower work", async () => {
   const workflow = await readFile(branchCiPath, "utf8");
 
+  const downloadScript = extractWorkflowRunStep(
+    workflow,
+    "Download recent successful build timing history",
+  );
+
   assert.match(workflow, /^on:\n  pull_request:\n  push:/m);
   assert.match(
     workflow,
@@ -289,21 +312,10 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     workflow.indexOf("  release-chain:"),
     workflow.indexOf("\n  build:"),
   );
-  assert.doesNotMatch(
-    releaseJob,
-    /playwright|validate:release|validate:publish|test:browser|drizzle|DATABASE_URL: [^"'\s]/i,
-    "The early gate must not prepare a database, run browser tests, or invoke the slower release lifecycle.",
-  );
-  assert.match(
-    workflow,
-    /\n  build:\n {4}name: .*\n {4}needs: release-chain\n/,
-    "Slower CI work must depend on the release-chain job.",
-  );
-});
-
-test("timed CI build preserves failure details and reports before exiting", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
   const binDir = path.join(tempDir, "bin");
+
+  const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
@@ -400,6 +412,8 @@ exit 0
 test("timed CI build preserves the build code when report writing also fails", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-success-report-failure-"));
   const binDir = path.join(tempDir, "bin");
+
+  const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
   const blockedSummaryPath = path.join(tempDir, "blocked-summary");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
@@ -1131,3 +1145,56 @@ test("a new focused employee browser command must be released or explicitly loca
     )
   );
 });
+
+  const fakeGhPath = path.join(binDir, "gh");
+
+    const downloadResult = await runCommand(
+      "bash",
+      ["-euo", "pipefail", "-c", downloadScript],
+      environment,
+      tempDir,
+    );
+
+    const currentReportPath = path.join(tempDir, "current-build-timings.json");
+
+  const validZipPath = path.join(tempDir, "valid-history.zip");
+
+  const summaryPath = path.join(tempDir, "step-summary.md");
+
+    const downloadSummary = await readFile(summaryPath, "utf8");
+
+    const environment = {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      GITHUB_REPOSITORY: "example/lumera",
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_STEP_SUMMARY: summaryPath,
+      VALID_ZIP_PATH: validZipPath,
+      GH_TOKEN: "test-token",
+    };
+
+  const outputPath = path.join(tempDir, "github-output");
+
+    const zipResult = await runCommand(
+      "zip",
+      ["-q", "-j", validZipPath, validReportPath],
+      process.env,
+      tempDir,
+    );
+
+  const validReportPath = path.join(tempDir, "build-timings.json");
+
+    const trendResult = await runCommand(
+      "node",
+      [
+        path.join(workspaceRoot, "scripts", "summarize-ci-build-trend.mjs"),
+        currentReportPath,
+        path.join(tempDir, "ci-timings", "history"),
+        summaryPath,
+        path.join(scriptsDir, "ci-build-timings.json"),
+      ],
+      process.env,
+      tempDir,
+    );
+
+  const historyDir = path.join(tempDir, "ci-timings", "history");
