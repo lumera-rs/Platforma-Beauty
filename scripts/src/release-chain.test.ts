@@ -206,6 +206,11 @@ test("publish validation checks the release chain first without database access"
     1,
     "validate:publish must run the early release-chain gate exactly once.",
   );
+  assert.match(
+    publishCommand,
+    /pnpm run build && pnpm --filter @workspace\/scripts run typecheck && pnpm run test:beauty-marketplace-typecheck/,
+    "validate:publish must run the complete scripts typecheck after the build without disturbing the existing static-check order.",
+  );
 });
 
 test("branch CI runs the database-free release-chain gate before slower work", async () => {
@@ -327,7 +332,7 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions",
+    "export CI=true && pnpm run build && pnpm --filter @workspace/scripts run typecheck && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions",
     "The build CI command must preserve every genuinely database-free phase-one publish check.",
   );
   assert.equal(
