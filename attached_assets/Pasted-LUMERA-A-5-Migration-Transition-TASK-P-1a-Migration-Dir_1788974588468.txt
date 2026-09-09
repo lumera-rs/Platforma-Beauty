@@ -1,0 +1,341 @@
+LUMERA — A-5 Migration Transition
+TASK P.1a — Migration Directory Contract + Immutable Checksum Verifier
+
+Claude Code completed the final independent Task 2 architecture review.
+
+Final verdict:
+PASS WITH REQUIRED CHANGES
+
+Safe to start first zero-risk implementation task:
+YES
+
+This task is ONLY P.1a.
+
+==================================================
+ARCHITECTURAL DECISIONS ALREADY MADE
+==================================================
+
+R1:
+Use ONE Lumera-owned migration authority.
+
+We choose the custom Lumera migration layout/contract approach.
+
+Do NOT introduce or maintain a parallel Drizzle meta/_journal.json
+authority.
+
+Do NOT use drizzle-kit generate as an authoritative migration history
+mechanism.
+
+Future migration execution may still use Drizzle schema/model tooling,
+but migration ordering/history must not have two competing authorities.
+
+IMPORTANT:
+Do NOT implement manifest.json yet in this task.
+The final manifest/ledger fields will be designed separately.
+
+R2:
+Baseline adoption and P0 remediation are separate operations.
+
+Future ordering will be:
+
+baseline adoption commits
+→ P0 forward migration
+→ deployment blocked if P0 migration fails
+
+Do not implement either operation now.
+
+R3:
+Migration timeout policy will be finalized later.
+
+Do not implement migration runner/timeouts now.
+
+==================================================
+PURPOSE
+==================================================
+
+Implement ONLY a filesystem-level migration directory contract and
+immutable checksum verifier.
+
+NO DATABASE ACCESS.
+
+This task must be incapable of modifying or even connecting to the DB.
+
+==================================================
+1. MIGRATION DIRECTORY CONTRACT
+==================================================
+
+Create the directory contract:
+
+lib/db/migrations/
+
+Future real migrations will use:
+
+000001_<snake_case_purpose>/
+  migration.sql
+
+000002_<snake_case_purpose>/
+  migration.sql
+
+etc.
+
+Rules:
+
+- exactly six numeric digits
+- starts at 000001
+- strictly monotonic
+- no gaps
+- no duplicate sequence numbers
+- sequence number never reused
+- lowercase snake_case purpose
+- meaningful purpose
+- no dates
+- no branch names
+- no task numbers
+- no generic names such as:
+  fix
+  final
+  final_fix
+  v2
+  new
+  update
+  changes
+
+Do NOT create a real migration yet.
+
+Do NOT create baseline SQL.
+
+Fixtures must live outside the real migration directory or otherwise
+be unmistakably test-only.
+
+==================================================
+2. STATIC VERIFIER
+==================================================
+
+Implement a verifier under:
+
+scripts/src/migration-contract/
+
+It must inspect the migration filesystem only.
+
+It must NOT:
+
+- import pg
+- import postgres clients
+- read DATABASE_URL
+- access network
+- execute SQL
+- inspect live DB
+- invoke drizzle-kit push
+- invoke bootstrap
+- mutate migration files
+
+Verifier must fail closed for:
+
+- invalid directory name
+- duplicate sequence
+- missing sequence/gap
+- non-monotonic ordering
+- reused sequence
+- missing migration.sql
+- unexpected migration structure
+- invalid generic purpose
+- date-like purpose
+- branch/task-like purpose
+
+==================================================
+3. IMMUTABILITY / SHA-256
+==================================================
+
+Implement SHA-256 verification for historical migrations.
+
+Goal:
+
+Once a migration exists in the protected reference history,
+its execution-relevant contents may never silently change.
+
+Verifier must detect:
+
+- edited migration.sql
+- renamed migration directory
+- removed historical migration
+- replaced migration
+- sequence reuse
+
+Do not invent a second migration ordering authority.
+
+For this task, implement the smallest mechanism needed to compare the
+current migration set against a protected/reference migration set.
+
+Prefer Git/main history comparison if it can be done deterministically
+without network access.
+
+Do NOT require GitHub API/network access.
+
+If main/reference history is unavailable locally, fail explicitly or
+provide a clearly-defined CI reference input rather than silently
+passing.
+
+Document exactly how the reference set is selected.
+
+==================================================
+4. IMPORTANT — NO MANIFEST YET
+==================================================
+
+Do NOT create:
+
+manifest.json
+meta/_journal.json
+custom migration ledger
+migration metadata sidecars
+compatibility phase metadata
+review-status metadata
+baseline metadata
+
+Those belong to later architecture work.
+
+P.1a establishes only:
+
+- directory convention
+- sequencing
+- immutability
+- checksum verification
+
+==================================================
+5. TESTS
+==================================================
+
+Add:
+
+pnpm run test:migration-contract
+
+Fixture-based tests must cover at minimum:
+
+PASS:
+- valid migration sequence
+
+FAIL:
+- gap
+- duplicate number
+- invalid directory name
+- uppercase name
+- bad snake_case
+- generic `fix`
+- generic `final`
+- `v2`
+- date-based name
+- branch/task-like name
+- missing migration.sql
+- unexpected file/layout
+- renamed historical migration
+- edited historical migration
+- deleted historical migration
+- sequence reuse
+
+Also test:
+
+- deterministic SHA-256
+- deterministic ordering
+- same files produce same result across repeated runs
+
+==================================================
+6. SAFETY TEST
+==================================================
+
+Prove this task has no database capability.
+
+Check that the implementation:
+
+- does not import pg
+- does not import drizzle DB connection code
+- does not read DATABASE_URL
+- does not spawn drizzle-kit
+- does not execute shell DB commands
+
+A static test is acceptable.
+
+==================================================
+7. DO NOT WIRE RELEASE YET
+==================================================
+
+Do NOT add this to:
+
+validate:release
+validate:publish
+production startup
+deployment hooks
+
+We first want independent Claude review.
+
+==================================================
+8. ALLOWED FILES
+==================================================
+
+Expected scope:
+
+lib/db/migrations/
+  only placeholder/documentation if technically required;
+  NO real migration.sql
+
+scripts/src/migration-contract/*
+scripts/src/*migration-contract* if needed
+scripts/package.json
+root package.json only if needed for the test command
+pnpm-lock.yaml only if genuinely required
+
+Do NOT modify:
+
+lib/db/src/schema/*
+production artifacts/*
+bootstrap schema modules
+application routes
+booking logic
+Education B2B
+retail review FK
+database configuration
+
+==================================================
+9. VALIDATION
+==================================================
+
+Run:
+
+pnpm run typecheck
+pnpm run test:migration-contract
+
+Also run existing schema-drift unit tests if shared code was touched.
+
+Confirm git diff contains no production/schema/bootstrap changes.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact files changed
+2. Directory contract implemented
+3. Validation rules
+4. SHA-256/reference-history design
+5. How reference history is selected
+6. Failure behavior when reference unavailable
+7. Test matrix
+8. Database-capability proof
+9. Commands run/results
+10. Git diff scope
+11. HEAD/git status
+12. Any unresolved issue
+
+Then:
+
+TASK P.1a VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+STOP.
+
+Do not begin P.1b.
+Do not create baseline.
+Do not create runner.
+Do not create ledger.
+Do not touch database.
