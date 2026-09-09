@@ -238,7 +238,7 @@ router.post("/shop/quotes", async (req, res): Promise<void> => {
 });
 
 router.post("/shop/cart/bulk-matrix", async (req, res): Promise<void> => {
-  const user = await admin(req, res); if (!user) return;
+  const user = await auth(req, res); if (!user) return;
   const salon = await salonFor(user.id); if (!salon) { res.status(403).json({ error: "Salon owner access required." }); return; }
   const rawRows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rawRows.length || rawRows.length > 200) { res.status(400).json({ error: "Between 1 and 200 rows are required." }); return; }
@@ -253,19 +253,48 @@ router.post("/shop/cart/bulk-matrix", async (req, res): Promise<void> => {
     requested.set(key, { productId, variantValue, quantity: quantity + (previous?.quantity ?? 0) });
   }
   try {
-  const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(rmasTable).where(eq(rmasTable.id, req.params.id!)).for("update").limit(1);
-    if (!current || current.status === status) return current ? { row: current, changed: false } : null;
-    const [row] = await tx.update(rmasTable).set({ status, updatedAt: new Date() }).where(eq(rmasTable.id, current.id)).returning();
-    await tx.insert(rmaStatusHistoryTable).values({ rmaId: current.id, actorUserId: user.id, previousStatus: current.status, nextStatus: status });
-    const [requester] = await tx.select().from(usersTable).where(eq(usersTable.id, current.requesterUserId)).limit(1);
-    if (requester) await tx.insert(emailDeliveriesTable).values({
-      eventKey: `rma:${current.id}:status:${status}`, emailType: "rma_status_changed", recipientEmail: requester.email,
-      recipientName: `${requester.firstName} ${requester.lastName}`.trim(), subject: `LUMERA RMA ${current.rmaNumber}: ${status}`,
-      htmlContent: `<p>Status vaseg zahteva je promenjen na ${status}.</p>`, metadata: { rmaId: current.id, status },
-    }).onConflictDoNothing();
-    return { row: row!, changed: true };
-  });
+    const result = await db.transaction(async (tx) => {
+      // Cart precedes products everywhere in this operation; products are then
+      // locked by stable UUID order so concurrent matrices cannot deadlock.
+      let [cart] = await tx.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).for("update").limit(1);
+      if (!cart) {
+        [cart] = await tx.insert(shoppingCartsTable).values({ salonId: salon.id }).onConflictDoNothing().returning();
+        if (!cart) [cart] = await tx.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).for("update").limit(1);
+      }
+      const productIds = [...new Set([...requested.values()].map((row) => row.productId))].sort();
+      const products = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds)).orderBy(asc(productsTable.id)).for("update");
+      const byId = new Map(products.map((product) => [product.id, product]));
+      // Cart rows are locked after cart/product locks. Include them in every
+      // availability check: adding a row can never silently overbook stock.
+      const existing = await tx.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart!.id)).for("update");
+      const additions = [];
+      for (const row of requested.values()) {
+        const product = byId.get(row.productId);
+        const variant = product?.variants?.find((candidate) => candidate.value === row.variantValue);
+        if (!product || !product.active || !product.professionalEnabled || !product.bulkMatrixEnabled || !variant) throw new Error(`INVALID:${row.productId}:${row.variantValue}`);
+        const current = existing.find((item) => item.productId === product.id && item.variantValue === variant.value);
+        // Null variant stock means this variant consumes product-level shared
+        // inventory, rather than being unavailable.
+        const requestedForProduct = [...requested.values()].filter((candidate) => candidate.productId === product.id
+          && product.variants?.find((v) => v.value === candidate.variantValue)?.stock == null).reduce((sum, candidate) => sum + candidate.quantity, 0);
+        const existingShared = existing.filter((item) => item.productId === product.id
+          && product.variants?.find((v) => v.value === item.variantValue)?.stock == null).reduce((sum, item) => sum + item.quantity, 0);
+        const stock = variant.stock == null ? product.stock : variant.stock;
+        if (product.priceOnRequest || effectiveStock(product) === 0 || (variant.stock == null
+          ? requestedForProduct + existingShared > product.stock
+          : row.quantity + (current?.quantity ?? 0) > stock)) throw new Error(`STOCK:${row.productId}:${row.variantValue}`);
+        const unitPrice = variant.price ?? Math.max(0, activeProductSale(product, "B2B")?.price ?? product.price) + (variant.priceAdjust ?? 0);
+        additions.push({ cartId: cart!.id, productId: product.id, bundleId: null, variantValue: variant.value,
+          productName: product.name, productImageUrl: variant.mainImageUrl ?? product.imageUrl, variantLabel: variant.label,
+          productSku: variant.sku ?? product.sku, unitPrice, quantity: row.quantity });
+      }
+      for (const addition of additions) {
+        const current = existing.find((item) => item.productId === addition.productId && item.variantValue === addition.variantValue);
+        if (current) await tx.update(shoppingCartItemsTable).set({ quantity: current.quantity + addition.quantity, unitPrice: addition.unitPrice, updatedAt: new Date() }).where(eq(shoppingCartItemsTable.id, current.id));
+        else await tx.insert(shoppingCartItemsTable).values(addition);
+      }
+      return { cartId: cart!.id, addedRows: additions.length };
+    });
     res.json(result);
   } catch (error) {
     const message = (error as Error).message;
@@ -282,7 +311,7 @@ async function ownedQuote(req: Request, res: Response) {
   if (!quote) res.status(404).json({ error: "Quote not found." });
   return quote ?? null;
 }
-  const quote = await ownedQuote(req, res); if (!quote) return;
+router.get("/shop/quotes/:publicId", async (req, res): Promise<void> => { const quote = await ownedQuote(req, res); if (quote) res.json(quote); });
 router.post("/shop/quotes/:publicId/restore-cart", async (req, res): Promise<void> => {
   const quote = await ownedQuote(req, res); if (!quote) return;
   if (quote.validUntil.getTime() <= Date.now()) {
