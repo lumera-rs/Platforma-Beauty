@@ -94,7 +94,10 @@ export function validatedSwatch(value: unknown) {
 router.get("/catalog/feed", async (_req, res): Promise<void> => {
   let origin: string;
   try { origin = canonicalOrigin(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
-  const rows = await adminRmaRows(sql`true`, 500);
+  const rows = await db.select({ product: productsTable, supplier: suppliersTable }).from(productsTable)
+    .innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+    .where(and(eq(productsTable.active, true), eq(productsTable.retailEnabled, true), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"])))
+    .orderBy(asc(productsTable.catalogReference));
   res.json({
     generatedAt: new Date().toISOString(),
     items: rows.filter(({ product }) => !product.priceOnRequest && effectiveStock(product) > 0).map(({ product, supplier }) => ({
@@ -111,7 +114,7 @@ router.get("/catalog/feed", async (_req, res): Promise<void> => {
 });
 
 router.get("/public/products/:productId/bulk-matrix", async (req, res): Promise<void> => {
-    const productId = clean(raw?.productId, 50), variantValue = clean(raw?.variantValue, 200), quantity = Number(raw?.quantity);
+  const productId = Array.isArray(req.params.productId) ? req.params.productId[0]! : req.params.productId!;
   const [product] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true))).limit(1);
   if (!product || !product.bulkMatrixEnabled) { res.status(404).json({ error: "Bulk matrix not available." }); return; }
   const priceOnRequest = product.priceOnRequest || effectiveStock(product) === 0;
@@ -132,7 +135,7 @@ router.get("/public/products/:productId/bulk-matrix", async (req, res): Promise<
 
 router.post("/public/suppliers/:supplierId/products/:productId/price-inquiries", async (req, res): Promise<void> => {
   const name = clean(req.body?.name, 120), email = clean(req.body?.email, 254).toLowerCase();
-  const phone = recipient?.phone ?? legacySalon?.phone;
+  const phone = clean(req.body?.phone, 40), message = clean(req.body?.message, 2_000);
   if (name.length < 2 || !emailPattern.test(email) || phone.length < 6 || message.length < 10) {
     res.status(400).json({ error: "Valid name, email, phone and message are required." }); return;
   }
@@ -153,7 +156,18 @@ router.get("/admin/price-inquiries", async (req, res): Promise<void> => {
   const page = query.data.page ?? 1;
   const pageSize = query.data.pageSize ?? 50;
   const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
-  const rows = await adminRmaRows(sql`true`, 500);
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiries", AdminListPriceInquiriesResponse, rows);
 });
 
@@ -165,7 +179,18 @@ router.get("/admin/price-inquiries/page", async (req, res): Promise<void> => {
   const page = query.data.page ?? 1;
   const pageSize = query.data.pageSize ?? 50;
   const escapedSearch = search?.replace(/[\\%_]/g, "\\$&");
-  const rows = await adminRmaRows(sql`true`, 500);
+  const rows = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
+    .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
+    .innerJoin(suppliersTable, eq(priceInquiriesTable.supplierId, suppliersTable.id))
+    .where(search ? or(
+      sql`${priceInquiriesTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${priceInquiriesTable.email} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${productsTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+      sql`${suppliersTable.name} ILIKE ${`%${escapedSearch}%`} ESCAPE '\'`,
+    ) : undefined)
+    .orderBy(desc(priceInquiriesTable.createdAt), desc(priceInquiriesTable.id))
+    .limit(pageSize + 1)
+    .offset((page - 1) * pageSize);
   sendValidatedAdminCommerceResponse(req, res, "adminListPriceInquiriesPage", AdminListPriceInquiriesPageResponse, {
     items: rows.slice(0, pageSize),
     page,
@@ -178,11 +203,11 @@ router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
   const params = AdminUpdatePriceInquiryParams.safeParse(req.params);
   const body = AdminUpdatePriceInquiryBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: "Invalid price inquiry update." }); return; }
-  const [updated] = await db.update(shopSettingsTable).set({
-    reviewRewardsEnabled: req.body.enabled, reviewInvitationDelayDays: delay,
-    reviewRewardPercent: percent, reviewRewardValidityDays: validity,
-    version: version + 1, updatedAt: new Date(),
-  }).where(eq(shopSettingsTable.version, version)).returning();
+  const [updated] = await db.update(priceInquiriesTable).set({
+    status: body.data.status,
+    internalNote: body.data.internalNote,
+    updatedAt: new Date(),
+  }).where(eq(priceInquiriesTable.id, params.data.id)).returning();
   if (!updated) { res.status(404).json({ error: "Inquiry not found." }); return; }
   const [inquiry] = await db.select(adminPriceInquirySelection).from(priceInquiriesTable)
     .innerJoin(productsTable, eq(priceInquiriesTable.productId, productsTable.id))
@@ -193,7 +218,7 @@ router.patch("/admin/price-inquiries/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/shop/quotes", async (req, res): Promise<void> => {
-  const user = await admin(req, res); if (!user) return;
+  const user = await auth(req, res); if (!user) return;
   let origin: string;
   try { origin = canonicalOrigin(); } catch (error) { res.status(503).json({ error: (error as Error).message }); return; }
   const salon = await salonFor(user.id); if (!salon) { res.status(403).json({ error: "Salon owner access required." }); return; }
@@ -373,7 +398,7 @@ router.get("/shop/quotes/:publicId/pdf", async (req, res): Promise<void> => {
 
 router.get("/admin/quotes", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
-  const rows = await adminRmaRows(sql`true`, 500);
+  const rows = await db.select().from(b2bQuotesTable).orderBy(desc(b2bQuotesTable.createdAt)).limit(500);
   sendValidatedAdminCommerceResponse(req, res, "adminListQuotes", AdminListQuotesResponse, rows);
 });
 router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
@@ -385,8 +410,8 @@ router.get("/admin/catalog/meta/status", async (req, res): Promise<void> => {
 });
 
 router.post("/orders/:orderId/rmas", async (req, res): Promise<void> => {
-  const user = await admin(req, res); if (!user) return;
-  if (!["CUSTOMER", "JOBSEEKER"].includes(user.role)) { res.status(403).json({ error: "Retail customer access required." }); return; }
+  const user = await auth(req, res); if (!user) return;
+  if (!["CUSTOMER", "JOBSEEKER", "SALON_OWNER"].includes(user.role)) { res.status(403).json({ error: "Order owner access required." }); return; }
   const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0]! : req.params.orderId!;
   const orderItemId = clean(req.body?.orderItemId, 50), quantity = Number(req.body?.quantity);
   const reason = clean(req.body?.reason, 120), description = clean(req.body?.description, 3_000);
@@ -517,7 +542,7 @@ export function validateAdminRmaResponse<T>(
 router.get("/admin/rmas", async (req, res): Promise<void> => {
   if (!await admin(req, res)) return;
   const rows = await adminRmaRows(sql`true`, 500);
-  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
+  const response = validateAdminRmaResponse("list", AdminListRmasResponse, rows.map(adminRmaListDto), req.log);
   if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
   res.json(response);
 });
@@ -538,12 +563,22 @@ router.get("/admin/rmas/:id", async (req, res): Promise<void> => {
     : (await db.select({ orderItemId: orderItemsTable.id, productName: orderItemsTable.productName, quantity: rmasTable.quantity })
       .from(orderItemsTable).innerJoin(rmasTable, eq(rmasTable.orderItemId, orderItemsTable.id))
       .where(eq(rmasTable.id, row.id)).limit(1))[0];
-  const response = validateAdminRmaResponse("status-update", AdminUpdateRmaStatusResponse, result, req.log);
+  const response = validateAdminRmaResponse("detail", AdminGetRmaResponse, {
+    ...adminRmaListDto(base),
+    items: item ? [item] : [],
+    privatePhotos: attachments.map((attachment) => `/api/media/${attachment.mediaAssetId}`),
+    auditTrail: history.map((entry) => ({
+      action: `${entry.previousStatus ?? "CREATED"} → ${entry.nextStatus}`,
+      timestamp: entry.createdAt,
+      actorId: entry.actorUserId,
+      note: null,
+    })),
+  }, req.log);
   if (!response) { res.status(500).json({ error: "RMA data could not be returned safely." }); return; }
   res.json(response);
 });
 router.post("/retail/orders/:orderId/rmas", async (req, res): Promise<void> => {
-  const user = await admin(req, res); if (!user) return;
+  const user = await auth(req, res); if (!user) return;
   if (!["CUSTOMER", "JOBSEEKER"].includes(user.role)) { res.status(403).json({ error: "Retail customer access required." }); return; }
   const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0]! : req.params.orderId!;
   const itemId = clean(req.body?.orderItemId, 50), quantity = Number(req.body?.quantity), reason = clean(req.body?.reason, 120), description = clean(req.body?.description, 3_000);

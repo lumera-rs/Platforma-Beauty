@@ -26,20 +26,6 @@ import { settledCommerceSpend } from "./deo-g2-rule-loader";
 const marker = `commerce-ef-${randomUUID()}`;
 const ids = { users: [] as string[], salons: [] as string[], suppliers: [] as string[], categories: [] as string[], products: [] as string[], carts: [] as string[], orders: [] as string[], retailCarts: [] as string[], retailOrders: [] as string[], assets: [] as string[] };
 let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let base = ""; let server: ReturnType<typeof app.listen>; let salonOwner = ""; let customer = ""; let otherCustomer = ""; let admin = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
-let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
 let salonId = ""; let productId = ""; let zeroProductId = ""; let simpleRetailProductId = ""; let hiddenRelatedProductId = ""; let explicitBuyer = ""; let b2bOrderId = ""; let b2bItemId = ""; let retailOrderId = ""; let retailItemId = "";
 let settings: typeof shopSettingsTable.$inferSelect | undefined;
 const cookie = async (id: string) => `${sessionCookieName}=${await createSession(id)}`;
@@ -146,12 +132,12 @@ test("admin profitability aggregates immutable B2C/B2B snapshots and excludes ca
   ids.retailOrders.push(excludedB2c!.id);
   await db.insert(retailOrderItemsTable).values({ orderId: excludedB2c!.id, ...snapshot, productImageUrl: "/test.jpg", unitPrice: 999, quantity: 1, lineSubtotal: 999, lineTotal: 999, unitCostPriceRsd: 1, lineCogsRsd: 1, realizedRevenueRsd: 999 });
 
-    const adminCookie = await cookie(admin);
+  const adminCookie = await cookie(admin);
   const get = (extra = "") => api(`/admin/commerce/profitability?from=2025-01-15&to=2025-01-15&productId=${productId}${extra}`, adminCookie);
   for (const [granularity, period] of [["DAY", "2025-01-15"], ["WEEK", "2025-01-13"], ["MONTH", "2025-01-01"]] as const) {
-    const response = await get(`&market=${market}&supplierId=${product!.supplierId}&categoryId=${product!.categoryId}&brand=${encodeURIComponent(marker)}`);
+    const response = await get(`&granularity=${granularity}&supplierId=${product!.supplierId}&categoryId=${product!.categoryId}&brand=${encodeURIComponent(marker)}`);
     assert.equal(response.status, 200);
-    const report = await response.json() as { kpis: { revenueRsd: number; cogsRsd: number; units: number } };
+    const report = await response.json() as { kpis: { revenueRsd: number; cogsRsd: number; profitRsd: number; marginPercent: number; units: number }; timeSeries: Array<{ period: string }>; products: Array<{ productId: string; realizedRevenueRsd: number; cogsRsd: number }> };
     assert.deepEqual(report.kpis, { revenueRsd: 2700, cogsRsd: 1000, profitRsd: 1700, marginPercent: 62.96, units: 3 });
     assert.equal(report.timeSeries[0]?.period, period);
     assert.deepEqual(report.products.map((row) => ({ productId: row.productId, revenueRsd: row.realizedRevenueRsd, cogsRsd: row.cogsRsd })), [{ productId, revenueRsd: 2700, cogsRsd: 1000 }]);
@@ -190,7 +176,7 @@ test.after(async () => {
 test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences", async (t) => {
   await t.test("quote is owner-bound immutable evidence and restore replaces the cart exactly", async () => {
     const owner = await cookie(salonOwner);
-    const made = await api(`/retail/orders/${retailOrderId}/rmas`, await cookie(customer), { method: "POST", body: JSON.stringify({ orderItemId: retailItemId, quantity: 1, reason: "Damaged", description: "The item arrived visibly damaged.", photoUrls: [`/api/media/${assetId}`] }) }); assert.equal(made.status, 201);
+    const made = await api("/shop/quotes", owner, { method: "POST", body: JSON.stringify({ validityDays: 7 }) }); assert.equal(made.status, 201);
     const quote = await made.json() as {
       publicId: string;
       sellerSnapshot: {
@@ -234,7 +220,6 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal((await api(`/shop/quotes/${quote.publicId}/restore-cart`, owner, { method: "POST" })).status, 409);
   });
   await t.test("zero stock is price-on-request everywhere and matrix validation is atomic", async () => {
-    const matrix = await api(`/public/products/${zeroProductId}/bulk-matrix`); const body = await matrix.json() as { priceOnRequest: boolean; cartEligible: boolean; rows: Array<Record<string, unknown>> };
     const matrix = await api(`/public/products/${zeroProductId}/bulk-matrix`); const body = await matrix.json() as { priceOnRequest: boolean; cartEligible: boolean; rows: Array<Record<string, unknown>> };
     assert.equal(body.priceOnRequest, true); assert.equal(body.cartEligible, false); assert.equal("unitPrice" in body.rows[0]!, false);
     assert.equal((await api(`/public/suppliers/${ids.suppliers[0]}/products/${zeroProductId}/price-inquiries`, "", { method: "POST", body: JSON.stringify({ name: "Test User", email: "test@example.test", phone: "+381601234567", message: "Need a price for this item." }) })).status, 201);
@@ -353,7 +338,12 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
       method: "POST", headers: { "Idempotency-Key": randomUUID() },
     });
     assert.equal(repeatResponse.status, 200);
-    const repeated = JSON.stringify({ orderItemId: retailItemId, quantity: 1, reason: "Damaged", description: "The item arrived visibly damaged." });
+    const repeated = await repeatResponse.json() as {
+      cart: {
+        items: Array<{ id: string; kind: string; productId?: string; variantValue?: string | null }>;
+        savedItems: Array<{ id: string; productId?: string | null; variantValue?: string | null }>;
+      };
+    };
     const repeatedVariant = repeated.cart.items.find((item) => item.kind === "product" && item.productId === productId);
     assert.equal(repeatedVariant?.variantValue, "red");
     const saveResponse = await api(`/retail/cart/items/${repeatedVariant!.id}/save-for-later`, explicitBrowserSession, { method: "POST" });
@@ -368,7 +358,7 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.deepEqual(validatedSwatch({ kind: "COLOR", hex: "#aabbcc" }), { kind: "COLOR", hex: "#AABBCC" }); assert.equal(validatedSwatch({ kind: "COLOR", hex: "#fff" }), null); assert.equal(validatedSwatch({ kind: "IMAGE", imageUrl: "https://evil.test/a" }), null);
   });
   await t.test("concurrent review creation gives one order reward and one invitation outbox row", async () => {
-  const adminSession = await cookie(admin);
+    const adminSession = await cookie(admin);
     const loadedSettings = await (await api("/admin/review-rewards", adminSession)).json() as {
       settings: { enabled: boolean; invitationDelayDays: number; percent: number; validityDays: number; version: number };
       stats: { issued: number };
@@ -384,7 +374,6 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(AdminUpdateReviewRewardSettingsResponse.safeParse(savedSettings).success, true);
     assert.equal(savedSettings.version, loadedSettings.settings.version + 1);
     const session = await cookie(customer);
-    const firstAsset = randomUUID(); const replacementAsset = randomUUID(); ids.assets.push(firstAsset, replacementAsset);
     const firstAsset = randomUUID(); const replacementAsset = randomUUID(); ids.assets.push(firstAsset, replacementAsset);
     await db.insert(mediaAssetsTable).values([firstAsset, replacementAsset].map((id) => ({ id, ownerUserId: customer, scope: "retail-review-photo", visibility: "private", originalFileName: "review.jpg", originalContentType: "image/jpeg", width: 1, height: 1, contentHash: `${marker}-${id}` })));
     const result = await Promise.all([api(`/customer/retail-products/${productId}/reviews`, session, { method: "POST", body: JSON.stringify({ rating: 5, comment: "Excellent product", photoUrls: [`/api/media/${firstAsset}`] }) }), api(`/customer/retail-products/${productId}/reviews`, session, { method: "POST", body: JSON.stringify({ rating: 4, comment: "Race review" }) })]);
