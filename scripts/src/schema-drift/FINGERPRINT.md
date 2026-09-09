@@ -10,6 +10,30 @@ catalog query through the schema-drift read-only query guard. It does not compar
 baseline eligibility and does not write a manifest, ledger, migration, or
 database row.
 
+Pass `--eligibility-manifest=path/to/manifest.json` to classify the same live
+snapshot against a reviewed, versioned set of expected fingerprints. The command
+still performs no database writes. Only an exact structural and physical match
+to a `LEGACY` entry returns `eligibleForMetadataAdoption: true`.
+
+Eligibility codes are explicit and fail closed:
+
+- `FRESH_DATABASE`: no included application tables; adoption is unnecessary.
+- `ALREADY_CURRENT`: exact match to a reviewed `CURRENT` entry.
+- `KNOWN_LEGACY`: exact match to a reviewed `LEGACY` entry; the only eligible code.
+- `PARTIAL_SCHEMA`: some expected Lumera tables exist but the expected set is incomplete.
+- `WRONG_DATABASE`: no expected Lumera table identity overlaps the live snapshot.
+- `UNEXPECTED_P0_P1_DRIFT`: the closest complete table set has unknown critical drift.
+- `UNKNOWN_FINGERPRINT`: Lumera-shaped but not an approved exact fingerprint and
+  without a P0/P1 finding from the legacy comparator.
+
+Each expected entry pins the fingerprint format, algorithm, fingerprint version,
+schema format, both digests, and its reviewed physical snapshot. Incompatible
+versions, malformed hashes, duplicate IDs, and empty manifests are errors rather
+than permissive fallbacks. Each digest pair is unique, cannot receive conflicting
+`CURRENT`/`LEGACY` labels, and is recomputed from its reviewed physical snapshot
+before classification. P0/P1 findings are returned for review but never authorize
+adoption.
+
 ## Fingerprints
 
 Both hashes use SHA-256 over a versioned, locale-neutral canonical UTF-8 JSON
@@ -44,4 +68,6 @@ Only exact registry matches that are present in the snapshot are excluded.
 Each applied exception is returned in `ownershipExceptions` with
 `handling: "EXCLUDED"`. Unknown extra objects remain in both payloads and
 therefore affect both hashes. This is transparent catalog handling, not a
-baseline eligibility decision.
+baseline eligibility decision. Eligibility fingerprints the live snapshot with
+the same registry first, so a registered extension/bootstrap-owned table is
+excluded. An unknown extra table is not excluded and prevents an exact match.
