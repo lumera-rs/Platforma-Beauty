@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { createSeoResponse } from './seo-server.mjs';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 
@@ -13,6 +17,58 @@ const appSource = readFileSync(new URL('./src/App.tsx', import.meta.url), 'utf8'
 function request(pathname) {
   return { url: pathname, headers: { host: 'lumera.example', 'x-forwarded-proto': 'https' } };
 }
+
+async function reservePort() {
+  const server = createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+test('direct entry point serves HTTP on the explicit PORT and shuts down cleanly', { timeout: 10_000 }, async (t) => {
+  const port = await reservePort();
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./seo-server.mjs', import.meta.url))], {
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  });
+
+  const deadline = Date.now() + 5_000;
+  let response;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      assert.fail(`SEO server exited before accepting HTTP requests: ${stderr}`);
+    }
+    try {
+      response = await fetch(`http://127.0.0.1:${port}/uslovi-koriscenja`);
+      break;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  assert.ok(response, `SEO server did not accept HTTP requests on PORT=${port}: ${stderr}`);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>Uslovi korišćenja \| LUMERA<\/title>/);
+
+  child.kill('SIGTERM');
+  const [exitCode, signal] = await once(child, 'exit');
+  assert.equal(exitCode, null);
+  assert.equal(signal, 'SIGTERM');
+});
 
 test('shared category definitions use unique route, slug, and API mappings', () => {
   const requiredFields = ['slug', 'path', 'apiCategory', 'label', 'h1', 'title', 'description', 'intro'];
