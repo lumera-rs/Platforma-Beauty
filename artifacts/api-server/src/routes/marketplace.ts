@@ -12896,7 +12896,10 @@ router.patch("/admin/suppliers/:supplierId", async (req, res): Promise<void> => 
   res.json(AdminUpdateSupplierResponse.parse(supplier));
 });
 router.get("/suppliers", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(suppliersTable).where(eq(suppliersTable.active, true))
+  const rows = await db.select().from(suppliersTable).where(and(
+    eq(suppliersTable.active, true),
+    inArray(suppliersTable.scope, ["B2C", "BOTH"]),
+  ))
     .orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
   res.json(ListPublicSuppliersResponse.parse(rows));
 });
@@ -12981,17 +12984,120 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise
   const [supplier] = await db.select().from(suppliersTable).where(and(eq(suppliersTable.slug, params.data.supplierSlug),
     eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]))).limit(1);
   if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
-  const filters = [eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
-    isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice)];
-  if (query.data.categoryId) filters.push(eq(productsTable.categoryId, query.data.categoryId));
-  if (query.data.brand) filters.push(eq(productsTable.brand, query.data.brand));
-  if (query.data.search) filters.push(ilike(productsTable.name, `%${query.data.search}%`));
-  const page = query.data.page ?? 1; const pageSize = query.data.pageSize ?? 24; const where = and(...filters);
-  const [[totalRow], products] = await Promise.all([db.select({ count: count() }).from(productsTable).where(where),
-    db.select().from(productsTable).where(where).orderBy(asc(productsTable.name), asc(productsTable.id)).limit(pageSize).offset((page - 1) * pageSize)]);
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 24;
+  const where = publicSupplierProductWhere(supplier.id, query.data);
+  const facetBase = publicSupplierProductWhere(supplier.id, query.data, "category");
+  const priceExpr = sql<number>`coalesce(${activeProductSalePriceSql("B2C")}, ${productsTable.publicPrice})`;
+  const ordering = query.data.sort === "PRICE_ASC" ? [asc(priceExpr), asc(productsTable.id)]
+    : query.data.sort === "PRICE_DESC" ? [desc(priceExpr), asc(productsTable.id)]
+    : query.data.sort === "NEWEST" ? [desc(productsTable.createdAt), asc(productsTable.id)]
+    : query.data.sort === "BEST_RATED" ? [desc(productsTable.averageRating), desc(productsTable.createdAt), asc(productsTable.id)]
+    : [desc(productsTable.isBestseller), desc(productsTable.isNew), desc(productsTable.createdAt), asc(productsTable.id)];
+  const [[totalRow], products, priceRange, categoryCounts, categories, brandFacets, typeFacets, tagFacets] = await Promise.all([
+    db.select({ count: count() }).from(productsTable).where(where),
+    db.select().from(productsTable).where(where).orderBy(...ordering).limit(pageSize).offset((page - 1) * pageSize),
+    db.select({ min: sql<number>`min(${priceExpr})`, max: sql<number>`max(${priceExpr})` }).from(productsTable)
+      .where(publicSupplierProductWhere(supplier.id, query.data, "price")),
+    db.select({ id: productsTable.categoryId, count: count() }).from(productsTable).where(facetBase).groupBy(productsTable.categoryId),
+    db.select({ id: productCategoriesTable.id, name: productCategoriesTable.name, parentId: productCategoriesTable.parentId })
+      .from(productCategoriesTable).where(and(eq(productCategoriesTable.supplierId, supplier.id), eq(productCategoriesTable.active, true))),
+    db.select({ value: productsTable.brand, count: count() }).from(productsTable).where(publicSupplierProductWhere(supplier.id, query.data, "brand")).groupBy(productsTable.brand),
+    db.select({ id: b2cProductTypesTable.id, value: b2cProductTypesTable.slug, label: b2cProductTypesTable.label, count: count() })
+      .from(productsTable).innerJoin(b2cProductTypesTable, eq(productsTable.productTypeId, b2cProductTypesTable.id))
+      .where(and(publicSupplierProductWhere(supplier.id, query.data, "type"), eq(b2cProductTypesTable.active, true)))
+      .groupBy(b2cProductTypesTable.id),
+    db.select({ id: b2cNeedTagsTable.id, value: b2cNeedTagsTable.key, label: b2cNeedTagsTable.label, count: sql<number>`count(distinct ${productsTable.id})` })
+      .from(productsTable).innerJoin(b2cProductNeedTagsTable, eq(productsTable.id, b2cProductNeedTagsTable.productId))
+      .innerJoin(b2cNeedTagsTable, eq(b2cProductNeedTagsTable.needTagId, b2cNeedTagsTable.id))
+      .where(and(publicSupplierProductWhere(supplier.id, query.data, "tag"), eq(b2cNeedTagsTable.active, true)))
+      .groupBy(b2cNeedTagsTable.id),
+  ]);
   const total = Number(totalRow?.count ?? 0);
-  res.json(ListSupplierPublicProductsResponse.parse({ items: products.map(publicProductDto), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) }));
+  const directCounts = new Map(categoryCounts.map((row) => [row.id, Number(row.count)]));
+  res.json(ListSupplierPublicProductsResponse.parse({
+    items: products.map(publicProductDto),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    activeRange: {
+      minPrice: priceRange[0]?.min == null ? null : Number(priceRange[0].min),
+      maxPrice: priceRange[0]?.max == null ? null : Number(priceRange[0].max),
+    },
+    facets: {
+      categories: categories.map((category) => ({
+        id: category.id, label: category.name, count: directCounts.get(category.id) ?? 0,
+      })),
+      brands: brandFacets.filter((item) => item.value).map((item) => ({ value: item.value, count: Number(item.count) })),
+      productTypes: typeFacets.map((item) => ({ ...item, count: Number(item.count) })),
+      needTags: tagFacets.map((item) => ({ ...item, count: Number(item.count) })),
+    },
+  }));
 });
+
+type PublicSupplierProductQuery = ReturnType<typeof ListSupplierPublicProductsQueryParams.parse>;
+type PublicSupplierProductFilter = "category" | "brand" | "type" | "tag" | "price";
+
+function publicSupplierProductValues(value: string | undefined): string[] {
+  return value ? [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))] : [];
+}
+
+function publicSupplierProductWhere(
+  supplierId: string,
+  query: PublicSupplierProductQuery,
+  omit?: PublicSupplierProductFilter,
+) {
+  const conditions: SQL[] = [
+    eq(productsTable.supplierId, supplierId),
+    eq(productsTable.active, true),
+    eq(productsTable.retailEnabled, true),
+    activeCategoryCondition(),
+    isNotNull(productsTable.publicDescription),
+    isNotNull(productsTable.publicPrice),
+  ];
+  if (omit !== "category" && query.categoryId) {
+    conditions.push(sql`${productsTable.categoryId} IN (
+      WITH RECURSIVE descendants AS (
+        SELECT id FROM product_categories WHERE id = ${query.categoryId} AND supplier_id = ${supplierId}
+        UNION ALL
+        SELECT child.id FROM product_categories child JOIN descendants parent ON child.parent_id = parent.id
+      )
+      SELECT id FROM descendants
+    )`);
+  }
+  const brands = publicSupplierProductValues(query.brand);
+  if (omit !== "brand" && brands.length) conditions.push(inArray(productsTable.brand, brands));
+  const types = publicSupplierProductValues(query.productType);
+  if (omit !== "type" && types.length) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM b2c_product_types pt
+      WHERE pt.id = ${productsTable.productTypeId} AND pt.active = true
+        AND pt.slug IN (${sql.join(types.map((value) => sql`${value}`), sql`, `)})
+    )`);
+  }
+  const tags = publicSupplierProductValues(query.needTag);
+  if (omit !== "tag" && tags.length) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM b2c_product_need_tags pnt
+      JOIN b2c_need_tags nt ON nt.id = pnt.need_tag_id
+      WHERE pnt.product_id = ${productsTable.id} AND nt.active = true
+        AND nt.key IN (${sql.join(tags.map((value) => sql`${value}`), sql`, `)})
+    )`);
+  }
+  const priceExpr = sql<number>`coalesce(${activeProductSalePriceSql("B2C")}, ${productsTable.publicPrice})`;
+  if (omit !== "price" && query.minPrice != null) conditions.push(gte(priceExpr, query.minPrice));
+  if (omit !== "price" && query.maxPrice != null) conditions.push(lte(priceExpr, query.maxPrice));
+  if (query.search) {
+    const pattern = `%${query.search}%`;
+    conditions.push(or(
+      ilike(productsTable.name, pattern),
+      ilike(productsTable.brand, pattern),
+      ilike(productsTable.categoryName, pattern),
+    )!);
+  }
+  return and(...conditions)!;
+}
 function productBelongsToActiveCategory(
   product: typeof productsTable.$inferSelect,
   categories: Array<typeof productCategoriesTable.$inferSelect>,
