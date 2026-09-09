@@ -56,6 +56,11 @@ export interface BeautyJobCreateInput {
      */
   photos?: string[];
   /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
+  /**
      * @minLength 1
      * @maxLength 1000
      */

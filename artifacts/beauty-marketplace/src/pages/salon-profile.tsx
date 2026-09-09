@@ -791,7 +791,12 @@ export default function SalonProfile() {
           {/* Top Section */}
           <div className="flex flex-col lg:flex-row gap-8 lg:gap-16 items-start">
              <div className="w-full lg:w-[55%] xl:w-[60%]">
-                <SalonGallery media={mediaItems} salonName={salonData.name} />
+                <SalonGallery
+                  media={mediaItems}
+                  salonName={salonData.name}
+                  coverImageUrl={salonData.imageUrl}
+                  coverImageDescription={salonData.coverImageDescription}
+                />
              </div>
 
               <div className="relative w-full lg:w-[45%] xl:w-[40%] flex flex-col justify-center space-y-8 lg:pt-4">

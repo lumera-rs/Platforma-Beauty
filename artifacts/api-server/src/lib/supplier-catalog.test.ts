@@ -252,7 +252,9 @@ test.before(async () => {
       name: `${marker} ordered`,
       description: "Wholesale secret description",
       publicDescription: "Public description",
-      imageUrl: "/supplier-catalog-test.jpg",
+      imageUrl: "/supplier-catalog-cover.jpg",
+      images: ["/supplier-catalog-gallery.jpg"],
+      coverImageDescription: "Naslovna fotografija proizvoda",
       price: 4_000,
       discountPrice: 3_500,
       publicPrice: 5_000,
@@ -473,6 +475,17 @@ test("supplier B2B products require authentication and public products expose on
   const product = await publicResponse.json() as Record<string, unknown>;
   assert.equal(product.price, orderedProduct.publicPrice);
   assert.equal(product.description, orderedProduct.publicDescription);
+  assert.deepEqual(
+    product.socialImage,
+    { url: orderedProduct.imageUrl },
+    "the public product social image must be derived from the cover rather than the first gallery image",
+  );
+  assert.equal(product.coverImageDescription, orderedProduct.coverImageDescription);
+  const legacyPublicResponse = await api(`/shop/public/products/${orderedProduct.id}`);
+  assert.equal(legacyPublicResponse.status, 200);
+  const legacyProduct = await legacyPublicResponse.json() as Record<string, unknown>;
+  assert.deepEqual(legacyProduct.socialImage, { url: orderedProduct.imageUrl });
+  assert.equal(legacyProduct.coverImageDescription, orderedProduct.coverImageDescription);
   for (const forbidden of [
     "sku", "stock", "weightGrams", "professionalEnabled",
     "publicPrice", "publicDiscountPrice",
@@ -927,6 +940,7 @@ test("public supplier and retail product details expose managed social image met
       height: 1280,
       type: "image/jpeg",
     });
+    assert.equal(managedSupplierProduct.coverImageDescription, orderedProduct.coverImageDescription);
     const managedSupplierProductListResponse = await api(`/suppliers/${supplierA.slug}/public-products`);
     assert.equal(
       managedSupplierProductListResponse.status,
@@ -945,6 +959,7 @@ test("public supplier and retail product details expose managed social image met
     assert.equal(managedRetailProductResponse.status, 200, await managedRetailProductResponse.clone().text());
     const managedRetailProduct = GetPublicProductResponse.parse(await managedRetailProductResponse.json());
     assert.deepEqual(managedRetailProduct.socialImage, managedSupplierProduct.socialImage);
+    assert.equal(managedRetailProduct.coverImageDescription, orderedProduct.coverImageDescription);
 
     const legacySupplierResponse = await api(`/suppliers/${supplierB.slug}`);
     assert.equal(legacySupplierResponse.status, 200, await legacySupplierResponse.clone().text());
@@ -1222,7 +1237,7 @@ test("order item supplier and commercial snapshots survive catalog edits and rej
   await assert.rejects(
     db.execute(sql`update order_items set unit_price = unit_price + 1 where id = ${before.id}`),
     (error: unknown) => {
-      const cause = error instanceof Error ? error.cause : undefined;
+    const cause = error instanceof Error ? error.cause : undefined;
       return cause instanceof Error && /Order item commercial snapshot is immutable/.test(cause.message);
     },
   );

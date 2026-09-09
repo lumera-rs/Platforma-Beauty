@@ -877,6 +877,11 @@ const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 const CUSTOMER_SETUP_TTL_MS = 15 * 60 * 1000;
 const CUSTOMER_SETUP_MAX_ATTEMPTS = 5;
 const CUSTOMER_SETUP_INVALID_MESSAGE = "Link za postavljanje lozinke nije važeći ili više nije dostupan.";
+function normalizedCoverImageDescription(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value?.trim() ?? "";
+  return normalized || null;
+}
 // This is deliberately server-owned.  A client can attest only to the boolean
 // request field; it cannot choose the legal wording, version, account or time.
 
@@ -3796,6 +3801,7 @@ async function educationCourseView(
     giftVoucherEligible: course.giftVoucherEligible,
     centerId: course.centerId,
     imageUrl: course.imageUrl,
+    coverImageDescription: course.coverImageDescription,
     startDate: course.startDate,
     published: course.published,
     archived: course.archived,
@@ -4189,6 +4195,7 @@ function card(
     city: salon.city,
     municipality: salon.municipality,
     imageUrl: salon.imageUrl,
+    coverImageDescription: salon.coverImageDescription,
     rating: salon.rating / 10,
     reviewCount: salon.reviewCount,
     shortDescription: salon.shortDescription,
@@ -7122,7 +7129,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     ),
     featured: Boolean(activeFeaturedPlacement),
     gallery: salon.gallery,
-    socialImage: await publicSocialImage(salon.gallery[0] ?? salon.imageUrl),
+    socialImage: await publicSocialImage(salon.imageUrl),
     videoUrl: salon.videoUrl,
     description: salon.description,
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
@@ -9566,6 +9573,7 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     servesMen: salon.servesMen,
     openSunday: openSunday.length > 0,
     imageUrl: salon.imageUrl,
+    coverImageDescription: salon.coverImageDescription,
     gallery: salon.gallery,
   }));
 });
@@ -9580,6 +9588,9 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (parsed.data.videoUrl !== undefined && !isSafeExternalHttpUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
+  if (parsed.data.coverImageDescription !== undefined) {
+    updates.coverImageDescription = normalizedCoverImageDescription(parsed.data.coverImageDescription);
+  }
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
@@ -9687,6 +9698,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
       .where(and(eq(salonHoursTable.salonId, updated!.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
     imageUrl: updated!.imageUrl,
+    coverImageDescription: updated!.coverImageDescription,
     gallery: updated!.gallery,
   }));
 });
@@ -13037,7 +13049,7 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise
   res.json(ListSupplierPublicProductsResponse.parse({
     items: await Promise.all(products.map(async (product) => ({
       ...publicProductDto(product),
-      socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
+      socialImage: await publicSocialImage(product.imageUrl),
     }))),
     total,
     page,
@@ -13267,6 +13279,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     brand: item.brand ?? null,
     description: item.publicDescription,
     imageUrl: item.imageUrl,
+    coverImageDescription: item.coverImageDescription ?? null,
     images: item.images ?? [],
     price,
     discountPrice: discountPrice ?? null,
@@ -14463,7 +14476,7 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   if (!product) { res.status(404).json({ error: "Javni proizvod nije pronađen." }); return; }
   res.json(GetPublicProductResponse.parse({
     ...publicProductDto(product),
-    socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
+    socialImage: await publicSocialImage(product.imageUrl),
     relatedProducts: await similarProductCards(product, "B2C"),
   }));
 });
@@ -19310,7 +19323,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Centar mora biti verifikovan i imati aktivnu pretplatu pre objave ili prodaje edukacija." });
     return;
   }
-  const data = parsed.data;
+  const data = {
+    ...parsed.data,
+    coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) ?? null,
+  };
   if (!isSafeExternalHttpUrl(data.trailerUrl)) {
     res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
     return;
@@ -19381,6 +19397,7 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         extensionPrice3Months: data.extensionPrice3Months ?? null,
         extensionPrice6Months: data.extensionPrice6Months ?? null,
         imageUrl: data.imageUrl,
+        coverImageDescription: data.coverImageDescription,
         startDate: data.startDate ? calendarDate(data.startDate) : null,
         ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
         giftVoucherEligible: data.giftVoucherEligible ?? false,
@@ -19438,7 +19455,12 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   const [params, body] = [UpdateEducationCourseParams.safeParse(req.params), UpdateEducationCourseBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
-  const data = body.data;
+  const data = {
+    ...body.data,
+    ...(body.data.coverImageDescription !== undefined
+      ? { coverImageDescription: normalizedCoverImageDescription(body.data.coverImageDescription) }
+      : {}),
+  };
   if (data.trailerUrl !== undefined && !isSafeExternalHttpUrl(data.trailerUrl)) {
     res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
     return;
@@ -21554,6 +21576,7 @@ export async function batchEducationCourseViews(
       giftVoucherEligible: course.giftVoucherEligible,
       centerId: course.centerId,
       imageUrl: course.imageUrl,
+      coverImageDescription: course.coverImageDescription,
       startDate: course.startDate,
       published: course.published,
       archived: course.archived,
@@ -26899,6 +26922,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect, treatmentTaxon
     description: item.description,
     shortDescription: item.shortDescription ?? null,
     imageUrl: item.imageUrl,
+    coverImageDescription: item.coverImageDescription ?? null,
     images: item.images ?? [],
     price: item.price,
     costPriceRsd: item.costPriceRsd ?? null,
@@ -27479,7 +27503,10 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const parsed = AdminCreateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const body = parsed.data;
+  const body = {
+    ...parsed.data,
+    coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) ?? null,
+  };
   if (!body.supplierId) { res.status(400).json({ error: "Dobavljač je obavezan." }); return; }
   if (body.discountPrice != null && body.discountPrice >= body.price) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
@@ -27550,6 +27577,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         description: body.description,
         shortDescription: body.shortDescription ?? null,
         imageUrl: body.imageUrl,
+        coverImageDescription: body.coverImageDescription,
         images: body.images ?? [],
         price: body.price,
         costPriceRsd: body.costPriceRsd ?? null,
@@ -27730,7 +27758,12 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
   const parsed = AdminUpdateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const body = parsed.data;
+  const body = {
+    ...parsed.data,
+    ...(parsed.data.coverImageDescription !== undefined
+      ? { coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) }
+      : {}),
+  };
   if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const nextPrice = body.price ?? existing.price;
   const nextDiscount = body.discountPrice !== undefined ? body.discountPrice : existing.discountPrice;
@@ -27888,6 +27921,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         description: body.description ?? existing.description,
         shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
         imageUrl: nextImageUrl,
+        coverImageDescription: body.coverImageDescription !== undefined
+          ? body.coverImageDescription
+          : existing.coverImageDescription,
         images: nextImages,
         price: nextPrice,
         costPriceRsd: body.costPriceRsd !== undefined ? body.costPriceRsd : existing.costPriceRsd,

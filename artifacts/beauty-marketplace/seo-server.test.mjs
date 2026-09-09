@@ -566,6 +566,78 @@ test('supplier-qualified product uses only public B2C DTO fields in Product and 
   }
 });
 
+test('owner cover descriptions drive social and visible image alt with a title fallback after removal', async () => {
+  const originalFetch = global.fetch;
+  const fixtures = {
+    '/api/suppliers/aurora': { id: 's1', slug: 'aurora', name: 'Aurora Beauty', scope: 'B2C', active: true },
+    '/api/suppliers/aurora/public-products/p1': {
+      id: 'p1', supplierId: 's1', name: 'Javni serum', category: 'Nega',
+      description: 'Opis proizvoda.', imageUrl: '/serum-cover.jpg', images: ['/serum-gallery.jpg'],
+      socialImage: {
+        url: '/api/media/images/product-cover?size=large&format=fallback',
+        width: 1600,
+        height: 1200,
+        type: 'image/jpeg',
+      },
+      coverImageDescription: 'Bočica seruma pored cveta kamilice', price: 2499,
+    },
+    '/api/beauty-jobs/job-1': {
+      id: 'job-1', type: 'job', intent: 'offering', title: 'Potreban frizer',
+      description: 'Opis oglasa.', city: 'Beograd', region: 'Vračar',
+      photos: ['/job.jpg'], coverImageDescription: 'Moderan frizerski radni prostor',
+      authorDisplayName: 'Studio LUMERA',
+    },
+    '/api/salons/studio-lumera': {
+      name: 'Studio LUMERA', city: 'Beograd', description: 'Opis salona.',
+      imageUrl: '/salon-cover.jpg', gallery: ['/salon-gallery.jpg'],
+      socialImage: {
+        url: '/api/media/images/salon-cover?size=large&format=fallback',
+        width: 1920,
+        height: 1280,
+        type: 'image/jpeg',
+      },
+      coverImageDescription: 'Enterijer salona sa dve radne stolice',
+    },
+    '/api/education/public/courses/course-1': {
+      title: 'Balayage kurs', description: 'Opis kursa.', imageUrl: '/course.jpg',
+      coverImageDescription: 'Instruktorka demonstrira balayage tehniku',
+      publisher: 'LUMERA Akademija', format: 'in-person', duration: '2 dana', price: 12000,
+    },
+  };
+  global.fetch = supplierCatalogFetch(fixtures);
+  try {
+    const cases = [
+      ['/shop/aurora/proizvod/p1', 'Bočica seruma pored cveta kamilice'],
+      ['/poslovi/potreban-frizer/job-1', 'Moderan frizerski radni prostor'],
+      ['/saloni/studio-lumera', 'Enterijer salona sa dve radne stolice'],
+      ['/edukacije/course-1', 'Instruktorka demonstrira balayage tehniku'],
+    ];
+    for (const [pathname, imageAlt] of cases) {
+      const response = await createSeoResponse(request(pathname), template);
+      assert.equal(response.status, 200);
+      assert.match(response.body, new RegExp(`property="og:image:alt" content="${imageAlt}"`));
+      assert.match(response.body, new RegExp(`name="twitter:image:alt" content="${imageAlt}"`));
+      assert.match(response.body, new RegExp(`<img[^>]+alt="${imageAlt}"`));
+    }
+    const productResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1'), template);
+    assert.match(productResponse.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/product-cover\?size=large&amp;format=fallback"/);
+    assert.match(productResponse.body, /property="og:image:alt" content="Bočica seruma pored cveta kamilice"/);
+    assert.doesNotMatch(productResponse.body, /property="og:image" content="[^"]*serum-gallery/);
+    const salonResponse = await createSeoResponse(request('/saloni/studio-lumera'), template);
+    assert.match(salonResponse.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/salon-cover\?size=large&amp;format=fallback"/);
+    assert.match(salonResponse.body, /property="og:image:alt" content="Enterijer salona sa dve radne stolice"/);
+    assert.match(salonResponse.body, /<img src="\/salon-cover\.jpg"[^>]+alt="Enterijer salona sa dve radne stolice"/);
+    assert.doesNotMatch(salonResponse.body, /<img src="\/salon-gallery\.jpg"[^>]+alt="Enterijer salona sa dve radne stolice"/);
+
+    fixtures['/api/suppliers/aurora/public-products/p1'].coverImageDescription = '   ';
+    const fallback = await createSeoResponse(request('/shop/aurora/proizvod/p1'), template);
+    assert.match(fallback.body, /property="og:image:alt" content="Javni serum \| Aurora Beauty"/);
+    assert.match(fallback.body, /<img[^>]+alt="Javni serum \| Aurora Beauty"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('sitemap contains only active retail supplier, category, and supplier-qualified product URLs', async () => {
   const originalFetch = global.fetch;
   const active = { id: 's1', slug: 'aurora', name: 'Aurora', scope: 'B2C', active: true, updatedAt: '2026-08-20T12:00:00Z' };

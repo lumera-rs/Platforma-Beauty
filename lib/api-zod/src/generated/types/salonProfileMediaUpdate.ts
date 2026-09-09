@@ -20,6 +20,11 @@ export interface SalonProfileMediaUpdate {
   /** @minLength 1 */
   imageUrl?: string;
   /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
+  /**
      * @maxItems 20
      * @items.minLength 1
      */

@@ -338,6 +338,7 @@ export const salonsTable = pgTable("salons", {
   shortDescription: text("short_description").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),
+  coverImageDescription: text("cover_image_description"),
   gallery: jsonb("gallery").$type<string[]>().notNull().default([]),
   videoUrl: text("video_url"),
   rating: integer("rating").notNull().default(0),

@@ -105,7 +105,7 @@ export function BeautyJobCard({ job, onClickToggleSaved, showSaveButton = true }
             {job.photos && job.photos.length > 0 ? (
               <OptimizedImage
                 src={job.photos[0]}
-                alt={job.title}
+                alt={job.coverImageDescription?.trim() || job.title}
                 width={88}
                 height={88}
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"

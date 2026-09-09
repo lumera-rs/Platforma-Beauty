@@ -32,6 +32,11 @@ export interface AdminProductInput {
   shortDescription?: string | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images?: string[];
   /**
      * @minimum 0

@@ -1404,6 +1404,11 @@ export interface SalonCard {
   city: string;
   municipality: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   rating: number;
   reviewCount: number;
@@ -1617,6 +1622,11 @@ export interface SalonProfileMedia {
   servesMen: boolean;
   openSunday: boolean;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   gallery: string[];
 }
 
@@ -1633,6 +1643,11 @@ export interface SalonProfileMediaUpdate {
   servesMen?: boolean;
   /** @minLength 1 */
   imageUrl?: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /**
      * @maxItems 20
      * @items.minLength 1
@@ -4757,6 +4772,11 @@ export interface PublicProduct {
   brand?: string | null;
   description: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
   socialImage?: PublicSocialImage;
   /**
@@ -6266,6 +6286,11 @@ export interface Course {
   /** @minimum 0 */
   viewCount30d: number;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   /** @nullable */
   startDate?: string | null;
@@ -6479,6 +6504,11 @@ export interface EducationCourseInput {
   depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /** @nullable */
   startDate?: string | null;
   /**
@@ -6690,6 +6720,11 @@ export interface EducationCourseUpdate {
   depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl?: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /** @nullable */
   startDate?: string | null;
   published?: boolean;
@@ -10064,6 +10099,11 @@ export interface AdminProduct {
   /** @nullable */
   shortDescription?: string | null;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
   price: number;
   /**
@@ -10193,6 +10233,11 @@ export interface AdminProductInput {
   shortDescription?: string | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images?: string[];
   /**
      * @minimum 0
@@ -10341,6 +10386,11 @@ export interface AdminProductUpdate {
   shortDescription?: string | null;
   /** @minLength 1 */
   imageUrl?: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images?: string[];
   /**
      * @minimum 0
@@ -12573,6 +12623,11 @@ export interface BeautyJobListing {
   negotiable: boolean;
   isUrgent: boolean;
   photos: string[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   status: string;
   moderationStatus: string;
@@ -12707,6 +12762,11 @@ export interface BeautyJobCreateInput {
      */
   photos?: string[];
   /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
+  /**
      * @minLength 1
      * @maxLength 1000
      */
@@ -12804,6 +12864,11 @@ export interface BeautyJobUpdateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /**
      * @minLength 1
      * @maxLength 1000

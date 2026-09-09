@@ -11,7 +11,7 @@ export function HomeSalonCard({ salon, className }: { salon: SalonCard; classNam
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
         <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
-          alt={`${salon.name} — salon lepote`}
+          alt={salon.coverImageDescription?.trim() || `${salon.name} — salon lepote`}
           width={800}
           height={600}
           responsiveSizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 320px"
@@ -65,7 +65,7 @@ export function HomeDiscountSalonCard({ salon, className }: { salon: DiscountedS
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
         <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
-          alt={`${salon.name} — salon lepote`}
+          alt={salon.coverImageDescription?.trim() || `${salon.name} — salon lepote`}
           width={800}
           height={600}
           responsiveSizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 320px"

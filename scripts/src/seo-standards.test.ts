@@ -425,7 +425,8 @@ const product = {
   description: "Profesionalni serum za svakodnevnu negu lica koji pruža intenzivnu hidrataciju, podržava prirodnu zaštitnu barijeru kože i ostavlja kožu glatkom, mekom i blistavom tokom celog dana.",
   price: 2400,
   category: "Nega lica",
-  images: ["/glow-serum.jpg"],
+  imageUrl: "/glow-serum-cover.jpg",
+  images: ["/glow-serum-gallery.jpg"],
 };
 const salon = {
   id: "glow-salon",
@@ -433,7 +434,9 @@ const salon = {
   name: "Glow Studio",
   city: "Beograd",
   description: "Salon za negu lica i kose.",
-  gallery: ["/glow-studio.jpg"],
+  imageUrl: "/glow-studio-cover.jpg",
+  coverImageDescription: "Enterijer Glow Studija",
+  gallery: ["/glow-studio-gallery.jpg"],
   services: [],
 };
 const beautyJob = {
@@ -754,8 +757,13 @@ try {
 
   assert.equal(
     (await serverMetadata("/saloni/glow-studio")).head.openGraph.image,
-    `${seoOrigin}/glow-studio.jpg`,
-    "relative social images must resolve against the public origin",
+    `${seoOrigin}/glow-studio-cover.jpg`,
+    "the salon cover image, not a gallery image, must resolve against the public origin",
+  );
+  assert.equal(
+    (await serverMetadata("/shop/glow-supply/proizvod/glow-product")).head.openGraph.image,
+    `${seoOrigin}/glow-serum-cover.jpg`,
+    "the product cover image, not a gallery image, must resolve against the public origin",
   );
   assert.equal(
     (await serverMetadata("/shop/glow-supply")).head.openGraph.image,
@@ -764,8 +772,8 @@ try {
   );
   assert.equal(
     (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt,
-    "Glow Studio u Beograd | LUMERA",
-    "dynamic social images must describe their public content",
+    salon.coverImageDescription,
+    "dynamic social images must prefer the owner's cover description",
   );
   assert.equal(
     (await serverMetadata("/")).head.openGraph.imageAlt,

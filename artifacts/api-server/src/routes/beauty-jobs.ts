@@ -104,6 +104,10 @@ async function applicantAuthenticated(req: import("express").Request, res: impor
   return user;
 }
 function validPhotos(photos: string[] | undefined) { return !photos || (photos.length <= 8 && photos.every((p) => MANAGED_URL.test(p))); }
+function normalizedCoverImageDescription(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  return value?.trim() || null;
+}
 function ensureCompatibility(categorySlug: string, type: string, availability?: string | null) {
   const rentalCategory = categorySlug === "iznajmljivanje-opreme" || categorySlug === "iznajmljivanje-prostora-stolice";
   if (RENTAL_TYPES.has(type) !== rentalCategory) return "Tip oglasa nije kompatibilan sa kategorijom.";
@@ -368,7 +372,13 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
     const [recent] = await tx.select({ total: count() }).from(beautyJobListingsTable).where(and(authorFilter, sql`${beautyJobListingsTable.createdAt} >= ${since}`));
     if ((recent?.total ?? 0) >= cfg.hourlyPostingLimit) return null;
     const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingData } = body.data;
-    const [l] = await tx.insert(beautyJobListingsTable).values({ ...listingData, salonId: authorSalon?.id, userId: authorSalon ? null : user.id, postedByType: authorSalon ? "salon" : "user", photos: body.data.photos ?? [], expiresAt: new Date(Date.now() + cfg.listingExpiryDays * 86400000) }).returning();
+    const [l] = await tx.insert(beautyJobListingsTable).values({
+      ...listingData,
+      coverImageDescription: normalizedCoverImageDescription(body.data.coverImageDescription) ?? null,
+      salonId: authorSalon?.id, userId: authorSalon ? null : user.id,
+      postedByType: authorSalon ? "salon" : "user", photos: body.data.photos ?? [],
+      expiresAt: new Date(Date.now() + cfg.listingExpiryDays * 86400000),
+    }).returning();
     if (RENTAL_TYPES.has(body.data.type)) await tx.insert(beautyJobListingAvailabilityTable).values({ listingId: l!.id, availabilityPattern: body.data.availabilityPattern!, dayLabels: body.data.dayLabels ?? [] });
     if (requiresSlots && body.data.availableSlots?.length) {
       await tx.insert(beautyJobRentalSlotsTable).values(body.data.availableSlots.map((slot) => ({ listingId: l!.id, startsAt: slot.startsAt, endsAt: slot.endsAt })));
@@ -597,6 +607,9 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
     const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingUpdates } = b.data;
     await tx.update(beautyJobListingsTable).set({
       ...listingUpdates,
+      ...(b.data.coverImageDescription !== undefined
+        ? { coverImageDescription: normalizedCoverImageDescription(b.data.coverImageDescription) }
+        : {}),
       photos: b.data.photos ?? lockedListing.photos,
       latitude: RENTAL_TYPES.has(type) ? null : b.data.latitude,
       longitude: RENTAL_TYPES.has(type) ? null : b.data.longitude,

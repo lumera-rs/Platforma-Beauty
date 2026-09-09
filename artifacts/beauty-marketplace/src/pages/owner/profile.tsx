@@ -39,6 +39,7 @@ export default function OwnerSalonProfile() {
   const [homeServiceRadiusKm, setHomeServiceRadiusKm] = useState(10);
   const [servesMen, setServesMen] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
+  const [coverImageDescription, setCoverImageDescription] = useState("");
   const [gallery, setGallery] = useState<string[]>([]);
   const [uploading, setUploading] = useState<"profile" | "gallery" | null>(null);
   const [widgetColor, setWidgetColor] = useState("#9b6b54");
@@ -50,6 +51,7 @@ export default function OwnerSalonProfile() {
     setHomeServiceRadiusKm(salon?.homeServiceRadiusKm ?? 10);
     setServesMen(salon?.servesMen ?? false);
     setImageUrl(salon?.imageUrl ?? "");
+    setCoverImageDescription(salon?.coverImageDescription ?? "");
     setGallery(salon?.gallery ?? []);
   }, [salon]);
 
@@ -119,6 +121,7 @@ export default function OwnerSalonProfile() {
           homeServiceRadiusKm: Number(homeServiceRadiusKm),
           servesMen,
           imageUrl,
+          coverImageDescription: coverImageDescription.trim() || null,
           gallery,
         },
       },
@@ -291,7 +294,11 @@ export default function OwnerSalonProfile() {
                         </label>
                       </Button>
                     </div>
-                    {imageUrl ? <OptimizedImage src={imageUrl} alt={`Naslovna fotografija salona ${salon.name}`} width={1200} height={800} priority responsiveSizes="(max-width: 768px) 100vw, 640px" className="aspect-[3/2] w-full rounded-xl object-cover" /> : null}
+                    {imageUrl ? <OptimizedImage src={imageUrl} alt={coverImageDescription.trim() || `Naslovna fotografija salona ${salon.name}`} width={1200} height={800} priority responsiveSizes="(max-width: 768px) 100vw, 640px" className="aspect-[3/2] w-full rounded-xl object-cover" /> : null}
+                    <div className="space-y-2">
+                      <label htmlFor="salon-cover-description" className="text-sm font-medium">Opis naslovne fotografije (opciono)</label>
+                      <Input id="salon-cover-description" maxLength={160} value={coverImageDescription} onChange={(event) => setCoverImageDescription(event.target.value)} placeholder="Kratko opišite šta se vidi na fotografiji" />
+                    </div>
                   </div>
 
                   <div className="space-y-3 border-t pt-5">

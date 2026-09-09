@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 121;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 123;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -4938,8 +4938,19 @@ function tableStatements(s: string): string[] {
            VALIDATE CONSTRAINT education_bundle_purchases_target_check;
        END IF;
      END $$`,
+    ...coverImageDescriptionColumnStatements(s),
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
+  ];
+}
+
+function coverImageDescriptionColumnStatements(s: string, guardMissingTables = false): string[] {
+  const table = (name: string) => `${guardMissingTables ? "IF EXISTS " : ""}${s}.${name}`;
+  return [
+    `ALTER TABLE ${table("salons")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("products")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("courses")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("beauty_job_listings")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
   ];
 }
 
@@ -4990,6 +5001,12 @@ export async function runBusinessGrowthSchemaDdl(
        detached_users integer NOT NULL, deleted_salons integer NOT NULL,
        retired_salons integer NOT NULL, completed_at timestamptz NOT NULL DEFAULT now()
      )`);
+    // Static schema pushes and parallel rollouts can leave the tracker at the
+    // current version while an additive column is still absent. Repair these
+    // ORM dependencies before taking the fast path or starting background work.
+    for (const statement of coverImageDescriptionColumnStatements(quoted, true)) {
+      await client.query(statement);
+    }
     const rolloutTable = `${schemaName}.business_growth_schema_rollout`;
     const existingRollout = await client.query<{ relation: string | null }>(
       "SELECT to_regclass($1)::text AS relation", [rolloutTable],

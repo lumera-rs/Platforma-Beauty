@@ -35,6 +35,11 @@ export interface BeautyJobListing {
   negotiable: boolean;
   isUrgent: boolean;
   photos: string[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   status: string;
   moderationStatus: string;

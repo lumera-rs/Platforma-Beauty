@@ -98,6 +98,11 @@ export interface EducationCourseInput {
   depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /** @nullable */
   startDate?: Date | null;
   /**

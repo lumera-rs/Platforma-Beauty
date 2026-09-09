@@ -164,6 +164,7 @@ export const productsTable = pgTable("products", {
   description: text("description").notNull(),
   shortDescription: text("short_description"),
   imageUrl: text("image_url").notNull(),
+  coverImageDescription: text("cover_image_description"),
   images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
   /** Internal whole-RSD acquisition cost. Never expose outside administrator contracts. */

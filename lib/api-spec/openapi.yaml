@@ -10888,6 +10888,7 @@ components:
         city: { type: string }
         municipality: { type: string }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         rating: { type: number }
         reviewCount: { type: number }
@@ -10908,7 +10909,7 @@ components:
         openSunday: { type: boolean }
         lastBookedAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: ["string", "null"], format: date-time }
-      required: [id, slug, name, city, municipality, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
+      required: [id, slug, name, city, municipality, imageUrl, coverImageDescription, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
     DiscoveryService:
       type: object
       properties:
@@ -11020,10 +11021,11 @@ components:
         servesMen: { type: boolean }
         openSunday: { type: boolean }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         gallery:
           type: array
           items: { type: string }
-      required: [id, name, slug, active, isVerified, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, gallery]
+      required: [id, name, slug, active, isVerified, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, coverImageDescription, gallery]
     SalonProfileMediaUpdate:
       type: object
       properties:
@@ -11033,6 +11035,7 @@ components:
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         gallery:
           type: array
           maxItems: 20
@@ -13062,6 +13065,7 @@ components:
         brand: { type: ["string", "null"] }
         description: { type: string }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
@@ -14041,6 +14045,7 @@ components:
         inquiryCount30d: { type: number, multipleOf: 1, minimum: 0 }
         viewCount30d: { type: number, multipleOf: 1, minimum: 0 }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
@@ -14066,7 +14071,7 @@ components:
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
-      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, reviewCount, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, published, archived]
+      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, reviewCount, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, coverImageDescription, published, archived]
     EducationCourseInput:
       type: object
       properties:
@@ -14105,6 +14110,7 @@ components:
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         startDate: { type: ["string", "null"], format: date }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
         giftVoucherEligible: { type: boolean }
@@ -14160,6 +14166,7 @@ components:
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
@@ -16301,6 +16308,7 @@ components:
         description: { type: string }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
@@ -16387,6 +16395,7 @@ components:
         description: { type: string, minLength: 1 }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
@@ -16452,6 +16461,7 @@ components:
         description: { type: string, minLength: 1 }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
@@ -18053,6 +18063,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, items: { type: string } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
         socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         status: { type: string }
         moderationStatus: { type: string }
@@ -18070,7 +18081,7 @@ components:
         isSaved: { type: boolean }
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
-      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, isUrgent, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, isUrgent, photos, coverImageDescription, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
     BeautyJobModerationAuditEvent:
       type: object
       description: Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.
@@ -18108,6 +18119,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
         availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }
@@ -18129,6 +18141,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
         availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }

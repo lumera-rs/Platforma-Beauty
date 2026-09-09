@@ -87,6 +87,7 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   /** Only freelance authors may mark a listing urgent. Enforced below in SQL. */
   isUrgent: boolean("is_urgent").notNull().default(false),
   photos: jsonb("photos").$type<string[]>().notNull().default([]),
+  coverImageDescription: text("cover_image_description"),
   isTest: boolean("is_test").notNull().default(false),
   status: beautyJobListingStatusEnum("status").notNull().default("active"),
   moderationStatus: beautyJobModerationStatusEnum("moderation_status").notNull().default("pending"),

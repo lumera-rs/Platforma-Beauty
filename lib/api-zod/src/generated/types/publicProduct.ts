@@ -26,6 +26,11 @@ export interface PublicProduct {
   brand?: string | null;
   description: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
   socialImage?: PublicSocialImage;
   /**

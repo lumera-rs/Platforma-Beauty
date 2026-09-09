@@ -316,7 +316,7 @@ export default function BeautyJobDetailPage() {
               <div className="md:col-span-3 aspect-[4/3] md:aspect-[16/9] rounded-xl overflow-hidden bg-muted relative">
                 <OptimizedImage
                   src={job.photos[0]}
-                  alt="Glavna slika"
+                  alt={job.coverImageDescription?.trim() || job.title}
                   width={800}
                   height={600}
                   className="w-full h-full object-cover"

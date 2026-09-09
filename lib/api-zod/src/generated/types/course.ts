@@ -97,6 +97,11 @@ export interface Course {
   /** @minimum 0 */
   viewCount30d: number;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   /** @nullable */
   startDate?: Date | null;

@@ -118,7 +118,7 @@ function makeMeta(pathname, title, description, options = {}) {
     title: clip(title, 60),
     description: clip(description),
     image: options.image ?? '/og-lumera.png',
-    imageAlt: options.imageAlt ?? (options.image ? clip(title, 60) : fallbackImageAlt),
+    imageAlt: String(options.imageAlt ?? '').trim() || (options.image ? clip(title, 60) : fallbackImageAlt),
     imageWidth: options.imageWidth ?? (usesFallbackImage ? fallbackImageMetadata.width : undefined),
     imageHeight: options.imageHeight ?? (usesFallbackImage ? fallbackImageMetadata.height : undefined),
     imageType: options.imageType ?? (usesFallbackImage ? fallbackImageMetadata.type : undefined),
@@ -485,14 +485,15 @@ async function renderPublicPage(req, pathname) {
       { name: product.name, pathname: canonicalPath },
     ];
     const meta = makeMeta(canonicalPath, `${product.name} | ${supplier.name}`, description, {
-      ...socialImageOptions(product, product.images?.[0] ?? product.imageUrl),
+      ...socialImageOptions(product, product.imageUrl),
+      imageAlt: product.coverImageDescription,
       schema: {
         '@context': 'https://schema.org',
         '@graph': [{
           '@type': 'Product',
           name: product.name,
           description,
-          image: asAbsolute(origin, product.images?.[0] ?? product.imageUrl),
+          image: asAbsolute(origin, product.imageUrl),
           brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
           category: product.category,
           offers: {
@@ -507,7 +508,7 @@ async function renderPublicPage(req, pathname) {
     });
     return {
       meta,
-      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(product.name)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
+      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
     };
   }
 
@@ -578,12 +579,13 @@ async function renderPublicPage(req, pathname) {
     const description = job.description || `${job.title} — ${beautyJobTypeLabel(job.type).toLowerCase()} u mestu ${job.city}.`;
     const meta = makeMeta(canonicalPath, `${job.title} | LUMERA Poslovi`, description, {
       ...socialImageOptions(job, job.photos?.[0]),
+      imageAlt: job.coverImageDescription,
       schema: beautyJobSchema(job, origin, canonicalPath),
     });
     const price = job.priceAmount ? `${job.priceAmount} RSD${job.pricePeriod ? ` / ${job.pricePeriod}` : ''}` : job.negotiable ? 'Cena po dogovoru' : '';
     return {
       meta,
-      html: pageShell(meta, `<article><p class="seo-kicker">${escapeHtml(beautyJobIntentLabel(job.intent))} · ${escapeHtml(beautyJobTypeLabel(job.type))}</p><h1>${escapeHtml(job.title)}</h1><p>${escapeHtml(description)}</p>${job.photos?.[0] ? `<img src="${escapeHtml(job.photos[0])}" width="960" height="640" alt="${escapeHtml(job.title)}">` : ''}<p><strong>${escapeHtml(job.city)}, ${escapeHtml(job.region)}</strong>${price ? ` · ${escapeHtml(price)}` : ''}</p>${job.availabilityPattern ? `<p>Raspoloživost: ${escapeHtml(job.availabilityPattern)}</p>` : ''}<p>Oglašivač: ${escapeHtml(job.authorDisplayName)}</p><p><a href="/poslovi">Svi Beauty Poslovi oglasi</a></p></article>`, origin),
+      html: pageShell(meta, `<article><p class="seo-kicker">${escapeHtml(beautyJobIntentLabel(job.intent))} · ${escapeHtml(beautyJobTypeLabel(job.type))}</p><h1>${escapeHtml(job.title)}</h1><p>${escapeHtml(description)}</p>${job.photos?.[0] ? `<img src="${escapeHtml(job.photos[0])}" width="960" height="640" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>${escapeHtml(job.city)}, ${escapeHtml(job.region)}</strong>${price ? ` · ${escapeHtml(price)}` : ''}</p>${job.availabilityPattern ? `<p>Raspoloživost: ${escapeHtml(job.availabilityPattern)}</p>` : ''}<p>Oglašivač: ${escapeHtml(job.authorDisplayName)}</p><p><a href="/poslovi">Svi Beauty Poslovi oglasi</a></p></article>`, origin),
     };
   }
 
@@ -593,11 +595,14 @@ async function renderPublicPage(req, pathname) {
     if (!salon) return null;
     const description = salon.description || salon.shortDescription || `${salon.name} — salon i beauty tretmani u gradu ${salon.city}.`;
     const meta = makeMeta(pathname, `${salon.name} u ${salon.city} | LUMERA`, description, {
-      ...socialImageOptions(salon, salon.gallery?.[0] ?? salon.imageUrl),
-      schema: { '@context': 'https://schema.org', '@type': 'BeautySalon', name: salon.name, description, image: asAbsolute(origin, salon.gallery?.[0] ?? salon.imageUrl), address: { '@type': 'PostalAddress', addressLocality: salon.city, addressCountry: 'RS' }, aggregateRating: salon.rating ? { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount ?? 0 } : undefined },
+      ...socialImageOptions(salon, salon.imageUrl),
+      imageAlt: salon.coverImageDescription,
+      schema: { '@context': 'https://schema.org', '@type': 'BeautySalon', name: salon.name, description, image: asAbsolute(origin, salon.socialImage?.url ?? salon.imageUrl), address: { '@type': 'PostalAddress', addressLocality: salon.city, addressCountry: 'RS' }, aggregateRating: salon.rating ? { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount ?? 0 } : undefined },
     });
     const services = (salon.services ?? []).slice(0, 24).map((service) => `<li>${escapeHtml(service.name)}${service.price ? ` — od ${escapeHtml(service.promoPrice ?? service.price)} RSD` : ''}</li>`).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${salon.gallery?.[0] || salon.imageUrl ? `<img src="${escapeHtml(salon.gallery?.[0] ?? salon.imageUrl)}" width="960" height="640" alt="${escapeHtml(salon.name)}">` : ''}<p>${escapeHtml(salon.city ?? '')}${salon.address ? ` · ${escapeHtml(salon.address)}` : ''}</p><p>Ocena: ${escapeHtml(salon.rating ?? 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section><p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
+    const heroImage = salon.imageUrl ?? salon.gallery?.[0];
+    const heroImageAlt = heroImage === salon.imageUrl ? meta.imageAlt : salon.name;
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}${salon.address ? ` · ${escapeHtml(salon.address)}` : ''}</p><p>Ocena: ${escapeHtml(salon.rating ?? 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section><p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
   }
 
   const courseMatch = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);
@@ -605,9 +610,9 @@ async function renderPublicPage(req, pathname) {
     const course = await getJson(req, `/api/education/public/courses/${encodeURIComponent(courseMatch[1])}`);
     if (!course) return null;
     const description = course.description || `${course.title} — stručna beauty edukacija na LUMERA platformi.`;
-    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { ...socialImageOptions(course, course.imageUrl), schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description, provider: { '@type': 'Organization', name: course.publisher }, image: asAbsolute(origin, course.socialImage?.url ?? course.imageUrl) } });
+    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { ...socialImageOptions(course, course.imageUrl), imageAlt: course.coverImageDescription, schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description, provider: { '@type': 'Organization', name: course.publisher }, image: asAbsolute(origin, course.socialImage?.url ?? course.imageUrl) } });
     const outcomes = (course.learningOutcomes ?? []).slice(0, 10).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(course.title)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
 
   const bundleMatch = pathname.match(/^\/edukacije\/paketi\/([a-zA-Z0-9-]+)$/);

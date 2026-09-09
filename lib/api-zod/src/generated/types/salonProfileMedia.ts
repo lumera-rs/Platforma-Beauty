@@ -25,5 +25,10 @@ export interface SalonProfileMedia {
   servesMen: boolean;
   openSunday: boolean;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   gallery: string[];
 }

@@ -525,13 +525,18 @@ async function run(): Promise<void> {
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
     assert.equal((await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: salon!.id })).status, 200);
 
-    const originalSalonImages = { imageUrl: salon!.imageUrl, gallery: salon!.gallery };
+    const originalSalonImages = {
+      imageUrl: salon!.imageUrl,
+      gallery: salon!.gallery,
+      coverImageDescription: salon!.coverImageDescription,
+    };
     const originalForeignSalonImages = { imageUrl: foreignSalon!.imageUrl, gallery: foreignSalon!.gallery };
     const externalSalonImageUrl = "https://legacy.example.test/salon-social-image.jpg";
     try {
       await db.update(salonsTable).set({
         imageUrl: managedSalonImageUrl,
-        gallery: [managedSalonImageUrl],
+        gallery: ["/salon-gallery-image.jpg"],
+        coverImageDescription: "Naslovna fotografija test salona",
       }).where(eq(salonsTable.id, salon!.id));
       await db.update(salonsTable).set({
         imageUrl: externalSalonImageUrl,
@@ -545,8 +550,9 @@ async function run(): Promise<void> {
       assert.deepEqual(
         parsedPublicProfile.socialImage,
         managedSalonSocialImage,
-        "a managed salon gallery image must expose exact large fallback social metadata",
+        "a managed salon cover image must expose exact large fallback social metadata",
       );
+      assert.equal(parsedPublicProfile.coverImageDescription, "Naslovna fotografija test salona");
       for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
         assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
       }
@@ -1055,14 +1061,38 @@ async function run(): Promise<void> {
       false,
       "the salon profile response must retain the owner's men's-services designation",
     );
+    assert.equal(
+      (ownerServesMenUpdate.body as { coverImageDescription: string | null }).coverImageDescription,
+      null,
+      "an unrelated salon profile update must still satisfy the cover-description response contract",
+    );
+    const savedCoverDescription = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
+      coverImageDescription: "  Enterijer salona sa radnim mestima za tretmane  ",
+    });
+    assert.equal(savedCoverDescription.status, 200, "a salon owner must be able to save a cover description");
+    assert.equal(
+      (savedCoverDescription.body as { coverImageDescription: string | null }).coverImageDescription,
+      "Enterijer salona sa radnim mestima za tretmane",
+      "the salon profile response must return the normalized cover description",
+    );
+    const clearedCoverDescription = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
+      coverImageDescription: "   ",
+    });
+    assert.equal(clearedCoverDescription.status, 200, "a salon owner must be able to clear a cover description");
+    assert.equal(
+      (clearedCoverDescription.body as { coverImageDescription: string | null }).coverImageDescription,
+      null,
+      "whitespace-only salon cover descriptions must be returned as null",
+    );
     const [ownerUpdatedSalon] = await db.select({
       servesMen: salonsTable.servesMen,
       servesMenManuallySet: salonsTable.servesMenManuallySet,
+      coverImageDescription: salonsTable.coverImageDescription,
     }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
     assert.deepEqual(
       ownerUpdatedSalon,
-      { servesMen: false, servesMenManuallySet: true },
-      "the owner's men's-services designation must persist and opt out of inferred values",
+      { servesMen: false, servesMenManuallySet: true, coverImageDescription: null },
+      "the owner's profile settings must persist while a cleared cover description remains null",
     );
 
     const customerAppointments = await getRequest(baseUrl, customerSession, "/appointments");

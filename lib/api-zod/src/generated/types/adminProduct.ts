@@ -25,6 +25,11 @@ export interface AdminProduct {
   /** @nullable */
   shortDescription?: string | null;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
   price: number;
   /**

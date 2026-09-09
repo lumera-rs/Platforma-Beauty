@@ -76,6 +76,7 @@ const emptyForm = {
   description: "",
   shortDescription: null,
   imageUrl: "",
+  coverImageDescription: null,
   images: [],
   price: 0,
   costPriceRsd: null,
@@ -196,6 +197,7 @@ function ProductFormDialog({
           description: editing.description,
           shortDescription: editing.shortDescription ?? null,
           imageUrl: editing.imageUrl,
+          coverImageDescription: editing.coverImageDescription ?? null,
           images: editing.images ?? [],
           price: editing.price,
           costPriceRsd: editing.costPriceRsd ?? null,
@@ -515,6 +517,7 @@ function ProductFormDialog({
       costPriceRsd: costPriceParsed.value,
       discountPrice: discountParsed.value,
       publicDescription: form.publicDescription?.trim() || null,
+      coverImageDescription: form.coverImageDescription?.trim() || null,
       publicPrice: publicPriceParsed.value,
       publicDiscountPrice: publicDiscountParsed.value,
       stock: variantInventoryMode === "per-variant" ? variantStockTotal : stockParsed.value,
@@ -931,6 +934,10 @@ function ProductFormDialog({
           {/* ── Slike ── */}
           <section className="space-y-4 border rounded-xl p-4">
             <h4 className="text-sm font-semibold text-foreground">Slike proizvoda</h4>
+            <div className="space-y-2">
+              <Label htmlFor="product-cover-description">Opis glavne fotografije (opciono)</Label>
+              <Input id="product-cover-description" maxLength={160} value={form.coverImageDescription ?? ""} onChange={(event) => setForm({ ...form, coverImageDescription: event.target.value || null })} placeholder="Kratko opišite šta se vidi na fotografiji" />
+            </div>
             <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
               <p className="text-sm text-muted-foreground">JPG, PNG, WEBP ili AVIF do 12 MB. Slike se automatski optimizuju.</p>
               <Button asChild type="button" variant="secondary" disabled={uploadingImages || (form.images?.length ?? 0) >= 12}>

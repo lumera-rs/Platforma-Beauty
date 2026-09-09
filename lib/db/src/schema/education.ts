@@ -413,6 +413,7 @@ export const coursesTable = pgTable("courses", {
   paymentMode: educationPaymentModeEnum("payment_mode").notNull().default("online_full"),
   depositAmount: integer("deposit_amount"),
   imageUrl: text("image_url").notNull(),
+  coverImageDescription: text("cover_image_description"),
   isTest: boolean("is_test").notNull().default(false),
   published: boolean("published").notNull().default(true),
   subscriptionSuspended: boolean("subscription_suspended").notNull().default(false),

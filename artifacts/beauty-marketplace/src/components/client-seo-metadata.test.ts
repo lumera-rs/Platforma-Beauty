@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { QueryClient } from '@tanstack/react-query';
 import { GetPublicSupplierResponse } from '@workspace/api-zod';
 import { dynamicMetadata, seoHeadMetadata, withQueryIndexability } from './client-seo-metadata';
+import { galleryImageAlt } from './salon-gallery';
 
 const taxonomy = [{
   id: 'section-1',
@@ -123,4 +125,169 @@ test('generated public contract accepts both verified and URL-only social image 
     socialImage: { url: supplier.logoUrl },
   });
   assert.deepEqual(unknown.socialImage, { url: supplier.logoUrl });
+});
+
+test('client social image alt prefers the owner description and safely falls back after removal', () => {
+  const ownerDescription = seoHeadMetadata('/saloni/studio-lumera', {
+    title: 'Studio LUMERA u Beogradu | LUMERA',
+    description: 'Javni opis salona.',
+    image: '/salon.jpg',
+    imageAlt: 'Svetao enterijer salona sa dve radne stolice',
+    indexable: true,
+  }, 'https://lumera.example');
+  assert.equal(ownerDescription.imageAlt, 'Svetao enterijer salona sa dve radne stolice');
+  assert.equal(ownerDescription.openGraph.imageAlt, ownerDescription.imageAlt);
+  assert.equal(ownerDescription.twitter.imageAlt, ownerDescription.imageAlt);
+
+  for (const imageAlt of [undefined, '', '   ']) {
+    const fallback = seoHeadMetadata('/saloni/studio-lumera', {
+      title: 'Studio LUMERA u Beogradu | LUMERA',
+      description: 'Javni opis salona.',
+      image: '/salon.jpg',
+      imageAlt,
+      indexable: true,
+    }, 'https://lumera.example');
+    assert.equal(fallback.imageAlt, 'Studio LUMERA u Beogradu | LUMERA');
+  }
+});
+
+test('client metadata keeps API-produced cover social images paired with owner descriptions', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixtures = new Map([
+    ['/api/salons/studio-lumera', {
+      name: 'Studio LUMERA',
+      city: 'Beograd',
+      description: 'Javni opis salona.',
+      imageUrl: '/salon-cover.jpg',
+      gallery: ['/salon-gallery.jpg'],
+      coverImageDescription: 'Enterijer salona sa dve radne stolice',
+      socialImage: {
+        url: '/api/media/images/salon-cover?size=large&format=fallback',
+        width: 1920,
+        height: 1280,
+        type: 'image/jpeg',
+      },
+    }],
+    ['/api/suppliers/aurora', {
+      id: 'supplier-1',
+      slug: 'aurora',
+      name: 'Aurora Beauty',
+      scope: 'B2C',
+      active: true,
+    }],
+    ['/api/suppliers/aurora/public-products/product-1', {
+      id: 'product-1',
+      name: 'Javni serum',
+      description: 'Opis proizvoda.',
+      imageUrl: '/serum-cover.jpg',
+      images: ['/serum-gallery.jpg'],
+      coverImageDescription: 'Bočica seruma pored cveta kamilice',
+      socialImage: {
+        url: '/api/media/images/product-cover?size=large&format=fallback',
+        width: 1600,
+        height: 1200,
+        type: 'image/jpeg',
+      },
+    }],
+  ]);
+  globalThis.fetch = async (input) => {
+    const pathname = typeof input === 'string' ? input : input.url;
+    const payload = fixtures.get(pathname);
+    return new Response(payload ? JSON.stringify(payload) : null, {
+      status: payload ? 200 : 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const queryClient = new QueryClient();
+  try {
+    const salon = await dynamicMetadata('/saloni/studio-lumera', queryClient);
+    const product = await dynamicMetadata('/shop/aurora/proizvod/product-1', queryClient);
+    assert.deepEqual(
+      salon,
+      {
+        title: 'Studio LUMERA u Beograd | LUMERA',
+        description: 'Javni opis salona.',
+        image: '/api/media/images/salon-cover?size=large&format=fallback',
+        imageAlt: 'Enterijer salona sa dve radne stolice',
+        imageWidth: 1920,
+        imageHeight: 1280,
+        imageType: 'image/jpeg',
+        indexable: true,
+      },
+    );
+    assert.deepEqual(
+      product,
+      {
+        title: 'Javni serum | Aurora Beauty',
+        description: 'Opis proizvoda.',
+        image: '/api/media/images/product-cover?size=large&format=fallback',
+        imageAlt: 'Bočica seruma pored cveta kamilice',
+        imageWidth: 1600,
+        imageHeight: 1200,
+        imageType: 'image/jpeg',
+        indexable: true,
+        canonicalPath: '/shop/aurora/proizvod/product-1',
+      },
+    );
+    assert.equal(
+      seoHeadMetadata('/saloni/studio-lumera', salon!, 'https://lumera.example').openGraph.imageAlt,
+      'Enterijer salona sa dve radne stolice',
+    );
+    assert.equal(
+      seoHeadMetadata('/shop/aurora/proizvod/product-1', product!, 'https://lumera.example').openGraph.image,
+      'https://lumera.example/api/media/images/product-cover?size=large&format=fallback',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    queryClient.clear();
+  }
+});
+
+test('public galleries use the owner description only for the matching cover image', () => {
+  const shared = {
+    salonName: 'Studio LUMERA',
+    coverImageUrl: '/cover.jpg',
+    coverImageDescription: '  Enterijer sa dve radne stolice  ',
+  };
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/cover.jpg', index: 0, variant: 'main' }),
+    'Enterijer sa dve radne stolice',
+  );
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/cover.jpg', index: 1, variant: 'gallery' }),
+    'Enterijer sa dve radne stolice',
+  );
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'gallery' }),
+    'Studio LUMERA — fotografija 2',
+  );
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'thumbnail' }),
+    'Studio LUMERA — minijatura 2',
+  );
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/cover.jpg', index: 0, variant: 'main', coverImageDescription: '   ' }),
+    'Studio LUMERA — glavna fotografija',
+  );
+});
+
+test('public salon and education cover callsites pass owner descriptions to visible images', async () => {
+  const [salonsSource, homeSalonCardSource, salonProfileSource, educationSource] = await Promise.all([
+    readFile(new URL('../pages/salons.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('./home-salon-card.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../pages/salon-profile.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../pages/education-marketplace.tsx', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(salonsSource, /alt=\{salon\.coverImageDescription\?\.trim\(\) \|\| `\$\{salon\.name\} — salon lepote`\}/);
+  assert.match(homeSalonCardSource, /alt=\{salon\.coverImageDescription\?\.trim\(\) \|\| `\$\{salon\.name\} — salon lepote`\}/);
+  assert.match(
+    salonProfileSource,
+    /coverImageUrl=\{salonData\.imageUrl\}[\s\S]{0,120}coverImageDescription=\{salonData\.coverImageDescription\}/,
+  );
+  assert.match(educationSource, /alt=\{course\.coverImageDescription\?\.trim\(\) \|\| course\.title\}/);
+  assert.match(
+    educationSource,
+    /coverImageUrl=\{course\.imageUrl\}[\s\S]{0,120}coverImageDescription=\{course\.coverImageDescription\}/,
+  );
 });

@@ -13,6 +13,7 @@ export type SeoPayload = {
   title: string;
   description: string;
   image?: string;
+  imageAlt?: string | null;
   imageWidth?: number;
   imageHeight?: number;
   imageType?: string;
@@ -109,7 +110,7 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.png`;
   const title = clip(payload.title, 60);
   const description = clip(payload.description);
-  const imageAlt = payload.image ? title : defaultImageAlt;
+  const imageAlt = payload.image ? text(payload.imageAlt, title) : defaultImageAlt;
   const imageWidth = payload.imageWidth ?? (!payload.image ? defaultImageMetadata.width : undefined);
   const imageHeight = payload.imageHeight ?? (!payload.image ? defaultImageMetadata.height : undefined);
   const imageType = payload.imageType ?? (!payload.image ? defaultImageMetadata.type : undefined);
@@ -184,7 +185,8 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} | ${supplierName}`,
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
-      ...socialImagePayload(item, item.images?.[0] ?? item.imageUrl),
+      ...socialImagePayload(item, item.imageUrl),
+      imageAlt: item.coverImageDescription,
       indexable: true,
       canonicalPath: `/shop/${encodeURIComponent(canonicalSupplierSlug)}/proizvod/${encodeURIComponent(canonicalProductId)}`,
     };
@@ -232,7 +234,8 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} | LUMERA proizvodi`,
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
-      ...socialImagePayload(item, item.images?.[0] ?? item.imageUrl),
+      ...socialImagePayload(item, item.imageUrl),
+      imageAlt: item.coverImageDescription,
       indexable: true,
     };
   }
@@ -246,7 +249,8 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} u ${city} | LUMERA`,
       description: text(item.description, text(item.shortDescription, `${name} — salon i beauty tretmani u gradu ${city}.`)),
-      ...socialImagePayload(item, item.gallery?.[0] ?? item.imageUrl),
+      ...socialImagePayload(item, item.imageUrl),
+      imageAlt: item.coverImageDescription,
       indexable: true,
     };
   }
@@ -291,6 +295,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       title: `${title} | LUMERA edukacije`,
       description: text(item.description, `${title} — stručna beauty edukacija na LUMERA platformi.`),
       ...socialImagePayload(item, item.imageUrl),
+      imageAlt: item.coverImageDescription,
       indexable: true,
     };
   }
@@ -344,6 +349,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       title: `${title} | LUMERA Poslovi`,
       description: text(item.description, `${title} — beauty oglas na LUMERA platformi.`),
       ...socialImagePayload(item, item.photos?.[0]),
+      imageAlt: item.coverImageDescription,
       indexable: true,
     };
   }

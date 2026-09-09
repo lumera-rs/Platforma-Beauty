@@ -14,6 +14,11 @@ export interface SalonCard {
   city: string;
   municipality: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   socialImage?: PublicSocialImage;
   rating: number;
   reviewCount: number;

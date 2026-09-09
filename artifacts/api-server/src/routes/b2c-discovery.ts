@@ -479,7 +479,10 @@ function publicBase(product: typeof productsTable.$inferSelect) {
   return {
     id: product.id, supplierId: product.supplierId, name: product.name, category: product.categoryName,
     categoryId: product.categoryId, subcategory: product.subcategoryName, brand: product.brand,
-    description: product.publicDescription!, imageUrl: product.imageUrl, images: product.images ?? [],
+    description: product.publicDescription!,
+    imageUrl: product.imageUrl,
+    coverImageDescription: product.coverImageDescription ?? null,
+    images: product.images ?? [],
     price, discountPrice, saleEndsAt: discountPrice ? sale?.endsAt ?? null : null,
     discountPercent: discountPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
     priceOnRequest, cartEligible: !priceOnRequest,
@@ -606,7 +609,7 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
     ? relationIds.map((id) => byId.get(id)).filter((item): item is typeof relatedRows[number] => Boolean(item))
     : relatedRows;
   res.json(serializeSupplierPublicProduct(product, {
-    socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
+    socialImage: await publicSocialImage(product.imageUrl),
     productType: productType[0] ?? null,
     needTags,
     relatedProducts: related.slice(0, 8).map((item) => {

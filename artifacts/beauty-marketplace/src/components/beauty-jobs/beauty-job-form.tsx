@@ -45,6 +45,7 @@ const formSchema = z.object({
     available: z.boolean().optional(),
   })).max(100).default([]),
   photos: z.array(z.string()).max(8, "Maksimalno 8 slika").default([]),
+  coverImageDescription: z.string().max(160, "Opis može imati najviše 160 karaktera").optional(),
 }).refine(data => {
   if ((data.type === "equipment_rental" || data.type === "space_rental") && !data.availabilityPattern) {
     return false;
@@ -119,7 +120,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       availabilityPattern: "",
       dayLabels: [],
       availableSlots: [],
-      photos: []
+      photos: [],
+      coverImageDescription: ""
     }
   });
 
@@ -148,7 +150,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
             available: slot.available,
           }];
         }),
-        photos: initialData.photos || []
+        photos: initialData.photos || [],
+        coverImageDescription: initialData.coverImageDescription || ""
       });
     } else if (open) {
       form.reset({
@@ -166,7 +169,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         availabilityPattern: "",
         dayLabels: [],
         availableSlots: [],
-        photos: []
+        photos: [],
+        coverImageDescription: ""
       });
     }
   }, [initialData, open, form]);
@@ -225,6 +229,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       isUrgent: data.type === "freelance" ? data.isUrgent : false,
       dayLabels: data.dayLabels,
       photos: data.photos,
+      coverImageDescription: data.coverImageDescription?.trim() || null,
       priceAmount: data.priceAmount ?? undefined,
       pricePeriod: data.pricePeriod || undefined,
       availabilityPattern: data.availabilityPattern || undefined,
@@ -581,6 +586,20 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
 
             <div className="space-y-3">
               <FormLabel>Slike (do 8 slika, max 8MB po slici)</FormLabel>
+              <FormField
+                control={form.control}
+                name="coverImageDescription"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Opis naslovne slike (opciono)</FormLabel>
+                    <FormControl>
+                      <Input maxLength={160} placeholder="Kratko opišite šta se vidi na prvoj slici" {...field} />
+                    </FormControl>
+                    <FormDescription>Koristi se za pristupačnost i prikaz na društvenim mrežama.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               
               <div className="flex flex-wrap gap-4">
                 {watchPhotos.map((url: string, idx: number) => (
