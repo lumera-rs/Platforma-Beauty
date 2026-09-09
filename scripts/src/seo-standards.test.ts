@@ -15,10 +15,81 @@ const server = read(serverPath);
 const indexHtml = read(indexPath);
 const clientMetadata = read("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx");
 
+type StaticSeoPage = {
+  path: string;
+  title: string;
+  description: string;
+  indexable: boolean;
+};
+
+export function validateStaticSeoPages(value: unknown): asserts value is StaticSeoPage[] {
+  assert.ok(Array.isArray(value), "the shared static SEO catalog must be an array");
+
+  const seenPaths = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    assert.ok(
+      typeof entry === "object" && entry !== null && !Array.isArray(entry),
+      `static SEO catalog entry #${index + 1} must be an object`,
+    );
+
+    const candidate = entry as Record<string, unknown>;
+    const routePath = typeof candidate.path === "string" && candidate.path.trim()
+      ? candidate.path
+      : `<entry #${index + 1}>`;
+
+    assert.ok(
+      typeof candidate.path === "string" && candidate.path.trim().length > 0,
+      `${routePath} must have a non-empty path`,
+    );
+    assert.ok(!seenPaths.has(candidate.path), `${candidate.path} is duplicated in the static SEO catalog`);
+    seenPaths.add(candidate.path);
+
+    assert.ok(
+      typeof candidate.title === "string" && candidate.title.trim().length > 0,
+      `${candidate.path} must have a non-empty title`,
+    );
+    assert.ok(
+      typeof candidate.description === "string" && candidate.description.trim().length > 0,
+      `${candidate.path} must have a non-empty description`,
+    );
+    assert.equal(
+      typeof candidate.indexable,
+      "boolean",
+      `${candidate.path} must have a boolean indexable value`,
+    );
+  }
+}
+
 process.env.NODE_ENV = "test";
-const staticSeoPages = JSON.parse(
+const parsedStaticSeoPages: unknown = JSON.parse(
   read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
-) as Array<{ path: string; title: string; description: string; indexable: boolean }>;
+);
+validateStaticSeoPages(parsedStaticSeoPages);
+const staticSeoPages = parsedStaticSeoPages;
+
+const validCatalogEntry: StaticSeoPage = {
+  path: "/seo-validation-fixture",
+  title: "SEO validation fixture",
+  description: "Complete metadata used to verify the shared catalog validator.",
+  indexable: true,
+};
+assert.doesNotThrow(() => validateStaticSeoPages([validCatalogEntry]));
+assert.throws(
+  () => validateStaticSeoPages([validCatalogEntry, { ...validCatalogEntry }]),
+  /\/seo-validation-fixture.*duplicated/u,
+);
+assert.throws(
+  () => validateStaticSeoPages([{ ...validCatalogEntry, title: " " }]),
+  /\/seo-validation-fixture.*non-empty title/u,
+);
+assert.throws(
+  () => validateStaticSeoPages([{ ...validCatalogEntry, description: "" }]),
+  /\/seo-validation-fixture.*non-empty description/u,
+);
+assert.throws(
+  () => validateStaticSeoPages([{ ...validCatalogEntry, indexable: "yes" }]),
+  /\/seo-validation-fixture.*boolean indexable/u,
+);
 type SeoPayload = {
   title: string;
   description: string;
