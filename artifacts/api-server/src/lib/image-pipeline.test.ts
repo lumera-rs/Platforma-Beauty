@@ -25,6 +25,7 @@ import {
   cleanupMediaRouteRegressionUploads,
   enableMediaRouteRegressionUploadMarking,
 } from "../routes/media";
+import { setEmployeeProfileAfterAccessReadForTest } from "../routes/marketplace";
 
 const password = "image-pipeline-test-password";
 const email = `image-pipeline-${randomUUID()}@example.test`;
@@ -637,6 +638,73 @@ async function run(): Promise<void> {
         .filter((asset) => asset.id !== winningParallelEmployeeImage.id).length,
       0,
       "no stale public employee-avatar claim may remain after the parallel save",
+    );
+
+    const parallelBio = `Parallel bio ${randomUUID()}`;
+    const parallelPhone = `+38164${Date.now().toString().slice(-7)}`;
+    let barrierArrivals = 0;
+    let releaseProfileSaves!: () => void;
+    const profileSaveBarrier = new Promise<void>((resolve) => { releaseProfileSaves = resolve; });
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
+    const disableProfileSaveBarrier = setEmployeeProfileAfterAccessReadForTest(async () => {
+      barrierArrivals += 1;
+      if (barrierArrivals === 2) releaseProfileSaves();
+      await profileSaveBarrier;
+    });
+    process.env.NODE_ENV = previousNodeEnv;
+    let parallelFieldSaves: Response[];
+    try {
+      parallelFieldSaves = await Promise.all([
+        fetch(`${first.baseUrl}/api/employee/profile`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", cookie: employeeCookie },
+          body: JSON.stringify({ bio: parallelBio }),
+        }),
+        fetch(`${first.baseUrl}/api/employee/profile`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", cookie: employeeCookie },
+          body: JSON.stringify({ phone: parallelPhone }),
+        }),
+      ]);
+    } finally {
+      disableProfileSaveBarrier();
+    }
+    assert.equal(barrierArrivals, 2, "both profile saves must read the same stale access snapshot");
+    assert.deepEqual(
+      parallelFieldSaves.map((response) => response.status),
+      [200, 200],
+      "parallel saves of distinct employee profile fields must both succeed",
+    );
+    const [mergedEmployeeProfile] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+      phone: usersTable.phone,
+    }).from(employeesTable)
+      .innerJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.deepEqual(
+      mergedEmployeeProfile,
+      { bio: parallelBio, avatarUrl: winningParallelEmployeeImage.imageUrl, phone: parallelPhone },
+      "parallel saves must merge without restoring stale employee profile fields or avatar",
+    );
+    const finalParallelAssetRows = await db.select({
+      id: mediaAssetsTable.id,
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.scope, "employee-avatar"),
+      eq(mediaAssetsTable.ownerUserId, employeeUser!.id),
+    ));
+    assert.deepEqual(
+      finalParallelAssetRows.filter((asset) => asset.visibility === "public" && asset.resourceId === employee!.id),
+      [{
+        id: winningParallelEmployeeImage.id,
+        resourceId: employee!.id,
+        visibility: "public",
+      }],
+      "distinct-field saves must preserve the winning avatar as the sole public employee claim",
     );
     assert.equal(
       parallelAssetRows.filter((asset) => asset.resourceId === employee!.id)

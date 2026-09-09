@@ -886,6 +886,7 @@ function normalizedCoverImageDescription(value: string | null | undefined): stri
 // request field; it cannot choose the legal wording, version, account or time.
 
 let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
+let employeeProfileAfterAccessReadForTest: (() => Promise<void>) | undefined;
 
 
 /**
@@ -906,6 +907,23 @@ export function setAdminSummaryAfterFirstReadForTest(
   return () => {
     if (adminSummaryAfterFirstReadForTest === barrier) {
       adminSummaryAfterFirstReadForTest = undefined;
+    }
+  };
+}
+
+export function setEmployeeProfileAfterAccessReadForTest(
+  barrier: () => Promise<void>,
+): () => void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Employee profile write barriers are available only in tests.");
+  }
+  if (employeeProfileAfterAccessReadForTest) {
+    throw new Error("An employee profile write barrier is already active.");
+  }
+  employeeProfileAfterAccessReadForTest = barrier;
+  return () => {
+    if (employeeProfileAfterAccessReadForTest === barrier) {
+      employeeProfileAfterAccessReadForTest = undefined;
     }
   };
 }
@@ -12391,25 +12409,37 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
 
 router.put("/employee/profile", async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
-  const bio = typeof req.body?.bio === "string" ? req.body.bio.trim() : access.employee.bio;
-  const avatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl.trim() : access.employee.avatarUrl;
-  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : access.user.phone;
-  const phoneNormalized = phone ? normalizedPhone(phone) : null;
-  if (avatarUrl && !await canClaimMediaReference({
+  await employeeProfileAfterAccessReadForTest?.();
+  const hasBio = Object.prototype.hasOwnProperty.call(req.body ?? {}, "bio");
+  const hasAvatarUrl = Object.prototype.hasOwnProperty.call(req.body ?? {}, "avatarUrl");
+  const hasPhone = Object.prototype.hasOwnProperty.call(req.body ?? {}, "phone");
+  if (!hasBio && !hasAvatarUrl && !hasPhone) {
+    res.status(400).json({ error: "Nema podataka za izmenu." }); return;
+  }
+  if ((hasBio && typeof req.body.bio !== "string")
+    || (hasAvatarUrl && typeof req.body.avatarUrl !== "string")
+    || (hasPhone && typeof req.body.phone !== "string")) {
+    res.status(400).json({ error: "Podaci profila nisu ispravni." }); return;
+  }
+  const requestedBio = hasBio ? req.body.bio.trim() : undefined;
+  const requestedAvatarUrl = hasAvatarUrl ? req.body.avatarUrl.trim() : undefined;
+  const requestedPhone = hasPhone ? req.body.phone.trim() : undefined;
+  const requestedPhoneNormalized = requestedPhone ? normalizedPhone(requestedPhone) : null;
+  if (requestedAvatarUrl && !await canClaimMediaReference({
     userId: access.user.id,
-    url: avatarUrl,
+    url: requestedAvatarUrl,
     scope: "employee-avatar",
     resourceId: access.employee.id,
     existingUrls: [access.employee.avatarUrl],
   })) {
     res.status(400).json({ error: "Fotografija profila nije otpremljena sa ovog naloga." }); return;
   }
-  if (phone && !phoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
-  if (phoneNormalized) {
-    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+  if (requestedPhone && !requestedPhoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
+  if (hasPhone && requestedPhoneNormalized) {
+    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, requestedPhoneNormalized)).limit(1);
     if (taken && taken.id !== access.user.id) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
   }
-  const revokedAvatarIds = avatarUrl !== access.employee.avatarUrl
+  const revokedAvatarIds = hasAvatarUrl && requestedAvatarUrl !== access.employee.avatarUrl
     ? [mediaAssetIdFromUrl(access.employee.avatarUrl)].filter((id): id is string => Boolean(id))
     : [];
   if (revokedAvatarIds.length) {
@@ -12422,16 +12452,24 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
     }
   }
   try {
-    await db.transaction(async (tx) => {
-      const [lockedEmployee] = await tx.select({ avatarUrl: employeesTable.avatarUrl })
+    const savedProfile = await db.transaction(async (tx) => {
+      const [lockedEmployee] = await tx.select({ bio: employeesTable.bio, avatarUrl: employeesTable.avatarUrl })
         .from(employeesTable)
         .where(eq(employeesTable.id, access.employee.id))
         .for("update")
         .limit(1);
-      if (!lockedEmployee || lockedEmployee.avatarUrl !== access.employee.avatarUrl) {
+      const [lockedUser] = await tx.select({ phone: usersTable.phone })
+        .from(usersTable)
+        .where(eq(usersTable.id, access.user.id))
+        .for("update")
+        .limit(1);
+      if (!lockedEmployee || !lockedUser || (hasAvatarUrl && lockedEmployee.avatarUrl !== access.employee.avatarUrl)) {
         throw new MediaClaimConflictError();
       }
-      if (avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
+      const bio = requestedBio ?? lockedEmployee.bio;
+      const avatarUrl = requestedAvatarUrl ?? lockedEmployee.avatarUrl;
+      const phone = requestedPhone ?? lockedUser.phone;
+      if (hasAvatarUrl && avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: avatarUrl,
         scope: "employee-avatar",
@@ -12439,22 +12477,34 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
       }, tx)) {
         throw new MediaClaimConflictError();
       }
-      await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
-      if (avatarUrl !== access.employee.avatarUrl) {
+      if (hasBio || hasAvatarUrl) {
+        await tx.update(employeesTable).set({
+          ...(hasBio ? { bio } : {}),
+          ...(hasAvatarUrl ? { avatarUrl } : {}),
+        }).where(eq(employeesTable.id, access.employee.id));
+      }
+      if (hasAvatarUrl && avatarUrl !== access.employee.avatarUrl) {
         await releaseMediaReferenceClaims({
           urls: [access.employee.avatarUrl],
           resourceId: access.employee.id,
           visibility: "private",
         }, tx);
       }
-      await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
+      if (hasPhone) {
+        await tx.update(usersTable).set({
+          phone: phone || null,
+          phoneNormalized: requestedPhoneNormalized,
+          updatedAt: new Date(),
+        }).where(eq(usersTable.id, access.user.id));
+      }
+      return { bio, avatarUrl, phone: phone || null };
     });
+    res.json(savedProfile);
   } catch (error) {
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Fotografija profila je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  res.json({ bio, avatarUrl, phone: phone || null });
 });
 
 router.post("/employee/leave-requests", async (req, res): Promise<void> => {

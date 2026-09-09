@@ -554,6 +554,7 @@ export default function EmployeePortal() {
     allAvailable: boolean;
   } | null>(null);
   const [profile, setProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
+  const [loadedProfile, setLoadedProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [leave, setLeave] = useState(() => createEmployeeLeaveDraft(today()));
   const locationsQuery = useListEmployeeAssignedLocations({
@@ -601,7 +602,9 @@ export default function EmployeePortal() {
     try {
       const data = await api<Portal>("/api/employee/portal");
       setPortal(data);
-      setProfile({ bio: data.employee.bio, avatarUrl: data.employee.avatarUrl, phone: data.employee.phone ?? "" });
+      const nextProfile = { bio: data.employee.bio, avatarUrl: data.employee.avatarUrl, phone: data.employee.phone ?? "" };
+      setProfile(nextProfile);
+      setLoadedProfile(nextProfile);
       setBooking((current) => ({
         ...current,
         serviceId: data.services.some((service) => service.id === current.serviceId) ? current.serviceId : data.services[0]?.id || "",
@@ -691,7 +694,16 @@ export default function EmployeePortal() {
 
   const saveProfile = async () => {
     try {
-      await api("/api/employee/profile", { method: "PUT", body: JSON.stringify(profile) });
+      const changes = {
+        ...(profile.bio !== loadedProfile.bio ? { bio: profile.bio } : {}),
+        ...(profile.avatarUrl !== loadedProfile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+        ...(profile.phone !== loadedProfile.phone ? { phone: profile.phone } : {}),
+      };
+      if (!Object.keys(changes).length) {
+        setProfileOpen(false);
+        return;
+      }
+      await api("/api/employee/profile", { method: "PUT", body: JSON.stringify(changes) });
       toast.success("Profil je sačuvan.");
       setProfileOpen(false);
       await load();
