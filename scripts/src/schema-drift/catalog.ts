@@ -65,7 +65,7 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     JOIN pg_catalog.pg_class i ON i.oid=ix.indexrelid
     JOIN pg_catalog.pg_namespace n ON n.oid=t.relnamespace
     JOIN pg_catalog.pg_am am ON am.oid=i.relam
-    LEFT JOIN pg_catalog.pg_constraint con ON con.conindid=ix.indexrelid AND con.contype IN ('p','u')
+    LEFT JOIN pg_catalog.pg_constraint con ON con.conindid=ix.indexrelid AND con.contype IN ('p','u','x')
     WHERE n.nspname='public' AND t.relkind IN ('r','p') AND con.oid IS NULL
     ORDER BY n.nspname,t.relname,i.relname`);
 

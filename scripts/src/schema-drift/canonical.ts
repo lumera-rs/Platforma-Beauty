@@ -23,10 +23,10 @@ function indexExpression(value: unknown): string {
   throw new Error("Unsupported Drizzle index expression in canonical schema");
 }
 
-export function buildCanonicalSnapshot(): SchemaSnapshot {
+export function buildCanonicalSnapshot(exportsToRead: unknown[] = Object.values(schemaExports)): SchemaSnapshot {
   const seen = new Set<string>();
   const tables: TableDefinition[] = [];
-  for (const value of Object.values(schemaExports)) {
+  for (const value of exportsToRead) {
     if (!is(value, PgTable)) continue;
     const config = getTableConfig(value);
     const schema = config.schema ?? "public";

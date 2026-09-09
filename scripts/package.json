@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "schema-drift:audit": "tsx ./src/audit-schema-drift.ts",
+    "schema-drift:audit:json-file": "tsx ./src/audit-schema-drift.ts --json-file=schema-drift-report.json",
     "test:schema-drift": "tsx --test ./src/schema-drift/schema-drift.test.ts",
     "test:schema-drift:integration": "tsx --test ./src/schema-drift/schema-drift.integration.test.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",

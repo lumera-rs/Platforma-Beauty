@@ -2,8 +2,11 @@ export type DriftCategory =
   | "MISSING_IN_DB"
   | "EXTRA_IN_DB"
   | "DEFINITION_MISMATCH"
+  | "SEMANTIC_MATCH_DIFFERENT_NAME"
+  | "DESIGN_DIFFERENCE"
   | "OWNERSHIP_EXCEPTION";
 export type Severity = "P0" | "P1" | "P2" | "P3";
+export type EnforcementDirection = "DB_WEAKER" | "DB_STRICTER" | "EQUIVALENT" | "DIFFERENT" | "UNKNOWN";
 export type ObjectType =
   | "TABLE"
   | "COLUMN"
@@ -68,6 +71,10 @@ export interface Finding {
   expected: unknown;
   actual: unknown;
   ownership: OwnershipException | null;
+  semanticEquality: boolean;
+  enforcementDirection: EnforcementDirection;
+  decision: "MECHANICAL" | "NEEDS_DESIGN_DECISION";
+  safety: string | null;
 }
 
 export interface AuditReport {
@@ -83,6 +90,7 @@ export function normalizeSql(input: string | null | undefined): string | null {
     .replace(/"/g, "")
     .replace(/\b(public\.)/gi, "")
     .replace(/\b[a-z_][a-z0-9_]*\./gi, "")
+    .replace(/'([^']*)'\s*::\s*interval\b/gi, "interval '$1'")
     .replace(/::(?:character varying|timestamp with(?:out)? time zone|[a-z_][a-z0-9_]*(?:\[\])?)/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\(\s+/g, "(")
@@ -92,13 +100,11 @@ export function normalizeSql(input: string | null | undefined): string | null {
     .trim()
     .toLowerCase();
   value = value
-    .replace(/jsonb_array_length([a-z_][a-z0-9_]*)/g, "jsonb_array_length($1)")
-    .replace(/jsonb_array_lengthportfolio_media\b/g, "jsonb_array_length(portfolio_media)")
     .replace(/ not like /g, " !~~ ")
     .replace(/ like /g, " ~~ ")
-    .replace(/\(([a-z_][a-z0-9_]*)\)(?=\s*(?:=|>=|<=|<>|~~|!~~))/g, "$1")
+    .replace(/(?<![a-z0-9_])\(([a-z_][a-z0-9_]*)\)(?=\s*(?:=|<>|>=|<=|>|<|~~|!~~|\bis\b))/g, "$1")
     .replace(
-      /\b([a-z_][a-z0-9_]*(?:\([^()]+\))?) between (-?\d+(?:\.\d+)?) and (-?\d+(?:\.\d+)?)/g,
+      /\b([a-z_][a-z0-9_]*(?:\([^()]*(?:\([^()]*\)[^()]*)*\))?) between\s*(-?\d+(?:\.\d+)?) and (-?\d+(?:\.\d+)?)/g,
       "$1>=$2 and $1<=$3",
     )
     .replace(/\b([a-z_][a-z0-9_]*) in \(([^()]+)\)/g, "$1=any (array[$2])");
@@ -134,7 +140,6 @@ export function normalizeSql(input: string | null | undefined): string | null {
     if (!wraps) break;
     value = value.slice(1, -1).trim();
   }
-  value = value.replace(/jsonb_array_lengthportfolio_media\b/g, "jsonb_array_length(portfolio_media)");
   return value;
 }
 
@@ -167,7 +172,7 @@ function removeRedundantOrGroups(value: string): string {
       else if (depth === 0) {
         if (/\band\b/.test(content.slice(index, index + 4))) hasTopLevelAnd = true;
         if (/\bor\b/.test(content.slice(index, index + 3))) hasTopLevelOr = true;
-        if (/^(?:=|<>|>=|<=|~~|!~~| is(?: not)?\b|->>)/.test(content.slice(index))) {
+        if (/^(?:=|<>|>=|<=|>|<|~~|!~~| is(?: not)?\b|->>)/.test(content.slice(index))) {
           hasTopLevelComparison = true;
         }
       }

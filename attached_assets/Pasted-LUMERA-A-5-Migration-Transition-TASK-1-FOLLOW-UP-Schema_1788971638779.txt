@@ -1,0 +1,420 @@
+LUMERA — A-5 Migration Transition
+TASK 1 FOLLOW-UP — Schema Drift Audit Hardening
+
+Claude Code independently reviewed Task 1.
+
+Verdict:
+CONDITIONAL PASS
+
+The audit is confirmed read-only and useful, but it is NOT yet safe
+to drive Task 2 baseline/adoption decisions without corrections.
+
+Do NOT begin Task 2.
+Do NOT create migrations.
+Do NOT change database schema.
+Do NOT run drizzle push.
+Do NOT run bootstrap/repair.
+Do NOT modify production application behavior.
+
+Fix ONLY the Task 1 audit tool and its tests.
+
+==================================================
+1. FIX EXCLUDE-CONSTRAINT INDEX FALSE POSITIVES
+==================================================
+
+Claude confirmed that PostgreSQL EXCLUDE constraint backing indexes
+currently leak into the audit as EXTRA_IN_DB indexes.
+
+Current catalog filter excludes:
+contype IN ('p','u')
+
+but not:
+contype = 'x'
+
+Fix the catalog extraction so backing indexes for:
+
+- PRIMARY KEY
+- UNIQUE constraints
+- EXCLUDE constraints
+
+are not double-counted as standalone indexes.
+
+At minimum cover the confirmed live cases:
+
+- education_b2b_discount_tiers_no_overlap
+- education_placements_active_slot_no_overlap
+
+Do not hide genuine standalone GiST/expression indexes.
+
+Add regression tests.
+
+==================================================
+2. FIX INTERVAL NORMALIZATION
+==================================================
+
+Claude confirmed this current false positive:
+
+DB:
+now() + '180 days'::interval
+
+Drizzle:
+now() + interval '180 days'
+
+These are semantically equivalent.
+
+Normalize equivalent PostgreSQL interval literal renderings without
+collapsing genuinely different interval expressions.
+
+Add direct normalizeSql tests for:
+
+- interval '180 days'
+- '180 days'::interval
+- different interval values remain different
+- interval arithmetic remains semantically distinct when actually
+  different
+
+==================================================
+3. REMOVE FRAGILE FUNCTION-CALL NORMALIZATION
+==================================================
+
+Claude identified a fragile rule that can strip parentheses from
+function calls such as:
+
+jsonb_array_length(portfolio_media)
+
+and is currently mitigated by hardcoded column-specific replacements.
+
+Replace this with a general, function-call-aware normalization rule.
+
+Do NOT keep object-specific patches such as special-casing
+portfolio_media.
+
+Add direct tests for:
+
+- function calls
+- nested function calls
+- function result comparisons
+- boolean grouping
+- ordinary parenthesized identifiers
+
+Preserve the existing AND/OR precedence guarantee.
+
+==================================================
+4. FIX BETWEEN / COMPARISON NORMALIZATION EDGE CASES
+==================================================
+
+Claude found latent issues:
+
+- negative BETWEEN bounds do not normalize correctly
+- strict < and > are missing from the top-level comparison detector
+
+Fix these generally.
+
+Add tests for:
+
+- BETWEEN -1 AND 5
+- BETWEEN positive ranges
+- < and >
+- <= and >=
+- negative numeric comparisons
+- NULL-related comparisons remain distinct
+
+Do not broaden normalization so far that different SQL semantics
+become equal.
+
+==================================================
+5. RECONCILE SEMANTIC UNIQUE REPRESENTATIONS
+==================================================
+
+Claude confirmed false/double-counted findings where equivalent
+uniqueness is represented differently.
+
+Implement careful reconciliation for:
+
+A. canonical UNIQUE / uniqueIndex
+vs
+DB partial unique index WHERE nullable_column IS NOT NULL
+
+ONLY when PostgreSQL enforcement is genuinely equivalent for the
+nullable column semantics.
+
+Do not treat arbitrary partial predicates as equivalent.
+
+B. canonical uniqueIndex(bundle_id, course_id)
+vs
+DB PRIMARY KEY(bundle_id, course_id)
+
+Do not silently call them identical.
+
+Collapse them into ONE explicit design-difference finding rather than:
+
+- EXTRA PRIMARY KEY
+- MISSING INDEX
+
+The finding should explain:
+
+- enforcement is currently equivalent if columns are NOT NULL
+- object type differs
+- migration must not drop the PK before replacement uniqueness exists
+
+This is important for Task 2 safety.
+
+==================================================
+6. REPORT NAME DRIFT
+==================================================
+
+Claude confirmed that semantic matching currently hides different
+constraint/index names.
+
+For migration planning, this is not acceptable because actual DDL may
+depend on real object names.
+
+Do not convert semantic name differences into zero findings.
+
+Introduce an explicit category or metadata such as:
+
+NAME_MISMATCH
+or
+SEMANTIC_MATCH_DIFFERENT_NAME
+
+It must be non-destructive/informational but visible.
+
+For every such finding report:
+
+- canonical name
+- actual DB name
+- object type
+- semantic equality status
+
+Do not double-count the same object as missing + extra if semantics
+match.
+
+==================================================
+7. IMPROVE SEVERITY CLASSIFICATION
+==================================================
+
+Current severity is derived mainly from objectType.
+
+Claude confirmed this produces material misclassification.
+
+Redesign severity to consider:
+
+- MISSING_IN_DB
+- EXTRA_IN_DB
+- DEFINITION_MISMATCH
+- enforcement impact
+- whether DB is stricter or weaker than canonical
+- data-loss/integrity implications
+
+At minimum ensure:
+
+A. Extra DB primary key with equivalent UNIQUE + NOT NULL semantics
+must NOT automatically be P0.
+
+B. Missing tenant-scoped idempotency unique protection that permits
+duplicate orders under concurrency must be at least P1.
+
+C. FK difference from canonical RESTRICT to DB CASCADE must surface
+as high-risk because deletion behavior can remove dependent data.
+
+D. EXTRA_IN_DB FK / NOT NULL / PK should not automatically have the
+same severity as the protection being missing from DB.
+
+Do NOT attempt to encode every business rule automatically.
+
+Where severity cannot be determined mechanically, use a conservative
+classification and mark:
+
+NEEDS_DESIGN_DECISION
+
+rather than pretending certainty.
+
+==================================================
+8. EXTRACTION LAYER UNIT TESTS
+==================================================
+
+Claude found that all current unit tests mainly exercise
+compareSchemas(), while the real defects were found in:
+
+- buildCanonicalSnapshot()
+- readPostgresSnapshot()
+- normalizeSql()
+
+Add focused unit tests for all three.
+
+For canonical extraction cover:
+
+- inline PK
+- composite PK
+- UNIQUE constraint
+- unique index
+- multi-column FK
+- ON DELETE / ON UPDATE
+- CHECK
+- generated column
+- expression index
+- partial index
+
+For catalog extraction cover mocked/fixture pg_catalog results for:
+
+- PK backing index exclusion
+- UNIQUE backing index exclusion
+- EXCLUDE backing index exclusion
+- expression index
+- partial predicate
+- dropped column exclusion
+- multi-column FK ordering
+
+For normalizeSql test directly, not only through compareSchemas.
+
+==================================================
+9. DATABASE INTEGRATION TEST BEHAVIOR
+==================================================
+
+Claude found the integration test can silently skip when DATABASE_URL
+is absent and still appear green.
+
+Change behavior so:
+
+- in an environment where the integration DB test is expected, missing
+  DATABASE_URL causes explicit failure
+- a deliberate local/unit-only mode may skip only when explicitly
+  requested, not silently
+
+Do not wire this test into the full release chain yet unless its
+database provisioning is deterministic.
+
+Document expected CI behavior.
+
+==================================================
+10. HARDEN READ-ONLY EXECUTION
+==================================================
+
+Claude verified the tool is currently safe because all SQL is
+hardcoded, but the regex allows WITH and PostgreSQL permits
+data-modifying CTEs.
+
+Improve defense-in-depth.
+
+Prefer one or more of:
+
+- PostgreSQL READ ONLY transaction/session
+- read-only DB connection/session setting
+- explicit safe query API
+
+Do not rely only on:
+startsWith SELECT/WITH
+
+Keep all catalog SQL static.
+
+Add a test demonstrating an attempted mutating CTE cannot execute
+through the audit query layer.
+
+Do not mutate the actual development database during the test.
+
+==================================================
+11. MACHINE-READABLE OUTPUT
+==================================================
+
+Claude noted:
+
+pnpm run schema-drift:audit > file.json
+
+may include pnpm wrapper/banner/error output and therefore not be
+clean JSON.
+
+Provide one documented command/path that guarantees machine-readable
+JSON only.
+
+Examples:
+
+- direct tsx command
+- --json-file option
+- dedicated CLI output file
+
+Do not mix logs with JSON stdout in the supported machine interface.
+
+==================================================
+12. RE-RUN LIVE INVENTORY
+==================================================
+
+After fixing the audit:
+
+Run it read-only against the current development database.
+
+Report:
+
+- previous finding count
+- new finding count
+- how many known false positives were eliminated
+- how many semantic/design differences remain
+- all remaining P0/P1 findings
+
+Specifically re-check:
+
+- Education B2B six known findings
+- retail_product_reviews FK delete action
+- education_bundle_courses representation
+- sms_deliveries_retention_idx
+- salon_booking_settings
+- order_items nullability differences
+- payment/invoice uniqueness
+
+Do NOT fix any schema difference.
+
+==================================================
+13. REQUIRED TESTS
+==================================================
+
+Run:
+
+pnpm run typecheck
+pnpm run test:schema-drift
+pnpm run test:schema-drift:integration
+
+Run any new extraction/normalization tests.
+
+Run live audit read-only.
+
+Run direct pg_catalog spot checks for representative remaining
+findings.
+
+Do not weaken tests to make them pass.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact root cause for each Claude finding.
+2. Files changed.
+3. Catalog extraction fixes.
+4. Canonical extraction changes, if any.
+5. Comparator/normalization changes.
+6. New name-drift behavior.
+7. New severity model.
+8. New test coverage.
+9. Read-only hardening.
+10. Integration-test behavior.
+11. Machine-readable output contract.
+12. Old vs new live finding counts.
+13. Known false positives eliminated.
+14. Remaining high-risk drift.
+15. Confirmation Education B2B still remains unfixed.
+16. Confirmation database was not modified.
+17. HEAD SHA and git status.
+
+Then give:
+
+TASK 1 FOLLOW-UP VERDICT:
+
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+STOP.
+
+Do not begin Task 2.
+Do not create a migration baseline.
+Do not fix any database drift.

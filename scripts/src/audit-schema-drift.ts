@@ -1,29 +1,39 @@
 import pg from "pg";
+import { writeFile } from "node:fs/promises";
 import { buildCanonicalSnapshot } from "./schema-drift/canonical";
 import { readPostgresSnapshot } from "./schema-drift/catalog";
 import { compareSchemas, serializeReport, summarizeReport } from "./schema-drift/compare";
 import { ownershipExceptions } from "./schema-drift/ownership";
+import { readOnlyQueryLayer } from "./schema-drift/read-only-query";
 
 const { Pool } = pg;
 
 async function main(): Promise<number> {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+  const outputArgument = process.argv.find((argument) => argument.startsWith("--json-file="));
+  const outputFile = outputArgument?.slice("--json-file=".length);
   try {
-    const readOnlyClient = {
-      async query(text: string, values?: unknown[]) {
-        if (!/^\s*(?:SELECT|WITH)\b/i.test(text)) {
-          throw new Error("Schema audit refused a non-read-only SQL statement");
-        }
-        return pool.query(text, values);
-      },
-    };
-    const report = compareSchemas(
-      buildCanonicalSnapshot(),
-      await readPostgresSnapshot(readOnlyClient),
-      ownershipExceptions,
-    );
-    process.stdout.write(serializeReport(report));
+    const client = await pool.connect();
+    let report;
+    try {
+      await client.query("BEGIN READ ONLY");
+      await client.query("SET LOCAL statement_timeout = '30s'");
+      report = compareSchemas(
+        buildCanonicalSnapshot(),
+        await readPostgresSnapshot(readOnlyQueryLayer(client)),
+        ownershipExceptions,
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const json = serializeReport(report);
+    if (outputFile) await writeFile(outputFile, json, "utf8");
+    else process.stdout.write(json);
     process.stderr.write(`${summarizeReport(report)}\n`);
     return report.actionable ? 1 : 0;
   } finally {

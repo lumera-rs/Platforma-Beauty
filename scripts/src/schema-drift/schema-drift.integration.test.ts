@@ -6,8 +6,14 @@ import { readPostgresSnapshot } from "./catalog";
 import { compareSchemas } from "./compare";
 import { ownershipExceptions } from "./ownership";
 
+// CI contract: provision DATABASE_URL. Local unit-only runs must opt out
+// explicitly with SCHEMA_DRIFT_UNIT_ONLY=1; absence never silently passes.
+if (!process.env.DATABASE_URL && process.env.SCHEMA_DRIFT_UNIT_ONLY !== "1") {
+  throw new Error("DATABASE_URL is required for schema drift integration tests; set SCHEMA_DRIFT_UNIT_ONLY=1 to skip deliberately");
+}
+
 test("current database exposes all six confirmed Education B2B findings read-only", {
-  skip: !process.env.DATABASE_URL,
+  skip: process.env.SCHEMA_DRIFT_UNIT_ONLY === "1",
 }, async () => {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
   try {
