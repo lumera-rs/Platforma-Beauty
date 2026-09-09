@@ -63,6 +63,7 @@
     "cleanup:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts --recover-interrupted-databases",
     "test:beauty-jobs-browser": "tsx ./src/run-beauty-jobs-browser.ts",
     "test:cover-image-description-browser": "tsx ./src/run-cover-image-description-browser.ts",
+    "test:cover-image-description-browser:mobile": "tsx ./src/run-cover-image-description-browser.ts --mobile",
     "cleanup:cover-image-description-browser": "tsx ./src/run-cover-image-description-browser.ts --recover-interrupted-databases",
     "cleanup:beauty-jobs-browser": "tsx ./src/run-beauty-jobs-browser.ts --recover-interrupted-databases",
     "test:salon-notifications:release": "tsx ./src/run-salon-notification-release.ts",

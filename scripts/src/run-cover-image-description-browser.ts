@@ -15,14 +15,30 @@ const configuration: IsolatedBrowserSuiteConfiguration = {
   },
 };
 
+const mobileConfiguration: IsolatedBrowserSuiteConfiguration = {
+  ...configuration,
+  testLabel: "Mobile cover image description browser regression",
+  environment: {
+    ...configuration.environment,
+    LUMERA_COVER_IMAGE_DESCRIPTION_MOBILE: "1",
+  },
+};
+
 async function run(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--recover-interrupted-databases") {
     await recoverInterruptedHarnessDatabases(configuration, "browser");
     return;
   }
+  if (args.length === 1 && args[0] === "--mobile") {
+    await recoverInterruptedHarnessDatabases(mobileConfiguration, "browser");
+    await runIsolatedBrowserSuite(mobileConfiguration);
+    return;
+  }
   if (args.length > 0) {
-    throw new Error("Usage: run-cover-image-description-browser.ts [--recover-interrupted-databases]");
+    throw new Error(
+      "Usage: run-cover-image-description-browser.ts [--mobile|--recover-interrupted-databases]",
+    );
   }
   await recoverInterruptedHarnessDatabases(configuration, "browser");
   await runIsolatedBrowserSuite(configuration);

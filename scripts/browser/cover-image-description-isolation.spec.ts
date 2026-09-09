@@ -9,6 +9,7 @@ import {
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
 
 const suffix = randomUUID();
+const mobileViewport = process.env.LUMERA_COVER_IMAGE_DESCRIPTION_MOBILE === "1";
 const password = `cover-description-${suffix}`;
 const emails = {
   owner: `cover-owner-${suffix}@example.test`,
@@ -36,6 +37,20 @@ const names = {
   listing: `${title} listing`,
   supplier: `${title} supplier`,
 };
+
+test.use(mobileViewport
+  ? {
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    }
+  : {});
+
+test.beforeEach(async ({ page }) => {
+  if (mobileViewport) {
+    expect(page.viewportSize()).toEqual({ width: 390, height: 844 });
+  }
+});
 
 async function login(context: BrowserContext, email: string, id: string) {
   const response = await context.request.post("/api/auth/login", { data: { email, password } });
