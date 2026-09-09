@@ -471,6 +471,85 @@ test("supplier B2B products require authentication and public products expose on
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
 });
 
+test("canonical public supplier details follow supplier scope and active visibility", async () => {
+  const [supplier] = await db.insert(suppliersTable).values({
+    name: `${marker} visibility`,
+    slug: `${marker}-visibility`,
+    scope: "BOTH",
+  }).returning();
+  assert.ok(supplier);
+  supplierIds.push(supplier.id);
+
+  const [category] = await db.insert(productCategoriesTable).values({
+    supplierId: supplier.id,
+    name: `${marker} visibility category`,
+    slug: `${marker}-visibility-category`,
+  }).returning();
+  assert.ok(category);
+  categoryIds.push(category.id);
+
+  const [product] = await db.insert(productsTable).values({
+    supplierId: supplier.id,
+    categoryId: category.id,
+    categoryName: category.name,
+    name: `${marker} visibility product`,
+    description: `${marker} wholesale description`,
+    publicDescription: `${marker} public description`,
+    imageUrl: "/supplier-catalog-test.jpg",
+    price: 1_000,
+    publicPrice: 1_500,
+    professionalEnabled: false,
+    retailEnabled: true,
+    stock: 5,
+    sku: `${marker}-visibility-product`,
+    unit: "kom",
+    weightGrams: 100,
+  }).returning();
+  assert.ok(product);
+  productIds.push(product.id);
+
+  const supplierPath = `/suppliers/${supplier.slug}`;
+  const productPath = `/suppliers/${supplier.slug}/public-products/${product.id}`;
+  const assertPublic = async () => {
+    const supplierResponse = await api(supplierPath);
+    const supplierBody = await supplierResponse.text();
+    assert.equal(supplierResponse.status, 200, supplierBody);
+    const publicSupplier = GetPublicSupplierResponse.parse(JSON.parse(supplierBody));
+    assert.equal(publicSupplier.id, supplier.id);
+
+    const productResponse = await api(productPath);
+    const productBody = await productResponse.text();
+    assert.equal(productResponse.status, 200, productBody);
+    const publicProduct = GetSupplierPublicProductResponse.parse(JSON.parse(productBody));
+    assert.equal(publicProduct.id, product.id);
+  };
+  const assertHidden = async () => {
+    for (const path of [supplierPath, productPath]) {
+      const response = await api(path);
+      assert.equal(response.status, 404, `${path} must remain hidden, got ${response.status}`);
+      assert.deepEqual(await response.json(), { error: "Supplier not found." });
+    }
+  };
+
+  await assertPublic();
+
+  // The database enforces that a B2B-only supplier cannot retain retail
+  // products, so make the fixture compatible before changing its scope.
+  await db.update(productsTable).set({ retailEnabled: false }).where(eq(productsTable.id, product.id));
+  await db.update(suppliersTable).set({ scope: "B2B" }).where(eq(suppliersTable.id, supplier.id));
+  await assertHidden();
+
+  await db.update(suppliersTable).set({ scope: "BOTH" }).where(eq(suppliersTable.id, supplier.id));
+  await db.update(productsTable).set({ retailEnabled: true }).where(eq(productsTable.id, product.id));
+  await assertPublic();
+
+  await db.update(suppliersTable).set({ active: false }).where(eq(suppliersTable.id, supplier.id));
+  await assertHidden();
+
+  await db.update(suppliersTable).set({ active: true }).where(eq(suppliersTable.id, supplier.id));
+  await assertPublic();
+});
+
 test("public supplier and retail product details expose managed social image metadata and keep legacy URLs unverified", async () => {
   try {
     await Promise.all([
