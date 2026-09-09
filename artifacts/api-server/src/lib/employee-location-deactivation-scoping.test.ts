@@ -28,6 +28,7 @@
  *   9. appointment history preservation (no delete, no employeeId cascade)
  *   11. reactivation scoped to exactly the reactivated location
  *   12. deterministic repeat behavior
+ *   13. access denial without an assignment and relocation to another salon
  * plus adversarial authorization checks against actual DB state (not just
  * HTTP status) and concurrency checks on the shared derived-state sync.
  */
@@ -116,7 +117,7 @@ async function run(): Promise<void> {
 
     const [soloEmployee, multiEmployee] = await db.insert(employeesTable).values([
       { salonId: salonA1.id, userId: soloUser.id, name: `Solo ${suffix}`, role: "Stilista", bio: "", avatarUrl: "" },
-      { salonId: salonA1.id, userId: multiUser.id, name: `Multi ${suffix}`, role: "Stilista", bio: "", avatarUrl: "" },
+      { salonId: salonA1.id, userId: multiUser.id, name: `Multi ${suffix}`, role: "Stilista", bio: `Bio pre preseljenja ${suffix}`, avatarUrl: "" },
     ]).returning();
     assert.ok(soloEmployee && multiEmployee);
     employeeIds.push(soloEmployee.id, multiEmployee.id);
@@ -358,6 +359,60 @@ async function run(): Promise<void> {
       assert.equal(fourth.response.status, 200);
       assert.equal((await employeeRow(multiEmployee.id)).active, true);
       assert.equal((await userRow(multiUser.id)).active, true);
+    }
+
+    // --- Scenario #13: deny the profile with no assignment, then relocate ---
+    {
+      await setActiveSalon(ownerA.id, salonA1.id);
+      const deactivated = await post(`/salon/employees/${multiEmployee.id}/deactivate`, ownerACookie);
+      assert.equal(deactivated.response.status, 200, "the old location must be deactivated before relocation");
+      assert.equal((await assignment(multiEmployee.id, salonA1.id))?.active, false);
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.active, false);
+      assert.equal((await employeeRow(multiEmployee.id)).active, false, "no active assignment must disable the employee profile");
+      assert.equal((await userRow(multiUser.id)).active, false, "no active assignment must disable the employee account");
+
+      const profileBeforeDeniedRequest = {
+        bio: (await employeeRow(multiEmployee.id)).bio,
+        phone: (await userRow(multiUser.id)).phone,
+      };
+      const deniedProfileUpdate = await put("/employee/profile", multiCookie, {
+        bio: "Ovaj profil ne sme biti izmenjen",
+        phone: "+381600000099",
+      });
+      assert.equal(deniedProfileUpdate.response.status, 401, "the employee profile must be rejected without an active assignment");
+      assert.deepEqual({
+        bio: (await employeeRow(multiEmployee.id)).bio,
+        phone: (await userRow(multiUser.id)).phone,
+      }, profileBeforeDeniedRequest, "a rejected profile request must not change profile data");
+
+      await setActiveSalon(ownerA.id, salonA2.id);
+      const relocated = await put(`/salon/employees/${multiEmployee.id}/locations/${salonA2.id}`, ownerACookie, {
+        active: true,
+        isDefault: true,
+      });
+      assert.equal(relocated.response.status, 200, "the employee must be assignable to the second salon");
+      assert.equal((await assignment(multiEmployee.id, salonA1.id))?.active, false, "the old assignment must stay inactive");
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.active, true, "the new assignment must be active");
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.isDefault, true, "the relocated assignment must become the default");
+      assert.equal((await employeeRow(multiEmployee.id)).salonId, salonA1.id, "the legacy employee salon must not be rewritten as the authorization source");
+      assert.equal((await employeeRow(multiEmployee.id)).active, true);
+      assert.equal((await userRow(multiUser.id)).active, true);
+
+      const relocatedSession = await createSession(multiUser.id);
+      const relocatedCookie = `${sessionCookieName}=${relocatedSession}`;
+      const locations = await get("/employee/locations", relocatedCookie);
+      assert.equal(locations.response.status, 200, "the employee must regain portal access after relocation");
+      assert.equal(locations.body.activeSalonId, salonA2.id, "the employee portal must use the new active location");
+      assert.deepEqual(
+        (locations.body.locations as Array<{ salonId: string }>).map((location) => location.salonId),
+        [salonA2.id],
+        "inactive old locations must not remain in the employee location picker",
+      );
+
+      const portal = await get("/employee/portal", relocatedCookie);
+      assert.equal(portal.response.status, 200);
+      assert.equal((portal.body.salon as { name: string }).name, salonA2.name, "the employee profile must be scoped to the new salon");
+      assert.equal((portal.body.employee as { bio: string }).bio, profileBeforeDeniedRequest.bio, "relocation must preserve profile data");
     }
 
     // --- Concurrency: two simultaneous deactivations of an employee's last
