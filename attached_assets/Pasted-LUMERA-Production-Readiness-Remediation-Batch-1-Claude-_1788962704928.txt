@@ -1,0 +1,243 @@
+LUMERA — Production Readiness Remediation Batch 1
+
+Claude Code completed an independent read-only audit of the current codebase.
+
+For this task, fix ONLY the four confirmed findings below:
+
+F1 — Employee password reset does not revoke existing sessions
+F2 — Cancellation email is enqueued after the cancellation transaction commits
+A-2 — Full-table scan of salon_customers during phone verification / registration
+A-6 — No maximum booking horizon
+
+IMPORTANT SCOPE DECISION
+
+LUMERA is currently Serbia-only.
+
+Do NOT implement Balkan/international support in this task.
+
+Keep:
+- Serbia as the supported country
+- +381 phone behavior
+- RSD as the current currency
+
+Do NOT:
+- introduce multi-country phone normalization
+- introduce multiple currencies
+- add i18n architecture
+- migrate existing Serbian phone numbers
+- change existing Serbian phone identity behavior
+
+Internationalization will be handled separately in the future.
+
+GENERAL SAFETY RULES
+
+Before modifying anything:
+
+1. Inspect the current implementation and all surrounding code paths.
+2. Confirm each Claude finding against the current HEAD.
+3. Inspect existing tests and related database constraints/indexes.
+4. Preserve all existing booking, authentication, authorization,
+   tenant-isolation and notification behavior except where explicitly
+   required by these fixes.
+5. Use the smallest safe change.
+6. Do not perform unrelated refactoring.
+7. Do not redesign existing architecture.
+8. Do not weaken existing validation, locking, transactions,
+   idempotency or authorization.
+9. Do not delete or rewrite existing regression tests.
+10. Add regression tests for every confirmed defect fixed.
+
+--------------------------------------------------
+F1 — REVOKE SESSIONS AFTER OWNER PASSWORD RESET
+--------------------------------------------------
+
+Claude finding:
+
+POST /salon/employees/:employeeId/access/reset-password
+
+updates the employee password and sets mustChangePassword=true,
+but does not revoke the employee's existing sessions.
+
+Existing sibling flows already revoke sessions, including employee
+deactivation and password-change/setup flows.
+
+Required behavior:
+
+When a salon owner successfully resets an employee password:
+
+- update the password exactly as today
+- preserve mustChangePassword behavior
+- revoke ALL existing sessions belonging to that employee
+- perform password update and session revocation atomically
+- if any part fails, rollback the entire operation
+
+Do not change unrelated authentication/session behavior.
+
+Regression test:
+
+1. Authenticate employee.
+2. Capture valid employee session.
+3. Owner resets employee password.
+4. Attempt an authenticated employee request using the OLD session.
+5. It must return 401.
+6. It must NOT merely return 428 because mustChangePassword changed.
+7. Verify new login/setup behavior still works correctly.
+
+--------------------------------------------------
+F2 — TRANSACTIONAL CANCELLATION EMAIL OUTBOX
+--------------------------------------------------
+
+Claude finding:
+
+The appointment cancellation state commits before the cancellation
+email is inserted into email_deliveries.
+
+sendAppointmentEmails is called without the transaction store after
+the cancellation transaction has already completed.
+
+This violates the transactional-outbox invariant already documented
+in the codebase.
+
+Required behavior:
+
+The appointment cancellation state change and creation of its
+transactional email outbox record must share the same transaction.
+
+If the transaction commits:
+- both cancellation and required outbox row exist.
+
+If the transaction rolls back:
+- neither exists.
+
+Do NOT send the external email synchronously inside the booking
+transaction.
+
+Only enqueue the durable outbox record transactionally.
+
+Actual external provider delivery must remain asynchronous.
+
+Preserve:
+- cancellation behavior
+- authorization
+- locking
+- booking availability release
+- notifications
+- SMS behavior
+- existing retry/idempotency behavior
+
+Add a regression/fault-injection test proving that there is no
+commit boundary where the appointment is cancelled but its required
+email outbox row does not exist.
+
+--------------------------------------------------
+A-2 — REMOVE salon_customers FULL-TABLE SCAN
+--------------------------------------------------
+
+Claude identified an unfiltered:
+
+select().from(salonCustomersTable)
+
+used by the phone contact-linking path during verification /
+registration, followed by filtering in application memory.
+
+Required behavior:
+
+Replace the full-table read with a bounded SQL query that retrieves
+only relevant matching contact rows.
+
+IMPORTANT:
+
+Preserve the CURRENT Serbia-only phone-normalization semantics.
+
+Do NOT change +381 behavior in this task.
+
+Do NOT alter contact identity/merge semantics beyond removing the
+full-table scan.
+
+Inspect the actual query patterns and existing schema first.
+
+If the required lookup column does not have an appropriate index,
+add the smallest appropriate index using the project's established
+schema conventions.
+
+Do not add speculative indexes.
+
+Regression tests must prove:
+
+- matching contacts are still found correctly
+- unrelated contacts are not loaded
+- existing Serbian contact-linking behavior remains unchanged
+- query work remains bounded as unrelated salonCustomers rows grow
+- tenant/data-integrity behavior is unchanged
+
+--------------------------------------------------
+A-6 — MAXIMUM BOOKING HORIZON
+--------------------------------------------------
+
+Claude found that minimum lead time exists but there is no maximum
+future booking horizon.
+
+Implement this using the existing salon booking-settings architecture
+rather than a hardcoded route-level workaround.
+
+Requirements:
+
+- salon can have a maximum future booking horizon
+- server is authoritative
+- availability must not advertise slots beyond the horizon
+- direct/manual/API attempts beyond the allowed horizon must also
+  be rejected server-side
+- boundary at the last valid time/date must be tested
+- preserve existing bookings already stored beyond a newly reduced
+  horizon
+- do not silently cancel or modify historical/existing appointments
+- use the same central availability/booking logic for all entry
+  points
+
+Choose a safe backwards-compatible default that preserves existing
+behavior for salons that have not configured this setting.
+
+Do not introduce a breaking migration/default that suddenly prevents
+currently valid booking behavior.
+
+--------------------------------------------------
+REQUIRED VALIDATION
+--------------------------------------------------
+
+After implementation run the relevant existing suites, including:
+
+pnpm run typecheck
+pnpm run test:tenant-isolation
+pnpm run test:appointment-regressions
+pnpm run test:customer-password-setup
+pnpm run test:change-password-session-revocation
+pnpm run test:query-counts
+pnpm run test:query-budgets
+pnpm run validate:release:3-api
+
+Also run all new regression tests introduced for F1, F2, A-2 and A-6.
+
+If any existing test fails:
+
+Do not weaken or delete the test merely to make the suite green.
+
+Investigate whether the implementation caused a regression.
+
+FINAL REPORT
+
+Report:
+
+1. Which findings were independently confirmed before modification.
+2. Exact files changed.
+3. Exact behavior changed for F1, F2, A-2 and A-6.
+4. Database/schema changes, if any.
+5. New indexes, if any, and why they are necessary.
+6. New regression tests.
+7. All test commands and results.
+8. Any remaining risk.
+9. Current HEAD SHA and git status.
+
+Do not implement anything outside this task.
+
+Do not begin another remediation batch.
+Stop after the report.
