@@ -383,6 +383,62 @@ exit 0
   );
 });
 
+test("timed CI build preserves the build code when report writing also fails", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-report-failure-"));
+  const binDir = path.join(tempDir, "bin");
+  const reportDir = path.join(tempDir, "reports");
+  const blockedSummaryPath = path.join(tempDir, "blocked-summary");
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  const failureCode = 43;
+
+  await mkdir(binDir);
+  await mkdir(blockedSummaryPath);
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+if [[ "$*" == "--filter @workspace/scripts run typecheck" ]]; then
+  printf '%s\\n' "controlled build failure" >&2
+  exit "$FAKE_PNPM_FAILURE_CODE"
+fi
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: reportDir,
+      GITHUB_STEP_SUMMARY: blockedSummaryPath,
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
+    },
+  );
+
+  assert.equal(
+    result.code,
+    failureCode,
+    `A report failure must not replace the failed build's exit code. stderr: ${result.stderr}`,
+  );
+  assert.match(result.stderr, /controlled build failure/);
+  assert.match(result.stderr, /Could not write Markdown timing summary/);
+  assert.match(
+    result.stderr,
+    /Build failed with exit code 43; report writing also failed.*original build failure/,
+  );
+
+  const report = JSON.parse(
+    await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
+  ) as { status?: string };
+  assert.equal(report.status, "failed");
+});
+
 test("workflow syntax lint runs locally and in an independent database-free CI job", async () => {
   const [workflow, packageJsonSource] = await Promise.all([
     readFile(workflowLintPath, "utf8"),
@@ -502,7 +558,12 @@ test("branch CI isolates database checks and orders browser journeys after every
     "The timed build runner must run the explicit scripts typecheck exactly once.",
   );
   assert.match(buildTimingScript, /^set -euo pipefail$/m);
-  assert.match(buildTimingScript, /trap 'status="failed"; write_report "\$status"' ERR/);
+  assert.match(buildTimingScript, /trap 'handle_build_failure' ERR/);
+  assert.match(
+    buildTimingScript,
+    /Preserving the original build failure/,
+    "A report-writing failure must not replace the original build failure.",
+  );
   assert.match(buildTimingScript, /significantSlowdown/);
   assert.match(buildTimingScript, /Timing warnings are informational and never change the validation result/);
 
