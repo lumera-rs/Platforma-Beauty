@@ -538,8 +538,6 @@ import
   ListOrdersResponse,
   ListProductReviewsParams,
    ListPublicSuppliersResponse,
-   GetPublicSupplierParams,
-   GetPublicSupplierResponse,
    ListSupplierCategoriesParams,
    ListSupplierCategoriesResponse,
    ListSupplierProductsParams,
@@ -550,8 +548,6 @@ import
    ListSupplierPublicProductsParams,
    ListSupplierPublicProductsQueryParams,
    ListSupplierPublicProductsResponse,
-   GetSupplierPublicProductParams,
-   GetSupplierPublicProductResponse,
   ListProductReviewsResponse,
   ListProductCategoriesResponse,
   ListProductsQueryParams,
@@ -12904,18 +12900,6 @@ router.get("/suppliers", async (_req, res): Promise<void> => {
     .orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
   res.json(ListPublicSuppliersResponse.parse(rows));
 });
-router.get("/suppliers/:supplierSlug", async (req, res): Promise<void> => {
-  const params = GetPublicSupplierParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const [supplier] = await db.select().from(suppliersTable).where(and(
-    eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true),
-  )).limit(1);
-  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
-  res.json(GetPublicSupplierResponse.parse({
-    ...supplier,
-    socialImage: await publicSocialImage(supplier.logoUrl),
-  }));
-});
 router.get("/suppliers/:supplierSlug/categories", async (req, res): Promise<void> => {
   const params = ListSupplierCategoriesParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -13008,21 +12992,6 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise
   const total = Number(totalRow?.count ?? 0);
   res.json(ListSupplierPublicProductsResponse.parse({ items: products.map(publicProductDto), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) }));
 });
-router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res): Promise<void> => {
-  const params = GetSupplierPublicProductParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const rows = await db.select({ product: productsTable }).from(productsTable).innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
-    .where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]),
-      eq(productsTable.id, params.data.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
-      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice))).limit(1);
-  if (!rows[0]) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
-  res.json(GetSupplierPublicProductResponse.parse({
-    ...publicProductDto(rows[0].product),
-    socialImage: await publicSocialImage(rows[0].product.images?.[0] ?? rows[0].product.imageUrl),
-    relatedProducts: await similarProductCards(rows[0].product, "B2C"),
-  }));
-});
-
 function productBelongsToActiveCategory(
   product: typeof productsTable.$inferSelect,
   categories: Array<typeof productCategoriesTable.$inferSelect>,

@@ -36,7 +36,11 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureShippingConfigSchema } from "./shipping-config";
-import { claimRecentlyViewedForUser } from "../routes/b2c-discovery";
+import {
+  claimRecentlyViewedForUser,
+  serializePublicSupplier,
+  serializeSupplierPublicProduct,
+} from "../routes/b2c-discovery";
 import {
   CreateShopApprovalRequestResponse,
   GetPublicProductResponse,
@@ -487,6 +491,13 @@ test("public supplier and retail product details expose managed social image met
     const managedSupplierResponse = await api(`/suppliers/${supplierA.slug}`);
     assert.equal(managedSupplierResponse.status, 200, await managedSupplierResponse.clone().text());
     const managedSupplier = GetPublicSupplierResponse.parse(await managedSupplierResponse.json());
+    const [managedSupplierRow] = await db.select().from(suppliersTable)
+      .where(eq(suppliersTable.id, supplierA.id));
+    assert.deepEqual(
+      managedSupplier,
+      serializePublicSupplier(managedSupplierRow!, managedSupplier.socialImage),
+      "the active supplier detail must use the canonical supplier serializer",
+    );
     assert.deepEqual(managedSupplier.socialImage, {
       url: `/api/media/${supplierLogoAssetId}?v=${"1".repeat(16)}&size=large&format=fallback`,
       width: 1200,
@@ -500,6 +511,18 @@ test("public supplier and retail product details expose managed social image met
     assert.equal(managedSupplierProductResponse.status, 200, await managedSupplierProductResponse.clone().text());
     const managedSupplierProduct = GetSupplierPublicProductResponse.parse(
       await managedSupplierProductResponse.json(),
+    );
+    const [managedProductRow] = await db.select().from(productsTable)
+      .where(eq(productsTable.id, orderedProduct.id));
+    assert.deepEqual(
+      managedSupplierProduct,
+      serializeSupplierPublicProduct(managedProductRow!, {
+        socialImage: managedSupplierProduct.socialImage,
+        productType: managedSupplierProduct.productType,
+        needTags: managedSupplierProduct.needTags,
+        relatedProducts: managedSupplierProduct.relatedProducts,
+      }),
+      "the active supplier-product detail must use the canonical product serializer",
     );
     assert.deepEqual(managedSupplierProduct.socialImage, {
       url: `/api/media/${productImageAssetId}?v=${"2".repeat(16)}&size=large&format=fallback`,

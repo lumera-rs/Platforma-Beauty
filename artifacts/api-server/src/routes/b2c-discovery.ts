@@ -21,6 +21,12 @@ import { getCurrentUser, isAdmin } from "../lib/auth";
 import { createHash, randomBytes } from "node:crypto";
 import { activeProductSale, activeProductSalePriceSql } from "../lib/active-product-sale";
 import { publicSocialImage } from "./image-media";
+import {
+  GetPublicSupplierParams,
+  GetPublicSupplierResponse,
+  GetSupplierPublicProductParams,
+  GetSupplierPublicProductResponse,
+} from "@workspace/api-zod";
 
 const router = Router();
 const SORTS = ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "BEST_RATED", "MOST_POPULAR"] as const;
@@ -159,18 +165,45 @@ async function activeB2cSupplier(slug: string) {
   )).limit(1);
   return supplier;
 }
+
+export function serializePublicSupplier(
+  supplier: typeof suppliersTable.$inferSelect,
+  socialImage: unknown,
+) {
+  return GetPublicSupplierResponse.parse({ ...supplier, socialImage });
+}
+
+export function serializeSupplierPublicProduct(
+  product: typeof productsTable.$inferSelect,
+  details: {
+    socialImage: unknown;
+    productType: unknown;
+    needTags: unknown;
+    relatedProducts: unknown;
+  },
+) {
+  return GetSupplierPublicProductResponse.parse({
+    ...publicBase(product),
+    ingredients: product.ingredients,
+    usageInstructions: product.usageInstructions,
+    socialImage: details.socialImage,
+    productType: details.productType,
+    needTags: details.needTags,
+    relatedProducts: details.relatedProducts,
+  });
+}
+
 router.get("/suppliers", async (_req, res) => {
   res.json(await db.select().from(suppliersTable).where(and(
     eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]),
   )).orderBy(asc(suppliersTable.name), asc(suppliersTable.id)));
 });
-router.get("/suppliers/:supplierSlug", async (req, res, next) => {
-  const supplier = await activeB2cSupplier(req.params.supplierSlug!);
-  if (!supplier) { next(); return; }
-  res.json({
-    ...supplier,
-    socialImage: await publicSocialImage(supplier.logoUrl),
-  });
+router.get("/suppliers/:supplierSlug", async (req, res) => {
+  const params = GetPublicSupplierParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const supplier = await activeB2cSupplier(params.data.supplierSlug);
+  if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
+  res.json(serializePublicSupplier(supplier, await publicSocialImage(supplier.logoUrl)));
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res) => {
   const supplier = await activeB2cSupplier(req.params.supplierSlug!);
@@ -620,14 +653,16 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res, next) => {
-  const supplier = await activeB2cSupplier(req.params.supplierSlug!);
+router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res) => {
+  const params = GetSupplierPublicProductParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const supplier = await activeB2cSupplier(params.data.supplierSlug);
   if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
   const [product] = await db.select().from(productsTable).where(and(
-    eq(productsTable.id, req.params.productId!),
+    eq(productsTable.id, params.data.productId),
     productConditions(supplier.id, { categoryIds: [], brands: [], types: [], tags: [], showOutOfStock: true }),
   )).limit(1);
-  if (!product) { next(); return; } // Preserve the existing detail route's related-products behavior.
+  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   const [productType, needTags] = await Promise.all([
     product.productTypeId ? db.select({ slug: b2cProductTypesTable.slug, label: b2cProductTypesTable.label })
       .from(b2cProductTypesTable).where(and(eq(b2cProductTypesTable.id, product.productTypeId), eq(b2cProductTypesTable.active, true))).limit(1) : [],
@@ -649,16 +684,19 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
   const related = relationIds.length
     ? relationIds.map((id) => byId.get(id)).filter((item): item is typeof relatedRows[number] => Boolean(item))
     : relatedRows;
-  res.json({ ...publicBase(product), ingredients: product.ingredients, usageInstructions: product.usageInstructions,
+  res.json(serializeSupplierPublicProduct(product, {
     socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
-    productType: productType[0] ?? null, needTags, relatedProducts: related.slice(0, 8).map((item) => {
+    productType: productType[0] ?? null,
+    needTags,
+    relatedProducts: related.slice(0, 8).map((item) => {
       const view = publicBase(item);
       return {
         id: item.id, name: item.name, imageUrl: item.imageUrl, brand: item.brand,
         price: view.price, discountPrice: view.discountPrice, saleEndsAt: view.saleEndsAt,
         priceOnRequest: view.priceOnRequest, cartEligible: view.cartEligible,
       };
-    }) });
+    }),
+  }));
 });
 
 // This intentionally does not mint a viewer cookie: passive reads must not
