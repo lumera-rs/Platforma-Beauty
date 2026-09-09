@@ -604,6 +604,46 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(buildJob, /path: ci-timings\/build-timings\.json/);
   assert.match(buildJob, /retention-days: 90/);
   assert.doesNotMatch(buildJob, /\$\{\{\s*secrets\./);
+  assert.match(
+    workflow,
+    /run_build_timing_history_probe:[\s\S]*?type: boolean/,
+    "Branch CI must expose an on-demand build timing history probe.",
+  );
+  assert.match(
+    workflow,
+    /expected_build_timing_history_reports:[\s\S]*?type: number/,
+    "The timing history probe must make its expected report count explicit.",
+  );
+  assert.match(
+    buildJob,
+    /actions\/workflows\/ci\.yml\/runs[\s\S]*?-f branch="\$default_branch"[\s\S]*?-f status=success/,
+    "History must come only from successful runs of the repository default branch.",
+  );
+  assert.match(
+    buildJob,
+    /artifact_name="build-timings-\$\{run_attempt\}"[\s\S]*?\.name == \$artifact_name/,
+    "A rerun must select the artifact named for that run attempt, not whichever artifact happens to be newest.",
+  );
+  assert.match(
+    buildJob,
+    /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/artifacts\/\$\{artifact_id\}\/zip"[\s\S]*?unzip -q/,
+    "The workflow must exercise the GitHub artifact ZIP endpoint and extract its response.",
+  );
+  assert.match(
+    buildJob,
+    /Missing, expired, or unreadable artifacts are skipped and never block the build\./,
+    "Missing or expired history artifacts must remain non-blocking.",
+  );
+  assert.match(
+    buildJob,
+    /Confirm expected build timing history[\s\S]*?steps\.build-timing-history\.outputs\.history_count/,
+    "The controlled probe must compare the downloaded count with its expected count.",
+  );
+  assert.match(
+    buildJob,
+    /Verify current build timing artifact and redirect download[\s\S]*?GITHUB_RUN_ATTEMPT[\s\S]*?report\.runAttempt/,
+    "The controlled probe must verify that a rerun downloaded the current attempt's artifact.",
+  );
 
   const databaseJob = workflow.slice(
     workflow.indexOf("  database:"),

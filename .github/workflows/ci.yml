@@ -10,6 +10,16 @@ on:
         required: true
         default: false
         type: boolean
+      run_build_timing_history_probe:
+        description: "Verify main-branch build timing history and the current rerun artifact"
+        required: true
+        default: false
+        type: boolean
+      expected_build_timing_history_reports:
+        description: "Expected number of previous successful timing reports for the history probe"
+        required: false
+        default: 1
+        type: number
 
 permissions:
   actions: read
@@ -51,29 +61,90 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Download recent successful build timing history
+        id: build-timing-history
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ci-timings/history
-          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
-          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch="$default_branch" -f status=success -f per_page="$history_limit" \
-            --jq '.workflow_runs[].id' |
-          while read -r run_id; do
+          history_count=0
+          default_branch=""
+          run_ids_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file"
+          }
+          trap cleanup EXIT
+
+          if ! default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"; then
+            echo "::notice title=Build timing history unavailable::Could not read the repository default branch; continuing without historical timings."
+            echo "history_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --jq '.workflow_runs[] | [.id, .run_attempt] | @tsv' > "$run_ids_file"; then
+            echo "::notice title=Build timing history unavailable::Could not list successful main-branch workflow runs; continuing without historical timings."
+            echo "history_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r run_id run_attempt; do
             [ -n "$run_id" ] || continue
-            artifact_id="$(
-              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
-                --jq '.artifacts | map(select(.expired == false and (.name | startswith("build-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
-            )"
+            [ "$history_count" -lt "$history_limit" ] || break
+            artifact_name="build-timings-${run_attempt}"
+            artifact_id=""
+            if artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts")"; then
+              artifact_id="$(
+                jq -r --arg artifact_name "$artifact_name" \
+                  '.artifacts | map(select(.expired == false and .name == $artifact_name)) | sort_by(.created_at) | last | .id // empty' \
+                  <<< "$artifacts_json"
+              )"
+            fi
             [ -n "$artifact_id" ] || continue
             destination="ci-timings/history/${run_id}"
             mkdir -p "$destination"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" &&
-              unzip -q "$destination/artifact.zip" -d "$destination" &&
-              rm "$destination/artifact.zip"
-          done
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip"; then
+              rm -rf "$destination"
+              continue
+            fi
+            if ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            if find "$destination" -type f -name build-timings.json -print -quit | grep -q .; then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
+
+          {
+            echo "### Build timing history download"
+            echo
+            echo "- Source branch: \`$default_branch\`"
+            echo "- Historical reports downloaded: **$history_count** (expected up to **$history_limit**)"
+            echo "- Missing, expired, or unreadable artifacts are skipped and never block the build."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "history_count=$history_count" >> "$GITHUB_OUTPUT"
+      - name: Confirm expected build timing history
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_build_timing_history_probe }}
+        run: |
+          expected="${{ inputs.expected_build_timing_history_reports }}"
+          actual="${{ steps.build-timing-history.outputs.history_count }}"
+          if [ -z "$actual" ] || [ "$actual" -ne "$expected" ]; then
+            echo "Expected $expected previous successful timing reports, but downloaded ${actual:-0}." >&2
+            exit 1
+          fi
+          {
+            echo
+            echo "### Build timing history probe"
+            echo
+            echo "Verified the expected historical report count: **$actual**."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Controlled build timing history probe found exactly $actual expected report(s)."
       - name: Run build and database-free publish checks
         run: env -u DATABASE_URL pnpm run validate:ci:build
       - name: Upload build timing history
@@ -85,6 +156,36 @@ jobs:
           path: ci-timings/build-timings.json
           if-no-files-found: warn
           retention-days: 90
+      - name: Verify current build timing artifact and redirect download
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_build_timing_history_probe && success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected_name="build-timings-${GITHUB_RUN_ATTEMPT}"
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
+          artifact_id="$(
+            jq -r --arg expected_name "$expected_name" \
+              '.artifacts | map(select(.expired == false and .name == $expected_name)) | sort_by(.created_at) | last | .id // empty' \
+              <<< "$artifacts_json"
+          )"
+          test -n "$artifact_id"
+          mkdir -p ci-timings/probe
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > ci-timings/probe/artifact.zip
+          unzip -tq ci-timings/probe/artifact.zip
+          unzip -oq ci-timings/probe/artifact.zip -d ci-timings/probe
+          test -f ci-timings/probe/build-timings.json
+          node - <<'NODE'
+          const report = require("./ci-timings/probe/build-timings.json");
+          if (String(report.runAttempt) !== process.env.GITHUB_RUN_ATTEMPT) {
+            throw new Error(`Expected the latest attempt ${process.env.GITHUB_RUN_ATTEMPT}, got ${report.runAttempt ?? "none"}.`);
+          }
+          NODE
+          {
+            echo
+            echo "### Build timing artifact probe"
+            echo
+            echo "Verified the current run's latest attempt artifact (\`$expected_name\`) through the GitHub API ZIP download, including its redirect."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   database:
     name: Database checks (isolated PostgreSQL)
