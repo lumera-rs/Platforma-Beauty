@@ -15,6 +15,19 @@ Catalog fingerprints used for adoption evidence must be fail-closed, come from o
 
 **How to apply:** Pin the PostgreSQL deparser GUCs, read index semantic vectors explicitly, normalize only proven equivalences, preserve literal and resolved object identity, expose structural and physical payloads for review, and make unknown catalog object types fail instead of disappearing.
 
+Application-trigger evidence must use trigger-aware deparsing for conditional
+expressions and conservatively treat trigger names as structural semantics.
+PostgreSQL enum discovery must retain empty enum types and empty-string labels.
+
+**Why:** Generic expression deparsing lacks the OLD/NEW relation context used by
+trigger WHEN clauses. PostgreSQL orders same-kind triggers alphabetically and
+exposes `TG_NAME`, so a rename can change behavior. Empty enums and empty labels
+are valid catalog states and must not disappear from exact identity evidence.
+
+**How to apply:** Derive conditional-trigger semantics from the complete trigger
+definition with quote-aware parsing, hash trigger and function definitions under
+the pinned deparser contract, and enumerate enum types independently of labels.
+
 Baseline adoption must acquire the shared schema-management advisory lock before
 starting its verification transaction. During verification it must also lock the
 relation catalog against writes and lock all existing application tables through

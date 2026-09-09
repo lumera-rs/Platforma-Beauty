@@ -138,7 +138,10 @@ test("identical, reordered, and repeated snapshots have byte-stable fingerprints
   assert.match(first.physicalFingerprint, /^[a-f0-9]{64}$/);
   assert.equal(first.algorithm, "sha256");
   assert.equal(first.formatVersion, 2);
-  assert.equal(first.fingerprintVersion, 2);
+  assert.equal(first.fingerprintVersion, 3);
+  assert.equal(first.structuralPayload.payloadKind, "structural");
+  assert.equal(first.physicalPayload.payloadKind, "physical");
+  assert.notEqual(first.structuralFingerprint, first.physicalFingerprint);
   assert.equal(first.schemaFormatVersion, 1);
   assert.deepEqual(first.postgresCompatibility, POSTGRES_16);
   assert.equal(first.structuralPayload.postgresDeparserFormat, "postgresql-16-deparser-v1");
@@ -148,11 +151,11 @@ test("PostgreSQL 16 golden catalog fixture locks all deparser-sensitive output",
   const result = fingerprintSnapshot(goldenCatalogSnapshot(), [], POSTGRES_16);
   assert.equal(
     result.structuralFingerprint,
-    "c5e33f1f10b0dcb42cd9196d129b87db0f69ca2556aeec5bc10ec4663d3dd515",
+    "9d94ce509e32d85d21317950d2bb5aa0b6ab299993e68574b34ebaf77f8dbeb4",
   );
   assert.equal(
     result.physicalFingerprint,
-    "c5db65d0c1f2aa59f466f42dafdb0d2ba3e954e503cf59d25088bf4b434677e8",
+    "ca3e932e3142dbc4d816946b9bdebca0d8bfc98eb6baff9cf5577029f48ff423",
   );
 
   const goldenTable = result.physicalPayload.tables[0]!;
@@ -487,4 +490,91 @@ test("absent ownership registry entries are not reported as applied", () => {
     temporary: false,
   }];
   assert.deepEqual(fingerprintSnapshot(snapshot(), registry, POSTGRES_16).ownershipExceptions, []);
+});
+
+test("enum labels and order, trigger behavior/body, and unmodelled census affect both hashes", () => {
+  const base = snapshot();
+  base.enums = [{ schema: "public", name: "delivery_status", labels: ["queued", "done"] }];
+  base.triggers = [{
+    tableSchema: "public", tableName: "orders", name: "orders_immutable",
+    enabled: "origin", timing: "before", events: ["update"], level: "row",
+    updateColumns: ["id"], constraint: false, deferrable: false,
+    initiallyDeferred: false, oldTransitionTable: null, newTransitionTable: null,
+    when: "old.id is distinct from new.id", functionSchema: "public",
+    functionName: "reject_order_change", argumentsBase64: "",
+    definition: "CREATE TRIGGER orders_immutable BEFORE UPDATE ON public.orders FOR EACH ROW WHEN (old.id IS DISTINCT FROM new.id) EXECUTE FUNCTION public.reject_order_change()",
+    functionDefinition: "CREATE FUNCTION public.reject_order_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'immutable'; END $$",
+  }];
+  base.unmodelled = {
+    views: [{ schema: "public", name: "order_report" }],
+    materializedViews: [], foreignTables: [], sequences: [],
+    applicationSchemas: ["private_app"], rlsTables: [], policies: [],
+    extensions: [{ name: "plpgsql", schema: "pg_catalog", version: "1.0" }],
+  };
+  const original = fingerprints(base);
+  for (const mutate of [
+    (value: SchemaSnapshot) => value.enums![0]!.labels.push("failed"),
+    (value: SchemaSnapshot) => value.enums![0]!.labels.reverse(),
+    (value: SchemaSnapshot) => { value.enums![0]!.name = "renamed_status"; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.enabled = "disabled"; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.timing = "after"; },
+    (value: SchemaSnapshot) => value.triggers![0]!.events.push("insert"),
+    (value: SchemaSnapshot) => { value.triggers![0]!.level = "statement"; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.when = null; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.functionName = "other_function"; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.argumentsBase64 = "YQAA"; },
+    (value: SchemaSnapshot) => { value.triggers![0]!.functionDefinition += " -- changed"; },
+    (value: SchemaSnapshot) => value.unmodelled!.materializedViews.push({
+      schema: "public", name: "rollup",
+    }),
+    (value: SchemaSnapshot) => value.unmodelled!.policies.push({
+      schema: "public", table: "orders", name: "tenant_policy", command: "r",
+      permissive: true, roles: ["app"], using: "tenant_id=current_user", check: null,
+    }),
+  ]) {
+    const changed = structuredClone(base);
+    mutate(changed);
+    const result = fingerprints(changed);
+    assert.notEqual(result.structuralFingerprint, original.structuralFingerprint);
+    assert.notEqual(result.physicalFingerprint, original.physicalFingerprint);
+  }
+});
+
+test("trigger names affect both domains because they control firing order and TG_NAME", () => {
+  const base = snapshot();
+  base.triggers = [{
+    tableSchema: "public", tableName: "orders", name: "original",
+    enabled: "origin", timing: "before", events: ["delete"], level: "row",
+    updateColumns: [], constraint: false, deferrable: false,
+    initiallyDeferred: false, oldTransitionTable: null, newTransitionTable: null,
+    when: null, functionSchema: "public", functionName: "reject_delete",
+    definition: "CREATE TRIGGER original BEFORE DELETE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.reject_delete()",
+    argumentsBase64: "", functionDefinition:
+      "CREATE FUNCTION public.reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$",
+  }];
+  const renamed = structuredClone(base);
+  renamed.triggers![0]!.name = "renamed";
+  renamed.triggers![0]!.definition =
+    "CREATE TRIGGER renamed BEFORE DELETE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.reject_delete()";
+  const before = fingerprints(base);
+  const after = fingerprints(renamed);
+  assert.notEqual(after.structuralFingerprint, before.structuralFingerprint);
+  assert.notEqual(after.physicalFingerprint, before.physicalFingerprint);
+});
+
+test("empty enums and empty enum labels remain fingerprinted", () => {
+  const emptyEnum = snapshot();
+  emptyEnum.enums = [{ schema: "public", name: "empty_status", labels: [] }];
+  const emptyLabel = snapshot();
+  emptyLabel.enums = [{ schema: "public", name: "blank_status", labels: [""] }];
+  for (const value of [emptyEnum, emptyLabel]) {
+    const result = fingerprintSnapshot(value, [], POSTGRES_16);
+    assert.notEqual(result.structuralFingerprint, fingerprints(snapshot()).structuralFingerprint);
+    assert.notEqual(result.physicalFingerprint, fingerprints(snapshot()).physicalFingerprint);
+  }
+});
+
+test("empty schemas remain domain-separated", () => {
+  const result = fingerprintSnapshot({ tables: [] }, [], POSTGRES_16);
+  assert.notEqual(result.structuralFingerprint, result.physicalFingerprint);
 });

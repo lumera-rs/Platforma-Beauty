@@ -10,73 +10,22 @@ catalog query through the schema-drift read-only query guard. It does not compar
 baseline eligibility and does not write a manifest, ledger, migration, or
 database row.
 
-Pass `--eligibility-manifest=path/to/manifest.json` to classify the same live
-snapshot against a reviewed, versioned set of expected fingerprints. The command
-still performs no database writes. Only an exact structural and physical match
-to a `LEGACY` entry returns `eligibleForMetadataAdoption: true`.
+Legacy `schema-drift:audit` intentionally strips catalog-added casts while
+comparing defaults and expressions (for example, an enum literal or `jsonb`
+literal). That tolerance is scoped to audit normalization. Version-3
+fingerprints retain casts and remain strict.
 
-Eligibility codes are explicit and fail closed:
-
-- `FRESH_DATABASE`: no included application tables; adoption is unnecessary.
-- `ALREADY_CURRENT`: exact match to a reviewed `CURRENT` entry.
-- `KNOWN_LEGACY`: exact match to a reviewed `LEGACY` entry; the only eligible code.
-- `PARTIAL_SCHEMA`: some expected Lumera tables exist but the expected set is incomplete.
-- `WRONG_DATABASE`: no expected Lumera table identity overlaps the live snapshot.
-- `UNEXPECTED_P0_P1_DRIFT`: the closest complete table set has unknown critical drift.
-- `UNKNOWN_FINGERPRINT`: Lumera-shaped but not an approved exact fingerprint and
-  without a P0/P1 finding from the legacy comparator.
-
-Each expected entry pins the fingerprint format, algorithm, fingerprint version,
-schema format, both digests, and its reviewed physical snapshot. Incompatible
-versions, malformed hashes, duplicate IDs, and empty manifests are errors rather
-than permissive fallbacks. Each digest pair is unique, cannot receive conflicting
-`CURRENT`/`LEGACY` labels, and is recomputed from its reviewed physical snapshot
-before classification. P0/P1 findings are returned for review but never authorize
-adoption.
-
-
-## Controlled baseline adoption
-
-Adoption is an explicit write operation:
-
-```bash
-pnpm --silent run schema-drift:fingerprint -- \
-  --eligibility-manifest=path/to/reviewed-manifest.json \
-  --adopt-known-legacy=reviewed-legacy-id \
-  --adoption-actor=operator-or-automation-identity
-```
-
-The command acquires Lumera's session-scoped PostgreSQL advisory migration lock
-before starting the write transaction or taking a catalog snapshot. It then
-takes a write-conflicting lock on PostgreSQL's relation catalog, followed by
-`ACCESS EXCLUSIVE` locks on the existing public tables. This blocks both new
-relations and changes to approved existing relations while it reads and
-classifies the catalog again inside the same read-write transaction. It writes
-metadata only when the fresh result is
-exactly `KNOWN_LEGACY` and its reviewed manifest ID equals the operator-supplied
-ID. Every other eligibility code, a different legacy ID, malformed manifest, or
-ledger conflict rolls the transaction back without a metadata write.
-
-The audit row is stored in
-`lumera_migrations.baseline_adoptions`. It records the baseline ID, both schema
-fingerprints and their format versions, the exact manifest file SHA-256,
-PostgreSQL server version and pinned deparser format, operator identity, database
-name, and database-generated adoption time. Repeating
-the command with the same evidence is idempotent and returns
-`ALREADY_ADOPTED`; reuse of an ID with different evidence fails closed. All
-Lumera migration and schema-adoption writers must use the same advisory lock, so
-schema verification and metadata adoption cannot be separated by a competing
-managed schema change. Existing-table locks additionally prevent uncoordinated
-DDL against the approved legacy tables, while the relation-catalog lock prevents
-uncoordinated creation of a new public table or index during verification and
-adoption.
+The fingerprint CLI accepts no eligibility or adoption arguments and has no
+imports from those modules. Eligibility/adoption work from #925 remains isolated
+behind `schema-drift:eligibility-adoption` and its own test commands. It is
+**present but not part of #924 sign-off** and must receive independent review.
 
 ## Fingerprints
 
 Both hashes use SHA-256 over a versioned, locale-neutral canonical UTF-8 JSON
 payload:
 
-Fingerprint result format 2 and fingerprint payload version 2 support
+Fingerprint result format 2 and fingerprint payload version 3 support
 PostgreSQL 16. The result records the exact
 `serverVersionNum`, the parsed major version, and deparser family
 `postgresql-16-deparser-v1`. The deparser family is part of both hash payloads;
@@ -84,10 +33,14 @@ the patch version is visible metadata but does not by itself change the hashes.
 Any unsupported major version, malformed version response, or missing
 compatibility metadata fails closed before a fingerprint can be produced.
 Adding support for another PostgreSQL major requires a reviewed deparser-format
-identifier and updated golden catalog fixtures. The integration suite creates
-its representative fixture inside a transaction and rolls it back after
-verifying real server output for defaults, checks, expression/INCLUDE indexes,
-NULLS NOT DISTINCT, and exclusion constraints.
+identifier and updated golden catalog fixtures. Version-2 digests are not
+interpreted as version 3. The DDL fixture is not in the normal integration suite:
+`test:schema-drift:golden-fixture` requires both
+`SCHEMA_DRIFT_DISPOSABLE_DB=1` and a database name containing a `test` or
+`disposable` token, and otherwise fails closed. It pins the same deparser
+environment and checks ordered and empty enums, OLD/NEW conditional-trigger
+semantics, a constraint trigger, trigger arguments, function-body sensitivity,
+and trigger-name sensitivity. It must never run against the development DB.
 
 - `structuralFingerprint` proves the semantic schema structure, including
   schema/table/column identity and column order, types, column collations,
@@ -98,13 +51,25 @@ NULLS NOT DISTINCT, and exclusion constraints.
   validation/deferrability/match/null
   semantics and ordinary or constraint-backed index key/include expressions,
   ordering, collations, opclasses, NULLS NOT DISTINCT, validity, and readiness
-  are represented. Physical
-  constraint and index names are omitted.
+  are represented. PostgreSQL enum identities and label order, non-internal
+  public-table trigger definitions, target function identity, arguments, and the
+  pinned-deparser `pg_get_functiondef` function definition are also represented.
+  Physical constraint and index names are omitted. Trigger names remain
+  structural because they control same-kind firing order and are exposed as
+  `TG_NAME` to trigger functions.
 - `physicalFingerprint` proves the same normalized structure and additionally
   includes physical primary-key, unique, foreign-key, check, exclusion, and
   index names.
 
-The JSON result exposes both normalized payloads for review and diffing.
+Both payloads carry an explicit `payloadKind`, so even an empty schema has
+domain-separated structural and physical digests. Both also include a sorted
+unmodelled-object census for views, materialized views, foreign tables,
+sequences, non-public application schemas, RLS state and policy definitions,
+and installed extensions. These objects are detected and hashed, but are not
+claimed to have full migration support.
+
+The JSON result exposes both normalized payloads, enum/trigger counts, and the
+unmodelled census for review and diffing.
 Payload ordering is independent of input table, constraint, check, and index
 ordering. Column positions and key/index column order remain meaningful.
 Fingerprint transactions pin `search_path` to `pg_catalog` before invoking

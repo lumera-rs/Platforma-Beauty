@@ -2,7 +2,7 @@ import type { DatabaseClient } from "../backend-standards-database";
 
 export const BASELINE_ADOPTION_ADVISORY_LOCK_KEY = 7_346_231_927;
 
-async function pinFingerprintEnvironment(client: DatabaseClient): Promise<void> {
+export async function pinFingerprintEnvironment(client: DatabaseClient): Promise<void> {
   await client.query("SET LOCAL search_path = pg_catalog");
   await client.query("SET LOCAL quote_all_identifiers = on");
   await client.query("SET LOCAL standard_conforming_strings = on");

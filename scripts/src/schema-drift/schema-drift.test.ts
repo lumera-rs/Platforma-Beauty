@@ -140,6 +140,128 @@ test("normalizeSql preserves semantics while normalizing PostgreSQL renderings",
   assert.notEqual(normalizeSql("(a or b) and c"), normalizeSql("a or b and c"));
 });
 
+test("legacy audit strips catalog casts without weakening fingerprint normalization", () => {
+  for (const [plain, catalog] of [
+    ["'QUEUED'", "'QUEUED'::aftercare_delivery_status"],
+    ["'{}'", "'{}'::jsonb"],
+  ]) {
+    const desired = clone();
+    const actual = clone();
+    desired.tables[0]!.columns[2]!.default = plain;
+    actual.tables[0]!.columns[2]!.default = catalog;
+    assert.deepEqual(compareSchemas(desired, actual).findings, []);
+    assert.notEqual(normalizeSql(plain), normalizeSql(catalog));
+  }
+  const desired = clone();
+  const actual = clone();
+  desired.tables[0]!.columns[2]!.default = "'QUEUED'";
+  actual.tables[0]!.columns[2]!.default = "'DONE'::aftercare_delivery_status";
+  assert.equal(compareSchemas(desired, actual).findings.length, 1);
+});
+
+test("catalog rows extract enums, public application triggers, and deterministic census", async () => {
+  const results = [
+    { rows: [{ schema_name: "public", table_name: "fixture" }] },
+    { rows: [] }, { rows: [] }, { rows: [] },
+    { rows: [{
+      schema_name: "public", enum_name: "status", labels: ["queued", "done"],
+    }] },
+    { rows: [{
+      table_schema: "public", table_name: "fixture", trigger_name: "immutable",
+      enabled: "origin", timing: "before", events: ["update"], level: "row",
+      update_columns: ["id"], is_constraint: false, deferrable: false,
+      initially_deferred: false, old_transition_table: null, new_transition_table: null,
+      trigger_definition: "CREATE TRIGGER immutable BEFORE UPDATE ON public.fixture FOR EACH ROW WHEN (old.id IS DISTINCT FROM new.id) EXECUTE FUNCTION public.reject_change()",
+      function_schema: "public",
+      function_name: "reject_change", arguments_base64: "AA==",
+      function_definition: "CREATE FUNCTION public.reject_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'immutable'; END $$",
+    }] },
+    { rows: [{
+      views: [{ schema: "public", name: "report" }],
+      materialized_views: [], foreign_tables: [], sequences: [{ schema: "public", name: "seq" }],
+      application_schemas: ["application_private"], rls_tables: [],
+      policies: [], extensions: [{ name: "plpgsql", schema: "pg_catalog", version: "1.0" }],
+    }] },
+  ];
+  let index = 0;
+  const queries: string[] = [];
+  const extracted = await readPostgresSnapshot({ async query(sql: string) {
+    queries.push(sql);
+    return results[index++]!;
+  } });
+  assert.deepEqual(extracted.enums, [{
+    schema: "public", name: "status", labels: ["queued", "done"],
+  }]);
+  assert.equal(extracted.triggers?.[0]?.functionName, "reject_change");
+  assert.equal(extracted.triggers?.[0]?.argumentsBase64, "AA==");
+  assert.equal(extracted.triggers?.[0]?.when, "old.id IS DISTINCT FROM new.id");
+  assert.deepEqual(extracted.unmodelled?.applicationSchemas, ["application_private"]);
+  assert.match(queries[4]!, /pg_catalog\.pg_enum/);
+  assert.match(queries[5]!, /NOT t\.tgisinternal/);
+  assert.match(queries[5]!, /pg_get_functiondef/);
+  assert.match(queries[5]!, /pg_get_triggerdef/);
+  assert.doesNotMatch(queries[5]!, /pg_get_expr\(t\.tgqual/);
+  assert.match(queries[6]!, /pg_catalog\.pg_policy/);
+});
+
+test("trigger catalog parsing ignores WHEN text in arguments and models constraint triggers", async () => {
+  const results = [
+    { rows: [{ schema_name: "public", table_name: "fixture" }] },
+    { rows: [] },
+    { rows: [{
+      constraint_oid: 77, schema_name: "public", table_name: "fixture",
+      conname: "fixture_constraint_trigger", contype: "t", columns: [],
+      deferrable: true, initially_deferred: false, validated: true,
+    }] },
+    { rows: [] },
+    { rows: [] },
+    { rows: [{
+      constraint_oid: 77, table_schema: "public", table_name: "fixture",
+      trigger_name: "fixture_constraint_trigger", enabled: "origin", timing: "after",
+      events: ["update"], update_columns: [], level: "row",
+      trigger_definition: "CREATE CONSTRAINT TRIGGER fixture_constraint_trigger AFTER UPDATE ON public.fixture DEFERRABLE FOR EACH ROW EXECUTE FUNCTION public.guard(' WHEN (')",
+      is_constraint: true, deferrable: true, initially_deferred: false,
+      old_transition_table: null, new_transition_table: null,
+      function_schema: "public", function_name: "guard", arguments_base64: "IFdIRU4gKAA=",
+      function_definition: "CREATE FUNCTION public.guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+    }] },
+    { rows: [{}] },
+  ];
+  let index = 0;
+  const extracted = await readPostgresSnapshot({
+    async query() { return results[index++]!; },
+  });
+  assert.equal(extracted.triggers?.length, 1);
+  assert.equal(extracted.triggers?.[0]?.constraint, true);
+  assert.equal(extracted.triggers?.[0]?.when, null);
+});
+
+test("trigger WHEN extraction preserves OLD and NEW with nested and quoted syntax", async () => {
+  const results = [
+    { rows: [{ schema_name: "public", table_name: "fixture" }] },
+    { rows: [] }, { rows: [] }, { rows: [] }, { rows: [] },
+    { rows: [{
+      constraint_oid: 0, table_schema: "public", table_name: "fixture",
+      trigger_name: "fixture_when", enabled: "origin", timing: "before",
+      events: ["update"], update_columns: [], level: "row",
+      trigger_definition: "CREATE TRIGGER fixture_when BEFORE UPDATE ON public.fixture FOR EACH ROW WHEN ((OLD.id IS DISTINCT FROM NEW.id) AND (NEW.note <> ') EXECUTE FUNCTION fake')) EXECUTE FUNCTION public.guard()",
+      is_constraint: false, deferrable: false, initially_deferred: false,
+      old_transition_table: null, new_transition_table: null,
+      function_schema: "public", function_name: "guard", arguments_base64: "",
+      function_definition: "CREATE FUNCTION public.guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+    }] },
+    { rows: [{}] },
+  ];
+  let index = 0;
+  const extracted = await readPostgresSnapshot({
+    async query() { return results[index++]!; },
+  });
+  assert.equal(
+    extracted.triggers?.[0]?.when,
+    "(OLD.id IS DISTINCT FROM NEW.id) AND (NEW.note <> ') EXECUTE FUNCTION fake')",
+  );
+});
+
 test("canonical extraction covers keys, actions, checks, generated columns, and indexes", () => {
   const parent = pgTable("fixture_parent", {
     left: integer("left").notNull(),
@@ -191,13 +313,13 @@ test("catalog extraction excludes all constraint backing indexes and preserves c
     { rows: [
       {
         schema_name: "public", table_name: "fixture", conname: "fixture_fk", contype: "f",
-        columns: "{b,a}", foreign_schema: "public", foreign_table: "parent",
-        foreign_columns: "{y,x}", on_delete: "restrict", on_update: "cascade",
+        columns: ["b", "a"], foreign_schema: "public", foreign_table: "parent",
+        foreign_columns: ["y", "x"], on_delete: "restrict", on_update: "cascade",
         match_type: "simple", delete_set_columns: ["a"], no_inherit: false,
       },
       {
         schema_name: "public", table_name: "fixture", conname: "fixture_no_overlap", contype: "x",
-        columns: "{a,b}", exclusion_definition: "EXCLUDE USING gist (a WITH =, b WITH &&)",
+        columns: ["a", "b"], exclusion_definition: "EXCLUDE USING gist (a WITH =, b WITH &&)",
         index_method: "gist", index_include_expressions: ["b"], index_key_options: [0, 0],
         index_collations: ["", "pg_catalog.default"],
         index_opclasses: ["pg_catalog.int4_ops", "pg_catalog.int4_ops"],
@@ -206,7 +328,7 @@ test("catalog extraction excludes all constraint backing indexes and preserves c
     ] },
     { rows: [{
       schema_name: "public", table_name: "fixture", index_name: "fixture_expression_partial",
-      is_unique: false, method: "gist", expressions: "{lower(a::text)}", predicate: "b > 0",
+      is_unique: false, method: "gist", expressions: ["lower(a::text)"], predicate: "b > 0",
       key_options: [3], collations: ["pg_catalog.default"],
       opclasses: ["pg_catalog.text_ops"],
     }] },
@@ -390,6 +512,25 @@ test("catalog extraction fails when a child row has no table snapshot", async ()
   );
 });
 
+test("catalog extraction fails closed on unknown FK action or match codes", async () => {
+  const results = [
+    { rows: [{ schema_name: "public", table_name: "fixture" }] },
+    { rows: [] },
+    { rows: [{
+      schema_name: "public", table_name: "fixture", conname: "fixture_fk", contype: "f",
+      columns: ["id"], foreign_schema: "public", foreign_table: "parent",
+      foreign_columns: ["id"], on_delete: null, on_update: "no action",
+      match_type: "simple", delete_set_columns: [],
+    }] },
+    { rows: [] },
+  ];
+  let index = 0;
+  await assert.rejects(
+    () => readPostgresSnapshot({ async query() { return results[index++]!; } }),
+    /Unknown PostgreSQL FK action\/match code/,
+  );
+});
+
 test("read-only query layer rejects a mutating CTE before touching its client", async () => {
   let calls = 0;
   const layer = readOnlyQueryLayer({ async query() { calls += 1; return { rows: [] }; } });
@@ -477,6 +618,16 @@ test("normalizes SQL formatting and produces deterministic sorted JSON", () => {
 
 test("legacy audit JSON does not expose fingerprint-only catalog fields", () => {
   const actual = clone();
+  actual.enums = [{ schema: "public", name: "status", labels: ["active"] }];
+  actual.triggers = [{
+    tableSchema: "public", tableName: "orders", name: "guard",
+    enabled: "origin", timing: "before", events: ["update"], updateColumns: [],
+    level: "row", when: null, constraint: false, deferrable: false,
+    initiallyDeferred: false, oldTransitionTable: null, newTransitionTable: null,
+    functionSchema: "public", functionName: "guard", argumentsBase64: "",
+    definition: "CREATE TRIGGER guard BEFORE UPDATE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.guard()",
+    functionDefinition: "CREATE FUNCTION public.guard() RETURNS trigger LANGUAGE sql AS $$ SELECT old $$",
+  }];
   actual.tables[0]!.columns[2]!.type = "bigint";
   actual.tables[0]!.uniques[0]!.nullsNotDistinct = true;
   actual.tables[0]!.indexes[0]!.includeExpressions = ["tenant_id"];
@@ -490,6 +641,9 @@ test("legacy audit JSON does not expose fingerprint-only catalog fields", () => 
   assert.equal(serialized.includes('"deleteSetColumns"'), false);
   assert.equal(serialized.includes('"noInherit"'), false);
   assert.equal(serialized.includes('"exclusions"'), false);
+  assert.equal(serialized.includes('"enums"'), false);
+  assert.equal(serialized.includes('"triggers"'), false);
+  assert.equal(serialized.includes('"unmodelled"'), false);
   assert.match(serialized, /^\{\n  "formatVersion": 1,/);
 });
 

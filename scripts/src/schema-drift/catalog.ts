@@ -3,6 +3,7 @@ import type {
   BackingIndexDetails, CheckDefinition, ColumnDefinition, ExclusionDefinition,
   ForeignKeyDefinition, IndexDefinition,
   KeyDefinition, PostgresFingerprintCompatibility, SchemaSnapshot, TableDefinition,
+  EnumDefinition, TriggerDefinition, UnmodelledObjectCensus,
 } from "./model";
 import {
   POSTGRES_DEPARSE_FORMAT,
@@ -12,13 +13,8 @@ import {
 type Row = Record<string, unknown>;
 const strings = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.map(String);
-  // PostgreSQL's ARRAY over name/attname has a name[] OID that node-postgres
-  // intentionally leaves as its text representation.
-  if (typeof value === "string" && value.startsWith("{") && value.endsWith("}")) {
-    const body = value.slice(1, -1);
-    return body === "" ? [] : body.split(",").map((item) => item.replace(/^"|"$/g, ""));
-  }
-  return [];
+  if (value == null) return [];
+  throw new Error(`Catalog returned a non-JSON array: ${String(value)}`);
 };
 const numbers = (value: unknown): number[] => {
   if (Array.isArray(value)) return value.map(Number);
@@ -81,34 +77,34 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     WHERE c.relkind IN ('r','p') AND n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped
     ORDER BY n.nspname,c.relname,a.attnum`);
   const constraintsResult = await client.query(`
-    SELECT n.nspname AS schema_name, c.relname AS table_name, con.conname,
+    SELECT con.oid AS constraint_oid, n.nspname AS schema_name, c.relname AS table_name, con.conname,
       con.contype, fn.nspname AS foreign_schema, fc.relname AS foreign_table,
       con.condeferrable AS deferrable, con.condeferred AS initially_deferred,
       con.convalidated AS validated, con.connoinherit AS no_inherit,
       pix.indnullsnotdistinct AS nulls_not_distinct,
       pam.amname AS index_method, pix.indisvalid AS index_valid, pix.indisready AS index_ready,
-      ARRAY(SELECT pg_catalog.pg_get_indexdef(pix.indexrelid,k,true)
+       to_jsonb(ARRAY(SELECT pg_catalog.pg_get_indexdef(pix.indexrelid,k,true)
         FROM generate_series(pix.indnkeyatts + 1,pix.indnatts) k
-        ORDER BY k) AS index_include_expressions,
-      ARRAY(SELECT option_value FROM unnest(pix.indoption::smallint[]) WITH ORDINALITY
-        option(option_value,ord) WHERE ord<=pix.indnkeyatts ORDER BY ord) AS index_key_options,
-      ARRAY(SELECT CASE WHEN item.collation_oid=0 THEN ''
+         ORDER BY k)) AS index_include_expressions,
+       to_jsonb(ARRAY(SELECT option_value FROM unnest(pix.indoption::smallint[]) WITH ORDINALITY
+         option(option_value,ord) WHERE ord<=pix.indnkeyatts ORDER BY ord)) AS index_key_options,
+       to_jsonb(ARRAY(SELECT CASE WHEN item.collation_oid=0 THEN ''
           ELSE pg_catalog.format('%I.%I', cn.nspname, coll.collname) END
         FROM unnest(pix.indcollation::oid[]) WITH ORDINALITY item(collation_oid,ord)
         LEFT JOIN pg_catalog.pg_collation coll ON coll.oid=item.collation_oid
         LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid=coll.collnamespace
-        WHERE item.ord<=pix.indnkeyatts ORDER BY item.ord) AS index_collations,
-      ARRAY(SELECT pg_catalog.format('%I.%I', opn.nspname, opc.opcname)
+         WHERE item.ord<=pix.indnkeyatts ORDER BY item.ord)) AS index_collations,
+       to_jsonb(ARRAY(SELECT pg_catalog.format('%I.%I', opn.nspname, opc.opcname)
         FROM unnest(pix.indclass::oid[]) WITH ORDINALITY item(opclass_oid,ord)
         JOIN pg_catalog.pg_opclass opc ON opc.oid=item.opclass_oid
         JOIN pg_catalog.pg_namespace opn ON opn.oid=opc.opcnamespace
-        WHERE item.ord<=pix.indnkeyatts ORDER BY item.ord) AS index_opclasses,
-      ARRAY(SELECT a.attname FROM unnest(con.conkey) WITH ORDINALITY x(attnum,ord)
-        JOIN pg_catalog.pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=x.attnum ORDER BY x.ord) AS columns,
-      ARRAY(SELECT a.attname FROM unnest(con.confkey) WITH ORDINALITY x(attnum,ord)
-        JOIN pg_catalog.pg_attribute a ON a.attrelid=con.confrelid AND a.attnum=x.attnum ORDER BY x.ord) AS foreign_columns,
-      ARRAY(SELECT a.attname FROM unnest(con.confdelsetcols) WITH ORDINALITY x(attnum,ord)
-        JOIN pg_catalog.pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=x.attnum ORDER BY x.ord) AS delete_set_columns,
+         WHERE item.ord<=pix.indnkeyatts ORDER BY item.ord)) AS index_opclasses,
+       to_jsonb(ARRAY(SELECT a.attname::text FROM unnest(con.conkey) WITH ORDINALITY x(attnum,ord)
+         JOIN pg_catalog.pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=x.attnum ORDER BY x.ord)) AS columns,
+       to_jsonb(ARRAY(SELECT a.attname::text FROM unnest(con.confkey) WITH ORDINALITY x(attnum,ord)
+         JOIN pg_catalog.pg_attribute a ON a.attrelid=con.confrelid AND a.attnum=x.attnum ORDER BY x.ord)) AS foreign_columns,
+       to_jsonb(ARRAY(SELECT a.attname::text FROM unnest(con.confdelsetcols) WITH ORDINALITY x(attnum,ord)
+         JOIN pg_catalog.pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=x.attnum ORDER BY x.ord)) AS delete_set_columns,
       CASE con.confdeltype WHEN 'a' THEN 'no action' WHEN 'r' THEN 'restrict' WHEN 'c' THEN 'cascade'
         WHEN 'n' THEN 'set null' WHEN 'd' THEN 'set default' END AS on_delete,
       CASE con.confupdtype WHEN 'a' THEN 'no action' WHEN 'r' THEN 'restrict' WHEN 'c' THEN 'cascade'
@@ -131,23 +127,23 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     SELECT n.nspname AS schema_name, t.relname AS table_name, i.relname AS index_name,
       ix.indisunique AS is_unique, ix.indnullsnotdistinct AS nulls_not_distinct,
       ix.indisvalid AS is_valid, ix.indisready AS is_ready, am.amname AS method,
-      ARRAY(SELECT option_value FROM unnest(ix.indoption::smallint[]) WITH ORDINALITY
-        option(option_value,ord) WHERE ord<=ix.indnkeyatts ORDER BY ord) AS key_options,
-      ARRAY(SELECT CASE WHEN item.collation_oid=0 THEN ''
+       to_jsonb(ARRAY(SELECT option_value FROM unnest(ix.indoption::smallint[]) WITH ORDINALITY
+         option(option_value,ord) WHERE ord<=ix.indnkeyatts ORDER BY ord)) AS key_options,
+       to_jsonb(ARRAY(SELECT CASE WHEN item.collation_oid=0 THEN ''
           ELSE pg_catalog.format('%I.%I', cn.nspname, coll.collname) END
         FROM unnest(ix.indcollation::oid[]) WITH ORDINALITY item(collation_oid,ord)
         LEFT JOIN pg_catalog.pg_collation coll ON coll.oid=item.collation_oid
         LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid=coll.collnamespace
-        WHERE item.ord<=ix.indnkeyatts ORDER BY item.ord) AS collations,
-      ARRAY(SELECT pg_catalog.format('%I.%I', opn.nspname, opc.opcname)
+         WHERE item.ord<=ix.indnkeyatts ORDER BY item.ord)) AS collations,
+       to_jsonb(ARRAY(SELECT pg_catalog.format('%I.%I', opn.nspname, opc.opcname)
         FROM unnest(ix.indclass::oid[]) WITH ORDINALITY item(opclass_oid,ord)
         JOIN pg_catalog.pg_opclass opc ON opc.oid=item.opclass_oid
         JOIN pg_catalog.pg_namespace opn ON opn.oid=opc.opcnamespace
-        WHERE item.ord<=ix.indnkeyatts ORDER BY item.ord) AS opclasses,
-      ARRAY(SELECT pg_catalog.pg_get_indexdef(ix.indexrelid,k,true)
-        FROM generate_series(1,ix.indnkeyatts) k ORDER BY k) AS expressions,
-      ARRAY(SELECT pg_catalog.pg_get_indexdef(ix.indexrelid,k,true)
-        FROM generate_series(ix.indnkeyatts + 1,ix.indnatts) k ORDER BY k) AS include_expressions,
+         WHERE item.ord<=ix.indnkeyatts ORDER BY item.ord)) AS opclasses,
+       to_jsonb(ARRAY(SELECT pg_catalog.pg_get_indexdef(ix.indexrelid,k,true)
+         FROM generate_series(1,ix.indnkeyatts) k ORDER BY k)) AS expressions,
+       to_jsonb(ARRAY(SELECT pg_catalog.pg_get_indexdef(ix.indexrelid,k,true)
+         FROM generate_series(ix.indnkeyatts + 1,ix.indnatts) k ORDER BY k)) AS include_expressions,
       pg_catalog.pg_get_expr(ix.indpred,ix.indrelid,true) AS predicate
     FROM pg_catalog.pg_index ix
     JOIN pg_catalog.pg_class t ON t.oid=ix.indrelid
@@ -157,6 +153,98 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     LEFT JOIN pg_catalog.pg_constraint con ON con.conindid=ix.indexrelid AND con.contype IN ('p','u','x')
     WHERE n.nspname='public' AND t.relkind IN ('r','p') AND con.oid IS NULL
     ORDER BY n.nspname,t.relname,i.relname`);
+  const enumsResult = await client.query(`
+    SELECT n.nspname AS schema_name, t.typname AS enum_name,
+      COALESCE(
+        to_jsonb(array_agg(e.enumlabel::text ORDER BY e.enumsortorder)
+          FILTER (WHERE e.oid IS NOT NULL)),
+        '[]'::jsonb
+      ) AS labels
+    FROM pg_catalog.pg_type t
+    JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace
+    LEFT JOIN pg_catalog.pg_enum e ON e.enumtypid=t.oid
+    WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+      AND n.nspname !~ '^pg_toast'
+      AND t.typtype='e'
+    GROUP BY n.nspname,t.typname
+    ORDER BY n.nspname,t.typname`);
+  const triggersResult = await client.query(`
+    SELECT t.tgconstraint AS constraint_oid,
+      n.nspname AS table_schema, c.relname AS table_name, t.tgname AS trigger_name,
+      CASE t.tgenabled WHEN 'O' THEN 'origin' WHEN 'D' THEN 'disabled'
+        WHEN 'R' THEN 'replica' WHEN 'A' THEN 'always'
+        ELSE pg_catalog.concat('unknown:',t.tgenabled) END AS enabled,
+      CASE WHEN (t.tgtype & 2) <> 0 THEN 'before'
+        WHEN (t.tgtype & 64) <> 0 THEN 'instead of' ELSE 'after' END AS timing,
+      to_jsonb(array_remove(ARRAY[
+        CASE WHEN (t.tgtype & 4) <> 0 THEN 'insert' END,
+        CASE WHEN (t.tgtype & 8) <> 0 THEN 'delete' END,
+        CASE WHEN (t.tgtype & 16) <> 0 THEN 'update' END,
+        CASE WHEN (t.tgtype & 32) <> 0 THEN 'truncate' END
+      ],NULL)) AS events,
+      to_jsonb(ARRAY(SELECT a.attname::text
+        FROM unnest(t.tgattr::smallint[]) WITH ORDINALITY item(attnum,ord)
+        JOIN pg_catalog.pg_attribute a ON a.attrelid=t.tgrelid AND a.attnum=item.attnum
+        ORDER BY item.ord)) AS update_columns,
+      CASE WHEN (t.tgtype & 1) <> 0 THEN 'row' ELSE 'statement' END AS level,
+      pg_catalog.pg_get_triggerdef(t.oid,true) AS trigger_definition,
+      t.tgconstraint <> 0 AS is_constraint, t.tgdeferrable AS deferrable,
+      t.tginitdeferred AS initially_deferred,
+      t.tgoldtable AS old_transition_table, t.tgnewtable AS new_transition_table,
+      pn.nspname AS function_schema, p.proname AS function_name,
+      pg_catalog.encode(t.tgargs,'base64') AS arguments_base64,
+      pg_catalog.pg_get_functiondef(p.oid) AS function_definition
+    FROM pg_catalog.pg_trigger t
+    JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid
+    JOIN pg_catalog.pg_namespace pn ON pn.oid=p.pronamespace
+    WHERE NOT t.tgisinternal AND n.nspname='public' AND c.relkind IN ('r','p')
+    ORDER BY n.nspname,c.relname,t.tgname`);
+  const censusResult = await client.query(`
+    WITH objects AS (
+      SELECT n.nspname AS schema_name,c.relname AS object_name,c.relkind,
+        fs.srvname AS foreign_server
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+      LEFT JOIN pg_catalog.pg_foreign_table ft ON ft.ftrelid=c.oid
+      LEFT JOIN pg_catalog.pg_foreign_server fs ON fs.oid=ft.ftserver
+      WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+        AND n.nspname !~ '^pg_toast'
+    )
+    SELECT
+      (SELECT jsonb_agg(jsonb_build_object('schema',schema_name,'name',object_name)
+        ORDER BY schema_name,object_name) FROM objects WHERE relkind='v') AS views,
+      (SELECT jsonb_agg(jsonb_build_object('schema',schema_name,'name',object_name)
+        ORDER BY schema_name,object_name) FROM objects WHERE relkind='m') AS materialized_views,
+      (SELECT jsonb_agg(jsonb_build_object('schema',schema_name,'name',object_name,'server',foreign_server)
+        ORDER BY schema_name,object_name) FROM objects WHERE relkind='f') AS foreign_tables,
+      (SELECT jsonb_agg(jsonb_build_object('schema',schema_name,'name',object_name)
+        ORDER BY schema_name,object_name) FROM objects WHERE relkind='S') AS sequences,
+      (SELECT to_jsonb(array_agg(nspname::text ORDER BY nspname))
+        FROM pg_catalog.pg_namespace
+        WHERE nspname NOT IN ('public','pg_catalog','information_schema')
+          AND nspname !~ '^pg_(toast|temp)') AS application_schemas,
+      (SELECT jsonb_agg(jsonb_build_object('schema',n.nspname,'table',c.relname,
+          'enabled',c.relrowsecurity,'forced',c.relforcerowsecurity)
+        ORDER BY n.nspname,c.relname)
+        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE c.relkind IN ('r','p') AND (c.relrowsecurity OR c.relforcerowsecurity)
+          AND n.nspname NOT IN ('pg_catalog','information_schema')) AS rls_tables,
+      (SELECT jsonb_agg(jsonb_build_object('schema',n.nspname,'table',c.relname,
+          'name',pol.polname,'command',pol.polcmd,'permissive',pol.polpermissive,
+          'roles',to_jsonb(ARRAY(SELECT CASE WHEN role_oid=0 THEN 'PUBLIC' ELSE
+              (SELECT r.rolname::text FROM pg_catalog.pg_roles r WHERE r.oid=role_oid) END
+            FROM unnest(pol.polroles) role_oid ORDER BY 1)),
+          'using',pg_catalog.pg_get_expr(pol.polqual,pol.polrelid,true),
+          'check',pg_catalog.pg_get_expr(pol.polwithcheck,pol.polrelid,true))
+        ORDER BY n.nspname,c.relname,pol.polname)
+        FROM pg_catalog.pg_policy pol JOIN pg_catalog.pg_class c ON c.oid=pol.polrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname NOT IN ('pg_catalog','information_schema')) AS policies,
+      (SELECT jsonb_agg(jsonb_build_object('name',e.extname,'schema',n.nspname,'version',e.extversion)
+        ORDER BY e.extname) FROM pg_catalog.pg_extension e
+        JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace) AS extensions`);
 
   const map = new Map<string, TableDefinition>();
   for (const row of tablesResult.rows) {
@@ -186,6 +274,7 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     identity: row["identity_mode"] == null ? null : String(row["identity_mode"]),
     collation: row["column_collation"] == null ? null : String(row["column_collation"]),
   } satisfies ColumnDefinition);
+  const expectedConstraintTriggerIds = new Set<string>();
   for (const row of constraintsResult.rows) {
     const table = tableFor(row);
     const backingIndex: BackingIndexDetails = row["index_method"] == null ? {} : {
@@ -222,13 +311,22 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
       validated: base.validated,
       ...backingIndex,
     } satisfies ExclusionDefinition);
-    else if (row["contype"] === "f") table.foreignKeys.push({
-      ...base, foreignSchema: String(row["foreign_schema"]), foreignTable: String(row["foreign_table"]),
-      foreignColumns: strings(row["foreign_columns"]), onDelete: String(row["on_delete"]),
-      onUpdate: String(row["on_update"]), matchType: String(row["match_type"]),
-      deleteSetColumns: strings(row["delete_set_columns"]),
-    } satisfies ForeignKeyDefinition);
-    else throw new Error(`Unsupported catalog constraint type: ${String(row["contype"])}`);
+    else if (row["contype"] === "f") {
+      if (row["on_delete"] == null || row["on_update"] == null || row["match_type"] == null) {
+        throw new Error(`Unknown PostgreSQL FK action/match code for ${base.name}`);
+      }
+      table.foreignKeys.push({
+        ...base, foreignSchema: String(row["foreign_schema"]), foreignTable: String(row["foreign_table"]),
+        foreignColumns: strings(row["foreign_columns"]), onDelete: String(row["on_delete"]),
+        onUpdate: String(row["on_update"]), matchType: String(row["match_type"]),
+        deleteSetColumns: strings(row["delete_set_columns"]),
+      } satisfies ForeignKeyDefinition);
+    }
+    else if (row["contype"] === "t") {
+      const constraintId = String(row["constraint_oid"] ?? "");
+      if (!constraintId) throw new Error(`Missing PostgreSQL constraint trigger identity for ${base.name}`);
+      expectedConstraintTriggerIds.add(constraintId);
+    } else throw new Error(`Unsupported catalog constraint type: ${String(row["contype"])}`);
   }
   for (const row of indexesResult.rows) tableFor(row).indexes.push({
     name: String(row["index_name"]), expressions: strings(row["expressions"]),
@@ -242,5 +340,124 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     ready: Boolean(row["is_ready"]),
     predicate: row["predicate"] == null ? null : String(row["predicate"]),
   } satisfies IndexDefinition);
-  return { tables: [...map.values()] };
+  const enums: EnumDefinition[] = (enumsResult?.rows ?? []).map((row) => ({
+    schema: String(row["schema_name"]),
+    name: String(row["enum_name"]),
+    labels: strings(row["labels"]),
+  }));
+  const triggers: TriggerDefinition[] = (triggersResult?.rows ?? []).map((row) => {
+    const definition = String(row["trigger_definition"]);
+    return {
+    tableSchema: String(row["table_schema"]),
+    tableName: String(row["table_name"]),
+    name: String(row["trigger_name"]),
+    enabled: String(row["enabled"]),
+    timing: String(row["timing"]),
+    events: strings(row["events"]),
+    updateColumns: strings(row["update_columns"]),
+    level: String(row["level"]),
+    when: triggerWhenExpression(definition),
+    constraint: Boolean(row["is_constraint"]),
+    deferrable: Boolean(row["deferrable"]),
+    initiallyDeferred: Boolean(row["initially_deferred"]),
+    oldTransitionTable: row["old_transition_table"] == null
+      ? null : String(row["old_transition_table"]),
+    newTransitionTable: row["new_transition_table"] == null
+      ? null : String(row["new_transition_table"]),
+    functionSchema: String(row["function_schema"]),
+    functionName: String(row["function_name"]),
+    argumentsBase64: String(row["arguments_base64"]),
+    definition,
+    functionDefinition: String(row["function_definition"]),
+    };
+  });
+  const modeledConstraintTriggerIds = new Set(
+    (triggersResult?.rows ?? [])
+      .map((row) => String(row["constraint_oid"] ?? "0"))
+      .filter((value) => value !== "0"),
+  );
+  for (const constraintId of expectedConstraintTriggerIds) {
+    if (!modeledConstraintTriggerIds.has(constraintId)) {
+      throw new Error(`Constraint trigger ${constraintId} was not represented by the trigger catalog`);
+    }
+  }
+  const censusRow = censusResult?.rows?.[0] ?? {};
+  const array = <T>(key: string): T[] =>
+    censusRow[key] == null ? [] : Array.isArray(censusRow[key]) ? censusRow[key] as T[]
+      : (() => { throw new Error(`Catalog census ${key} was not a JSON array`); })();
+  const unmodelled: UnmodelledObjectCensus = {
+    views: array("views"),
+    materializedViews: array("materialized_views"),
+    foreignTables: array("foreign_tables"),
+    sequences: array("sequences"),
+    applicationSchemas: array("application_schemas").map(String),
+    rlsTables: array("rls_tables"),
+    policies: array("policies"),
+    extensions: array("extensions"),
+  };
+  return { tables: [...map.values()], enums, triggers, unmodelled };
+}
+
+function triggerWhenExpression(definition: string): string | null {
+  const marker = " WHEN (";
+  for (let index = 0; index < definition.length;) {
+    const quotedEnd = sqlQuotedTokenEnd(definition, index);
+    if (quotedEnd !== null) {
+      index = quotedEnd;
+      continue;
+    }
+    if (definition.slice(index, index + marker.length).toUpperCase() !== marker) {
+      index += 1;
+      continue;
+    }
+    const expressionStart = index + marker.length;
+    let depth = 1;
+    for (let cursor = expressionStart; cursor < definition.length;) {
+      const expressionQuotedEnd = sqlQuotedTokenEnd(definition, cursor);
+      if (expressionQuotedEnd !== null) {
+        cursor = expressionQuotedEnd;
+        continue;
+      }
+      if (definition[cursor] === "(") depth += 1;
+      else if (definition[cursor] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          const remainder = definition.slice(cursor + 1).trimStart().toUpperCase();
+          if (
+            remainder.startsWith("EXECUTE FUNCTION ")
+            || remainder.startsWith("EXECUTE PROCEDURE ")
+          ) {
+            return definition.slice(expressionStart, cursor);
+          }
+          break;
+        }
+      }
+      cursor += 1;
+    }
+    index += marker.length;
+  }
+  return null;
+}
+
+function sqlQuotedTokenEnd(input: string, start: number): number | null {
+  const quote = input[start];
+  if (quote === "'" || quote === '"') {
+    for (let index = start + 1; index < input.length; index += 1) {
+      if (input[index] === quote && input[index + 1] === quote) {
+        index += 1;
+      } else if (input[index] === quote) {
+        return index + 1;
+      }
+    }
+    throw new Error("Malformed quoted token in PostgreSQL trigger definition");
+  }
+  if (quote === "$") {
+    const delimiter = input.slice(start).match(/^\$(?:[a-z_][a-z0-9_]*)?\$/i)?.[0];
+    if (delimiter) {
+      const end = input.indexOf(delimiter, start + delimiter.length);
+      if (end < 0) throw new Error("Malformed dollar quote in PostgreSQL trigger definition");
+      return end + delimiter.length;
+    }
+  }
+  return null;
 }

@@ -91,7 +91,58 @@ export interface TableDefinition {
   exclusions?: ExclusionDefinition[];
   indexes: IndexDefinition[];
 }
-export interface SchemaSnapshot { tables: TableDefinition[] }
+export interface EnumDefinition {
+  schema: string;
+  name: string;
+  labels: string[];
+}
+export interface TriggerDefinition {
+  tableSchema: string;
+  tableName: string;
+  name: string;
+  enabled: string;
+  timing: string;
+  events: string[];
+  updateColumns: string[];
+  level: string;
+  when: string | null;
+  constraint: boolean;
+  deferrable: boolean;
+  initiallyDeferred: boolean;
+  oldTransitionTable: string | null;
+  newTransitionTable: string | null;
+  functionSchema: string;
+  functionName: string;
+  argumentsBase64: string;
+  definition: string;
+  functionDefinition: string;
+}
+export interface PolicyCensusEntry {
+  schema: string;
+  table: string;
+  name: string;
+  command: string;
+  permissive: boolean;
+  roles: string[];
+  using: string | null;
+  check: string | null;
+}
+export interface UnmodelledObjectCensus {
+  views: Array<{ schema: string; name: string }>;
+  materializedViews: Array<{ schema: string; name: string }>;
+  foreignTables: Array<{ schema: string; name: string; server: string }>;
+  sequences: Array<{ schema: string; name: string }>;
+  applicationSchemas: string[];
+  rlsTables: Array<{ schema: string; table: string; enabled: boolean; forced: boolean }>;
+  policies: PolicyCensusEntry[];
+  extensions: Array<{ name: string; schema: string; version: string }>;
+}
+export interface SchemaSnapshot {
+  tables: TableDefinition[];
+  enums?: EnumDefinition[];
+  triggers?: TriggerDefinition[];
+  unmodelled?: UnmodelledObjectCensus;
+}
 export const SUPPORTED_POSTGRES_MAJOR_VERSIONS = [16] as const;
 export const POSTGRES_DEPARSE_FORMAT = "postgresql-16-deparser-v1" as const;
 export interface PostgresFingerprintCompatibility {
@@ -144,6 +195,7 @@ interface SqlNormalizationContext {
 }
 interface SqlNormalizationOptions {
   preserveQuotedIdentifiers?: boolean;
+  stripCasts?: boolean;
 }
 
 export function normalizeSql(
@@ -169,8 +221,16 @@ export function normalizeSql(
       );
     }
   }
+  value = value.replace(/(\uE000\d+\uE001)\s*::\s*interval\b/gi, "interval $1");
+  if (options.stripCasts) {
+    // Legacy audit compatibility only. Fingerprints use the default strict
+    // path and therefore retain execution-relevant casts.
+    value = value.replace(
+      /\s*::\s*(?:(?:\uE000\d+\uE001|[a-z_][a-z0-9_$]*)(?:\s*\.\s*)?)+(?:\s*\[\s*\])*/gi,
+      "",
+    );
+  }
   value = value
-    .replace(/(\uE000\d+\uE001)\s*::\s*interval\b/gi, "interval $1")
     .replace(/\s+/g, " ")
     .replace(/\(\s+/g, "(")
     .replace(/\s+\)/g, ")")
@@ -409,5 +469,54 @@ export function normalizeSnapshot(
       })).sort(byName),
       };
     }).sort((a, b) => compareCodeUnits(`${a.schema}.${a.name}`, `${b.schema}.${b.name}`)),
+    enums: (snapshot.enums ?? []).map((value) => ({
+      schema: value.schema,
+      name: value.name,
+      labels: [...value.labels],
+    })).sort((a, b) => compareCodeUnits(`${a.schema}.${a.name}`, `${b.schema}.${b.name}`)),
+    triggers: (snapshot.triggers ?? []).map((value) => ({
+      ...value,
+      enabled: value.enabled.toLowerCase(),
+      timing: value.timing.toLowerCase(),
+      events: [...value.events].map((event) => event.toLowerCase()).sort(compareCodeUnits),
+      updateColumns: [...value.updateColumns],
+      level: value.level.toLowerCase(),
+      when: normalizeSql(value.when, undefined, options),
+      definition: normalizeSql(value.definition, undefined, options)!,
+      functionDefinition: normalizeSql(value.functionDefinition, undefined, options)!,
+    })).sort((a, b) => compareCodeUnits(
+      `${a.tableSchema}.${a.tableName}.${a.name}`,
+      `${b.tableSchema}.${b.tableName}.${b.name}`,
+    )),
+    unmodelled: normalizeCensus(snapshot.unmodelled),
+  };
+}
+
+function normalizeCensus(value: UnmodelledObjectCensus | undefined): UnmodelledObjectCensus {
+  const census = value ?? {
+    views: [], materializedViews: [], foreignTables: [], sequences: [],
+    applicationSchemas: [], rlsTables: [], policies: [], extensions: [],
+  };
+  const sortKey = (item: unknown): string => item !== null && typeof item === "object"
+    ? JSON.stringify(Object.fromEntries(Object.entries(item)
+      .sort(([left], [right]) => compareCodeUnits(left, right))))
+    : JSON.stringify(item);
+  const sorted = <T>(items: T[]) => [...items].sort((a, b) =>
+    compareCodeUnits(sortKey(a), sortKey(b)));
+  return {
+    views: sorted(census.views),
+    materializedViews: sorted(census.materializedViews),
+    foreignTables: sorted(census.foreignTables),
+    sequences: sorted(census.sequences),
+    applicationSchemas: [...census.applicationSchemas].sort(compareCodeUnits),
+    rlsTables: sorted(census.rlsTables),
+    policies: census.policies.map((policy) => ({
+      ...policy,
+      roles: [...policy.roles].sort(compareCodeUnits),
+    })).sort((a, b) => compareCodeUnits(
+      `${a.schema}.${a.table}.${a.name}`,
+      `${b.schema}.${b.table}.${b.name}`,
+    )),
+    extensions: sorted(census.extensions),
   };
 }

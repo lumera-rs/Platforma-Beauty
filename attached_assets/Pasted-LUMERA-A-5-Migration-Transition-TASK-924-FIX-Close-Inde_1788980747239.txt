@@ -1,0 +1,416 @@
+LUMERA — A-5 Migration Transition
+TASK #924-FIX — Close Independent Review Findings
+
+Claude Code independently reviewed Task #924 / P.1b.
+
+VERDICT:
+CONDITIONAL PASS
+
+SAFE TO PROCEED TO P.2:
+NO
+
+This task is ONLY remediation of confirmed #924 findings.
+
+Do NOT begin P.2.
+Do NOT implement baseline adoption.
+Do NOT create migrations.
+Do NOT create baseline SQL.
+Do NOT create migration runner or ledger.
+Do NOT modify production/runtime/schema/bootstrap code.
+Do NOT write to the database.
+
+==================================================
+DECISIONS
+==================================================
+
+We accept the following review findings:
+
+P1-1:
+Existing schema-drift:audit cast normalization regressed.
+
+P1-3:
+PostgreSQL ENUM definitions must be covered by the fingerprint.
+
+P1-4:
+Application triggers must be covered by the fingerprint.
+
+P2-1:
+Live DDL golden-fixture test must not remain inside a test suite that
+is expected to be safe/read-only.
+
+We also acknowledge that #925 baseline eligibility was implemented
+prematurely.
+
+DECISION FOR #925:
+
+Do NOT expand #925 further.
+
+Do NOT delete potentially useful #925 work blindly.
+
+But decouple #925 from the #924 fingerprint deliverable:
+
+- fingerprint CLI must work independently of eligibility
+- #924 tests must not require eligibility tests
+- #924 documentation must clearly separate fingerprint functionality
+  from future eligibility functionality
+- eligibility implementation may remain isolated for later dedicated
+  independent #925 review if removing it would create unnecessary risk
+
+Do not modify its business logic during this task unless strictly
+necessary for decoupling.
+
+==================================================
+1. RESTORE AUDIT CAST TOLERANCE
+==================================================
+
+Fix P1-1 with the smallest architecture-safe change.
+
+The existing schema-drift audit should retain its historical semantic
+tolerance for PostgreSQL catalog-rendered casts.
+
+Fingerprint normalization should remain strict enough to distinguish
+execution-relevant catalog definitions.
+
+Preferred design:
+
+add an explicit normalization option such as:
+
+stripCasts: boolean
+
+Use cast stripping ONLY on the legacy audit comparison path.
+
+Do NOT globally weaken fingerprint normalization.
+
+Add paired regression tests proving:
+
+AUDIT:
+'QUEUED'
+vs
+'QUEUED'::aftercare_delivery_status
+
+does NOT create a false drift finding.
+
+Also test a representative jsonb example:
+
+'{}'
+vs
+'{}'::jsonb
+
+FINGERPRINT:
+the strict fingerprint representation must remain deterministic and
+must not accidentally inherit the audit-only cast stripping.
+
+Re-run the live schema-drift audit and report corrected counts.
+
+==================================================
+2. ADD ENUM COVERAGE
+==================================================
+
+Extend the normalized schema snapshot to include PostgreSQL ENUM types.
+
+Read from PostgreSQL catalog using pg_type / pg_enum / pg_namespace.
+
+Represent deterministically, at minimum:
+
+- schema
+- enum type name
+- labels
+- label order
+
+Label order MUST be semantic and preserved.
+
+Include enums in BOTH:
+
+structuralFingerprint
+physicalFingerprint
+
+Enum type name is semantic identity and therefore belongs in both.
+
+A change to:
+
+- enum label addition
+- enum label removal
+- enum label rename
+- enum label ordering
+
+must change both fingerprints.
+
+Use catalog-row-driven extractor tests.
+
+Do not use application source definitions as the live truth.
+
+==================================================
+3. ADD TRIGGER COVERAGE
+==================================================
+
+Extend the normalized schema snapshot to include non-internal
+application triggers.
+
+At minimum capture:
+
+- table schema
+- table name
+- trigger name
+- enabled state
+- timing
+- event(s)
+- row vs statement level
+- WHEN expression if present
+- target function schema
+- target function name
+- trigger arguments
+
+Use PostgreSQL catalog sources such as pg_trigger / pg_proc and
+PostgreSQL deparser functions where appropriate.
+
+Do not include internal PostgreSQL-generated triggers.
+
+STRUCTURAL vs PHYSICAL rule:
+
+Structural fingerprint must capture trigger behavior/identity while
+ignoring ONLY a physical trigger name if renaming the trigger does not
+change behavior.
+
+Physical fingerprint must additionally capture the actual trigger name.
+
+Target function identity is semantic and must affect structural
+fingerprint.
+
+IMPORTANT:
+Also make an explicit decision about trigger FUNCTION BODY coverage.
+
+Because several Lumera triggers enforce append-only / immutable
+integrity, merely hashing trigger → function name is insufficient if
+the same function name can contain different code.
+
+Preferred:
+include a stable representation/hash of the relevant trigger function
+definition/body in the fingerprint model.
+
+If PostgreSQL deparser output is used, apply the same explicit
+PostgreSQL-version/deparser compatibility discipline already introduced
+for fingerprint version 2.
+
+Document exactly what is included.
+
+==================================================
+4. VERSION BUMP
+==================================================
+
+Because enum and trigger coverage materially changes what the
+fingerprint proves:
+
+bump FINGERPRINT_VERSION to 3.
+
+Update golden hashes accordingly.
+
+Do not silently reinterpret version-2 hashes as version 3.
+
+Document compatibility behavior.
+
+==================================================
+5. UNMODELLED OBJECT CENSUS
+==================================================
+
+Address the review's P2-2 cheaply without building full support for
+every PostgreSQL object class.
+
+Add a deterministic census for currently-unmodelled object classes
+relevant to schema identity.
+
+At minimum detect/count:
+
+- views
+- materialized views
+- foreign tables
+- sequences
+- non-public application schemas
+- RLS-enabled tables / policies
+- installed extensions
+
+The census must be included in the hashed representation or otherwise
+cause fingerprint mismatch when these classes differ.
+
+Goal:
+an unknown object class must not silently disappear from baseline
+identity.
+
+Do NOT build full migration support for these classes now.
+
+==================================================
+6. READ-ONLY TEST SEPARATION
+==================================================
+
+Fix P2-1.
+
+The normal schema-drift integration/read-only test suite must not
+perform CREATE TABLE / CREATE INDEX against the development DB.
+
+Separate the DDL golden fixture into a clearly named disposable-DB-only
+test command.
+
+For example:
+
+test:schema-drift:golden-fixture
+
+It must:
+
+- require explicit opt-in
+- require a disposable database
+- fail closed if disposable-DB safety cannot be proven
+
+The normal read-only integration suite must contain only READ ONLY
+catalog access.
+
+==================================================
+7. #925 DECOUPLING
+==================================================
+
+Confirm exactly what #925 introduced.
+
+For #924-FIX:
+
+- do not expand eligibility
+- do not authorize metadata adoption
+- do not write a ledger
+- do not connect eligibility to production startup
+- do not wire eligibility into release/deploy
+
+Separate #924 fingerprint testing from eligibility testing.
+
+If eligibility files remain in repository, report them explicitly as:
+
+PRESENT BUT NOT PART OF #924 SIGN-OFF
+
+They will receive a dedicated independent review later.
+
+==================================================
+8. SMALL HARDENING ITEMS
+==================================================
+
+Fix where low-risk and localized:
+
+- fail closed on unknown PostgreSQL FK action/match codes rather than
+  hashing "null"
+- avoid ambiguous structural==physical hashes for a constraint-free
+  schema by domain-separating the payloads, e.g.
+  payloadKind: "structural" | "physical"
+- replace fragile PostgreSQL name[] comma parsing if the catalog query
+  can return a typed array safely
+
+Do not turn this into a broad refactor.
+
+==================================================
+9. NON-REGRESSION
+==================================================
+
+Existing schema-drift:audit behavior is important.
+
+Add tests that explicitly protect:
+
+- cast-only defaults remain clean in audit
+- real definition differences remain findings
+- existing JSON contract remains unchanged
+- fingerprint-only fields do not leak into legacy audit output
+
+==================================================
+10. VALIDATION
+==================================================
+
+Run:
+
+pnpm run typecheck
+
+the complete schema-drift unit suite
+
+the READ-ONLY schema-drift integration suite
+
+the fingerprint CLI at least 3 times against the same dev DB READ ONLY
+
+Confirm:
+
+structuralFingerprint run1 == run2 == run3
+
+physicalFingerprint run1 == run2 == run3
+
+Record:
+
+- new version-3 hashes
+- object counts
+- enum count
+- trigger count
+- ownership exceptions
+- unmodelled-object census
+- corrected schema-drift audit counts
+
+Do NOT run the DDL golden fixture against the normal development DB.
+
+If testing it, use only a proven disposable DB.
+
+==================================================
+11. SCOPE
+==================================================
+
+Allowed scope:
+
+scripts/src/schema-drift/*
+scripts/src/fingerprint-schema.ts
+scripts/src/audit-schema-drift.ts only if strictly required
+scripts/package.json
+root package.json only if required
+documentation/tests
+
+Do NOT modify:
+
+lib/db/src/schema/*
+lib/db/migrations/*
+production artifacts/*
+bootstrap modules
+booking/application logic
+Education B2B schema
+retail review FK
+deployment/startup
+migration runner
+migration ledger
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact files changed
+2. P1-1 audit regression fix
+3. Corrected live audit counts
+4. ENUM model/extractor/hash coverage
+5. Trigger model/extractor/hash coverage
+6. Trigger function-body decision
+7. Fingerprint version 3 design
+8. Structural vs physical semantics
+9. Unmodelled-object census
+10. Read-only integration-test separation
+11. #925 decoupling status
+12. Hardening fixes
+13. Test matrix/results
+14. Version-3 live fingerprint values ×3
+15. Git diff scope
+16. HEAD/git status
+17. Remaining limitations
+
+Then:
+
+TASK #924-FIX VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+And:
+
+READY FOR INDEPENDENT CLAUDE RE-REVIEW:
+YES / NO
+
+STOP.
+
+Do not begin #925.
+Do not begin #926.
+Do not begin P.2.

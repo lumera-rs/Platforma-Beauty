@@ -201,7 +201,10 @@ export function compareSchemas(
 }
 
 function auditSnapshot(input: SchemaSnapshot): SchemaSnapshot {
-  const normalized = normalizeSnapshot(input, { preserveQuotedIdentifiers: false });
+  const normalized = normalizeSnapshot(input, {
+    preserveQuotedIdentifiers: false,
+    stripCasts: true,
+  });
   return {
     tables: normalized.tables.map(({ exclusions: _exclusions, ...table }) => ({
       ...table,

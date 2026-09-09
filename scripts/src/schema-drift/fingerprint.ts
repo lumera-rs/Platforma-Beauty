@@ -8,10 +8,12 @@ import {
   type PostgresFingerprintCompatibility,
   type SchemaSnapshot,
   type TableDefinition,
+  type TriggerDefinition,
+  type UnmodelledObjectCensus,
 } from "./model";
 
 export const FINGERPRINT_ALGORITHM = "sha256" as const;
-export const FINGERPRINT_VERSION = 2 as const;
+export const FINGERPRINT_VERSION = 3 as const;
 export const FINGERPRINT_FORMAT_VERSION = 2 as const;
 export const SCHEMA_FORMAT_VERSION = 1 as const;
 
@@ -83,7 +85,11 @@ export interface FingerprintPayload {
   fingerprintVersion: typeof FINGERPRINT_VERSION;
   schemaFormatVersion: typeof SCHEMA_FORMAT_VERSION;
   postgresDeparserFormat: typeof POSTGRES_DEPARSE_FORMAT;
+  payloadKind: "structural" | "physical";
   tables: StructuralTable[] | TableDefinition[];
+  enums: NonNullable<SchemaSnapshot["enums"]>;
+  triggers: TriggerDefinition[];
+  unmodelled: UnmodelledObjectCensus;
 }
 
 export interface AppliedOwnershipException extends OwnershipException {
@@ -99,6 +105,9 @@ export interface CatalogFingerprintResult {
   structuralFingerprint: string;
   physicalFingerprint: string;
   normalizedObjectCount: number;
+  enumCount: number;
+  triggerCount: number;
+  unmodelledObjectCensus: UnmodelledObjectCensus;
   ownershipExceptions: AppliedOwnershipException[];
   structuralPayload: FingerprintPayload;
   physicalPayload: FingerprintPayload;
@@ -168,6 +177,16 @@ function withoutOwnedTables(
   return {
     tables: snapshot.tables.filter((table) =>
       !excludedTables.has(`${table.schema}\u0000${table.name}`)),
+    enums: snapshot.enums,
+    triggers: (snapshot.triggers ?? []).filter((trigger) =>
+      !excludedTables.has(`${trigger.tableSchema}\u0000${trigger.tableName}`)),
+    unmodelled: {
+      ...snapshot.unmodelled!,
+      rlsTables: snapshot.unmodelled!.rlsTables.filter((item) =>
+        !excludedTables.has(`${item.schema}\u0000${item.table}`)),
+      policies: snapshot.unmodelled!.policies.filter((item) =>
+        !excludedTables.has(`${item.schema}\u0000${item.table}`)),
+    },
   };
 }
 
@@ -180,7 +199,16 @@ function objectCount(snapshot: SchemaSnapshot): number {
     + table.foreignKeys.length
     + table.checks.length
     + (table.exclusions?.length ?? 0)
-    + table.indexes.length, 0);
+    + table.indexes.length, 0)
+    + (snapshot.enums?.length ?? 0)
+    + (snapshot.triggers?.length ?? 0)
+    + censusCount(snapshot.unmodelled!);
+}
+
+function censusCount(value: UnmodelledObjectCensus): number {
+  return value.views.length + value.materializedViews.length + value.foreignTables.length
+    + value.sequences.length + value.applicationSchemas.length + value.rlsTables.length
+    + value.policies.length + value.extensions.length;
 }
 
 function digest(payload: FingerprintPayload): string {
@@ -203,13 +231,21 @@ export function fingerprintSnapshot(
     fingerprintVersion: FINGERPRINT_VERSION,
     schemaFormatVersion: SCHEMA_FORMAT_VERSION,
     postgresDeparserFormat: postgresCompatibility.deparserFormat,
+    payloadKind: "structural",
     tables: included.tables.map(structuralTable),
+    enums: included.enums!,
+    triggers: included.triggers!,
+    unmodelled: included.unmodelled!,
   };
   const physicalPayload: FingerprintPayload = {
     fingerprintVersion: FINGERPRINT_VERSION,
     schemaFormatVersion: SCHEMA_FORMAT_VERSION,
     postgresDeparserFormat: postgresCompatibility.deparserFormat,
+    payloadKind: "physical",
     tables: included.tables,
+    enums: included.enums!,
+    triggers: included.triggers!,
+    unmodelled: included.unmodelled!,
   };
   return {
     formatVersion: FINGERPRINT_FORMAT_VERSION,
@@ -220,6 +256,9 @@ export function fingerprintSnapshot(
     structuralFingerprint: digest(structuralPayload),
     physicalFingerprint: digest(physicalPayload),
     normalizedObjectCount: objectCount(included),
+    enumCount: included.enums!.length,
+    triggerCount: included.triggers!.length,
+    unmodelledObjectCensus: included.unmodelled!,
     ownershipExceptions,
     structuralPayload,
     physicalPayload,
@@ -301,6 +340,29 @@ function validateSnapshot(snapshot: SchemaSnapshot, registry: OwnershipException
         `${tableKey}.${index.name}`,
       );
     }
+  }
+  const enumKeys = new Set<string>();
+  for (const value of snapshot.enums ?? []) {
+    requireText(value.schema, "enum schema");
+    requireText(value.name, "enum name");
+    const key = `${value.schema}.${value.name}`;
+    if (enumKeys.has(key)) throw new Error(`Duplicate catalog enum: ${key}`);
+    enumKeys.add(key);
+  }
+  const triggerKeys = new Set<string>();
+  for (const value of snapshot.triggers ?? []) {
+    const key = `${value.tableSchema}.${value.tableName}.${value.name}`;
+    for (const [text, label] of [
+      [value.tableSchema, "trigger table schema"], [value.tableName, "trigger table"],
+      [value.name, "trigger name"], [value.enabled, "trigger enabled state"],
+      [value.timing, "trigger timing"], [value.level, "trigger level"],
+      [value.functionSchema, "trigger function schema"], [value.functionName, "trigger function name"],
+      [value.definition, "trigger definition"],
+      [value.functionDefinition, "trigger function definition"],
+    ] as const) requireText(text, `${label} for ${key}`);
+    if (triggerKeys.has(key)) throw new Error(`Duplicate catalog trigger: ${key}`);
+    triggerKeys.add(key);
+    if (value.events.length === 0) throw new Error(`Missing trigger events for ${key}`);
   }
   const ownershipKeys = new Set<string>();
   for (const exception of registry) {
