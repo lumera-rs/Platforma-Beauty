@@ -317,12 +317,12 @@ test("branch CI runs the database-free release-chain gate before slower work", a
 
   const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
+  const summaryPath = path.join(reportDir, "build-summary.md");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
   const failureCode = 43;
 
   await mkdir(binDir);
-  await mkdir(blockedSummaryPath);
   await writeFile(
     fakePnpmPath,
     `#!/usr/bin/env bash
@@ -344,42 +344,30 @@ exit 0
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
       CI_TIMING_REPORT_DIR: reportDir,
-      GITHUB_STEP_SUMMARY: blockedSummaryPath,
+      GITHUB_STEP_SUMMARY: summaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
   assert.equal(
     result.code,
-    1,
-    `A successful build must still fail when its report cannot be written. stderr: ${result.stderr}`,
+    failureCode,
+    `The timed runner must preserve the failed phase's exit code. stderr: ${result.stderr}`,
   );
-  assert.match(result.stderr, /Could not write Markdown timing summary/);
-  assert.match(
-    result.stderr,
-    /Build passed, but report writing failed \(exit code 1\)/,
-    "The final error must identify the successful build/report-writing policy.",
-  );
-
   const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
   assert.deepEqual(invocations, [
     "run build:release",
     "--filter @workspace/scripts run typecheck",
-    "run test:internal-request-control-outputs",
-    "run test:beauty-marketplace-typecheck",
-    "run test:frontend-generated-typecheck",
-    "run test:api-server-typecheck",
-    "run test:browser-specs-typecheck",
-    "run test:browser-fixtures",
-    "run test:bundle-budget",
-    "run test:frontend-standards",
-    "run test:seo-standards",
-    "run test:frontend-interactions",
   ]);
 
   const report = JSON.parse(
     await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
-  ) as { status?: string };
+  ) as {
+    status?: string;
+    phases?: Array<{ name?: string; durationSeconds?: number }>;
+  };
+
   assert.equal(report.status, "failed");
   assert.deepEqual(
     report.phases?.map((phase) => phase.name),
@@ -416,6 +404,8 @@ test("timed CI build preserves the build code when report writing also fails", a
   const scriptsDir = path.join(tempDir, "scripts");
   const reportDir = path.join(tempDir, "reports");
   const blockedSummaryPath = path.join(tempDir, "blocked-summary");
+
+  const fallbackReportDir = path.join(tempDir, "fallback-reports");
   const invocationLog = path.join(tempDir, "pnpm-invocations.log");
   const fakePnpmPath = path.join(binDir, "pnpm");
   const failureCode = 43;
@@ -443,8 +433,10 @@ exit 0
       ...process.env,
       PATH: `${binDir}:${process.env.PATH ?? ""}`,
       CI_TIMING_REPORT_DIR: reportDir,
+      CI_TIMING_REPORT_FALLBACK_DIR: fallbackReportDir,
       GITHUB_STEP_SUMMARY: blockedSummaryPath,
       FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
     },
   );
 
@@ -463,11 +455,28 @@ exit 0
   const report = JSON.parse(
     await readFile(path.join(reportDir, "build-timings.json"), "utf8"),
   ) as { status?: string };
-  assert.equal(
-    report.status,
-    "passed",
-    "The report must prove that the build itself passed before report persistence failed.",
+
+  const fallbackReport = JSON.parse(
+    await readFile(path.join(fallbackReportDir, "build-timings.json"), "utf8"),
+  ) as {
+    status?: string;
+    phases?: Array<{ name?: string; durationSeconds?: number }>;
+  };
+  assert.equal(report.status, "failed");
+  assert.equal(fallbackReport.status, "failed");
+  assert.deepEqual(
+    fallbackReport.phases?.map((phase) => phase.name),
+    ["build:release", "scripts:typecheck", "validate:ci:build:total"],
+    "The fallback JSON report must retain every phase from the failed build.",
   );
+
+  const fallbackSummary = await readFile(
+    path.join(fallbackReportDir, "build-summary.md"),
+    "utf8",
+  );
+  assert.match(fallbackSummary, /^### CI timing trend$/m);
+  assert.match(fallbackSummary, /\| scripts:typecheck \|/);
+  assert.match(fallbackSummary, /\| validate:ci:build:total \|/);
 });
 
 test("timed CI build fails when a successful JSON timing report cannot be written", async () => {
@@ -541,7 +550,9 @@ test("workflow syntax lint runs locally and in an independent database-free CI j
     readFile(workflowLintPath, "utf8"),
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ]);
-  const scripts = packageJson.scripts ?? {};
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
 
   assert.equal(
     scripts["test:github-workflows"],
@@ -618,7 +629,9 @@ test("branch CI isolates database checks and orders browser journeys after every
     readFile(path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh"), "utf8"),
     readFile(path.join(workspaceRoot, "scripts", "ci-build-timings.json"), "utf8"),
   ]);
-  const scripts = packageJson.scripts ?? {};
+  const scripts =
+    (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
+      .scripts ?? {};
 
   assert.equal(
     scripts["validate:ci:build"],
@@ -865,7 +878,7 @@ test("release validation phases preserve the full gate and print safe continuati
     await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ) as { scripts?: Record<string, string> };
   const scripts = packageJson.scripts ?? {};
-  const releaseCommand = rootScripts["validate:release"];
+  const releaseCommand = scripts["validate:release"];
 
   assert.ok(releaseCommand, "validate:release must be defined.");
   assert.match(
@@ -942,23 +955,19 @@ test("focused administrator browser inventory remains wired into the release gat
   const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
   const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
     scripts?: Record<string, string>;
-    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
+    focusedAdministratorBrowserGates?: FocusedAdministratorBrowserGateInventory;
   };
-  const packageScripts = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
-  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
-  const releaseCommand = rootScripts["validate:release"];
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
+  const inventory = parsedScriptsPackageJson.focusedAdministratorBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
   assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
   assert.ok(
     inventory,
-    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
+    "scripts/package.json must define focusedAdministratorBrowserGates as the authoritative release/local-only inventory.",
   );
 
-  validateFocusedEmployeeBrowserGateInventory(
+  validateFocusedAdministratorBrowserGateInventory(
     packageScripts,
     inventory,
     isolatedPhaseCommand,
@@ -975,10 +984,10 @@ test("focused administrator browser inventory remains wired into the release gat
   }
 });
 
-test("a new focused employee browser command must be released or explicitly local-only", () => {
-  const packageScripts = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
+test("a new focused salon-owner browser command must be released or explicitly local-only", () => {
+  const packageScripts: Record<string, string> = {
+    "test:owner-existing": "pnpm run playwright:checked -- browser/owner-existing.spec.ts",
+    "test:owner-new-regression": "pnpm run playwright:checked -- browser/owner-new-regression.spec.ts",
   };
 
   assert.throws(
@@ -1034,10 +1043,7 @@ test("focused employee browser inventory remains wired into the release gate", a
     scripts?: Record<string, string>;
     focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
   };
-  const packageScripts = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
+  const packageScripts = parsedScriptsPackageJson.scripts ?? {};
   const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
   const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
 
@@ -1065,96 +1071,7 @@ test("focused employee browser inventory remains wired into the release gate", a
 });
 
 test("a new focused employee browser command must be released or explicitly local-only", () => {
-  const packageScripts = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
-
-  assert.throws(
-    () =>
-      validateFocusedOwnerBrowserGateInventory(
-        packageScripts,
-        { release: ["test:owner-existing"], localOnly: [] },
-        "pnpm run test:owner-existing",
-      ),
-    (error: unknown) =>
-      error instanceof assert.AssertionError &&
-      error.message.startsWith(
-        "Every test:owner-* Playwright command must be classified in scripts/package.json focusedOwnerBrowserGates.release or .localOnly.",
-      ),
-  );
-
-  assert.throws(
-    () =>
-      validateFocusedOwnerBrowserGateInventory(
-        packageScripts,
-        {
-          release: ["test:owner-existing", "test:owner-new-regression"],
-          localOnly: [],
-        },
-        "pnpm run test:owner-existing",
-      ),
-    (error: unknown) =>
-      error instanceof assert.AssertionError &&
-      error.message.startsWith(
-        `${requiredIsolatedBrowserGatePhase} must invoke release-focused salon-owner browser command test:owner-new-regression.`,
-      ),
-  );
-
-  assert.doesNotThrow(() =>
-    validateFocusedOwnerBrowserGateInventory(
-      packageScripts,
-      {
-        release: ["test:owner-existing"],
-        localOnly: ["test:owner-new-regression"],
-      },
-      "pnpm run test:owner-existing",
-    )
-  );
-});
-
-test("focused employee browser inventory remains wired into the release gate", async () => {
-  const [rootPackageJson, scriptsPackageJson] = await Promise.all([
-    readFile(path.join(workspaceRoot, "package.json"), "utf8"),
-    readFile(path.join(workspaceRoot, "scripts", "package.json"), "utf8"),
-  ]);
-  const rootScripts = (JSON.parse(rootPackageJson) as { scripts?: Record<string, string> }).scripts ?? {};
-  const parsedScriptsPackageJson = JSON.parse(scriptsPackageJson) as {
-    scripts?: Record<string, string>;
-    focusedEmployeeBrowserGates?: FocusedEmployeeBrowserGateInventory;
-  };
-  const packageScripts = {
-    "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
-    "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
-  };
-  const inventory = parsedScriptsPackageJson.focusedEmployeeBrowserGates;
-  const isolatedPhaseCommand = rootScripts[requiredIsolatedBrowserGatePhase];
-
-  assert.ok(isolatedPhaseCommand, `${requiredIsolatedBrowserGatePhase} must be defined.`);
-  assert.ok(
-    inventory,
-    "scripts/package.json must define focusedEmployeeBrowserGates as the authoritative release/local-only inventory for focused employee browser commands.",
-  );
-
-  validateFocusedEmployeeBrowserGateInventory(
-    packageScripts,
-    inventory,
-    isolatedPhaseCommand,
-  );
-
-  for (const scriptName of inventory.release ?? []) {
-    assert.ok(rootScripts[scriptName], `Root script ${scriptName} must be defined.`);
-    assert.match(
-      rootScripts[scriptName],
-      new RegExp(`(?:^| )run ${scriptName}(?: |$)`),
-      `Root script ${scriptName} must delegate to the scripts package.`,
-    );
-    assert.ok(packageScripts[scriptName], `Scripts package command ${scriptName} must be defined.`);
-  }
-});
-
-test("a new focused employee browser command must be released or explicitly local-only", () => {
-  const packageScripts = {
+  const packageScripts: Record<string, string> = {
     "test:employee-existing": "pnpm run playwright:checked -- browser/employee-existing.spec.ts",
     "test:employee-new-regression": "pnpm run playwright:checked -- browser/employee-new-regression.spec.ts",
   };
