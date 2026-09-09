@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { and, eq, inArray } from "drizzle-orm";
+import { GetSalonResponse } from "@workspace/api-zod";
 import {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
@@ -17,6 +18,7 @@ import {
   employeeTimeOffTable,
   employeesTable,
   mediaAssetsTable,
+  mediaVariantsTable,
   packagePurchaseServiceLinksTable,
   packageRedemptionsTable,
   pool,
@@ -277,6 +279,40 @@ async function run(): Promise<void> {
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
 
+    const managedSalonImageAssetId = randomUUID();
+    const managedSalonImageHash = "b".repeat(64);
+    const managedSalonImageUrl = `/api/media/${managedSalonImageAssetId}?v=fixture-version`;
+    const managedSalonSocialImage = {
+      url: `/api/media/${managedSalonImageAssetId}?v=${managedSalonImageHash.slice(0, 16)}&size=large&format=fallback`,
+      width: 1600,
+      height: 900,
+      type: "image/png" as const,
+    };
+    await db.insert(mediaAssetsTable).values({
+      id: managedSalonImageAssetId,
+      ownerUserId: owner!.id,
+      scope: "salon-profile",
+      resourceId: salon!.id,
+      visibility: "public",
+      originalFileName: "managed-salon-social-image.png",
+      originalContentType: "image/png",
+      width: 2400,
+      height: 1350,
+      contentHash: managedSalonImageHash,
+      testCleanupKey: suffix,
+    });
+    await db.insert(mediaVariantsTable).values({
+      assetId: managedSalonImageAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${managedSalonImageAssetId}/large.png`,
+      contentType: managedSalonSocialImage.type,
+      width: managedSalonSocialImage.width,
+      height: managedSalonSocialImage.height,
+      byteSize: 123,
+      etag: `"${managedSalonImageAssetId}"`,
+    });
+
     const [service] = await db.insert(servicesTable).values({
       salonId: salon!.id,
       categoryName: "Test",
@@ -489,25 +525,60 @@ async function run(): Promise<void> {
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
     assert.equal((await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: salon!.id })).status, 200);
 
-    const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
-    assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
-    const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
-    for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
-      assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
+    const originalSalonImages = { imageUrl: salon!.imageUrl, gallery: salon!.gallery };
+    const originalForeignSalonImages = { imageUrl: foreignSalon!.imageUrl, gallery: foreignSalon!.gallery };
+    const externalSalonImageUrl = "https://legacy.example.test/salon-social-image.jpg";
+    try {
+      await db.update(salonsTable).set({
+        imageUrl: managedSalonImageUrl,
+        gallery: [managedSalonImageUrl],
+      }).where(eq(salonsTable.id, salon!.id));
+      await db.update(salonsTable).set({
+        imageUrl: externalSalonImageUrl,
+        gallery: [],
+      }).where(eq(salonsTable.id, foreignSalon!.id));
+
+      const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
+      assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
+      const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
+      const parsedPublicProfile = GetSalonResponse.parse(publicProfile);
+      assert.deepEqual(
+        parsedPublicProfile.socialImage,
+        managedSalonSocialImage,
+        "a managed salon gallery image must expose exact large fallback social metadata",
+      );
+      for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
+        assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
+      }
+      assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
+      assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
+      assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
+      const publicStaff = publicProfile.staff;
+      assert.ok(Array.isArray(publicStaff), "public salon profiles must include their active staff");
+      const publicEmployee = publicStaff.find((item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null && item.id === employee!.id,
+      );
+      assert.equal(
+        publicEmployee?.canOrderIndependently,
+        false,
+        "public salon profiles must normalize an employee's omitted purchasing permission to the database default",
+      );
+
+      const externalProfileResponse = await fetch(`${baseUrl}/api/salons/${foreignSalon!.slug}`);
+      assert.equal(externalProfileResponse.status, 200, "a public salon with a legacy external image must remain discoverable");
+      const externalProfile = GetSalonResponse.parse(await externalProfileResponse.json());
+      assert.deepEqual(
+        externalProfile.socialImage,
+        { url: externalSalonImageUrl },
+        "a legacy external salon image must not claim managed dimensions or content type",
+      );
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "width"));
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "height"));
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "type"));
+    } finally {
+      await db.update(salonsTable).set(originalSalonImages).where(eq(salonsTable.id, salon!.id));
+      await db.update(salonsTable).set(originalForeignSalonImages).where(eq(salonsTable.id, foreignSalon!.id));
     }
-    assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
-    assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
-    assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
-    const publicStaff = publicProfile.staff;
-    assert.ok(Array.isArray(publicStaff), "public salon profiles must include their active staff");
-    const publicEmployee = publicStaff.find((item): item is Record<string, unknown> =>
-      typeof item === "object" && item !== null && item.id === employee!.id,
-    );
-    assert.equal(
-      publicEmployee?.canOrderIndependently,
-      false,
-      "public salon profiles must normalize an employee's omitted purchasing permission to the database default",
-    );
 
     const publicSalonCards = await getPublicSalonCards(baseUrl, "city=Beograd");
     const publicFixtureCard = publicSalonCards.find((item) => item.id === salon!.id) as Record<string, unknown> | undefined;

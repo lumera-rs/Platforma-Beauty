@@ -11,6 +11,8 @@ import {
   b2cRecentlyViewedProductsTable,
   type DatabasePoolClient,
   loyaltyPointLedgerTable,
+  mediaAssetsTable,
+  mediaVariantsTable,
   orderBundleComponentsTable,
   orderItemsTable,
   orderStatusHistoryTable,
@@ -37,7 +39,10 @@ import { ensureShippingConfigSchema } from "./shipping-config";
 import { claimRecentlyViewedForUser } from "../routes/b2c-discovery";
 import {
   CreateShopApprovalRequestResponse,
+  GetPublicProductResponse,
+  GetPublicSupplierResponse,
   GetShopApprovalRequestResponse,
+  GetSupplierPublicProductResponse,
   ListMyShopApprovalRequestsResponseItem,
   ListShopApprovalRequestsResponseItem,
   RejectShopApprovalRequestResponse,
@@ -61,6 +66,9 @@ const productIds: string[] = [];
 const orderIds: string[] = [];
 const bundleIds: string[] = [];
 const supplierIds: string[] = [];
+const supplierLogoAssetId = randomUUID();
+const productImageAssetId = randomUUID();
+const mediaAssetIds = [supplierLogoAssetId, productImageAssetId];
 let adminId = "";
 let ownerId = "";
 let salonId = "";
@@ -284,6 +292,56 @@ test.before(async () => {
   ];
   productIds.push(...products.map((product) => product.id));
 
+  await db.insert(mediaAssetsTable).values([
+    {
+      id: supplierLogoAssetId,
+      ownerUserId: adminId,
+      scope: "supplier-logo",
+      resourceId: supplierA.id,
+      visibility: "public",
+      originalFileName: "supplier-logo.png",
+      originalContentType: "image/png",
+      width: 1800,
+      height: 1200,
+      contentHash: "1".repeat(64),
+    },
+    {
+      id: productImageAssetId,
+      ownerUserId: adminId,
+      scope: "product-image",
+      resourceId: orderedProduct.id,
+      visibility: "public",
+      originalFileName: "ordered-product.jpg",
+      originalContentType: "image/jpeg",
+      width: 2400,
+      height: 1600,
+      contentHash: "2".repeat(64),
+    },
+  ]);
+  await db.insert(mediaVariantsTable).values([
+    {
+      assetId: supplierLogoAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${supplierLogoAssetId}/large.png`,
+      contentType: "image/png",
+      width: 1200,
+      height: 800,
+      byteSize: 12_345,
+      etag: `"${supplierLogoAssetId}"`,
+    },
+    {
+      assetId: productImageAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${productImageAssetId}/large.jpg`,
+      contentType: "image/jpeg",
+      width: 1920,
+      height: 1280,
+      byteSize: 23_456,
+      etag: `"${productImageAssetId}"`,
+    },
+  ]);
   adminCookie = `${sessionCookieName}=${await createSession(adminId)}`;
   ownerCookie = `${sessionCookieName}=${await createSession(ownerId)}`;
   server = app.listen(0, "127.0.0.1");
@@ -332,6 +390,7 @@ test.after(async () => {
     if (productIds.length) await db.delete(productsTable).where(inArray(productsTable.id, productIds));
     if (categoryIds.length) await db.delete(productCategoriesTable).where(inArray(productCategoriesTable.id, categoryIds));
     if (supplierIds.length) await db.delete(suppliersTable).where(inArray(suppliersTable.id, supplierIds));
+    if (mediaAssetIds.length) await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, mediaAssetIds));
     if (adminId || ownerId) await db.delete(usersTable).where(inArray(usersTable.id, [adminId, ownerId].filter(Boolean)));
     if (settingsBefore) {
       await db.update(shopSettingsTable).set(settingsBefore).where(eq(shopSettingsTable.id, settingsBefore.id));
@@ -406,6 +465,94 @@ test("supplier B2B products require authentication and public products expose on
   assert.deepEqual(publicVariants.map((variant) => variant.value), ["secret"]);
   assert.equal(Object.hasOwn(publicVariants[0]!, "stock"), false, "public variant leaked stock");
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
+});
+
+test("public supplier and retail product details expose managed social image metadata and keep legacy URLs unverified", async () => {
+  try {
+    await Promise.all([
+      db.update(suppliersTable).set({
+        logoUrl: `/api/media/${supplierLogoAssetId}?v=stale`,
+      }).where(eq(suppliersTable.id, supplierA.id)),
+      db.update(productsTable).set({
+        imageUrl: `/api/media/${productImageAssetId}?v=stale`,
+      }).where(eq(productsTable.id, orderedProduct.id)),
+      db.update(suppliersTable).set({
+        logoUrl: "https://legacy.example.test/supplier-logo.jpg",
+      }).where(eq(suppliersTable.id, supplierB.id)),
+      db.update(productsTable).set({
+        imageUrl: "https://legacy.example.test/product-image.jpg",
+      }).where(eq(productsTable.id, b2cProduct.id)),
+    ]);
+
+    const managedSupplierResponse = await api(`/suppliers/${supplierA.slug}`);
+    assert.equal(managedSupplierResponse.status, 200, await managedSupplierResponse.clone().text());
+    const managedSupplier = GetPublicSupplierResponse.parse(await managedSupplierResponse.json());
+    assert.deepEqual(managedSupplier.socialImage, {
+      url: `/api/media/${supplierLogoAssetId}?v=${"1".repeat(16)}&size=large&format=fallback`,
+      width: 1200,
+      height: 800,
+      type: "image/png",
+    });
+
+    const managedSupplierProductResponse = await api(
+      `/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`,
+    );
+    assert.equal(managedSupplierProductResponse.status, 200, await managedSupplierProductResponse.clone().text());
+    const managedSupplierProduct = GetSupplierPublicProductResponse.parse(
+      await managedSupplierProductResponse.json(),
+    );
+    assert.deepEqual(managedSupplierProduct.socialImage, {
+      url: `/api/media/${productImageAssetId}?v=${"2".repeat(16)}&size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/jpeg",
+    });
+
+    const managedRetailProductResponse = await api(`/shop/public/products/${orderedProduct.id}`);
+    assert.equal(managedRetailProductResponse.status, 200, await managedRetailProductResponse.clone().text());
+    const managedRetailProduct = GetPublicProductResponse.parse(await managedRetailProductResponse.json());
+    assert.deepEqual(managedRetailProduct.socialImage, managedSupplierProduct.socialImage);
+
+    const legacySupplierResponse = await api(`/suppliers/${supplierB.slug}`);
+    assert.equal(legacySupplierResponse.status, 200, await legacySupplierResponse.clone().text());
+    const legacySupplier = GetPublicSupplierResponse.parse(await legacySupplierResponse.json());
+    assert.deepEqual(legacySupplier.socialImage, {
+      url: "https://legacy.example.test/supplier-logo.jpg",
+    });
+
+    const legacySupplierProductResponse = await api(
+      `/suppliers/${supplierB.slug}/public-products/${b2cProduct.id}`,
+    );
+    assert.equal(legacySupplierProductResponse.status, 200, await legacySupplierProductResponse.clone().text());
+    const legacySupplierProduct = GetSupplierPublicProductResponse.parse(
+      await legacySupplierProductResponse.json(),
+    );
+    assert.deepEqual(legacySupplierProduct.socialImage, {
+      url: "https://legacy.example.test/product-image.jpg",
+    });
+
+    const legacyRetailProductResponse = await api(`/shop/public/products/${b2cProduct.id}`);
+    assert.equal(legacyRetailProductResponse.status, 200, await legacyRetailProductResponse.clone().text());
+    const legacyRetailProduct = GetPublicProductResponse.parse(await legacyRetailProductResponse.json());
+    assert.deepEqual(legacyRetailProduct.socialImage, legacySupplierProduct.socialImage);
+    for (const socialImage of [
+      legacySupplier.socialImage,
+      legacySupplierProduct.socialImage,
+      legacyRetailProduct.socialImage,
+    ]) {
+      assert.ok(socialImage);
+      assert.equal(Object.hasOwn(socialImage, "width"), false);
+      assert.equal(Object.hasOwn(socialImage, "height"), false);
+      assert.equal(Object.hasOwn(socialImage, "type"), false);
+    }
+  } finally {
+    await Promise.all([
+      db.update(suppliersTable).set({ logoUrl: supplierA.logoUrl }).where(eq(suppliersTable.id, supplierA.id)),
+      db.update(productsTable).set({ imageUrl: orderedProduct.imageUrl }).where(eq(productsTable.id, orderedProduct.id)),
+      db.update(suppliersTable).set({ logoUrl: supplierB.logoUrl }).where(eq(suppliersTable.id, supplierB.id)),
+      db.update(productsTable).set({ imageUrl: b2cProduct.imageUrl }).where(eq(productsTable.id, b2cProduct.id)),
+    ]);
+  }
 });
 
 test("public detail is passive and explicit recent recording is idempotent and merge-capped", async () => {

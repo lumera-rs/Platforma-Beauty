@@ -20,6 +20,7 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { createHash, randomBytes } from "node:crypto";
 import { activeProductSale, activeProductSalePriceSql } from "../lib/active-product-sale";
+import { publicSocialImage } from "./image-media";
 
 const router = Router();
 const SORTS = ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "BEST_RATED", "MOST_POPULAR"] as const;
@@ -166,7 +167,10 @@ router.get("/suppliers", async (_req, res) => {
 router.get("/suppliers/:supplierSlug", async (req, res, next) => {
   const supplier = await activeB2cSupplier(req.params.supplierSlug!);
   if (!supplier) { next(); return; }
-  res.json(supplier);
+  res.json({
+    ...supplier,
+    socialImage: await publicSocialImage(supplier.logoUrl),
+  });
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res) => {
   const supplier = await activeB2cSupplier(req.params.supplierSlug!);
@@ -646,6 +650,7 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
     ? relationIds.map((id) => byId.get(id)).filter((item): item is typeof relatedRows[number] => Boolean(item))
     : relatedRows;
   res.json({ ...publicBase(product), ingredients: product.ingredients, usageInstructions: product.usageInstructions,
+    socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
     productType: productType[0] ?? null, needTags, relatedProducts: related.slice(0, 8).map((item) => {
       const view = publicBase(item);
       return {

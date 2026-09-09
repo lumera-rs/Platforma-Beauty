@@ -9,8 +9,9 @@ import {
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
   educationCentersTable, educationFinancialAuditLogTable, educationTrialClaimsTable, employeeLocationAssignmentsTable,
   employeeLocationSchedulesTable, employeeSchedulesTable, employeeServicesTable, employeesTable,
-  pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
+  mediaAssetsTable, mediaVariantsTable, pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
+import { GetBeautyJobResponse } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
@@ -154,6 +155,60 @@ async function run(): Promise<void> {
     server = app.listen(0);
     await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const socialImageAssetId = randomUUID();
+    const socialImageHash = suffix.replaceAll("-", "").repeat(2);
+    await db.insert(mediaAssetsTable).values({
+      id: socialImageAssetId,
+      ownerUserId: customer.user.id,
+      scope: "salon-profile",
+      visibility: "public",
+      originalFileName: "beauty-job-social.png",
+      originalContentType: "image/png",
+      width: 2400,
+      height: 1600,
+      contentHash: socialImageHash,
+      testCleanupKey: suffix,
+    });
+    await db.insert(mediaVariantsTable).values({
+      assetId: socialImageAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${socialImageAssetId}/large.png`,
+      contentType: "image/png",
+      width: 1920,
+      height: 1280,
+      byteSize: 123,
+      etag: `"${socialImageAssetId}"`,
+    });
+    await db.update(beautyJobListingsTable)
+      .set({ photos: [`/api/media/${socialImageAssetId}`] })
+      .where(eq(beautyJobListingsTable.id, publicListing.id));
+    const managedSocialResult = await request(base, `/beauty-jobs/${publicListing.id}`);
+    assert.equal(managedSocialResult.status, 200);
+    const managedSocialListing = GetBeautyJobResponse.parse(managedSocialResult.body);
+    assert.deepEqual(managedSocialListing.socialImage, {
+      url: `/api/media/${socialImageAssetId}?v=${socialImageHash.slice(0, 16)}&size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/png",
+    }, "managed Beauty Poslovi photos expose the large fallback metadata");
+
+    const legacySocialUrl = "https://legacy.example.test/beauty-job-cover.jpg";
+    const legacySocialListing = await insertApproved(
+      hairCategory.id,
+      customer.user.id,
+      `Legacy social image ${suffix}`,
+      { photos: [legacySocialUrl] },
+    );
+    const legacySocialResult = await request(base, `/beauty-jobs/${legacySocialListing.id}`);
+    assert.equal(legacySocialResult.status, 200);
+    const legacySocialResponse = GetBeautyJobResponse.parse(legacySocialResult.body);
+    assert.deepEqual(
+      legacySocialResponse.socialImage,
+      { url: legacySocialUrl },
+      "external Beauty Poslovi photos remain URL-only without invented metadata",
+    );
 
     const invalidEducationEmail = `invalid-center-${suffix}@example.test`;
     const invalidEducationRegistration = await request(base, "/auth/business-register", undefined, "POST", {
@@ -1420,6 +1475,7 @@ async function run(): Promise<void> {
       await db.delete(beautyJobModerationAuditTable).where(inArray(beautyJobModerationAuditTable.listingId, createdListingIds));
       await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
     }
+    await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.testCleanupKey, suffix));
     if (monitorAlertEventKeys.length) {
       await db.delete(emailDeliveriesTable).where(inArray(emailDeliveriesTable.eventKey, monitorAlertEventKeys));
     }
