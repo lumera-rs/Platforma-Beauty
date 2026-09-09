@@ -8,7 +8,7 @@ import {
   shouldRetryBeautyJobDetail,
 } from '@/lib/beauty-job-detail-query';
 
-type SeoPayload = {
+export type SeoPayload = {
   title: string;
   description: string;
   image?: string;
@@ -16,11 +16,26 @@ type SeoPayload = {
   canonicalPath?: string;
 };
 
+export type SeoHeadMetadata = {
+  title: string;
+  description: string;
+  canonical: string;
+  robots: 'index, follow' | 'noindex, follow';
+  image: string;
+};
+
 const APP_NAME = 'LUMERA';
 const defaultDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function clip(value: string, limit = 158): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length <= limit
+    ? normalized
+    : `${normalized.slice(0, limit - 1).trimEnd()}…`;
 }
 
 function isPublicRetailSupplier(value: any): boolean {
@@ -75,28 +90,38 @@ function setMeta(selector: string, attribute: 'name' | 'property', key: string, 
   node.content = content;
 }
 
-function applySeo(pathname: string, payload: SeoPayload) {
-  const origin = window.location.origin;
+export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string): SeoHeadMetadata {
   const cleanPathname = pathname !== '/' ? pathname.replace(/\/+$/, '') : pathname;
   const canonical = `${origin}${payload.canonicalPath ?? cleanPathname}`;
   const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.svg`;
-  document.title = payload.title;
-  setMeta('meta[name="description"]', 'name', 'description', payload.description);
-  setMeta('meta[name="robots"]', 'name', 'robots', payload.indexable ? 'index, follow' : 'noindex, follow');
-  setMeta('meta[property="og:title"]', 'property', 'og:title', payload.title);
-  setMeta('meta[property="og:description"]', 'property', 'og:description', payload.description);
-  setMeta('meta[property="og:url"]', 'property', 'og:url', canonical);
-  setMeta('meta[property="og:image"]', 'property', 'og:image', image);
-  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', payload.title);
-  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', payload.description);
-  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', image);
+  return {
+    title: clip(payload.title, 60),
+    description: clip(payload.description),
+    canonical,
+    robots: payload.indexable ? 'index, follow' : 'noindex, follow',
+    image,
+  };
+}
+
+function applySeo(pathname: string, payload: SeoPayload) {
+  const metadata = seoHeadMetadata(pathname, payload, window.location.origin);
+  document.title = metadata.title;
+  setMeta('meta[name="description"]', 'name', 'description', metadata.description);
+  setMeta('meta[name="robots"]', 'name', 'robots', metadata.robots);
+  setMeta('meta[property="og:title"]', 'property', 'og:title', metadata.title);
+  setMeta('meta[property="og:description"]', 'property', 'og:description', metadata.description);
+  setMeta('meta[property="og:url"]', 'property', 'og:url', metadata.canonical);
+  setMeta('meta[property="og:image"]', 'property', 'og:image', metadata.image);
+  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', metadata.title);
+  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', metadata.description);
+  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', metadata.image);
   let link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!link) {
     link = document.createElement('link');
     link.rel = 'canonical';
     document.head.append(link);
   }
-  link.href = canonical;
+  link.href = metadata.canonical;
 }
 
 export function withQueryIndexability(payload: SeoPayload, searchString: string): SeoPayload {
@@ -288,6 +313,26 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
   return null;
 }
 
+export async function resolvePostMountSeo(
+  pathname: string,
+  searchString: string,
+  queryClient: QueryClient,
+): Promise<SeoPayload> {
+  let payload = staticMetadata(pathname);
+  if (!payload) {
+    try {
+      payload = await dynamicMetadata(pathname, queryClient);
+    } catch {
+      payload = null;
+    }
+  }
+  return withQueryIndexability(payload ?? {
+    title: `${APP_NAME} | Privatna stranica`,
+    description: defaultDescription,
+    indexable: false,
+  }, searchString);
+}
+
 export function ClientSeoMetadata() {
   const [pathname] = useLocation();
   const searchString = useSearch();
@@ -295,17 +340,8 @@ export function ClientSeoMetadata() {
 
   useEffect(() => {
     let cancelled = false;
-    const fallback = staticMetadata(pathname);
-    if (fallback) {
-      applySeo(pathname, withQueryIndexability(fallback, searchString));
-      return;
-    }
-    void dynamicMetadata(pathname, queryClient).then((payload) => {
-      if (!cancelled) applySeo(pathname, payload ? withQueryIndexability(payload, searchString) : {
-        title: `${APP_NAME} | Privatna stranica`,
-        description: defaultDescription,
-        indexable: false,
-      });
+    void resolvePostMountSeo(pathname, searchString, queryClient).then((payload) => {
+      if (!cancelled) applySeo(pathname, payload);
     }).catch(() => {
       if (!cancelled) applySeo(pathname, {
         title: `${APP_NAME} | Privatna stranica`,

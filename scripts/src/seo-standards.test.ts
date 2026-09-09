@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relativePath: string) =>
@@ -13,6 +14,49 @@ const app = read(appPath);
 const server = read(serverPath);
 const indexHtml = read(indexPath);
 const clientMetadata = read("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx");
+
+process.env.NODE_ENV = "test";
+type SeoPayload = {
+  title: string;
+  description: string;
+  image?: string;
+  indexable: boolean;
+  canonicalPath?: string;
+};
+type SeoQueryClient = {
+  getQueryData: () => undefined;
+  getQueryState: () => undefined;
+  fetchQuery: <T>(options: { queryFn: () => Promise<T> }) => Promise<T>;
+};
+type SeoHeadMetadata = {
+  title: string;
+  description: string;
+  canonical: string;
+  robots: string;
+  image: string;
+};
+const moduleUrl = (relativePath: string) =>
+  pathToFileURL(path.join(root, relativePath)).href;
+const { createSeoResponse } = await import(moduleUrl(serverPath)) as {
+  createSeoResponse: (
+    request: { url: string; headers: Record<string, string> },
+    template: string,
+  ) => Promise<{ status: number; body: string }>;
+};
+const { resolvePostMountSeo, seoHeadMetadata } = await import(
+  moduleUrl("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx")
+) as {
+  resolvePostMountSeo: (
+    pathname: string,
+    searchString: string,
+    queryClient: SeoQueryClient,
+  ) => Promise<SeoPayload>;
+  seoHeadMetadata: (
+    pathname: string,
+    payload: SeoPayload,
+    origin: string,
+  ) => SeoHeadMetadata;
+};
 
 type ReactRoute = { pattern: string; source: string };
 
@@ -139,11 +183,353 @@ for (const route of publicRoutes) {
     `${appPath} public route ${route.pattern} needs matching rendering in ${serverPath}`,
   );
 }
-assert.match(
-  clientMetadata,
-  /taxonomyMatch\s*=\s*pathname\.match\(\/\^\\\/edukacije\\\/sekcije/u,
-  "client metadata must preserve indexable education taxonomy routes after React mounts",
+
+type DynamicRouteContract = {
+  pattern: string;
+  pathname: string;
+  missingPathname: string;
+};
+
+const courseId = "11111111-1111-4111-8111-111111111111";
+const dynamicRouteContracts: DynamicRouteContract[] = [
+  {
+    pattern: "/saloni/kategorija/:categorySlug",
+    pathname: "/saloni/kategorija/frizerski-saloni",
+    missingPathname: "/saloni/kategorija/nepostojeca-kategorija",
+  },
+  {
+    pattern: "/saloni/:slug",
+    pathname: "/saloni/glow-studio",
+    missingPathname: "/saloni/nepostojeci-salon",
+  },
+  {
+    pattern: "/poslovi/:slug/:listingId",
+    pathname: "/poslovi/frizer/glow-job",
+    missingPathname: "/poslovi/nepostojeci/nepostojeci-oglas",
+  },
+  {
+    pattern: "/shop/:supplierSlug/proizvod/:productId",
+    pathname: "/shop/glow-supply/proizvod/glow-product",
+    missingPathname: "/shop/glow-supply/proizvod/nepostojeci-proizvod",
+  },
+  {
+    pattern: "/shop/:supplierSlug",
+    pathname: "/shop/glow-supply",
+    missingPathname: "/shop/nepostojeci-dobavljac",
+  },
+  {
+    pattern: "/shop/:supplierSlug/*",
+    pathname: "/shop/glow-supply/nega-lica",
+    missingPathname: "/shop/glow-supply/nepostojeca-kategorija",
+  },
+  {
+    pattern: "/edukacije/instruktori/:instructorId",
+    pathname: "/edukacije/instruktori/glow-instructor",
+    missingPathname: "/edukacije/instruktori/nepostojeci-instruktor",
+  },
+  {
+    pattern: "/edukacije/sekcije/:sectionSlug/:categorySlug/:subcategorySlug",
+    pathname: "/edukacije/sekcije/nega/lice/hidratacija",
+    missingPathname: "/edukacije/sekcije/nega/lice/nepostojeca-tehnika",
+  },
+  {
+    pattern: "/edukacije/sekcije/:sectionSlug/:categorySlug",
+    pathname: "/edukacije/sekcije/nega/lice",
+    missingPathname: "/edukacije/sekcije/nega/nepostojeca-kategorija",
+  },
+  {
+    pattern: "/edukacije/sekcije/:sectionSlug",
+    pathname: "/edukacije/sekcije/nega",
+    missingPathname: "/edukacije/sekcije/nepostojeca-sekcija",
+  },
+  {
+    pattern: "/edukacije/centri/:centerId",
+    pathname: "/edukacije/centri/glow-center",
+    missingPathname: "/edukacije/centri/nepostojeci-centar",
+  },
+  {
+    pattern: "/edukacije/paketi/:bundleId",
+    pathname: "/edukacije/paketi/glow-bundle",
+    missingPathname: "/edukacije/paketi/nepostojeci-paket",
+  },
+  {
+    pattern: "/edukacije/:courseId",
+    pathname: `/edukacije/${courseId}`,
+    missingPathname: "/edukacije/22222222-2222-4222-8222-222222222222",
+  },
+];
+
+const publicDynamicPatterns = publicRoutes
+  .filter(({ pattern }) => pattern.includes(":") || pattern.includes("*"))
+  .map(({ pattern }) => pattern)
+  .sort();
+assert.deepEqual(
+  dynamicRouteContracts.map(({ pattern }) => pattern).sort(),
+  publicDynamicPatterns,
+  "every public dynamic React route must have an SSR/client metadata contract fixture",
 );
+
+const supplier = {
+  id: "glow-supplier",
+  slug: "glow-supply",
+  name: "Glow Supply",
+  description: "Profesionalni proizvodi za negu.",
+  active: true,
+  scope: "B2C",
+  logoUrl: "/glow-supply.jpg",
+};
+const product = {
+  id: "glow-product",
+  supplierId: supplier.id,
+  name: "Glow serum za intenzivnu hidrataciju i profesionalnu svakodnevnu negu lica",
+  description: "Profesionalni serum za svakodnevnu negu lica koji pruža intenzivnu hidrataciju, podržava prirodnu zaštitnu barijeru kože i ostavlja kožu glatkom, mekom i blistavom tokom celog dana.",
+  price: 2400,
+  category: "Nega lica",
+  images: ["/glow-serum.jpg"],
+};
+const salon = {
+  id: "glow-salon",
+  slug: "glow-studio",
+  name: "Glow Studio",
+  city: "Beograd",
+  description: "Salon za negu lica i kose.",
+  gallery: ["/glow-studio.jpg"],
+  services: [],
+};
+const beautyJob = {
+  id: "glow-job",
+  slug: "frizer",
+  title: "Frizer",
+  description: "Tražimo iskusnog frizera.",
+  type: "job",
+  intent: "offering",
+  city: "Beograd",
+  region: "Beograd",
+  authorDisplayName: "Glow Studio",
+  photos: ["/glow-job.jpg"],
+};
+const course = {
+  id: courseId,
+  title: "Napredna nega lica",
+  description: "Praktičan kurs profesionalne nege lica.",
+  publisher: "Glow Akademija",
+  imageUrl: "/glow-course.jpg",
+  learningOutcomes: [],
+};
+const taxonomy = [{
+  id: "section-nega",
+  slug: "nega",
+  name: "Nega",
+  categories: [{
+    id: "category-lice",
+    slug: "lice",
+    name: "Nega lica",
+    subcategories: [{
+      id: "subcategory-hidratacija",
+      slug: "hidratacija",
+      name: "Hidratacija",
+    }],
+  }],
+}];
+const category = {
+  id: "category-nega-lica",
+  path: "nega-lica",
+  name: "Nega lica",
+  active: true,
+};
+const center = {
+  id: "glow-center",
+  name: "Glow Akademija",
+  description: "Centar za profesionalne beauty edukacije.",
+  imageUrl: "/glow-center.jpg",
+  courses: [],
+};
+const bundle = {
+  id: "glow-bundle",
+  name: "Glow paket",
+  description: "Paket kurseva za profesionalnu negu.",
+  price: 12000,
+  courses: [],
+};
+const instructor = {
+  id: "glow-instructor",
+  name: "Ana Glow",
+  biography: "Instruktorka profesionalne nege lica.",
+  photoUrl: "/ana-glow.jpg",
+  courses: [],
+};
+
+function responseJson(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (input) => {
+  const rawUrl = typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
+  const url = new URL(rawUrl, "https://seo-contract.test");
+  const requestPath = `${url.pathname}${url.search}`;
+
+  if (requestPath.startsWith("/api/salons?")) return responseJson([salon]);
+  if (url.pathname === `/api/salons/${salon.slug}`) return responseJson(salon);
+  if (url.pathname === `/api/beauty-jobs/${beautyJob.id}`) return responseJson(beautyJob);
+  if (url.pathname === `/api/suppliers/${supplier.slug}/public-products/${product.id}`) {
+    return responseJson(product);
+  }
+  if (url.pathname === `/api/suppliers/${supplier.slug}/public-products`) {
+    return responseJson({ items: [product] });
+  }
+  if (url.pathname === `/api/suppliers/${supplier.slug}/categories`) {
+    return responseJson([category]);
+  }
+  if (url.pathname === `/api/suppliers/${supplier.slug}`) return responseJson(supplier);
+  if (url.pathname === "/api/education/public/taxonomy") return responseJson(taxonomy);
+  if (url.pathname === `/api/education/public/courses/${course.id}`) return responseJson(course);
+  if (url.pathname === "/api/education/public/courses") return responseJson([course]);
+  if (url.pathname === `/api/education/bundles/${bundle.id}`) return responseJson(bundle);
+  if (url.pathname === `/api/education/public/centers/${center.id}`) return responseJson(center);
+  if (url.pathname === `/api/education/instructors/${instructor.id}/public`) {
+    return responseJson(instructor);
+  }
+  return responseJson({ message: "Not found" }, 404);
+};
+
+type ComparableSeoHead = {
+  title: string;
+  description: string;
+  canonical: string | null;
+  robots: string;
+};
+
+function htmlAttribute(html: string, pattern: RegExp, label: string): string {
+  const value = html.match(pattern)?.[1];
+  assert.ok(value, `SSR document must contain ${label}`);
+  return value;
+}
+
+function ssrHead(html: string): ComparableSeoHead {
+  return {
+    title: htmlAttribute(html, /<title>([^<]*)<\/title>/u, "a title"),
+    description: htmlAttribute(
+      html,
+      /<meta name="description" content="([^"]*)">/u,
+      "a description",
+    ),
+    canonical: html.match(/<link rel="canonical" href="([^"]*)">/u)?.[1] ?? null,
+    robots: htmlAttribute(
+      html,
+      /<meta name="robots" content="([^"]*)">/u,
+      "a robots directive",
+    ),
+  };
+}
+
+const seoOrigin = "https://lumera.example";
+const htmlTemplate = `<!doctype html><html><head>
+  <title>Default</title>
+  <meta name="description" content="Default">
+  <meta name="robots" content="noindex, follow">
+  <link rel="canonical" href="${seoOrigin}/">
+</head><body><div id="root"></div></body></html>`;
+
+async function serverMetadata(pathname: string): Promise<{
+  status: number;
+  head: ComparableSeoHead;
+}> {
+  const response = await createSeoResponse({
+    url: pathname,
+    headers: {
+      host: "lumera.example",
+      "x-forwarded-host": "lumera.example",
+      "x-forwarded-proto": "https",
+    },
+  }, htmlTemplate);
+  return { status: response.status, head: ssrHead(response.body) };
+}
+
+async function clientMetadataAfterMount(
+  pathname: string,
+  searchString = "",
+): Promise<ComparableSeoHead> {
+  const queryClient: SeoQueryClient = {
+    getQueryData: () => undefined,
+    getQueryState: () => undefined,
+    fetchQuery: async <T>({ queryFn }: { queryFn: () => Promise<T> }) => queryFn(),
+  };
+  const payload = await resolvePostMountSeo(pathname, searchString, queryClient);
+  const head = seoHeadMetadata(pathname, payload, seoOrigin);
+  return {
+    title: head.title,
+    description: head.description,
+    canonical: head.canonical,
+    robots: head.robots,
+  };
+}
+
+try {
+  for (const contract of dynamicRouteContracts) {
+    const serverResult = await serverMetadata(contract.pathname);
+    assert.equal(
+      serverResult.status,
+      200,
+      `${contract.pattern} valid fixture must server-render`,
+    );
+    assert.deepEqual(
+      await clientMetadataAfterMount(contract.pathname),
+      serverResult.head,
+      `${contract.pattern} must preserve SSR title, description, canonical, and robots after mount`,
+    );
+
+    const queryResult = await serverMetadata(`${contract.pathname}?seo-contract=1`);
+    assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
+    assert.equal(
+      queryResult.head.robots,
+      "noindex, follow",
+      `${contract.pattern} query variant must remain noindex`,
+    );
+    assert.equal(
+      queryResult.head.canonical,
+      `${seoOrigin}${contract.pathname}`,
+      `${contract.pattern} query canonical must omit the query string`,
+    );
+    const clientQueryHead = await clientMetadataAfterMount(contract.pathname, "seo-contract=1");
+    assert.equal(
+      clientQueryHead.robots,
+      "noindex, follow",
+      `${contract.pattern} query variant must remain noindex after mount`,
+    );
+    assert.equal(
+      clientQueryHead.canonical,
+      `${seoOrigin}${contract.pathname}`,
+      `${contract.pattern} client query canonical must omit the query string`,
+    );
+
+    const missingServerResult = await serverMetadata(contract.missingPathname);
+    assert.equal(
+      missingServerResult.status,
+      404,
+      `${contract.pattern} missing fixture must use the not-found response`,
+    );
+    assert.equal(
+      missingServerResult.head.robots,
+      "noindex, follow",
+      `${contract.pattern} missing fixture must remain noindex in SSR`,
+    );
+    assert.equal(
+      (await clientMetadataAfterMount(contract.missingPathname)).robots,
+      "noindex, follow",
+      `${contract.pattern} missing fixture must remain noindex after mount`,
+    );
+  }
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 assert.match(server, /function makeMeta\([^)]*title,\s*description/u);
 assert.match(server, /title:\s*clip\(title/u, "indexable metadata must retain a useful title");
