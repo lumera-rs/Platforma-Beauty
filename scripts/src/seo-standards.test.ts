@@ -553,7 +553,7 @@ type ComparableSeoHead = {
     imageAlt: string | null;
     imageWidth?: number;
     imageHeight?: number;
-    imageType: string | null;
+    imageType?: string | null;
   };
   twitter: {
     title: string | null;
