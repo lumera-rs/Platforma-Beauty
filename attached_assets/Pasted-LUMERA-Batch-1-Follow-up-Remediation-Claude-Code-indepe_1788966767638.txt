@@ -1,0 +1,244 @@
+LUMERA — Batch 1 Follow-up Remediation
+
+Claude Code independently reviewed Production Readiness Batch 1.
+
+Overall verdict:
+CONDITIONAL PASS
+
+The following original findings are VERIFIED and must NOT be
+reimplemented or unnecessarily changed:
+
+- F1 — VERIFIED FIX
+- F2 — VERIFIED FIX
+- A-6 — VERIFIED FIX
+
+A-2 is PARTIALLY FIXED.
+
+For this task fix ONLY the remaining Batch 1 issues described below.
+
+Do not begin Batch 2.
+Do not fix the independent Education B2B schema problem in this task.
+Do not perform unrelated refactoring.
+
+LUMERA remains Serbia-only.
+Keep +381 normalization and RSD behavior.
+
+==================================================
+1. A-2a — EMPTY NORMALIZED PHONE REGRESSION
+==================================================
+
+Claude confirmed that the new generated phone lookup implementation
+maps NULL/empty/digit-free phone values to an empty string.
+
+POST /salon/appointments currently calls:
+
+normalizedPhone(parsed.data.guest!.phone)
+
+and then findSalonCustomerByPhone(...)
+
+without rejecting an empty normalized value.
+
+This can cause a digit-free placeholder phone to match an arbitrary
+phoneless CRM contact and potentially attach/reassign appointments
+to the wrong customer.
+
+This is a confirmed Batch 1 regression.
+
+Required behavior:
+
+- An empty normalized phone must NEVER be used for contact matching.
+- Digit-free input must not match an existing phoneless contact.
+- Preserve existing Serbia +381 behavior.
+- Preserve valid contact-linking semantics.
+- Preserve tenant isolation.
+
+Use the same central validation behavior consistently across all
+relevant booking/contact entry points.
+
+Prefer making invalid/digit-free phone input fail validation with an
+appropriate 4xx response rather than silently linking it.
+
+Also inspect whether the generated lookup expression should return
+NULL rather than '' for a phone that contains no digits.
+
+If the generated column is removed as part of item 2 below, ensure
+the replacement expression has equivalent safe NULL semantics.
+
+Regression test required:
+
+Create at least one existing phoneless CRM contact.
+
+Submit a booking with a digit-free/invalid guest phone.
+
+Prove that:
+- it does not match the phoneless contact
+- it does not mutate that contact
+- it does not reassign its appointments
+- the request is rejected appropriately
+
+Also preserve tests for valid:
+- local Serbian phone
+- +381
+- 00381
+
+==================================================
+2. REMOVE THE PRODUCTION TABLE-REWRITE RISK
+==================================================
+
+Claude confirmed a P1 production rollout risk:
+
+ADD COLUMN ... GENERATED ALWAYS AS (...) STORED
+
+on salon_customers can force a full table rewrite while holding
+ACCESS EXCLUSIVE.
+
+This currently occurs from API-startup schema bootstrap without
+lock_timeout or statement_timeout.
+
+Do NOT accept this production rollout risk merely because it was fast
+on the development database.
+
+Before modifying anything, inspect whether phone_lookup_normalized
+is used anywhere except lookup/index predicates.
+
+If Claude's observation is correct that the generated column is only
+needed for indexed lookup, redesign this using the safest approach
+that avoids a full-table rewrite.
+
+Strongly prefer an expression-index based solution if it provides the
+same bounded lookup semantics without requiring the stored generated
+column.
+
+Requirements:
+
+- no salon_customers full-table scan returns
+- no table-rewriting generated-column migration is required
+- lookup remains indexable
+- valid +381/00381/local Serbian normalization remains equivalent
+- empty/NULL phones cannot match
+- tenant isolation remains intact
+- existing data does not need dangerous synchronous rewrite at API
+  startup
+
+Do not introduce a second normalization implementation whose semantics
+can silently diverge from normalizedPhone().
+
+If an expression index is used, prove that the actual SQL predicate
+matches the indexed expression.
+
+Also evaluate whether the two Batch 1 indexes remain necessary after
+this redesign. Do not keep redundant indexes without justification.
+
+==================================================
+3. WIRE THE NEW REGRESSION TESTS INTO CI/RELEASE
+==================================================
+
+Claude confirmed these two tests currently pass manually but are not
+referenced by package.json or any release/CI gate:
+
+owner-reset-password-session-revocation.test.ts
+phone-contact-sql-bounds.test.ts
+
+This repository does not automatically discover test files.
+
+Wire both tests into the appropriate existing regression/release
+chain so they execute automatically.
+
+Do not create a parallel testing system.
+
+Follow the existing package.json/release-chain conventions.
+
+Verify that failure of either test would cause the relevant CI/release
+gate to fail.
+
+==================================================
+4. REVIEW CANCELLATION EMAIL SCOPE WIDENING
+==================================================
+
+Do not change F2 unless necessary.
+
+Claude observed that moving sendAppointmentEmails into the shared
+cancelAppointmentInTx means cancellation emails are now enqueued for
+owner, employee, group and series cancellation paths, whereas
+previously the customer route was the explicit caller.
+
+Inspect the intended business behavior.
+
+If all cancellation paths are supposed to notify affected customers,
+keep the new behavior and document/test it.
+
+If any internal cancellation path is intentionally silent, preserve
+that intended behavior without weakening F2's transactional-outbox
+guarantee.
+
+Do not guess. Determine intended behavior from surrounding production
+logic and existing notification semantics.
+
+==================================================
+5. STARTUP DDL SAFETY
+==================================================
+
+Do not attempt to solve the repository-wide migration architecture
+(A-5) in this task.
+
+However, ensure that THIS Batch 1 follow-up no longer introduces a
+table-rewriting DDL operation on salon_customers during API startup.
+
+Report separately whether lock_timeout / statement_timeout should be
+addressed later as part of A-5 rather than adding an isolated
+inconsistent workaround now.
+
+==================================================
+TEST REQUIREMENTS
+==================================================
+
+Run:
+
+pnpm run typecheck
+pnpm run test:appointment-regressions
+pnpm run test:tenant-isolation
+pnpm run test:customer-password-setup
+pnpm run test:change-password-session-revocation
+pnpm run test:query-counts
+pnpm run test:query-budgets
+
+Run the newly wired:
+- F1 session revocation regression
+- A-2 bounded SQL regression
+- new empty/digit-free phone regression
+
+Also verify A-6 regression coverage remains green.
+
+Do not weaken existing tests to make them pass.
+
+Do not fix:
+education-b2b-checkout-idempotency
+
+in this task.
+
+It is an independent release blocker and will receive its own
+remediation task.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Report:
+
+1. Exact root cause of A-2a.
+2. Exact fix.
+3. Whether phone_lookup_normalized generated column was removed.
+4. Final index design and justification.
+5. Why the new design avoids a production table rewrite.
+6. How NULL/empty/digit-free phone values behave.
+7. Confirmation that valid Serbian phone behavior remains unchanged.
+8. Where F1 and A-2 tests were wired into CI/release.
+9. Result of cancellation-email scope review.
+10. All files changed.
+11. All tests run and exact results.
+12. Any remaining production rollout risk.
+13. Current HEAD SHA and git status.
+
+Do not begin another remediation batch.
+
+Stop after the report.
