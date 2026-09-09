@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "warningMultiplier": 1.5,
+  "warningMinimumIncreaseSeconds": 30,
+  "baselinesSeconds": {
+    "build:release": 85,
+    "scripts:typecheck": 25,
+    "validate:ci:build:total": 270
+  }
+}

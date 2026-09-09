@@ -51,6 +51,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run build and database-free publish checks
         run: env -u DATABASE_URL pnpm run validate:ci:build
+      - name: Upload build timing history
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-timings-${{ github.run_attempt }}
+          path: ci-timings/build-timings.json
+          if-no-files-found: warn
+          retention-days: 90
 
   database:
     name: Database checks (isolated PostgreSQL)

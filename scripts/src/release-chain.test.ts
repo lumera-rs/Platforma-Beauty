@@ -350,9 +350,11 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
 });
 
 test("branch CI isolates database checks and orders browser journeys after every prerequisite", async () => {
-  const [workflow, packageJsonSource] = await Promise.all([
+  const [workflow, packageJsonSource, buildTimingScript, timingBaselinesSource] = await Promise.all([
     readFile(branchCiPath, "utf8"),
     readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh"), "utf8"),
+    readFile(path.join(workspaceRoot, "scripts", "ci-build-timings.json"), "utf8"),
   ]);
   const scripts =
     (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
@@ -360,16 +362,49 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build:release && pnpm --filter @workspace/scripts run typecheck && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions",
-    "The build CI command must preserve every genuinely database-free phase-one publish check.",
+    "export CI=true && bash scripts/run-ci-build-with-timings.sh",
+    "The build CI command must delegate to the timing-aware, fail-fast build runner.",
   );
+  const expectedBuildSteps = [
+    'run_phase "build:release" pnpm run build:release',
+    'run_phase "scripts:typecheck" pnpm --filter @workspace/scripts run typecheck',
+    'run_phase "internal-request-control-outputs" pnpm run test:internal-request-control-outputs',
+    'run_phase "beauty-marketplace-typecheck" pnpm run test:beauty-marketplace-typecheck',
+    'run_phase "frontend-generated-typecheck" pnpm run test:frontend-generated-typecheck',
+    'run_phase "api-server-typecheck" pnpm run test:api-server-typecheck',
+    'run_phase "browser-specs-typecheck" pnpm run test:browser-specs-typecheck',
+    'run_phase "browser-fixtures" pnpm run test:browser-fixtures',
+    'run_phase "bundle-budget" pnpm run test:bundle-budget',
+    'run_phase "frontend-standards" pnpm run test:frontend-standards',
+    'run_phase "seo-standards" pnpm run test:seo-standards',
+    'run_phase "frontend-interactions" pnpm run test:frontend-interactions',
+  ];
+  let previousBuildStepIndex = -1;
+  for (const expectedStep of expectedBuildSteps) {
+    const stepIndex = buildTimingScript.indexOf(expectedStep);
+    assert.ok(stepIndex > previousBuildStepIndex, `${expectedStep} must remain present and ordered.`);
+    previousBuildStepIndex = stepIndex;
+  }
   assert.equal(
-    scripts["validate:ci:build"]?.match(
-      /pnpm --filter @workspace\/scripts run typecheck/g,
-    )?.length,
+    buildTimingScript.match(/pnpm --filter @workspace\/scripts run typecheck/g)?.length,
     1,
-    "The build CI command must run the explicit scripts typecheck exactly once.",
+    "The timed build runner must run the explicit scripts typecheck exactly once.",
   );
+  assert.match(buildTimingScript, /^set -euo pipefail$/m);
+  assert.match(buildTimingScript, /trap 'status="failed"; write_report "\$status"' ERR/);
+  assert.match(buildTimingScript, /significantSlowdown/);
+  assert.match(buildTimingScript, /Timing warnings are informational and never change the validation result/);
+
+  const timingBaselines = JSON.parse(timingBaselinesSource) as {
+    baselinesSeconds?: Record<string, number>;
+    warningMultiplier?: number;
+    warningMinimumIncreaseSeconds?: number;
+  };
+  assert.ok((timingBaselines.baselinesSeconds?.["build:release"] ?? 0) > 0);
+  assert.ok((timingBaselines.baselinesSeconds?.["scripts:typecheck"] ?? 0) > 0);
+  assert.ok((timingBaselines.baselinesSeconds?.["validate:ci:build:total"] ?? 0) > 0);
+  assert.ok((timingBaselines.warningMultiplier ?? 0) > 1);
+  assert.ok((timingBaselines.warningMinimumIncreaseSeconds ?? 0) > 0);
   assert.equal(
     scripts["validate:ci:database"],
     "export CI=true && pnpm run test:monitoring && pnpm run test:backend-standards:static && pnpm run validate:release:2-backend && pnpm run validate:release:3-api",
@@ -391,6 +426,11 @@ test("branch CI isolates database checks and orders browser journeys after every
     /run: env -u DATABASE_URL pnpm run validate:ci:build/,
     "Build and static checks must run without database access.",
   );
+  assert.match(buildJob, /name: Upload build timing history/);
+  assert.match(buildJob, /if: \$\{\{ always\(\) \}\}/);
+  assert.match(buildJob, /name: build-timings-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(buildJob, /path: ci-timings\/build-timings\.json/);
+  assert.match(buildJob, /retention-days: 90/);
   assert.doesNotMatch(buildJob, /\$\{\{\s*secrets\./);
 
   const databaseJob = workflow.slice(
