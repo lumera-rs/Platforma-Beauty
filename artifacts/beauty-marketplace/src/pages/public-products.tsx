@@ -38,6 +38,7 @@ import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from "@/components/ui/sheet";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -1093,6 +1094,7 @@ export function PublicProductDetailPage() {
   const adding = addRetailCartItem.isPending;
 
   const gallery = product ? [product.imageUrl, ...(product.images || []).filter((image) => image !== product.imageUrl)] : [];
+  const galleryDescriptions = useMediaDescriptions(gallery).data ?? {};
   const [activeThumbnail, setActiveThumbnail] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
@@ -1110,8 +1112,8 @@ export function PublicProductDetailPage() {
 
   const currentHeroImage = activeThumbnail || gallery[0];
   const currentHeroImageAlt = currentHeroImage === product.imageUrl
-    ? product.coverImageDescription?.trim() || product.name
-    : product.name;
+    ? galleryDescriptions[currentHeroImage]?.trim() || product.coverImageDescription?.trim() || product.name
+    : galleryDescriptions[currentHeroImage]?.trim() || product.name;
   const productDetail = product as any;
   const publicVariants = product.variants ?? [];
   const selectedVariant = publicVariants.find((variant) => variant.value === variantValue);
@@ -1152,7 +1154,7 @@ export function PublicProductDetailPage() {
                     className={`aspect-square rounded-xl overflow-hidden bg-muted border-2 transition-colors [&>picture]:contents ${activeThumbnail === img ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-primary/50"}`}
                     aria-label={`Slika ${i+1}`}
                   >
-                    <OptimizedImage src={img} alt={`Slika ${i+1}`} className="w-full h-full object-cover" />
+                    <OptimizedImage src={img} alt={galleryDescriptions[img]?.trim() || `${product.name} — fotografija ${i + 1}`} className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -1359,7 +1361,7 @@ export function PublicProductDetailPage() {
           <DialogContent className="max-w-[90vw] max-h-[90vh] p-1 bg-transparent border-none shadow-none flex items-center justify-center">
             <DialogTitle className="sr-only">Pregled slike</DialogTitle>
             <div className="relative w-full h-full flex items-center justify-center">
-              <img src={lightboxImage} alt={lightboxImage === product.imageUrl ? product.coverImageDescription?.trim() || product.name : product.name} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+              <img src={lightboxImage} alt={galleryDescriptions[lightboxImage]?.trim() || (lightboxImage === product.imageUrl ? product.coverImageDescription?.trim() : null) || product.name} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
               <Button
                 variant="secondary"
                 size="icon"

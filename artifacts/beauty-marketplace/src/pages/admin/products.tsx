@@ -62,6 +62,8 @@ import { uploadOptimizedImage, uploadDocument } from "@/lib/media-upload";
 import { FileText, Download } from "lucide-react";
 import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
+import { canonicalProductImageUrls, productImageDescriptionItems } from "@/lib/product-media";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -183,6 +185,8 @@ function ProductFormDialog({
   const { data: aftercareTreatments = [] } = useAdminListAftercareTreatments();
   const actionGuard = useImmediateActionGuard();
   const [newBrandName, setNewBrandName] = useState("");
+  const [imageDescriptions, setImageDescriptions] = useState<Record<string, string>>({});
+  const dirtyImageDescriptions = useRef(new Set<string>());
 
   const [form, setForm] = useState<AdminProductInput & { supplierId: string, market: "B2B" | "B2C" | "BOTH" }>(
     editing
@@ -240,6 +244,21 @@ function ProductFormDialog({
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
+  const galleryImageUrls = useMemo(
+    () => canonicalProductImageUrls(form.imageUrl, form.images),
+    [form.imageUrl, form.images],
+  );
+  const storedImageDescriptions = useMediaDescriptions(galleryImageUrls);
+  useEffect(() => {
+    if (!storedImageDescriptions.data) return;
+    setImageDescriptions((current) => Object.fromEntries(galleryImageUrls.map((url) => [
+      url,
+      dirtyImageDescriptions.current.has(url) ? current[url] ?? "" : storedImageDescriptions.data?.[url] ?? "",
+    ])));
+  }, [storedImageDescriptions.data, galleryImageUrls]);
+  useEffect(() => {
+    dirtyImageDescriptions.current.clear();
+  }, [editing?.id]);
   const [weightUnit, setWeightUnit] = useState<"g" | "kg">("g");
   // Raw string state so numeric inputs aren't clobbered while typing
   const [rawNums, setRawNums] = useState(() => ({
@@ -339,7 +358,7 @@ function ProductFormDialog({
   const variantStockTotal = (form.variants ?? []).reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
 
   const uploadImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, 12 - (form.images?.length ?? 0)));
+    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, 12 - galleryImageUrls.length));
     event.target.value = "";
     if (!files.length) return;
     setUploadingImages(true);
@@ -350,9 +369,13 @@ function ProductFormDialog({
         uploaded.push(asset.imageUrl);
       }
       setForm((current) => {
-        const images = [...(current.images ?? []), ...uploaded];
+        const images = canonicalProductImageUrls(current.imageUrl, [...(current.images ?? []), ...uploaded]);
         return { ...current, images, imageUrl: current.imageUrl || images[0] || "" };
       });
+      setImageDescriptions((current) => Object.fromEntries([
+        ...Object.entries(current),
+        ...uploaded.map((url) => [url, ""]),
+      ]));
       toast.success(files.length === 1 ? "Fotografija proizvoda je obrađena." : `${files.length} fotografije proizvoda su obrađene.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload fotografija nije uspeo.");
@@ -361,9 +384,9 @@ function ProductFormDialog({
     }
   };
 
-  const removeImage = (idx: number) => {
+  const removeImage = (url: string) => {
     setForm((f) => {
-      const images = (f.images ?? []).filter((_, i) => i !== idx);
+      const images = canonicalProductImageUrls(f.imageUrl, f.images).filter((candidate) => candidate !== url);
       return { ...f, images, imageUrl: f.imageUrl && images.includes(f.imageUrl) ? f.imageUrl : images[0] ?? "" };
     });
   };
@@ -414,8 +437,12 @@ function ProductFormDialog({
   };
 
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isPending) return;
+    if (galleryImageUrls.some((url) => url.startsWith("/api/media/")) && !storedImageDescriptions.data) {
+      toast.error("Sačekajte", { description: "Opisi fotografija se još učitavaju." });
+      return;
+    }
     const submittedRawNums = rawNumsRef.current;
     if (!form.supplierId) { toast.error("Greška", { description: "Dobavljač je obavezan." }); return; }
     if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
@@ -522,7 +549,8 @@ function ProductFormDialog({
       publicDiscountPrice: publicDiscountParsed.value,
       stock: variantInventoryMode === "per-variant" ? variantStockTotal : stockParsed.value,
       weightGrams,
-      images: form.images?.length ? form.images : [form.imageUrl],
+      images: galleryImageUrls,
+      imageDescriptions: productImageDescriptionItems(form.imageUrl, form.images, imageDescriptions),
       brand: form.brand?.trim() || null,
       similarProductsMode: form.similarProductsMode ?? "AUTO_CATEGORY",
       similarProductIds: form.similarProductsMode === "MANUAL" ? (form.similarProductIds ?? []) : [],
@@ -940,30 +968,36 @@ function ProductFormDialog({
             </div>
             <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
               <p className="text-sm text-muted-foreground">JPG, PNG, WEBP ili AVIF do 12 MB. Slike se automatski optimizuju.</p>
-              <Button asChild type="button" variant="secondary" disabled={uploadingImages || (form.images?.length ?? 0) >= 12}>
+              <Button asChild type="button" variant="secondary" disabled={uploadingImages || galleryImageUrls.length >= 12}>
                 <label className="cursor-pointer">
                   {uploadingImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
                   Dodaj fotografije
-                  <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingImages || (form.images?.length ?? 0) >= 12} onChange={(event) => void uploadImages(event)} />
+                  <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingImages || galleryImageUrls.length >= 12} onChange={(event) => void uploadImages(event)} />
                 </label>
               </Button>
             </div>
-            {(form.images ?? []).length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                {(form.images ?? []).map((url, idx) => (
-                  <div key={`${url}-${idx}`} className={`relative rounded-lg border-2 overflow-hidden group ${form.imageUrl === url ? "border-primary" : "border-transparent"}`}>
-                     <OptimizedImage src={url} alt={`Fotografija proizvoda ${idx + 1}`} width={320} height={320} preferredSize="thumbnail" responsiveSizes="160px" className="aspect-square object-cover w-full" />
+            {galleryImageUrls.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {galleryImageUrls.map((url, idx) => (
+                  <div key={url} className={`rounded-lg border-2 overflow-hidden group ${form.imageUrl === url ? "border-primary" : "border-transparent"}`}>
+                    <div className="relative">
+                     <OptimizedImage src={url} alt={imageDescriptions[url]?.trim() || `Fotografija proizvoda ${idx + 1}`} width={480} height={360} preferredSize="medium" responsiveSizes="320px" className="aspect-[4/3] object-cover w-full" />
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
                       <button type="button" onClick={() => setMainImage(url)} className="text-[10px] text-white flex items-center gap-1 hover:underline">
                         <Star className="w-3 h-3" /> Glavna
                       </button>
-                      <button type="button" onClick={() => removeImage(idx)} className="text-[10px] text-red-300 flex items-center gap-1 hover:underline">
+                       <button type="button" onClick={() => removeImage(url)} className="text-[10px] text-red-300 flex items-center gap-1 hover:underline">
                         <Trash2 className="w-3 h-3" /> Ukloni
                       </button>
                     </div>
                     {form.imageUrl === url && (
                       <Badge className="absolute top-1 left-1 text-[9px] px-1.5 py-0 bg-primary">Glavna</Badge>
                     )}
+                    </div>
+                    <div className="space-y-1 p-2">
+                      <Label htmlFor={`product-image-description-${idx}`} className="text-xs">Opis fotografije (opciono)</Label>
+                      <Input id={`product-image-description-${idx}`} maxLength={240} value={imageDescriptions[url] ?? ""} onChange={(event) => { dirtyImageDescriptions.current.add(url); setImageDescriptions((current) => ({ ...current, [url]: event.target.value })); }} placeholder="Šta se vidi na fotografiji" />
+                    </div>
                   </div>
                 ))}
               </div>

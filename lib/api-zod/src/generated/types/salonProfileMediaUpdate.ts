@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { MediaDescription } from './mediaDescription';
 
 export interface SalonProfileMediaUpdate {
   /** @nullable */
@@ -29,4 +30,6 @@ export interface SalonProfileMediaUpdate {
      * @items.minLength 1
      */
   gallery?: string[];
+  /** @maxItems 20 */
+  galleryDescriptions?: MediaDescription[];
 }

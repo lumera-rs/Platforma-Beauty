@@ -129,6 +129,13 @@ function managedImageAssetIds(value: unknown, ids = new Set<string>()): Set<stri
 
 type ImageAssetTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export class ImageAssetAttachmentError extends Error {
+  constructor() {
+    super("One or more managed image assets are not ready or do not belong to this user.");
+    this.name = "ImageAssetAttachmentError";
+  }
+}
+
 export async function attachReadyImageAssets(
   tx: ImageAssetTransaction,
   uploadedByUserId: string,
@@ -146,8 +153,36 @@ export async function attachReadyImageAssets(
     ))
     .returning({ id: imageAssetsTable.id });
   if (attached.length !== assetIds.length) {
-    throw new Error("One or more managed image assets are not ready or do not belong to this user.");
+    throw new ImageAssetAttachmentError();
   }
+}
+
+export async function updateImageAssetDescriptions(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  options: {
+    userId: string;
+    items: readonly { url: string; altText: string }[];
+    allowedUrls: readonly string[];
+    allowManager: boolean;
+  },
+): Promise<boolean> {
+  const allowedUrls = new Set(options.allowedUrls);
+  if (options.items.some((item) => !allowedUrls.has(item.url))) return false;
+  for (const item of options.items) {
+    const assetId = MANAGED_IMAGE_URL_PATTERN.exec(item.url)?.[1];
+    if (!assetId) return false;
+    const conditions = [
+      eq(imageAssetsTable.id, assetId),
+      eq(imageAssetsTable.status, "ready"),
+    ];
+    if (!options.allowManager) conditions.push(eq(imageAssetsTable.uploadedByUserId, options.userId));
+    const [updated] = await tx.update(imageAssetsTable)
+      .set({ altText: item.altText.trim() })
+      .where(and(...conditions))
+      .returning({ id: imageAssetsTable.id });
+    if (!updated) return false;
+  }
+  return true;
 }
 
 router.post("/media/uploads/request-url", async (req, res): Promise<void> => {

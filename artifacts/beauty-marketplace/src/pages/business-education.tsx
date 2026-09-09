@@ -1430,7 +1430,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       <p className="text-sm text-muted-foreground">Pogledajte prostor, materijal i atmosferu sa prethodnih obuka.</p>
                     </div>
                     <SalonGallery
-                      media={course.gallery.map((item) => ({ type: "image" as const, url: item.url }))}
+                      media={course.gallery.map((item) => ({ type: "image" as const, url: item.url, altText: item.altText }))}
                       salonName={course.title}
                     />
                   </section>

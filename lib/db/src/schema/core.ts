@@ -133,6 +133,7 @@ export const imageAssetsTable = pgTable("image_assets", {
   originalHeight: integer("original_height"),
   variants: jsonb("variants").$type<ImageAssetVariantSet>(),
   status: imageAssetStatusEnum("status").notNull().default("pending"),
+  altText: text("alt_text").notNull().default(""),
   failureReason: text("failure_reason"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

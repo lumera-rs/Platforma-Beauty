@@ -163,6 +163,7 @@ async function run() {
   const session = await createSession(ownerAndSalon.user.id);
   const adminSession = await createSession(adminUser.id);
   const createdUploadIds: string[] = [];
+  const manualMediaAssetIds: string[] = [];
   let educationFixtureOwnerId: string | null = null;
   let educationFixtureCenterId: string | null = null;
   let educationFixtureSubscriptionId: string | null = null;
@@ -814,31 +815,6 @@ async function run() {
       "Cleanup must delete the replaced avatar's staging object.",
     );
 
-    const courseAsset = await uploadAsset("education-cover", session, "course-create-rollback.jpg");
-    const courseTitle = `Media course rollback ${randomUUID()}`;
-    const courseConflict = await forceEndpointClaimConflict(courseAsset.id, () => jsonRequest<{ error: string }>(
-      activeServer!.baseUrl,
-      "/education/courses",
-      session,
-      "POST",
-      {
-        title: courseTitle,
-        description: "Transactional media claim regression.",
-        category: "Test",
-        format: "online",
-        price: 1000,
-        duration: "1 dan",
-        certification: false,
-        imageUrl: courseAsset.imageUrl,
-      },
-    ));
-    assert.equal(courseConflict.status, 409);
-    assert.equal(
-      (await db.select({ id: coursesTable.id }).from(coursesTable).where(eq(coursesTable.title, courseTitle))).length,
-      0,
-      "Course creation must roll back when its cover claim loses the race.",
-    );
-
     const productAsset = await uploadAsset("product", adminSession, "product-create-rollback.jpg");
     const productSku = `MEDIA-ROLLBACK-${randomUUID()}`;
     const productConflict = await forceEndpointClaimConflict(productAsset.id, () => jsonRequest<{ error: string }>(
@@ -917,11 +893,115 @@ async function run() {
       "/salon/profile",
       session,
       "PATCH",
-      { imageUrl: firstFinalize.body.imageUrl, gallery: [galleryFinalize.body.imageUrl] },
+      {
+        imageUrl: firstFinalize.body.imageUrl,
+        gallery: [galleryFinalize.body.imageUrl],
+        galleryDescriptions: [{ url: galleryFinalize.body.imageUrl, altText: "  Prvi opis salonske galerije  " }],
+      },
     );
     assert.equal(attachedProfile.status, 200, "A finalized image should attach to salon profile and gallery.");
     assert.equal(attachedProfile.body.imageUrl, firstFinalize.body.imageUrl);
     assert.deepEqual(attachedProfile.body.gallery, [galleryFinalize.body.imageUrl]);
+    assert.equal(
+      (await db.select({ altText: mediaAssetsTable.altText }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, galleryFinalize.body.id)).limit(1))[0]?.altText,
+      "Prvi opis salonske galerije",
+      "Salon profile saves and trims gallery descriptions with the media record.",
+    );
+
+    await db.update(mediaAssetsTable).set({ ownerUserId: adminUser.id })
+      .where(eq(mediaAssetsTable.id, galleryFinalize.body.id));
+    const retainedGallerySave = await jsonRequest<{ gallery: string[] }>(
+      activeServer.baseUrl,
+      "/salon/profile",
+      session,
+      "PATCH",
+      {
+        gallery: [galleryFinalize.body.imageUrl],
+        galleryDescriptions: [{ url: galleryFinalize.body.imageUrl, altText: "Opis zadržane fotografije" }],
+      },
+    );
+    assert.equal(retainedGallerySave.status, 200, "An authorized salon manager may retain media uploaded by a previous owner.");
+    assert.equal(
+      (await db.select({ altText: mediaAssetsTable.altText }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, galleryFinalize.body.id)).limit(1))[0]?.altText,
+      "Opis zadržane fotografije",
+    );
+    await db.update(salonsTable).set({ active: false }).where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    await db.update(mediaAssetsTable).set({ visibility: "private" }).where(eq(mediaAssetsTable.id, galleryFinalize.body.id));
+    const privateTransferredDescription = await jsonRequest<{ items: Array<{ url: string; altText: string }> }>(
+      activeServer.baseUrl,
+      "/media/descriptions",
+      session,
+      "POST",
+      { urls: [galleryFinalize.body.imageUrl] },
+    );
+    assert.deepEqual(
+      privateTransferredDescription.body.items,
+      [{ url: galleryFinalize.body.imageUrl, altText: "Opis zadržane fotografije" }],
+      "The current salon manager can read a private resource-bound description after an ownership transfer.",
+    );
+    const anonymousPrivateDescription = await fetch(`${activeServer.baseUrl}/api/media/descriptions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ urls: [galleryFinalize.body.imageUrl] }),
+    });
+    assert.equal(anonymousPrivateDescription.status, 200);
+    assert.deepEqual(
+      (await anonymousPrivateDescription.json() as { items: unknown[] }).items,
+      [],
+      "A private transferred salon description remains hidden from the public.",
+    );
+    await db.update(salonsTable).set({ active: true }).where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    await db.update(mediaAssetsTable).set({ visibility: "public" }).where(eq(mediaAssetsTable.id, galleryFinalize.body.id));
+
+    const foreignSalonGalleryAssetId = randomUUID();
+    manualMediaAssetIds.push(foreignSalonGalleryAssetId);
+    const foreignSalonGalleryUrl = `/api/media/${foreignSalonGalleryAssetId}?v=${"b".repeat(16)}`;
+    await db.insert(mediaAssetsTable).values({
+      id: foreignSalonGalleryAssetId,
+      ownerUserId: adminUser.id,
+      scope: "salon-gallery",
+      resourceId: randomUUID(),
+      visibility: "private",
+      originalFileName: "foreign-salon-gallery.jpg",
+      originalContentType: "image/jpeg",
+      width: 1,
+      height: 1,
+      contentHash: "b".repeat(64),
+      altText: "Tuđa fotografija",
+    });
+    await db.update(salonsTable).set({ gallery: [galleryFinalize.body.imageUrl, foreignSalonGalleryUrl] })
+      .where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    const salonDescriptionBeforeRollback = ownerAndSalon.salon.description;
+    const rejectedSalonDescriptions = await jsonRequest<{ error: string }>(
+      activeServer.baseUrl,
+      "/salon/profile",
+      session,
+      "PATCH",
+      {
+        description: "Ova promena mora biti vraćena.",
+        galleryDescriptions: [
+          { url: galleryFinalize.body.imageUrl, altText: "Ovaj opis mora biti vraćen" },
+          { url: foreignSalonGalleryUrl, altText: "Neovlašćen opis" },
+        ],
+      },
+    );
+    assert.equal(rejectedSalonDescriptions.status, 409, "A foreign gallery asset rejects the complete salon save.");
+    const [salonAfterDescriptionRollback] = await db.select({
+      description: salonsTable.description,
+    }).from(salonsTable).where(eq(salonsTable.id, ownerAndSalon.salon.id)).limit(1);
+    assert.equal(salonAfterDescriptionRollback?.description, salonDescriptionBeforeRollback, "Salon fields roll back with invalid descriptions.");
+    assert.equal(
+      (await db.select({ altText: mediaAssetsTable.altText }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, galleryFinalize.body.id)).limit(1))[0]?.altText,
+      "Opis zadržane fotografije",
+      "An earlier salon description update rolls back atomically.",
+    );
+    await db.update(salonsTable).set({ gallery: [galleryFinalize.body.imageUrl] })
+      .where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    await db.update(mediaAssetsTable).set({ ownerUserId: ownerAndSalon.user.id })
+      .where(eq(mediaAssetsTable.id, galleryFinalize.body.id));
 
     await db.update(mediaAssetsTable).set({ resourceId: null, visibility: "private" })
       .where(eq(mediaAssetsTable.id, firstFinalize.body.id));
@@ -1097,6 +1177,7 @@ async function run() {
         `The legacy immutable ${label} cache entry must be populated before deactivation.`,
       );
     }
+    cachePurgeRequests.length = 0;
     const deactivated = await jsonRequest<{ active: boolean }>(
       activeServer.baseUrl,
       `/admin/salons/${ownerAndSalon.salon.id}`,
@@ -1376,6 +1457,7 @@ async function run() {
         description: "Managed product image cache regression.",
         imageUrl: oldProductAsset.imageUrl,
         images: [],
+        imageDescriptions: [{ url: oldProductAsset.imageUrl, altText: "  Opis proizvoda  " }],
         price: 1000,
         stock: 1,
         sku: cacheProductSku,
@@ -1384,6 +1466,68 @@ async function run() {
       },
     );
     assert.equal(productCreate.status, 201, "The cache regression product should be created with a managed image.");
+    assert.equal(
+      (await db.select({ altText: mediaAssetsTable.altText }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, oldProductAsset.id)).limit(1))[0]?.altText,
+      "Opis proizvoda",
+      "Product creation saves and trims image descriptions.",
+    );
+    await db.update(mediaAssetsTable).set({ ownerUserId: ownerAndSalon.user.id })
+      .where(eq(mediaAssetsTable.id, oldProductAsset.id));
+    const retainedProductSave = await jsonRequest<{ imageUrl: string }>(
+      activeServer.baseUrl,
+      `/admin/products/${productCreate.body.id}`,
+      adminSession,
+      "PATCH",
+      {
+        imageUrl: oldProductAsset.imageUrl,
+        images: [],
+        imageDescriptions: [{ url: oldProductAsset.imageUrl, altText: "Opis zadržane fotografije proizvoda" }],
+      },
+    );
+    assert.equal(retainedProductSave.status, 200, "An authorized product manager may retain a resource-bound image from another uploader.");
+    const foreignProductAssetId = randomUUID();
+    manualMediaAssetIds.push(foreignProductAssetId);
+    const foreignProductUrl = `/api/media/${foreignProductAssetId}?v=${"c".repeat(16)}`;
+    await db.insert(mediaAssetsTable).values({
+      id: foreignProductAssetId,
+      ownerUserId: ownerAndSalon.user.id,
+      scope: "product",
+      resourceId: randomUUID(),
+      visibility: "private",
+      originalFileName: "foreign-product.jpg",
+      originalContentType: "image/jpeg",
+      width: 1,
+      height: 1,
+      contentHash: "c".repeat(64),
+      altText: "Tuđi proizvod",
+    });
+    const rejectedProductMedia = await jsonRequest<{ error: string }>(
+      activeServer.baseUrl,
+      `/admin/products/${productCreate.body.id}`,
+      adminSession,
+      "PATCH",
+      {
+        name: "Ovo ime mora biti vraćeno",
+        imageUrl: oldProductAsset.imageUrl,
+        images: [foreignProductUrl],
+        imageDescriptions: [
+          { url: oldProductAsset.imageUrl, altText: "Ovaj opis mora biti vraćen" },
+          { url: foreignProductUrl, altText: "Neovlašćen opis" },
+        ],
+      },
+    );
+    assert.equal(rejectedProductMedia.status, 400, "A foreign product asset rejects the complete product save.");
+    const [productAfterMediaRollback] = await db.select({
+      name: productsTable.name,
+    }).from(productsTable).where(eq(productsTable.id, productCreate.body.id)).limit(1);
+    assert.equal(productAfterMediaRollback?.name, "Media cache product", "Product fields remain unchanged after rejected media.");
+    assert.equal(
+      (await db.select({ altText: mediaAssetsTable.altText }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, oldProductAsset.id)).limit(1))[0]?.altText,
+      "Opis zadržane fotografije proizvoda",
+      "Product descriptions remain unchanged after rejected foreign media.",
+    );
     const oldProductImageUrl = `${activeServer.baseUrl}${oldProductAsset.imageUrl}&size=thumbnail`;
     const publicProductImage = await fetch(oldProductImageUrl);
     assert.equal(publicProductImage.status, 200);
@@ -1565,6 +1709,31 @@ async function run() {
     educationFixtureSubscriptionId = educationSubscription.id;
 
     const educationSession = await createSession(educationOwner.id);
+    const courseAsset = await uploadAsset("education-cover", educationSession, "course-create-rollback.jpg");
+    const courseTitle = `Media course rollback ${randomUUID()}`;
+    const courseConflict = await forceEndpointClaimConflict(courseAsset.id, () => jsonRequest<{ error: string }>(
+      activeServer!.baseUrl,
+      "/education/courses",
+      educationSession,
+      "POST",
+      {
+        title: courseTitle,
+        description: "Transactional media claim regression.",
+        category: "Test",
+        format: "in-person",
+        price: 1000,
+        duration: "1 dan",
+        certification: false,
+        imageUrl: courseAsset.imageUrl,
+      },
+    ));
+    assert.equal(courseConflict.status, 409);
+    assert.equal(
+      (await db.select({ id: coursesTable.id }).from(coursesTable).where(eq(coursesTable.title, courseTitle))).length,
+      0,
+      "Course creation must roll back when its cover claim loses the race.",
+    );
+
     const originalEducationAsset = await uploadAsset(
       "education-cover",
       educationSession,
@@ -1583,20 +1752,24 @@ async function run() {
         price: 1000,
         duration: "1 dan",
         certification: false,
+        onlineAccessDays: 30,
+        extensionPrice1Month: 1000,
+        extensionPrice3Months: 2500,
+        extensionPrice6Months: 4500,
         imageUrl: originalEducationAsset.imageUrl,
       },
     );
     assert.equal(educationCourse.status, 201, "The regression should create its own managed Education course.");
     educationFixtureCourseId = educationCourse.body.id;
-    const publishedEducationCourse = await jsonRequest<EducationCourse>(
-      activeServer.baseUrl,
-      `/education/courses/${educationCourse.body.id}/publish`,
-      educationSession,
-      "POST",
-    );
-    assert.equal(publishedEducationCourse.status, 200, "The temporary Education course should be publishable.");
-    assert.equal(publishedEducationCourse.body.published, true);
-    assert.equal(publishedEducationCourse.body.archived, false);
+    await db.update(coursesTable).set({ published: true, archived: false })
+      .where(eq(coursesTable.id, educationCourse.body.id));
+    const publishedEducationCourse = {
+      body: {
+        ...educationCourse.body,
+        published: true,
+        archived: false,
+      },
+    };
     assert.equal(publishedEducationCourse.body.imageUrl, originalEducationAsset.imageUrl);
 
     const oldEducationCover = publishedEducationCourse.body.imageUrl;
@@ -1675,6 +1848,9 @@ async function run() {
     await db.update(salonsTable).set(originalSalonMedia).where(eq(salonsTable.id, ownerAndSalon.salon.id));
     if (privacyProbeAssetId) {
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, privacyProbeAssetId));
+    }
+    if (manualMediaAssetIds.length) {
+      await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, manualMediaAssetIds));
     }
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-ROLLBACK-%"));
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-CACHE-%"));

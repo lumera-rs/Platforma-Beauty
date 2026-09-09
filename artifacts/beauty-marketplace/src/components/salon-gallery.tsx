@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronLeft, ChevronRight, Play, X, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OptimizedImage } from "@/components/optimized-image";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 
 export interface MediaItem {
   type: 'video' | 'image';
   url: string;
+  altText?: string;
 }
 
 interface SalonGalleryProps {
@@ -24,6 +26,7 @@ export function galleryImageAlt({
   coverImageUrl,
   coverImageDescription,
   variant,
+  altText,
 }: {
   mediaUrl: string;
   index: number;
@@ -31,7 +34,10 @@ export function galleryImageAlt({
   coverImageUrl?: string | null;
   coverImageDescription?: string | null;
   variant: GalleryImageVariant;
+  altText?: string | null;
 }) {
+  const galleryDescription = altText?.trim();
+  if (galleryDescription) return galleryDescription;
   const authoredDescription = coverImageDescription?.trim();
   if (authoredDescription && coverImageUrl && mediaUrl === coverImageUrl) {
     return authoredDescription;
@@ -47,6 +53,8 @@ export function SalonGallery({
   coverImageUrl,
   coverImageDescription,
 }: SalonGalleryProps) {
+  const imageUrls = media.filter((item) => item.type === "image").map((item) => item.url);
+  const descriptions = useMediaDescriptions(imageUrls).data ?? {};
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const lightboxRef = useRef<HTMLDivElement>(null);
@@ -151,7 +159,7 @@ export function SalonGallery({
                </div>
              </>
           ) : (
-              <OptimizedImage src={mainMedia.url} alt={galleryImageAlt({ mediaUrl: mainMedia.url, index: 0, salonName, coverImageUrl, coverImageDescription, variant: "main" })} width={1200} height={900} priority responsiveSizes="(max-width: 640px) 100vw, (max-width: 1024px) 55vw, 800px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+               <OptimizedImage src={mainMedia.url} alt={galleryImageAlt({ mediaUrl: mainMedia.url, index: 0, salonName, coverImageUrl, coverImageDescription, altText: mainMedia.altText ?? descriptions[mainMedia.url], variant: "main" })} width={1200} height={900} priority responsiveSizes="(max-width: 640px) 100vw, (max-width: 1024px) 55vw, 800px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
           )}
           <span className="absolute bottom-4 right-4 bg-black/60 text-white backdrop-blur-md p-2.5 flex items-center gap-2 rounded-lg text-sm font-medium border border-white/10">
             <Maximize2 className="w-4 h-4" />
@@ -176,7 +184,7 @@ export function SalonGallery({
                     </div>
                   </>
                 ) : (
-                  <OptimizedImage src={item.url} alt={galleryImageAlt({ mediaUrl: item.url, index: idx + 1, salonName, coverImageUrl, coverImageDescription, variant: "gallery" })} width={400} height={300} responsiveSizes="(max-width: 1024px) 0px, 200px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <OptimizedImage src={item.url} alt={galleryImageAlt({ mediaUrl: item.url, index: idx + 1, salonName, coverImageUrl, coverImageDescription, altText: item.altText ?? descriptions[item.url], variant: "gallery" })} width={400} height={300} responsiveSizes="(max-width: 1024px) 0px, 200px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                 )}
                 {idx === 1 && media.length > 3 && (
                   <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
@@ -220,7 +228,7 @@ export function SalonGallery({
                {media[currentIndex].type === 'video' ? (
                  <video src={media[currentIndex].url} controls autoPlay className="max-w-full max-h-[85vh] rounded-md shadow-2xl bg-black" />
                ) : (
-                  <OptimizedImage src={media[currentIndex].url} alt={galleryImageAlt({ mediaUrl: media[currentIndex].url, index: currentIndex, salonName, coverImageUrl, coverImageDescription, variant: "gallery" })} width={1600} height={1200} priority responsiveSizes="100vw" className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} />
+                   <OptimizedImage src={media[currentIndex].url} alt={galleryImageAlt({ mediaUrl: media[currentIndex].url, index: currentIndex, salonName, coverImageUrl, coverImageDescription, altText: media[currentIndex].altText ?? descriptions[media[currentIndex].url], variant: "gallery" })} width={1600} height={1200} priority responsiveSizes="100vw" className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} />
                )}
              </div>
 
@@ -253,7 +261,7 @@ export function SalonGallery({
                         </div>
                       </>
                     ) : (
-                      <OptimizedImage src={item.url} alt={galleryImageAlt({ mediaUrl: item.url, index: idx, salonName, coverImageUrl, coverImageDescription, variant: "thumbnail" })} width={80} height={80} preferredSize="thumbnail" responsiveSizes="80px" className="w-full h-full object-cover" />
+                      <OptimizedImage src={item.url} alt={galleryImageAlt({ mediaUrl: item.url, index: idx, salonName, coverImageUrl, coverImageDescription, altText: item.altText ?? descriptions[item.url], variant: "thumbnail" })} width={80} height={80} preferredSize="thumbnail" responsiveSizes="80px" className="w-full h-full object-cover" />
                     )}
                   </button>
                 ))}

@@ -1630,6 +1630,13 @@ export interface SalonProfileMedia {
   gallery: string[];
 }
 
+export interface MediaDescription {
+  /** @minLength 1 */
+  url: string;
+  /** @maxLength 240 */
+  altText: string;
+}
+
 export interface SalonProfileMediaUpdate {
   /** @nullable */
   videoUrl?: string | null;
@@ -1653,6 +1660,8 @@ export interface SalonProfileMediaUpdate {
      * @items.minLength 1
      */
   gallery?: string[];
+  /** @maxItems 20 */
+  galleryDescriptions?: MediaDescription[];
 }
 
 export type MediaUploadInputScope = typeof MediaUploadInputScope[keyof typeof MediaUploadInputScope];
@@ -1723,6 +1732,18 @@ export interface MediaAsset {
   /** @minimum 1 */
   height: number;
   contentHash: string;
+}
+
+export interface MediaDescriptionsRequest {
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     */
+  urls: string[];
+}
+
+export interface MediaDescriptionsResponse {
+  items: MediaDescription[];
 }
 
 export interface EmployeeDeactivationPreview {
@@ -10239,6 +10260,8 @@ export interface AdminProductInput {
      */
   coverImageDescription?: string | null;
   images?: string[];
+  /** @maxItems 20 */
+  imageDescriptions?: MediaDescription[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -10392,6 +10415,8 @@ export interface AdminProductUpdate {
      */
   coverImageDescription?: string | null;
   images?: string[];
+  /** @maxItems 20 */
+  imageDescriptions?: MediaDescription[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -12761,6 +12786,8 @@ export interface BeautyJobCreateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /** @maxItems 8 */
+  photoDescriptions?: MediaDescription[];
   /**
      * @maxLength 160
      * @nullable
@@ -12864,6 +12891,8 @@ export interface BeautyJobUpdateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /** @maxItems 8 */
+  photoDescriptions?: MediaDescription[];
   /**
      * @maxLength 160
      * @nullable
@@ -17233,7 +17262,6 @@ export type CreatePriceInquiry201 = {
   createdAt: string;
 };
 
-export type AdminListPriceInquiries200ItemStatus = typeof AdminListPriceInquiries200ItemStatus[keyof typeof AdminListPriceInquiries200ItemStatus];
 export type AdminListPriceInquiriesParams = {
 /**
  * Case-insensitive customer name, email, product, or supplier search.
@@ -17498,26 +17526,3 @@ export type AdminDeleteAutomaticXyPromotionParams = {
  */
 version: number;
 };
-
-export type AdminListPriceInquiries200Item = {
-  id: string;
-  supplierId: string;
-  productId: string;
-  productName: string;
-  supplierName: string;
-  contactName: string;
-  contactEmail: string;
-  contactPhone: string;
-  message: string;
-  status: AdminListPriceInquiries200ItemStatus;
-  /** @nullable */
-  internalNote: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export const AdminListPriceInquiries200ItemStatus = {
-  NEW: 'NEW',
-  CONTACTED: 'CONTACTED',
-  CLOSED: 'CLOSED',
-} as const;

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, CircleAlert, Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
+import { ArrowDown, ArrowUp, BadgeCheck, CircleAlert, Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { OwnerLocationWizard } from "@/components/owner-location-wizard";
@@ -15,6 +15,7 @@ import { MarketingEmailPreferences } from "@/components/marketing-email-preferen
 import { SafeExternalLink } from "@/components/safe-external-link";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
 import { trackEvent } from "@/lib/analytics";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 import { QRCodeSVG } from "qrcode.react";
 import {
   getGetManagedSalonProfileQueryKey,
@@ -41,6 +42,8 @@ export default function OwnerSalonProfile() {
   const [imageUrl, setImageUrl] = useState("");
   const [coverImageDescription, setCoverImageDescription] = useState("");
   const [gallery, setGallery] = useState<string[]>([]);
+  const [galleryDescriptions, setGalleryDescriptions] = useState<Record<string, string>>({});
+  const dirtyGalleryDescriptions = useRef(new Set<string>());
   const [uploading, setUploading] = useState<"profile" | "gallery" | null>(null);
   const [widgetColor, setWidgetColor] = useState("#9b6b54");
 
@@ -54,6 +57,14 @@ export default function OwnerSalonProfile() {
     setCoverImageDescription(salon?.coverImageDescription ?? "");
     setGallery(salon?.gallery ?? []);
   }, [salon]);
+  const storedGalleryDescriptions = useMediaDescriptions(gallery);
+  useEffect(() => {
+    if (!storedGalleryDescriptions.data) return;
+    setGalleryDescriptions((current) => Object.fromEntries(gallery.map((url) => [
+      url,
+      dirtyGalleryDescriptions.current.has(url) ? current[url] ?? "" : storedGalleryDescriptions.data?.[url] ?? "",
+    ])));
+  }, [storedGalleryDescriptions.data, gallery]);
 
   useEffect(() => {
     placements?.forEach((placement) => {
@@ -97,6 +108,10 @@ export default function OwnerSalonProfile() {
       const assets: FinalizedMediaAsset[] = [];
       for (const file of files) assets.push(await uploadOptimizedImage(file, "salon-gallery", salon?.id));
       setGallery((current) => [...current, ...assets.map((asset) => asset.imageUrl)].slice(0, 20));
+      setGalleryDescriptions((current) => Object.fromEntries([
+        ...Object.entries(current),
+        ...assets.map((asset) => [asset.imageUrl, ""]),
+      ]));
       toast.success(files.length === 1 ? "Fotografija je dodata u galeriju." : `${files.length} fotografije su dodate u galeriju.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload galerije nije uspeo.");
@@ -105,8 +120,12 @@ export default function OwnerSalonProfile() {
     }
   };
 
-  const save = (event: React.FormEvent) => {
+  const save = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (gallery.some((url) => url.startsWith("/api/media/")) && !storedGalleryDescriptions.data) {
+      toast.error("Sačekajte da se opisi fotografija učitaju.");
+      return;
+    }
     const nextVideoUrl = videoUrl.trim();
     if (nextVideoUrl && !/^https?:\/\//i.test(nextVideoUrl)) {
       toast.error("Unesite pun video URL koji počinje sa http:// ili https://.");
@@ -123,6 +142,7 @@ export default function OwnerSalonProfile() {
           imageUrl,
           coverImageDescription: coverImageDescription.trim() || null,
           gallery,
+          galleryDescriptions: gallery.map((url) => ({ url, altText: galleryDescriptions[url] ?? "" })),
         },
       },
       {
@@ -316,13 +336,21 @@ export default function OwnerSalonProfile() {
                       </Button>
                     </div>
                     {gallery.length ? (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         {gallery.map((url, index) => (
-                          <div className="group relative overflow-hidden rounded-lg border" key={`${url}-${index}`}>
-                            <OptimizedImage src={url} alt={`Fotografija ${index + 1} salona ${salon.name}`} width={480} height={360} responsiveSizes="(max-width: 640px) 50vw, 210px" preferredSize="medium" className="aspect-[4/3] w-full object-cover" />
-                            <Button type="button" size="icon" variant="destructive" className="absolute right-2 top-2 h-8 w-8 opacity-90" aria-label={`Ukloni fotografiju ${index + 1}`} onClick={() => setGallery((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <div className="overflow-hidden rounded-lg border" key={url}>
+                            <div className="relative">
+                              <OptimizedImage src={url} alt={galleryDescriptions[url]?.trim() || `Fotografija ${index + 1} salona ${salon.name}`} width={480} height={360} responsiveSizes="(max-width: 640px) 100vw, 320px" preferredSize="medium" className="aspect-[4/3] w-full object-cover" />
+                              <div className="absolute right-2 top-2 flex gap-1">
+                                <Button type="button" size="icon" variant="secondary" className="h-8 w-8" disabled={index === 0} aria-label={`Pomeri fotografiju ${index + 1} nagore`} onClick={() => setGallery((current) => current.map((item, itemIndex) => itemIndex === index ? current[index - 1]! : itemIndex === index - 1 ? url : item))}><ArrowUp className="h-4 w-4" /></Button>
+                                <Button type="button" size="icon" variant="secondary" className="h-8 w-8" disabled={index === gallery.length - 1} aria-label={`Pomeri fotografiju ${index + 1} nadole`} onClick={() => setGallery((current) => current.map((item, itemIndex) => itemIndex === index ? current[index + 1]! : itemIndex === index + 1 ? url : item))}><ArrowDown className="h-4 w-4" /></Button>
+                                <Button type="button" size="icon" variant="destructive" className="h-8 w-8" aria-label={`Ukloni fotografiju ${index + 1}`} onClick={() => setGallery((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            </div>
+                            <div className="space-y-1 p-3">
+                              <label htmlFor={`salon-gallery-description-${index}`} className="text-xs font-medium">Opis fotografije (opciono)</label>
+                              <Input id={`salon-gallery-description-${index}`} maxLength={240} value={galleryDescriptions[url] ?? ""} onChange={(event) => { dirtyGalleryDescriptions.current.add(url); setGalleryDescriptions((current) => ({ ...current, [url]: event.target.value })); }} placeholder="Kratko opišite šta se vidi" />
+                            </div>
                           </div>
                         ))}
                       </div>

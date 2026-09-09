@@ -1231,7 +1231,7 @@ export function EducationPublicCourseDetail() {
   };
   const gallery = useMemo(() => course ? [
     { type: "image" as const, url: course.imageUrl },
-    ...course.gallery.map((media) => ({ type: "image" as const, url: media.url })),
+    ...course.gallery.map((media) => ({ type: "image" as const, url: media.url, altText: media.altText })),
   ].filter((item, index, values) => values.findIndex((candidate) => candidate.url === item.url) === index) : [], [course]);
 
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;

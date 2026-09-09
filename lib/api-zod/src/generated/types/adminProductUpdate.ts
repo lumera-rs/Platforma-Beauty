@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminProductUpdateSimilarProductsMode } from './adminProductUpdateSimilarProductsMode';
+import type { MediaDescription } from './mediaDescription';
 import type { ProductCharacteristic } from './productCharacteristic';
 import type { ProductVariant } from './productVariant';
 import type { QuantityPricingTier } from './quantityPricingTier';
@@ -38,6 +39,8 @@ export interface AdminProductUpdate {
      */
   coverImageDescription?: string | null;
   images?: string[];
+  /** @maxItems 20 */
+  imageDescriptions?: MediaDescription[];
   /**
      * @minimum 0
      * @maximum 100000000

@@ -9,7 +9,7 @@ import {
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
   educationCentersTable, educationFinancialAuditLogTable, educationTrialClaimsTable, employeeLocationAssignmentsTable,
   employeeLocationSchedulesTable, employeeSchedulesTable, employeeServicesTable, employeesTable,
-  mediaAssetsTable, mediaVariantsTable, pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
+  imageAssetsTable, mediaAssetsTable, mediaVariantsTable, pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
 } from "@workspace/db";
 import { GetBeautyJobResponse } from "@workspace/api-zod";
 import app from "../app";
@@ -32,6 +32,7 @@ import type { SmsProvider } from "./sms";
 const suffix = randomUUID();
 const createdUsers: string[] = [];
 const createdListingIds: string[] = [];
+const createdImageAssetIds: string[] = [];
 let educationPlanId: string | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 
@@ -446,6 +447,116 @@ async function run(): Promise<void> {
     const jobseekerCreate = await request(base, "/beauty-jobs", jobseeker.token, "POST", body(hairCategory.id, `Jobseeker ${suffix}`));
     assert.equal(jobseekerCreate.status, 201, "JOBSEEKER may create an individual listing");
     createdListingIds.push(jobseekerCreate.body.id);
+    const ownedImageIds = [randomUUID(), randomUUID()];
+    const foreignImageId = randomUUID();
+    createdImageAssetIds.push(...ownedImageIds, foreignImageId);
+    await db.insert(imageAssetsTable).values([
+      ...ownedImageIds.map((id, index) => ({
+        id,
+        uploadedByUserId: jobseeker.user.id,
+        originalFilename: `gallery-${index + 1}.jpg`,
+        sourceContentType: "image/jpeg",
+        sourceSize: 123,
+        stagingObjectPath: `/test/beauty-job-gallery/${id}`,
+        status: "ready" as const,
+        altText: `Početni opis ${index + 1}`,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      })),
+      {
+        id: foreignImageId,
+        uploadedByUserId: otherJobseeker.user.id,
+        originalFilename: "foreign-gallery.jpg",
+        sourceContentType: "image/jpeg",
+        sourceSize: 123,
+        stagingObjectPath: `/test/beauty-job-gallery/${foreignImageId}`,
+        status: "ready" as const,
+        altText: "Tuđi opis",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    ]);
+    const ownedImageUrls = ownedImageIds.map((id) => `/api/media/images/${id}`);
+    const foreignImageUrl = `/api/media/images/${foreignImageId}`;
+    const describedGallery = await request(
+      base,
+      `/beauty-jobs/${jobseekerCreate.body.id}`,
+      jobseeker.token,
+      "PATCH",
+      {
+        photos: ownedImageUrls,
+        photoDescriptions: [
+          { url: ownedImageUrls[0], altText: "  Precizan prvi opis  " },
+          { url: ownedImageUrls[1], altText: "Precizan drugi opis" },
+        ],
+      },
+    );
+    assert.equal(describedGallery.status, 200, "listing owner can save one description per managed photo");
+    const savedDescriptions = await db.select({ id: imageAssetsTable.id, altText: imageAssetsTable.altText })
+      .from(imageAssetsTable).where(inArray(imageAssetsTable.id, ownedImageIds));
+    assert.deepEqual(
+      new Map(savedDescriptions.map((asset) => [asset.id, asset.altText])),
+      new Map([
+        [ownedImageIds[0], "Precizan prvi opis"],
+        [ownedImageIds[1], "Precizan drugi opis"],
+      ]),
+      "descriptions stay keyed to media identity and are trimmed",
+    );
+
+    const rejectedTitle = `Ovaj naslov mora biti vraćen ${suffix}`;
+    const rejectedGallery = await request(
+      base,
+      `/beauty-jobs/${jobseekerCreate.body.id}`,
+      jobseeker.token,
+      "PATCH",
+      {
+        title: rejectedTitle,
+        photos: [ownedImageUrls[0], foreignImageUrl],
+        photoDescriptions: [
+          { url: ownedImageUrls[0], altText: "Ne sme ostati" },
+          { url: foreignImageUrl, altText: "Neovlašćena izmena" },
+        ],
+      },
+    );
+    assert.equal(rejectedGallery.status, 400, "a foreign managed photo rejects the complete resource save");
+    const [listingAfterRejectedGallery] = await db.select({
+      title: beautyJobListingsTable.title,
+      photos: beautyJobListingsTable.photos,
+    }).from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, jobseekerCreate.body.id)).limit(1);
+    const [firstAssetAfterRejectedGallery] = await db.select({ altText: imageAssetsTable.altText })
+      .from(imageAssetsTable).where(eq(imageAssetsTable.id, ownedImageIds[0])).limit(1);
+    assert.equal(listingAfterRejectedGallery?.title, jobseekerCreate.body.title, "listing fields roll back with rejected descriptions");
+    assert.deepEqual(listingAfterRejectedGallery?.photos, ownedImageUrls, "gallery membership rolls back with rejected descriptions");
+    assert.equal(firstAssetAfterRejectedGallery?.altText, "Precizan prvi opis", "an earlier description update rolls back atomically");
+    assert.equal(
+      (await request(base, `/beauty-jobs/${jobseekerCreate.body.id}`, otherJobseeker.token, "PATCH", {
+        photoDescriptions: [{ url: ownedImageUrls[0], altText: "Tuđa izmena" }],
+      })).status,
+      403,
+      "another account cannot edit the listing's photo descriptions",
+    );
+
+    await db.update(beautyJobListingsTable).set({
+      status: "active",
+      moderationStatus: "approved",
+      expiresAt: new Date(Date.now() + 86_400_000),
+    }).where(eq(beautyJobListingsTable.id, jobseekerCreate.body.id));
+    const publicDescriptions = await request(base, "/media/descriptions", undefined, "POST", { urls: ownedImageUrls });
+    assert.equal(publicDescriptions.status, 200);
+    assert.deepEqual(publicDescriptions.body.items, [
+      { url: ownedImageUrls[0], altText: "Precizan prvi opis" },
+      { url: ownedImageUrls[1], altText: "Precizan drugi opis" },
+    ], "approved active listing descriptions are publicly readable");
+    await db.update(beautyJobListingsTable).set({ status: "closed" })
+      .where(eq(beautyJobListingsTable.id, jobseekerCreate.body.id));
+    assert.deepEqual(
+      (await request(base, "/media/descriptions", undefined, "POST", { urls: ownedImageUrls })).body.items,
+      [],
+      "closed listing descriptions stay private",
+    );
+    assert.deepEqual(
+      (await request(base, "/media/descriptions", jobseeker.token, "POST", { urls: ownedImageUrls })).body.items,
+      publicDescriptions.body.items,
+      "the uploader retains access to private descriptions",
+    );
     assert.equal((await request(base, "/beauty-jobs/mine", jobseeker.token)).status, 200, "JOBSEEKER may manage own listings");
     assert.equal((await request(base, `/beauty-jobs/${publicListing.id}/save`, jobseeker.token, "POST")).status, 200, "JOBSEEKER may save listings");
     for (const blocked of [blockedCustomer, student]) {
@@ -1474,6 +1585,9 @@ async function run(): Promise<void> {
     if (createdListingIds.length) {
       await db.delete(beautyJobModerationAuditTable).where(inArray(beautyJobModerationAuditTable.listingId, createdListingIds));
       await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
+    }
+    if (createdImageAssetIds.length) {
+      await db.delete(imageAssetsTable).where(inArray(imageAssetsTable.id, createdImageAssetIds));
     }
     await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.testCleanupKey, suffix));
     if (monitorAlertEventKeys.length) {

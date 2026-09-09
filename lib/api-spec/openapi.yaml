@@ -1279,6 +1279,22 @@ paths:
         "304": { description: Not modified }
         "403": { description: Private media access denied }
         "404": { description: Image or requested variant not found }
+  /media/descriptions:
+    post:
+      operationId: getMediaDescriptions
+      tags: [media]
+      summary: Return descriptions for readable managed images
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaDescriptionsRequest" }
+      responses:
+        "200":
+          description: Readable image descriptions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaDescriptionsResponse" }
   /salon/appointments:
     get:
       operationId: listSalonAppointments
@@ -11040,6 +11056,10 @@ components:
           type: array
           maxItems: 20
           items: { type: string, minLength: 1 }
+        galleryDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
     MediaUploadInput:
       type: object
       properties:
@@ -11069,6 +11089,27 @@ components:
         height: { type: number, minimum: 1, multipleOf: 1 }
         contentHash: { type: string }
       required: [id, imageUrl, width, height, contentHash]
+    MediaDescription:
+      type: object
+      properties:
+        url: { type: string, minLength: 1 }
+        altText: { type: string, maxLength: 240 }
+      required: [url, altText]
+    MediaDescriptionsRequest:
+      type: object
+      properties:
+        urls:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1 }
+      required: [urls]
+    MediaDescriptionsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MediaDescription" }
+      required: [items]
     OpeningHour:
       type: object
       properties:
@@ -16399,6 +16440,10 @@ components:
         images:
           type: array
           items: { type: string }
+        imageDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
@@ -16465,6 +16510,10 @@ components:
         images:
           type: array
           items: { type: string }
+        imageDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
@@ -18119,6 +18168,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        photoDescriptions: { type: array, maxItems: 8, items: { $ref: "#/components/schemas/MediaDescription" } }
         coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
@@ -18141,6 +18191,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        photoDescriptions: { type: array, maxItems: 8, items: { $ref: "#/components/schemas/MediaDescription" } }
         coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }

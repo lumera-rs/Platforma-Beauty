@@ -26,6 +26,7 @@ export const mediaAssetsTable = pgTable("media_assets", {
   width: integer("width").notNull(),
   height: integer("height").notNull(),
   contentHash: text("content_hash").notNull(),
+  altText: text("alt_text").notNull().default(""),
   cleanupReservedAt: timestamp("cleanup_reserved_at", { withTimezone: true }),
   testCleanupKey: text("test_cleanup_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

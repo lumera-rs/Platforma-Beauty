@@ -858,6 +858,7 @@ import
   requireMediaCachePurgeForVisibilityRevocation,
   releaseMediaReferenceClaims,
   stableMediaUrl,
+  updateManagedMediaDescriptions,
 }
  from "./media"
 ;
@@ -9642,7 +9643,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     }
     updates.gallery = parsed.data.gallery;
   }
-  if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
+  if (!Object.keys(updates).length && parsed.data.galleryDescriptions === undefined) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
   const homeService = await salonHasActiveHomeService(access.salon.id);
   updates.homeService = homeService;
   let updated: typeof salonsTable.$inferSelect | undefined;
@@ -9662,6 +9663,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
         scope: "salon-profile",
         resourceId: access.salon.id,
         visibility: lockedSalon.active ? "public" : "private",
+        allowBoundResource: true,
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -9673,10 +9675,20 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
             scope: "salon-gallery",
             resourceId: access.salon.id,
             visibility: lockedSalon.active ? "public" : "private",
+            allowBoundResource: true,
           }, tx)) {
             throw new MediaClaimConflictError();
           }
         }
+      }
+      if (parsed.data.galleryDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: access.user.id,
+        resourceId: access.salon.id,
+        scope: "salon-gallery",
+        items: parsed.data.galleryDescriptions,
+        allowedUrls: parsed.data.gallery ?? lockedSalon.gallery,
+      })) {
+        throw new MediaClaimConflictError();
       }
       const rows = await tx.update(salonsTable)
         .set(updates)
@@ -27683,6 +27695,13 @@ router.post("/admin/products", async (req, res): Promise<void> => {
           throw new MediaClaimConflictError();
         }
       }
+      if (body.imageDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: user.id,
+        resourceId: rows[0]!.id,
+        scope: "product",
+        items: body.imageDescriptions,
+        allowedUrls: imageReferences,
+      })) throw new MediaClaimConflictError();
       return rows;
     });
   } catch (error) {
@@ -27957,10 +27976,18 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
           scope: "product",
           resourceId: existing.id,
           visibility: nextActive ? "public" : "private",
+          allowBoundResource: true,
         }, tx)) {
           throw new MediaClaimConflictError();
         }
       }
+      if (body.imageDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: user.id,
+        resourceId: existing.id,
+        scope: "product",
+        items: body.imageDescriptions,
+        allowedUrls: imageReferences,
+      })) throw new MediaClaimConflictError();
       const rows = await tx.update(productsTable).set({
         supplierId: nextSupplierId,
         name: body.name ?? existing.name,

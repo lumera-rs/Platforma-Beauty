@@ -234,7 +234,7 @@ async function discoverDestructiveHarnessSources(root = workspaceRoot): Promise<
 }
 
 test("destructive harnesses refuse deployment runtimes before database commands", async () => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-deployment-guard-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const commandLogPath = path.join(temporaryRoot, "database-commands.log");
   const isolatedRunnerPath = path.join(temporaryRoot, "run-isolated-harness.ts");
@@ -313,7 +313,7 @@ void main();
     const automaticallyGuardedDatabaseTests: string[] = [];
     for (const sourcePath of discoveredSources) {
       if (!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(sourcePath)) continue;
-      const source = await readFile(path.join(workspaceRoot, harness.sourcePath), "utf8");
+      const source = await readFile(path.join(workspaceRoot, sourcePath), "utf8");
       // Importing @workspace/db is one way to be guarded — that module asserts
       // the runtime for you on import. Calling the assert directly is the other,
       // and is not weaker: it is the same guard, just named at the call site by
@@ -389,17 +389,24 @@ void db.insert({} as never);
     for (const harness of harnesses) {
       for (const guardedEnvironment of destructiveTestGuardEnvironments) {
         await unlink(commandLogPath).catch(() => undefined);
-      const result = await execFileAsync(
-        runnerPath,
-        [runner.scriptPath, "--recover-interrupted-databases"],
-        {
+        const result = await execFileAsync(harness.command, [harness.scriptPath], {
           cwd: workspaceRoot,
           env: {
             ...process.env,
+            NODE_ENV: "test",
+            REPLIT_DEPLOYMENT: "0",
+            REPL_DEPLOYMENT: "0",
+            ...guardedEnvironment.values,
             DATABASE_URL: databaseUrl,
+            LUMERA_BOOKING_LOAD: "1",
+            LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
+            LUMERA_GUARD_HARNESS: harness.mode,
+            PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
           },
-        },
-      ) as { stdout: string; stderr: string };
+        }).then(
+          () => assert.fail(`${harness.name} accepted ${guardedEnvironment.name}.`),
+          (error: unknown) => error as { stdout?: string; stderr?: string },
+        );
         const refusalOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
         assert.match(
           refusalOutput,
@@ -576,7 +583,7 @@ async function waitForOwnedTestServersToStop(testDatabaseUrl: string): Promise<v
 }
 
 test("recovery dispatch sends each wrapper's originating suite label", async () => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-recovery-dispatch-"));
   const originalPath = process.env.PATH;
   const originalArgv = process.argv;
   const originalConsoleLog = console.log;
@@ -628,18 +635,16 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
 
   const output: string[] = [];
   console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
-  console.error = (...args: unknown[]) => output.push(args.map(String).join(" "));
 
   try {
-    for (const recoveryCase of recoveryCases) {
+    for (const dispatchCase of dispatchCases) {
       const databaseName =
-        `${databasePrefixes[index]}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+        `${dispatchCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
       const manifestDirectory = path.join(
         workspaceRoot,
         ".lumera-test-state",
-        runner.manifestDirectoryName,
+        dispatchCase.manifestDirectoryName,
       );
-      manifestDirectories.add(manifestDirectory);
       await mkdir(manifestDirectory, { recursive: true });
       const manifestPath = await writeManifest(manifestDirectory, {
         version: 1,
@@ -680,7 +685,7 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
 });
 
 test("recovery reports malformed manifests while recovering valid records", async () => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-malformed-recovery-"));
   const originalPath = process.env.PATH;
   const originalArgv = process.argv;
   const originalConsoleLog = console.log;
@@ -732,8 +737,7 @@ test("recovery reports malformed manifests while recovering valid records", asyn
     },
   ] as const;
 
-  const manifestDirectories = retentionDirectories.map((directoryName) =>
-    path.join(workspaceRoot, ".lumera-test-state", directoryName));
+  const manifestDirectories: string[] = [];
   const manifestPaths: string[] = [];
   const output: string[] = [];
   console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
@@ -742,13 +746,13 @@ test("recovery reports malformed manifests while recovering valid records", asyn
   try {
     for (const recoveryCase of recoveryCases) {
       const databaseName =
-        `${databasePrefixes[index]}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+        `${recoveryCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
       const manifestDirectory = path.join(
         workspaceRoot,
         ".lumera-test-state",
-        runner.manifestDirectoryName,
+        recoveryCase.manifestDirectoryName,
       );
-      const malformedManifestName = `damaged-${index}-${randomUUID()}.json`;
+      const malformedManifestName = `malformed-${randomUUID()}.json`;
       const malformedManifestPath = path.join(manifestDirectory, malformedManifestName);
       manifestDirectories.push(manifestDirectory);
       await mkdir(manifestDirectory, { recursive: true });
@@ -796,28 +800,39 @@ test("recovery reports malformed manifests while recovering valid records", asyn
 });
 
 test("standalone browser cleanup entry points report browser suite wording", async () => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-standalone-recovery-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const originalPath = process.env.PATH;
   const standaloneRunners = [
     {
       scriptPath: path.join(workspaceRoot, "scripts", "src", "run-retention-preview.ts"),
-      databasePrefix: "lumera_retention_estimate_browser_",
-      manifestDirectoryName: "retention-preview-estimate-browser-databases",
-      expectedStdout:
-        "No interrupted retention preview exact control browser checks databases were found.\n"
-        + "No interrupted retention preview stratified estimate browser checks databases were found.\n",
+      cases: [
+        {
+          databasePrefix: "lumera_retention_estimate_browser_",
+          manifestDirectoryName: "retention-preview-estimate-browser-databases",
+        },
+        {
+          databasePrefix: "lumera_retention_exact_browser_",
+          manifestDirectoryName: "retention-preview-exact-browser-databases",
+        },
+        {
+          databasePrefix: "lumera_retention_stratified_browser_",
+          manifestDirectoryName: "retention-preview-stratified-browser-databases",
+        },
+      ],
     },
     {
       scriptPath: path.join(workspaceRoot, "scripts", "src", "run-infobip-registration-browser.ts"),
-      databasePrefix: "lumera_infobip_registration_browser_",
-      manifestDirectoryName: "infobip-registration-browser-databases",
-      expectedStdout: "",
+      cases: [
+        {
+          databasePrefix: "lumera_infobip_registration_browser_",
+          manifestDirectoryName: "infobip-registration-browser-databases",
+        },
+      ],
     },
   ] as const;
   const manifestPaths: string[] = [];
-  const manifestDirectories = retentionDirectories.map((directoryName) =>
-    path.join(workspaceRoot, ".lumera-test-state", directoryName));
+  const manifestDirectories = new Set<string>();
 
   try {
     await mkdir(binDirectory, { recursive: true });
@@ -831,13 +846,13 @@ test("standalone browser cleanup entry points report browser suite wording", asy
     for (const runner of standaloneRunners) {
       const expectedOutput: string[] = [];
       for (const standaloneCase of runner.cases) {
-      const databaseName =
-        `${databasePrefixes[index]}${process.pid}_${randomUUID().replaceAll("-", "")}`;
-      const manifestDirectory = path.join(
-        workspaceRoot,
-        ".lumera-test-state",
-        runner.manifestDirectoryName,
-      );
+        const databaseName =
+          `${standaloneCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+        const manifestDirectory = path.join(
+          workspaceRoot,
+          ".lumera-test-state",
+          standaloneCase.manifestDirectoryName,
+        );
         manifestDirectories.add(manifestDirectory);
         await mkdir(manifestDirectory, { recursive: true });
         manifestPaths.push(await writeManifest(manifestDirectory, {
@@ -891,7 +906,7 @@ test("standalone browser cleanup entry points report browser suite wording", asy
 });
 
 test("standalone browser cleanup entry points fail and preserve failed cleanup fixtures", async () => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-standalone-recovery-failure-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const originalPath = process.env.PATH;
   const standaloneRunners = [
@@ -911,8 +926,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
     },
   ] as const;
   const manifestPaths: string[] = [];
-  const manifestDirectories = retentionDirectories.map((directoryName) =>
-    path.join(workspaceRoot, ".lumera-test-state", directoryName));
+  const manifestDirectories = new Set<string>();
 
   try {
     await mkdir(binDirectory, { recursive: true });
@@ -925,7 +939,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
 
     for (const runner of standaloneRunners) {
       const databaseName =
-        `${databasePrefixes[index]}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+        `${runner.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
       const manifestDirectory = path.join(
         workspaceRoot,
         ".lumera-test-state",
@@ -956,7 +970,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
         ),
         (error: unknown) => {
           assert.ok(error && typeof error === "object");
-        const commandError = error as { stdout?: string; stderr?: string; code?: number };
+          const commandError = error as { stdout?: string; stderr?: string; code?: number };
           assert.equal(commandError.code, 1);
           assert.equal(commandError.stdout, runner.expectedStdout);
           assert.match(

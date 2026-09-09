@@ -6,12 +6,14 @@ import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-o
 import sharp from "sharp";
 import {
   coursesTable,
+  beautyJobListingsTable,
   db,
   educationCentersTable,
   educationCenterSubscriptionsTable,
   educationInstructorsTable,
   educationMediaTable,
   employeesTable,
+  imageAssetsTable,
   mediaAssetsTable,
   mediaUploadTicketsTable,
   mediaVariantsTable,
@@ -25,6 +27,8 @@ import {
 import {
   FinalizeMediaUploadParams,
   FinalizeMediaUploadResponse,
+  GetMediaDescriptionsBody,
+  GetMediaDescriptionsResponse,
   GetMediaAssetParams,
   GetMediaAssetQueryParams,
   RequestMediaUploadBody,
@@ -43,6 +47,7 @@ import {
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEGACY_IMAGE_URL_PATTERN = /^\/api\/media\/images\/([0-9a-f-]{36})(?:\?|$)/i;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOAD_TTL_SECONDS = 15 * 60;
@@ -406,6 +411,42 @@ export function mediaAssetIdFromUrl(url: string): string | null {
   return match && UUID_PATTERN.test(match[1]!) ? match[1]! : null;
 }
 
+type MediaDescriptionExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function updateManagedMediaDescriptions(
+  executor: MediaDescriptionExecutor,
+  options: {
+    userId: string;
+    resourceId: string;
+    scope: string;
+    items: readonly { url: string; altText: string }[];
+    allowedUrls: readonly string[];
+  },
+): Promise<boolean> {
+  const allowedUrls = new Set(options.allowedUrls);
+  if (options.items.some((item) => !allowedUrls.has(item.url))) return false;
+  const requested = options.items.flatMap((item) => {
+    const id = mediaAssetIdFromUrl(item.url);
+    return id ? [{ ...item, id }] : [];
+  });
+  for (const item of requested) {
+    const [updated] = await executor.update(mediaAssetsTable)
+      .set({ altText: item.altText.trim() })
+      .where(and(
+        eq(mediaAssetsTable.id, item.id),
+        eq(mediaAssetsTable.scope, options.scope),
+        eq(mediaAssetsTable.resourceId, options.resourceId),
+        or(
+          eq(mediaAssetsTable.ownerUserId, options.userId),
+          eq(mediaAssetsTable.resourceId, options.resourceId),
+        ),
+      ))
+      .returning({ id: mediaAssetsTable.id });
+    if (!updated) return false;
+  }
+  return true;
+}
+
 export async function canClaimMediaReference(input: {
   userId: string;
   url: string;
@@ -421,10 +462,13 @@ export async function canClaimMediaReference(input: {
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
   return Boolean(
     asset
-    && asset.ownerUserId === input.userId
     && asset.scope === input.scope
     && !asset.cleanupReservedAt
-    && (!asset.resourceId || !input.resourceId || asset.resourceId === input.resourceId),
+    && (!asset.resourceId || !input.resourceId || asset.resourceId === input.resourceId)
+    && (
+      asset.ownerUserId === input.userId
+      || Boolean(input.resourceId && asset.resourceId === input.resourceId && input.existingUrls?.includes(input.url))
+    )
   );
 }
 
@@ -434,6 +478,7 @@ export async function claimMediaReference(input: {
   scope: MediaScope;
   resourceId: string;
   visibility?: "public" | "private" | "education";
+  allowBoundResource?: boolean;
 }, executor: Pick<typeof db, "update"> = db): Promise<boolean> {
   const assetId = mediaAssetIdFromUrl(input.url);
   if (!assetId) return false;
@@ -442,7 +487,12 @@ export async function claimMediaReference(input: {
     visibility: input.visibility ?? (input.scope.startsWith("education-") ? "education" : "public"),
   }).where(and(
     eq(mediaAssetsTable.id, assetId),
-    eq(mediaAssetsTable.ownerUserId, input.userId),
+    input.allowBoundResource
+      ? or(
+          eq(mediaAssetsTable.ownerUserId, input.userId),
+          eq(mediaAssetsTable.resourceId, input.resourceId),
+        )
+      : eq(mediaAssetsTable.ownerUserId, input.userId),
     eq(mediaAssetsTable.scope, input.scope),
     isNull(mediaAssetsTable.cleanupReservedAt),
     or(isNull(mediaAssetsTable.resourceId), eq(mediaAssetsTable.resourceId, input.resourceId)),
@@ -895,6 +945,12 @@ async function mayReadAsset(req: Request, asset: typeof mediaAssetsTable.$inferS
   if (!user) return false;
   if (isAdmin(user)) return true;
   if (asset.ownerUserId === user.id) return true;
+  if (asset.resourceId && ["salon-profile", "salon-gallery"].includes(asset.scope)) {
+    const [managedSalon] = await db.select({ id: salonsTable.id }).from(salonsTable)
+      .where(and(eq(salonsTable.id, asset.resourceId), eq(salonsTable.ownerId, user.id)))
+      .limit(1);
+    if (managedSalon) return true;
+  }
   if (asset.scope === "treatment-photo" && asset.resourceId) {
     // resourceId is the treatment_photos row id after claim. Readable by the
     // salon owner (CRM profile view) and the customer the photo belongs to
@@ -911,6 +967,67 @@ async function mayReadAsset(req: Request, asset: typeof mediaAssetsTable.$inferS
   }
   return false;
 }
+
+type ManagedDescriptionTarget =
+  | { kind: "media"; id: string; url: string }
+  | { kind: "image"; id: string; url: string };
+
+function managedDescriptionTarget(url: string): ManagedDescriptionTarget | null {
+  const normalized = url.trim();
+  const mediaId = mediaAssetIdFromUrl(normalized);
+  if (mediaId) return { kind: "media", id: mediaId, url: normalized };
+  const imageMatch = LEGACY_IMAGE_URL_PATTERN.exec(normalized);
+  const imageId = imageMatch?.[1];
+  return imageId && UUID_PATTERN.test(imageId) ? { kind: "image", id: imageId, url: normalized } : null;
+}
+
+router.post("/media/descriptions", async (req, res): Promise<void> => {
+  const parsed = GetMediaDescriptionsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const targets = [...new Map(parsed.data.urls.flatMap((url) => {
+    const target = managedDescriptionTarget(url);
+    return target ? [[target.url, target] as const] : [];
+  })).values()];
+  const mediaIds = targets.filter((target) => target.kind === "media").map((target) => target.id);
+  const imageIds = targets.filter((target) => target.kind === "image").map((target) => target.id);
+  const [mediaAssets, imageAssets] = await Promise.all([
+    mediaIds.length ? db.select().from(mediaAssetsTable).where(inArray(mediaAssetsTable.id, mediaIds)) : [],
+    imageIds.length ? db.select().from(imageAssetsTable).where(and(
+      inArray(imageAssetsTable.id, imageIds),
+      eq(imageAssetsTable.status, "ready"),
+    )) : [],
+  ]);
+  const readableMedia = new Map<string, string>();
+  for (const asset of mediaAssets) {
+    if (await mayReadAsset(req, asset)) readableMedia.set(asset.id, asset.altText);
+  }
+  const currentUser = imageAssets.length ? await getCurrentUser(req) : undefined;
+  const readableImages = new Map<string, string>();
+  for (const asset of imageAssets) {
+    if (currentUser && (currentUser.id === asset.uploadedByUserId || isAdmin(currentUser))) {
+      readableImages.set(asset.id, asset.altText);
+      continue;
+    }
+    const target = targets.find((candidate) => candidate.kind === "image" && candidate.id === asset.id);
+    if (!target) continue;
+    const [publicListing] = await db.select({ id: beautyJobListingsTable.id })
+      .from(beautyJobListingsTable)
+      .where(and(
+        sql`${beautyJobListingsTable.photos} @> ${JSON.stringify([target.url])}::jsonb`,
+        eq(beautyJobListingsTable.status, "active"),
+        eq(beautyJobListingsTable.moderationStatus, "approved"),
+        sql`${beautyJobListingsTable.expiresAt} > now()`,
+      ))
+      .limit(1);
+    if (publicListing) readableImages.set(asset.id, asset.altText);
+  }
+  res.json(GetMediaDescriptionsResponse.parse({
+    items: targets.flatMap((target) => {
+      const altText = target.kind === "media" ? readableMedia.get(target.id) : readableImages.get(target.id);
+      return altText === undefined ? [] : [{ url: target.url, altText }];
+    }),
+  }));
+});
 
 function preferredFormats(explicitFormat: string | undefined, accept: string): string[] {
   if (explicitFormat === "original") return ["original"];

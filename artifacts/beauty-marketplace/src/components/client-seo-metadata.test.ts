@@ -5,6 +5,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { GetPublicSupplierResponse } from '@workspace/api-zod';
 import { dynamicMetadata, seoHeadMetadata, withQueryIndexability } from './client-seo-metadata';
 import { galleryImageAlt } from './salon-gallery';
+import { canonicalProductImageUrls, productImageDescriptionItems } from '../lib/product-media';
 
 const taxonomy = [{
   id: 'section-1',
@@ -21,6 +22,17 @@ const taxonomy = [{
     }],
   }],
 }];
+
+test('primary-only product media keeps its loaded description on unrelated saves', () => {
+  const primaryUrl = '/api/media/00000000-0000-4000-8000-000000000001?v=primary';
+  assert.deepEqual(canonicalProductImageUrls(primaryUrl, []), [primaryUrl]);
+  assert.deepEqual(
+    productImageDescriptionItems(primaryUrl, [], {
+      [primaryUrl]: 'Bočica seruma na beloj podlozi',
+    }),
+    [{ url: primaryUrl, altText: 'Bočica seruma na beloj podlozi' }],
+  );
+});
 
 test('client metadata keeps every valid education taxonomy depth indexable', async () => {
   const originalFetch = globalThis.fetch;
@@ -260,6 +272,10 @@ test('public galleries use the owner description only for the matching cover ima
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'gallery' }),
     'Studio LUMERA — fotografija 2',
+  );
+  assert.equal(
+    galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'gallery', altText: '  Balajaž na dugoj kosi  ' }),
+    'Balajaž na dugoj kosi',
   );
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'thumbnail' }),
