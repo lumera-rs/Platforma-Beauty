@@ -8,6 +8,9 @@ import { eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   b2cDisplaySettingsTable,
+  b2cNeedTagsTable,
+  b2cProductNeedTagsTable,
+  b2cProductTypesTable,
   b2cRecentlyViewedProductsTable,
   type DatabasePoolClient,
   loyaltyPointLedgerTable,
@@ -58,6 +61,7 @@ import {
 type CategoryResponse = {
   id: string;
   supplierId: string;
+  name: string;
   parentId: string | null;
   path?: string;
   depth?: number;
@@ -73,6 +77,8 @@ const productIds: string[] = [];
 const orderIds: string[] = [];
 const bundleIds: string[] = [];
 const supplierIds: string[] = [];
+const productTypeIds: string[] = [];
+const needTagIds: string[] = [];
 const supplierLogoAssetId = randomUUID();
 const productImageAssetId = randomUUID();
 const mediaAssetIds = [supplierLogoAssetId, productImageAssetId];
@@ -394,7 +400,12 @@ test.after(async () => {
       await db.delete(productBundleComponentsTable).where(inArray(productBundleComponentsTable.bundleId, bundleIds));
       await db.delete(productBundlesTable).where(inArray(productBundlesTable.id, bundleIds));
     }
+    if (productIds.length) {
+      await db.delete(b2cProductNeedTagsTable).where(inArray(b2cProductNeedTagsTable.productId, productIds));
+    }
     if (productIds.length) await db.delete(productsTable).where(inArray(productsTable.id, productIds));
+    if (needTagIds.length) await db.delete(b2cNeedTagsTable).where(inArray(b2cNeedTagsTable.id, needTagIds));
+    if (productTypeIds.length) await db.delete(b2cProductTypesTable).where(inArray(b2cProductTypesTable.id, productTypeIds));
     if (categoryIds.length) await db.delete(productCategoriesTable).where(inArray(productCategoriesTable.id, categoryIds));
     if (supplierIds.length) await db.delete(suppliersTable).where(inArray(suppliersTable.id, supplierIds));
     if (mediaAssetIds.length) await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, mediaAssetIds));
@@ -472,6 +483,151 @@ test("supplier B2B products require authentication and public products expose on
   assert.deepEqual(publicVariants.map((variant) => variant.value), ["secret"]);
   assert.equal(Object.hasOwn(publicVariants[0]!, "stock"), false, "public variant leaked stock");
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
+});
+
+test("supplier public product filters, paging, ranges, sorting, and facets share one canonical result set", async () => {
+  const child = await createCategory(supplierA.id, `${marker} facet child`, orderedProduct.categoryId);
+  const outside = await createCategory(supplierA.id, `${marker} facet outside`);
+  const [typeA, typeB, typeC] = await db.insert(b2cProductTypesTable).values([
+    { slug: `${marker}-facet-type-a`, label: `${marker} facet type A` },
+    { slug: `${marker}-facet-type-b`, label: `${marker} facet type B` },
+    { slug: `${marker}-facet-type-c`, label: `${marker} facet type C` },
+  ]).returning();
+  const [tagA, tagB, tagC] = await db.insert(b2cNeedTagsTable).values([
+    { key: `${marker}-facet-tag-a`, label: `${marker} facet tag A` },
+    { key: `${marker}-facet-tag-b`, label: `${marker} facet tag B` },
+    { key: `${marker}-facet-tag-c`, label: `${marker} facet tag C` },
+  ]).returning();
+  assert.ok(typeA);
+  assert.ok(typeB);
+  assert.ok(typeC);
+  assert.ok(tagA);
+  assert.ok(tagB);
+  assert.ok(tagC);
+  productTypeIds.push(typeA.id, typeB.id, typeC.id);
+  needTagIds.push(tagA.id, tagB.id, tagC.id);
+
+  const search = `${marker}-facet-match`;
+  const brandA = `${marker} Facet Brand A`;
+  const brandB = `${marker} Facet Brand B`;
+  const brandC = `${marker} Facet Brand C`;
+  const fixtures = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} low`, brand: brandA, productTypeId: typeA.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_000, publicPrice: 1_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-low`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} middle`, brand: brandB, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_000, publicPrice: 2_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-middle`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: orderedProduct.categoryId, categoryName: orderedProduct.categoryName,
+      name: `${search} high`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 3_000, publicPrice: 3_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-high`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} brand decoy`, brand: brandC, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-brand-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} type decoy`, brand: brandA, productTypeId: typeC.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-type-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} tag decoy`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-tag-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: outside.id, categoryName: outside.name,
+      name: `${search} category decoy`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-category-decoy`, unit: "kom",
+    },
+  ]).returning();
+  productIds.push(...fixtures.map((product) => product.id));
+  await db.insert(b2cProductNeedTagsTable).values([
+    { productId: fixtures[0]!.id, needTagId: tagA.id },
+    { productId: fixtures[1]!.id, needTagId: tagB.id },
+    { productId: fixtures[2]!.id, needTagId: tagA.id },
+    { productId: fixtures[2]!.id, needTagId: tagB.id },
+    { productId: fixtures[3]!.id, needTagId: tagB.id },
+    { productId: fixtures[4]!.id, needTagId: tagB.id },
+    { productId: fixtures[5]!.id, needTagId: tagC.id },
+    { productId: fixtures[6]!.id, needTagId: tagB.id },
+  ]);
+
+  const commonQuery = {
+    categoryId: orderedProduct.categoryId!,
+    search,
+    minPrice: "1500",
+    maxPrice: "3500",
+    page: "1",
+  };
+  const requestList = async (params: Record<string, string>) => {
+    const query = new URLSearchParams({ ...commonQuery, pageSize: "10", sort: "PRICE_ASC", ...params });
+    const response = await api(`/suppliers/${supplierA.slug}/public-products?${query}`);
+    assert.equal(response.status, 200, await response.clone().text());
+    return ListSupplierPublicProductsResponse.parse(await response.json());
+  };
+
+  const [brandOnly, typeOnly, tagOnly, ascending, descendingPage] = await Promise.all([
+    requestList({ brand: brandB }),
+    requestList({ productType: typeC.slug }),
+    requestList({ needTag: tagC.key }),
+    requestList({
+      brand: `${brandA},${brandB}`,
+      productType: `${typeA.slug},${typeB.slug}`,
+      needTag: `${tagA.key},${tagB.key}`,
+    }),
+    requestList({
+      brand: `${brandA},${brandB}`,
+      productType: `${typeA.slug},${typeB.slug}`,
+      needTag: `${tagA.key},${tagB.key}`,
+      sort: "PRICE_DESC",
+      pageSize: "1",
+    }),
+  ]);
+  assert.deepEqual(brandOnly.items.map((item) => item.id), [fixtures[1]!.id]);
+  assert.equal(brandOnly.total, 1);
+  assert.deepEqual(typeOnly.items.map((item) => item.id), [fixtures[4]!.id]);
+  assert.equal(typeOnly.total, 1);
+  assert.deepEqual(tagOnly.items.map((item) => item.id), [fixtures[5]!.id]);
+  assert.equal(tagOnly.total, 1);
+  assert.deepEqual(ascending.items.map((item) => item.id), [fixtures[1]!.id, fixtures[2]!.id]);
+  assert.deepEqual(descendingPage.items.map((item) => item.id), [fixtures[2]!.id]);
+  assert.equal(ascending.total, 2);
+  assert.equal(descendingPage.total, 2);
+  assert.equal(descendingPage.totalPages, 2);
+  assert.deepEqual(ascending.activeRange, { minPrice: 1_000, maxPrice: 3_000 });
+  assert.deepEqual(descendingPage.activeRange, ascending.activeRange);
+
+  const counts = (items: Array<{ value?: string | null; id?: string | null; count: number }>) =>
+    new Map(items.map((item) => [item.value ?? item.id, item.count]));
+  assert.deepEqual(counts(ascending.facets.brands), new Map([[brandA, 1], [brandB, 1], [brandC, 1]]));
+  assert.deepEqual(counts(ascending.facets.productTypes), new Map([[typeB.slug, 2], [typeC.slug, 1]]));
+  assert.deepEqual(counts(ascending.facets.needTags), new Map([[tagA.key, 1], [tagB.key, 2], [tagC.key, 1]]));
+  assert.equal(counts(ascending.facets.categories).get(orderedProduct.categoryId), 1);
+  assert.equal(counts(ascending.facets.categories).get(child.id), 1);
+  assert.equal(counts(ascending.facets.categories).get(outside.id), 1);
+  assert.deepEqual(descendingPage.facets, ascending.facets);
 });
 
 test("canonical public supplier detail, history, and reviews follow supplier scope and active visibility", async () => {
