@@ -479,6 +479,74 @@ exit 0
   assert.match(fallbackSummary, /\| validate:ci:build:total \|/);
 });
 
+test("timed CI build preserves the original failure when primary and fallback reports are unwritable", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-double-report-failure-"));
+  const binDir = path.join(tempDir, "bin");
+  const blockedPrimaryReportDir = path.join(tempDir, "blocked-primary-reports");
+  const blockedFallbackReportDir = path.join(tempDir, "blocked-fallback-reports");
+  const blockedSummaryPath = path.join(tempDir, "blocked-summary");
+  const invocationLog = path.join(tempDir, "pnpm-invocations.log");
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  const failureCode = 47;
+
+  await mkdir(binDir);
+  await writeFile(blockedPrimaryReportDir, "primary report location is unavailable\n");
+  await writeFile(blockedFallbackReportDir, "fallback report location is unavailable\n");
+  await mkdir(blockedSummaryPath);
+  await writeFile(
+    fakePnpmPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$FAKE_PNPM_INVOCATION_LOG"
+if [[ "$*" == "--filter @workspace/scripts run typecheck" ]]; then
+  printf '%s\\n' "controlled build failure" >&2
+  exit "$FAKE_PNPM_FAILURE_CODE"
+fi
+exit 0
+`,
+  );
+  await chmod(fakePnpmPath, 0o755);
+
+  const result = await runCommand(
+    "bash",
+    [path.join(workspaceRoot, "scripts", "run-ci-build-with-timings.sh")],
+    {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      CI_TIMING_REPORT_DIR: blockedPrimaryReportDir,
+      CI_TIMING_REPORT_FALLBACK_DIR: blockedFallbackReportDir,
+      GITHUB_STEP_SUMMARY: blockedSummaryPath,
+      FAKE_PNPM_INVOCATION_LOG: invocationLog,
+      FAKE_PNPM_FAILURE_CODE: String(failureCode),
+    },
+  );
+
+  assert.equal(
+    result.code,
+    failureCode,
+    `When both report locations fail, the runner must preserve the build failure code. stderr: ${result.stderr}`,
+  );
+  assert.match(result.stderr, /Could not prepare primary timing report directory/);
+  assert.match(result.stderr, /Could not write JSON timing report/);
+  assert.match(result.stderr, /Could not write fallback JSON timing report/);
+  assert.match(result.stderr, /Could not write Markdown timing summary/);
+  assert.match(result.stderr, /Could not prepare a fallback timing report directory/);
+  assert.match(
+    result.stderr,
+    new RegExp(`Build failed with exit code ${failureCode}; report writing also failed.*original build failure`),
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /Saved (?:JSON timing report|Markdown timing summary) to .*fallback/,
+    "A failed fallback must never be reported as successfully saved.",
+  );
+  assert.doesNotMatch(
+    result.stderr,
+    /Build passed, but report writing failed/,
+    "A failed build must not be reported as a successful build.",
+  );
+});
+
 test("timed CI build fails when a successful JSON timing report cannot be written", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-timings-json-report-failure-"));
   const binDir = path.join(tempDir, "bin");
