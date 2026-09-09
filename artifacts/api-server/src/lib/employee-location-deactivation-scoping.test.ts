@@ -280,6 +280,22 @@ async function run(): Promise<void> {
       const staff = await get("/salon/employees", ownerACookie);
       const ids = (staff.body as unknown as Json[]).map((item) => (item as Json).id);
       assert.ok(!ids.includes(multiEmployee.id), "A1's staff listing (and thus scheduling/employee-selection) must exclude the employee here");
+
+      const managedStaff = await get("/salon/employees?includeInactive=true", ownerACookie);
+      assert.equal(managedStaff.response.status, 200);
+      const managedEmployee = (managedStaff.body as unknown as Json[])
+        .find((item) => item.id === multiEmployee.id);
+      assert.ok(managedEmployee, "the owner management listing must keep the employee visible at the deactivated old location");
+      assert.equal(managedEmployee.active, false, "the old location must be clearly reported as inactive");
+
+      const managedLocations = await get(`/salon/employees/${multiEmployee.id}/locations`, ownerACookie);
+      assert.equal(managedLocations.response.status, 200);
+      const locationsBySalon = new Map(
+        (managedLocations.body as unknown as Array<{ salonId: string; active: boolean }>)
+          .map((location) => [location.salonId, location]),
+      );
+      assert.equal(locationsBySalon.get(salonA1.id)?.active, false, "the management flow must expose the disabled old assignment");
+      assert.equal(locationsBySalon.get(salonA2.id)?.active, true, "the same flow must expose the still-active sibling assignment");
     }
 
     // --- Scenario #3: cross-tenant / adversarial ID manipulation ------------
@@ -386,6 +402,15 @@ async function run(): Promise<void> {
       }, profileBeforeDeniedRequest, "a rejected profile request must not change profile data");
 
       await setActiveSalon(ownerA.id, salonA2.id);
+      const profileBeforeRelocation = await employeeRow(multiEmployee.id);
+      const accountBeforeRelocation = await userRow(multiUser.id);
+      const inactiveAtDestination = await get("/salon/employees?includeInactive=true", ownerACookie);
+      assert.equal(inactiveAtDestination.response.status, 200);
+      const destinationEmployee = (inactiveAtDestination.body as unknown as Json[])
+        .find((item) => item.id === multiEmployee.id);
+      assert.ok(destinationEmployee, "the destination salon must find the inactive employee through the owner management listing");
+      assert.equal(destinationEmployee.active, false);
+
       const relocated = await put(`/salon/employees/${multiEmployee.id}/locations/${salonA2.id}`, ownerACookie, {
         active: true,
         isDefault: true,
@@ -397,6 +422,42 @@ async function run(): Promise<void> {
       assert.equal((await employeeRow(multiEmployee.id)).salonId, salonA1.id, "the legacy employee salon must not be rewritten as the authorization source");
       assert.equal((await employeeRow(multiEmployee.id)).active, true);
       assert.equal((await userRow(multiUser.id)).active, true);
+      const profileAfterRelocation = await employeeRow(multiEmployee.id);
+      const accountAfterRelocation = await userRow(multiUser.id);
+      assert.deepEqual(
+        {
+          name: profileAfterRelocation.name,
+          role: profileAfterRelocation.role,
+          bio: profileAfterRelocation.bio,
+          avatarUrl: profileAfterRelocation.avatarUrl,
+          email: profileAfterRelocation.email,
+          specialties: profileAfterRelocation.specialties,
+        },
+        {
+          name: profileBeforeRelocation.name,
+          role: profileBeforeRelocation.role,
+          bio: profileBeforeRelocation.bio,
+          avatarUrl: profileBeforeRelocation.avatarUrl,
+          email: profileBeforeRelocation.email,
+          specialties: profileBeforeRelocation.specialties,
+        },
+        "reactivating at the destination salon must not rewrite employee profile data",
+      );
+      assert.deepEqual(
+        {
+          firstName: accountAfterRelocation.firstName,
+          lastName: accountAfterRelocation.lastName,
+          email: accountAfterRelocation.email,
+          phone: accountAfterRelocation.phone,
+        },
+        {
+          firstName: accountBeforeRelocation.firstName,
+          lastName: accountBeforeRelocation.lastName,
+          email: accountBeforeRelocation.email,
+          phone: accountBeforeRelocation.phone,
+        },
+        "reactivating at the destination salon must not rewrite account profile data",
+      );
 
       const relocatedSession = await createSession(multiUser.id);
       const relocatedCookie = `${sessionCookieName}=${relocatedSession}`;
