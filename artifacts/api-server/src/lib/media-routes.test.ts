@@ -622,6 +622,118 @@ async function run() {
       "Employee creation must roll back when its media claim loses the race.",
     );
 
+    const ownerReplacementOldAvatar = await uploadAsset("employee-avatar", session, "employee-owner-replacement-old.jpg");
+    const ownerReplacementNewAvatar = await uploadAsset("employee-avatar", session, "employee-owner-replacement-new.jpg");
+    const ownerReplacementEmployeeName = `Media owner replacement employee ${randomUUID()}`;
+    const ownerReplacementEmployee = await jsonRequest<{ id: string }>(
+      activeServer.baseUrl,
+      "/salon/employees",
+      session,
+      "POST",
+      { name: ownerReplacementEmployeeName, role: "Stilista", avatarUrl: ownerReplacementOldAvatar.imageUrl },
+    );
+    assert.equal(ownerReplacementEmployee.status, 201, "The owner replacement employee should be created with a managed avatar.");
+    const ownerReplacementOldAvatarUrl = `${activeServer.baseUrl}${ownerReplacementOldAvatar.imageUrl}&size=thumbnail`;
+    assert.equal((await fetch(ownerReplacementOldAvatarUrl)).status, 200);
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(ownerReplacementOldAvatarUrl),
+      { status: 200, fromCache: false },
+      "The old owner-managed employee avatar must be cached before replacement.",
+    );
+    const oldReplacementVariants = await db.select({ objectPath: mediaVariantsTable.objectPath })
+      .from(mediaVariantsTable)
+      .where(eq(mediaVariantsTable.assetId, ownerReplacementOldAvatar.id));
+    assert.ok(oldReplacementVariants.length > 0, "The old owner-managed avatar should have optimized variants before replacement.");
+    const [oldReplacementTicket] = await db.select({
+      stagingObjectPath: mediaUploadTicketsTable.stagingObjectPath,
+    }).from(mediaUploadTicketsTable)
+      .where(eq(mediaUploadTicketsTable.id, ownerReplacementOldAvatar.id))
+      .limit(1);
+    assert.ok(oldReplacementTicket, "The old owner-managed avatar should retain its upload ticket before cleanup.");
+
+    const ownerAvatarReplacement = await jsonRequest<{ id: string }>(
+      activeServer.baseUrl,
+      `/salon/employees/${ownerReplacementEmployee.body.id}`,
+      session,
+      "PATCH",
+      { avatarUrl: ownerReplacementNewAvatar.imageUrl },
+    );
+    assert.equal(ownerAvatarReplacement.status, 200, "The owner editor should save a finalized replacement employee avatar.");
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(ownerReplacementOldAvatarUrl),
+      { status: 403, fromCache: false },
+      "Replacing an employee avatar must purge the old public cache entry before it can be reused.",
+    );
+    assert.equal(
+      (await fetch(ownerReplacementOldAvatarUrl)).status,
+      403,
+      "The old employee avatar must no longer be publicly available after an owner replacement.",
+    );
+    const [replacedEmployee] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable).where(eq(employeesTable.id, ownerReplacementEmployee.body.id)).limit(1);
+    assert.equal(
+      replacedEmployee?.avatarUrl,
+      ownerReplacementNewAvatar.imageUrl,
+      "The employee row must point to the newly finalized avatar.",
+    );
+    const [releasedOldAvatar] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementOldAvatar.id)).limit(1);
+    assert.deepEqual(
+      releasedOldAvatar,
+      { resourceId: null, visibility: "private" },
+      "Replacing an employee avatar must remove the old claim and make the asset private.",
+    );
+    const [claimedNewAvatar] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ownerReplacementNewAvatar.id)).limit(1);
+    assert.deepEqual(
+      claimedNewAvatar,
+      { resourceId: ownerReplacementEmployee.body.id, visibility: "public" },
+      "The replacement avatar must be claimed by the edited employee and remain public.",
+    );
+    assert.equal(
+      (await fetch(`${activeServer.baseUrl}${ownerReplacementNewAvatar.imageUrl}&size=thumbnail`)).status,
+      200,
+      "The newly saved employee avatar must remain publicly readable.",
+    );
+
+    await db.update(mediaUploadTicketsTable).set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(mediaUploadTicketsTable.id, ownerReplacementOldAvatar.id));
+    await runMediaUploadCleanup();
+    assert.equal(
+      (await db.select({ id: mediaUploadTicketsTable.id }).from(mediaUploadTicketsTable)
+        .where(eq(mediaUploadTicketsTable.id, ownerReplacementOldAvatar.id))).length,
+      0,
+      "Cleanup must remove the expired upload ticket for the replaced avatar.",
+    );
+    assert.equal(
+      (await db.select({ id: mediaVariantsTable.id }).from(mediaVariantsTable)
+        .where(eq(mediaVariantsTable.assetId, ownerReplacementOldAvatar.id))).length,
+      0,
+      "Cleanup must remove every optimized variant for the replaced avatar.",
+    );
+    assert.equal(
+      (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, ownerReplacementOldAvatar.id))).length,
+      0,
+      "Cleanup must remove the old unclaimed avatar asset after replacement.",
+    );
+    for (const variant of oldReplacementVariants) {
+      assert.equal(
+        await readPrivateStorageObject(variant.objectPath),
+        null,
+        "Cleanup must delete each optimized object for the replaced avatar.",
+      );
+    }
+    assert.equal(
+      await readPrivateStorageObject(oldReplacementTicket.stagingObjectPath),
+      null,
+      "Cleanup must delete the replaced avatar's staging object.",
+    );
+
     const courseAsset = await uploadAsset("education-cover", session, "course-create-rollback.jpg");
     const courseTitle = `Media course rollback ${randomUUID()}`;
     const courseConflict = await forceEndpointClaimConflict(courseAsset.id, () => jsonRequest<{ error: string }>(
