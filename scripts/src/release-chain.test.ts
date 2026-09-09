@@ -194,6 +194,9 @@ test("publish validation checks the release chain first without database access"
     await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
   ) as { scripts?: Record<string, string> };
   const publishCommand = packageJson.scripts?.["validate:publish"];
+  const normalTypecheckCommand = packageJson.scripts?.typecheck;
+  const releaseBuildCommand = packageJson.scripts?.["build:release"];
+  const releaseTypecheckCommand = packageJson.scripts?.["typecheck:release"];
 
   assert.ok(publishCommand, "validate:publish must be defined.");
   assert.match(
@@ -208,8 +211,33 @@ test("publish validation checks the release chain first without database access"
   );
   assert.match(
     publishCommand,
-    /pnpm run build && pnpm --filter @workspace\/scripts run typecheck && pnpm run test:beauty-marketplace-typecheck/,
-    "validate:publish must run the complete scripts typecheck after the build without disturbing the existing static-check order.",
+    /pnpm run build:release && pnpm --filter @workspace\/scripts run typecheck && pnpm run test:beauty-marketplace-typecheck/,
+    "validate:publish must run the complete scripts typecheck once after the release build without disturbing the existing static-check order.",
+  );
+  assert.equal(
+    publishCommand.match(/pnpm --filter @workspace\/scripts run typecheck/g)?.length,
+    1,
+    "validate:publish must run the explicit scripts typecheck exactly once.",
+  );
+  assert.match(
+    normalTypecheckCommand ?? "",
+    /--filter "\.\/scripts"/,
+    "The normal root build must continue to include the scripts package typecheck.",
+  );
+  assert.equal(
+    releaseBuildCommand,
+    "pnpm run typecheck:release && pnpm -r --if-present run build",
+    "The release build must preserve the normal recursive build after its release-specific static checks.",
+  );
+  assert.equal(
+    releaseTypecheckCommand,
+    'pnpm run typecheck:libs && pnpm -r --filter "./artifacts/**" --if-present run typecheck',
+    "Release typechecking must preserve library and artifact checks while leaving the scripts check to the explicit release gate.",
+  );
+  assert.doesNotMatch(
+    releaseTypecheckCommand,
+    /\.\/scripts|@workspace\/scripts/,
+    "The release build must not duplicate the explicit scripts typecheck.",
   );
 });
 
@@ -332,8 +360,15 @@ test("branch CI isolates database checks and orders browser journeys after every
 
   assert.equal(
     scripts["validate:ci:build"],
-    "export CI=true && pnpm run build && pnpm --filter @workspace/scripts run typecheck && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions",
+    "export CI=true && pnpm run build:release && pnpm --filter @workspace/scripts run typecheck && pnpm run test:internal-request-control-outputs && pnpm run test:beauty-marketplace-typecheck && pnpm run test:frontend-generated-typecheck && pnpm run test:api-server-typecheck && pnpm run test:browser-specs-typecheck && pnpm run test:browser-fixtures && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:seo-standards && pnpm run test:frontend-interactions",
     "The build CI command must preserve every genuinely database-free phase-one publish check.",
+  );
+  assert.equal(
+    scripts["validate:ci:build"]?.match(
+      /pnpm --filter @workspace\/scripts run typecheck/g,
+    )?.length,
+    1,
+    "The build CI command must run the explicit scripts typecheck exactly once.",
   );
   assert.equal(
     scripts["validate:ci:database"],
