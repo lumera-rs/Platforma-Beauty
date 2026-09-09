@@ -15,6 +15,7 @@ import {
   db,
   emailDeliveriesTable,
   employeeLocationAssignmentsTable,
+  employeeLeaveRequestsTable,
   employeeServicesTable,
   employeeTimeOffTable,
   employeesTable,
@@ -107,6 +108,32 @@ async function request(
     status: response.status,
     body: response.status === 204 ? null : await response.json(),
   };
+}
+
+async function assertCancellationEmailPairs(appointmentIds: string[], message: string): Promise<void> {
+  const expectedKeys = appointmentIds.flatMap((appointmentId) => [
+    `appointment:${appointmentId}:customer:cancelled`,
+    `appointment:${appointmentId}:salon:cancelled`,
+  ]);
+  const rows = await db.select({ eventKey: emailDeliveriesTable.eventKey })
+    .from(emailDeliveriesTable)
+    .where(inArray(emailDeliveriesTable.eventKey, expectedKeys));
+  assert.deepEqual(
+    rows.map((row) => row.eventKey).sort(),
+    expectedKeys.sort(),
+    message,
+  );
+}
+
+async function assertNoCancellationEmails(appointmentIds: string[], message: string): Promise<void> {
+  const eventKeys = appointmentIds.flatMap((appointmentId) => [
+    `appointment:${appointmentId}:customer:cancelled`,
+    `appointment:${appointmentId}:salon:cancelled`,
+  ]);
+  const rows = await db.select({ eventKey: emailDeliveriesTable.eventKey })
+    .from(emailDeliveriesTable)
+    .where(inArray(emailDeliveriesTable.eventKey, eventKeys));
+  assert.equal(rows.length, 0, message);
 }
 
 async function getRequest(baseUrl: string, session: string, path: string): Promise<HttpResult> {
@@ -1230,6 +1257,10 @@ async function run(): Promise<void> {
     assert.ok(blockedGroupAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
     assert.equal((await db.select().from(appointmentStatusHistoryTable)
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
+    await assertNoCancellationEmails(
+      blockedGroupMembers.map((item) => item.id),
+      "rejected group cancellation creates no email obligations",
+    );
 
     const successfulGroupMembers = await db.insert(appointmentsTable).values([
       groupAppointmentValues(successfulGroup!.id, "2099-12-04", false),
@@ -1244,6 +1275,26 @@ async function run(): Promise<void> {
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, successfulGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")));
     assert.equal(successfulGroupHistory.length, 2);
     assert.ok(successfulGroupHistory.every((item) => item.occurredAt instanceof Date));
+    await assertCancellationEmailPairs(
+      successfulGroupMembers.map((item) => item.id),
+      "owner group cancellation enqueues one customer/salon email pair per affected appointment",
+    );
+
+    const [employeeLifecycleAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
+      employeeId: employee!.id, serviceId: service!.id,
+      date: "2099-12-09", startTime: "16:00", endTime: "17:00",
+      durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const employeeLifecycleCancel = await request(
+      baseUrl, employeeSession, `/appointments/${employeeLifecycleAppointment!.id}/lifecycle`, "POST",
+      { action: "cancel", reason: "Employee cancellation email scope" },
+    );
+    assert.equal(employeeLifecycleCancel.status, 200, "assigned employee lifecycle cancellation must succeed");
+    await assertCancellationEmailPairs(
+      [employeeLifecycleAppointment!.id],
+      "employee lifecycle cancellation enqueues the required email pair",
+    );
 
     const [blockedSeries] = await db.insert(appointmentSeriesTable).values({
       salonId: salon!.id, salonCustomerId: contact!.id, serviceId: service!.id,
@@ -1260,11 +1311,81 @@ async function run(): Promise<void> {
     assert.ok(blockedSeriesAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
     assert.equal((await db.select().from(appointmentStatusHistoryTable)
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedSeriesMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
+
+    const [successfulSeries] = await db.insert(appointmentSeriesTable).values({
+      salonId: salon!.id, salonCustomerId: contact!.id, serviceId: service!.id,
+      employeeId: employee!.id, totalAppointments: 2, createdByUserId: owner!.id,
+    }).returning();
+    const successfulSeriesMembers = await db.insert(appointmentsTable).values([
+      { ...groupAppointmentValues(successfulGroup!.id, "2099-12-10", false), bookingGroupId: null, seriesId: successfulSeries!.id },
+      { ...groupAppointmentValues(successfulGroup!.id, "2099-12-11", false), bookingGroupId: null, seriesId: successfulSeries!.id },
+    ]).returning();
+    const successfulSeriesCancel = await request(
+      baseUrl, ownerSession, `/salon/appointment-series/${successfulSeries!.id}`, "DELETE", {},
+    );
+    assert.equal(successfulSeriesCancel.status, 200, "owner series cancellation must succeed");
+    await assertCancellationEmailPairs(
+      successfulSeriesMembers.map((item) => item.id),
+      "series cancellation enqueues one customer/salon email pair per affected appointment",
+    );
+
+    const leaveDate = "2099-12-12";
+    const leaveAppointments = await db.insert(appointmentsTable).values([
+      {
+        ...groupAppointmentValues(successfulGroup!.id, leaveDate, false),
+        bookingGroupId: null, startTime: "09:00", endTime: "10:00",
+      },
+      {
+        ...groupAppointmentValues(successfulGroup!.id, leaveDate, false),
+        bookingGroupId: null, startTime: "11:00", endTime: "12:00",
+      },
+    ]).returning();
+    const [leaveRequest] = await db.insert(employeeLeaveRequestsTable).values({
+      employeeId: employee!.id, startDate: leaveDate, endDate: leaveDate,
+      reason: "Cancellation email scope",
+    }).returning();
+    const leaveApproval = await request(
+      baseUrl, ownerSession, `/salon/leave-requests/${leaveRequest!.id}`, "PATCH",
+      { status: "approved", affectedAppointments: "cancel" },
+    );
+    assert.equal(leaveApproval.status, 200, "leave approval can canonically cancel affected appointments");
+    await assertCancellationEmailPairs(
+      leaveAppointments.map((item) => item.id),
+      "leave-triggered cancellation enqueues one customer/salon email pair per affected appointment",
+    );
     assertCalendarDate(
       (customerCancellation.body as { date: string }).date,
       updatedCustomerBookingDate,
       "the customer appointment cancellation response date",
     );
+
+    const [phonelessContact] = await db.insert(salonCustomersTable).values({
+      salonId: salon!.id, firstName: "Kontakt", lastName: "Bez telefona",
+      phone: null, phoneNormalized: null,
+    }).returning();
+    const [phonelessAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, salonCustomerId: phonelessContact!.id,
+      employeeId: employee!.id, serviceId: service!.id,
+      date: "2099-10-30", startTime: "16:00", endTime: "17:00",
+      durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const invalidGuestBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      guest: { firstName: "Nevalidan", lastName: "Telefon", phone: "bez-broja" },
+      employeeId: employee!.id,
+      date: "2099-10-31",
+      startTime: "16:00",
+    });
+    assert.equal(invalidGuestBooking.status, 400, "digit-free guest phone must be rejected before CRM matching");
+    const [phonelessContactAfter] = await db.select().from(salonCustomersTable)
+      .where(eq(salonCustomersTable.id, phonelessContact!.id));
+    assert.equal(phonelessContactAfter!.phone, null);
+    assert.equal(phonelessContactAfter!.phoneNormalized, null);
+    assert.equal(phonelessContactAfter!.userId, null, "invalid phone must not assign the phoneless CRM contact");
+    const [phonelessAppointmentAfter] = await db.select().from(appointmentsTable)
+      .where(eq(appointmentsTable.id, phonelessAppointment!.id));
+    assert.equal(phonelessAppointmentAfter!.salonCustomerId, phonelessContact!.id);
+    assert.equal(phonelessAppointmentAfter!.customerId, null, "invalid phone must not reassign existing appointments");
 
     const salonBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
       serviceId: service!.id,
@@ -1710,6 +1831,10 @@ async function run(): Promise<void> {
       { action: "cancel", reason: "Resource capacity regression cleanup" },
     );
     assert.equal(ownerCancelBooking.status, 200, "owner cancellation must succeed");
+    await assertCancellationEmailPairs(
+      [firstBookingBody.id],
+      "owner lifecycle cancellation enqueues the required email pair",
+    );
 
     // After cancellation, the same slot must become available again.
     const retryResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {

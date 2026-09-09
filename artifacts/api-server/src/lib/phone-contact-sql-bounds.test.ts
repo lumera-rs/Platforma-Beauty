@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { db, pool, salonCustomersTable, salonsTable, usersTable } from "@workspace/db";
+import {
+  db,
+  pool,
+  salonCustomersTable,
+  salonsTable,
+  serbianPhoneNormalizedSqlExpression,
+  usersTable,
+} from "@workspace/db";
 import { hashPassword } from "./auth";
-import { findSalonCustomerByPhone, linkPhoneContactsToUser } from "../routes/marketplace";
+import { findSalonCustomerByPhone, linkPhoneContactsToUser, normalizedPhone } from "../routes/marketplace";
 
 async function run() {
   const suffix = randomUUID();
@@ -31,32 +38,45 @@ async function run() {
     assert.equal(salons.length, 3);
     salonIds.push(...salons.map((salon) => salon.id));
 
-    const [legacyDuplicate, canonical, otherTenantMatch, unrelated] = await db.insert(salonCustomersTable).values([
+    const [legacyDuplicate, canonical, otherTenantMatch, unrelated, phoneless] = await db.insert(salonCustomersTable).values([
       { salonId: salons[0]!.id, firstName: "Legacy", lastName: "Match", phone: `${localMatchingPhone.slice(0, 3)} / ${localMatchingPhone.slice(3, 6)}-${localMatchingPhone.slice(6)}`, phoneNormalized: null },
       { salonId: salons[0]!.id, firstName: "Canonical", lastName: "Match", phone: `+${matchingPhone}`, phoneNormalized: matchingPhone },
       { salonId: salons[1]!.id, firstName: "Other tenant", lastName: "Match", phone: `00${matchingPhone}`, phoneNormalized: null },
       { salonId: salons[0]!.id, firstName: "Unrelated", lastName: "Contact", phone: "0651112222", phoneNormalized: "381651112222" },
+      { salonId: salons[0]!.id, firstName: "No", lastName: "Phone", phone: null, phoneNormalized: null },
       ...Array.from({ length: 40 }, (_, index) => ({
         salonId: salons[2]!.id, firstName: `Unrelated ${index}`, lastName: "Bulk",
         phone: `+38163${String(index).padStart(7, "0")}`, phoneNormalized: `38163${String(index).padStart(7, "0")}`,
       })),
     ]).returning();
-    assert.ok(canonical && legacyDuplicate && otherTenantMatch && unrelated);
+    assert.ok(canonical && legacyDuplicate && otherTenantMatch && unrelated && phoneless);
+    for (const input of [matchingPhone, `+${matchingPhone}`, `00${matchingPhone}`, localMatchingPhone]) {
+      assert.equal(normalizedPhone(input), matchingPhone, `valid Serbian form ${input} must keep canonical +381 semantics`);
+    }
 
+    const legacyPhoneNormalized = sql.raw(
+      serbianPhoneNormalizedSqlExpression("\"salon_customers\".\"phone\""),
+    );
     const lookupPlan = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL enable_seqscan = off`);
       return tx.execute(sql`
         EXPLAIN (FORMAT JSON)
         SELECT id FROM salon_customers
         WHERE phone_normalized = ${matchingPhone}
-           OR phone_lookup_normalized = ${matchingPhone}
+           OR ${legacyPhoneNormalized} = ${matchingPhone}
       `);
     });
     const lookupPlanText = JSON.stringify(lookupPlan.rows);
     assert.match(lookupPlanText, /salon_customers_phone_normalized_idx/,
       "canonical phone matching must use its bounded index branch");
-    assert.match(lookupPlanText, /salon_customers_phone_lookup_normalized_idx/,
-      "legacy Serbian phone matching must use its bounded generated-column index branch");
+    assert.match(lookupPlanText, /salon_customers_phone_legacy_normalized_expr_idx/,
+      "legacy Serbian phone matching must use its bounded expression-index branch");
+
+    const [phonelessLookup] = await db.select({
+      normalized: legacyPhoneNormalized,
+    }).from(salonCustomersTable).where(eq(salonCustomersTable.id, phoneless.id));
+    assert.equal(phonelessLookup?.normalized, null, "NULL phones must remain unmatchable");
+    assert.equal(normalizedPhone("bez-broja"), "", "digit-free input must normalize to an invalid empty value");
 
     let queryCount = 0;
     const queryTexts: string[] = [];
@@ -68,6 +88,10 @@ async function run() {
         : query && typeof query === "object" && "text" in query ? String((query as { text: unknown }).text) : "");
       return originalQuery(...args);
     }) as typeof pool.query;
+
+    const emptyMatch = await findSalonCustomerByPhone(db, salons[0]!.id, "");
+    assert.equal(emptyMatch, undefined, "an empty normalized phone must never enter contact lookup");
+    assert.equal(queryCount, 0, "an empty normalized phone must be rejected before querying CRM contacts");
 
     const found = await findSalonCustomerByPhone(db, salons[0]!.id, matchingPhone);
     assert.equal(found?.id, canonical.id, "canonical +381 matching must be retained");

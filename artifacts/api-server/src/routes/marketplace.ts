@@ -223,6 +223,7 @@ import
   appointmentWaitlistTable,
   salonResourcesTable,
   salonsTable,
+  serbianPhoneNormalizedSqlExpression,
   salonCustomersTable,
   serviceCategoriesTable,
   serviceResourceRequirementsTable,
@@ -2879,13 +2880,17 @@ export function normalizedPhone(phone: string) {
 }
 
 function salonCustomerPhoneMatches(phoneNormalized: string) {
+  const legacyPhoneNormalized = sql.raw(
+    serbianPhoneNormalizedSqlExpression("\"salon_customers\".\"phone\""),
+  );
   return or(
     eq(salonCustomersTable.phoneNormalized, phoneNormalized),
-    eq(salonCustomersTable.phoneLookupNormalized, phoneNormalized),
+    eq(legacyPhoneNormalized, phoneNormalized),
   )!;
 }
 
 export async function findSalonCustomerByPhone(store: any, salonId: string, phoneNormalized: string) {
+  if (!phoneNormalized) return undefined;
   const [contact] = await store.select().from(salonCustomersTable).where(and(
     eq(salonCustomersTable.salonId, salonId),
     salonCustomerPhoneMatches(phoneNormalized),
@@ -7866,10 +7871,7 @@ async function createStaffBookingGroup(
         const phone = parsed.data.guest!.phone.trim();
         const phoneNormalized = normalizedPhone(phone);
         if (!phoneNormalized) throw new AppointmentSeriesError("Telefon gosta nije ispravan.", 400);
-        const [existing] = await tx.select().from(salonCustomersTable).where(and(
-          eq(salonCustomersTable.salonId, access.salon.id),
-          eq(salonCustomersTable.phoneNormalized, phoneNormalized),
-        )).limit(1);
+        const existing = await findSalonCustomerByPhone(tx, access.salon.id, phoneNormalized);
         if (existing) {
           contact = existing;
         } else {
@@ -8941,7 +8943,9 @@ async function cancelAppointmentInTx(
     appointmentId: cancelled.id, status: "cancelled", action: "cancel",
     changedByUserId: input.actorId, occurredAt: input.occurredAt,
   });
-  // Persist the cancellation email outbox entry in this canonical transition.
+  // Every business cancellation path intentionally shares this canonical
+  // transition. The customer/salon email pair has no actor-specific opt-out:
+  // it is a required transactional obligation for every cancelled appointment.
   // Delivery remains asynchronous; a rollback therefore cannot leave a
   // cancelled appointment without its required email.
   if (cancelled.customerId) {
@@ -10260,6 +10264,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
     if (!contact) { res.status(404).json({ error: "CRM klijent ne pripada ovom salonu." }); return; }
   } else {
     const submittedPhone = normalizedPhone(parsed.data.guest!.phone);
+    if (!submittedPhone) { res.status(400).json({ error: "Unesite ispravan broj telefona klijenta." }); return; }
     const [registeredUser] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, submittedPhone)).limit(1);
     contact = await findSalonCustomerByPhone(db, salon.id, submittedPhone);
     if (!contact) {

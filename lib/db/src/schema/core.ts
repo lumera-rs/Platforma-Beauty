@@ -15,6 +15,23 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+export type SerbianPhoneSqlColumn =
+  | "phone"
+  | "\"phone\""
+  | "\"salon_customers\".\"phone\"";
+
+export function serbianPhoneNormalizedSqlExpression(column: SerbianPhoneSqlColumn): string {
+  const internationalDigits =
+    `regexp_replace(regexp_replace(coalesce(${column}, ''), '[^0-9]', '', 'g'), '^00', '')`;
+  return `nullif(case when ${internationalDigits} like '0%' `
+    + `then '381' || substring(${internationalDigits} from 2) `
+    + `else ${internationalDigits} end, '')`;
+}
+
+const salonCustomerPhoneLookupExpression = sql.raw(
+  serbianPhoneNormalizedSqlExpression("\"phone\""),
+);
+
 export const userRoleEnum = pgEnum("user_role", [
   "SUPER_ADMIN",
   "ADMIN",
@@ -689,25 +706,6 @@ export const salonCustomersTable = pgTable("salon_customers", {
   email: text("email"),
   phone: text("phone"),
   phoneNormalized: text("phone_normalized"),
-  phoneLookupNormalized: text("phone_lookup_normalized").generatedAlwaysAs(sql`
-    case
-      when (case
-        when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
-          then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
-        else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-      end) like '0%'
-        then '381' || substring((case
-          when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
-            then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
-          else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-        end) from 2)
-      else (case
-        when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
-          then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
-        else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-      end)
-    end
-  `),
   smsOptOut: boolean("sms_opt_out").notNull().default(false),
   /** Optional date-of-birth for birthday automation trigger (format: YYYY-MM-DD) */
   birthDate: date("birth_date", { mode: "string" }),
@@ -717,7 +715,9 @@ export const salonCustomersTable = pgTable("salon_customers", {
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
   index("salon_customers_phone_normalized_idx").on(table.phoneNormalized).where(sql`${table.phoneNormalized} is not null`),
-  index("salon_customers_phone_lookup_normalized_idx").on(table.phoneLookupNormalized).where(sql`${table.phoneLookupNormalized} is not null`),
+  index("salon_customers_phone_legacy_normalized_expr_idx")
+    .on(salonCustomerPhoneLookupExpression)
+    .where(sql`${salonCustomerPhoneLookupExpression} is not null`),
   // Per-salon retention samples seek from a random UUID cursor and take a
   // bounded circular range. This avoids sorting the platform-wide customer
   // table while still drawing a distinct sample inside every salon.

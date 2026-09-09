@@ -427,6 +427,35 @@ test("publish validation checks the release chain first without database access"
   );
 });
 
+test("Batch 1 F1 and A-2 regressions stay in the API release phase", async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const scripts = packageJson.scripts ?? {};
+  const apiPhase = scripts["validate:release:3-api"] ?? "";
+
+  assert.equal(
+    scripts["test:owner-reset-password-session-revocation"],
+    "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/owner-reset-password-session-revocation.test.ts",
+    "F1 owner-reset session revocation must keep a focused root test command.",
+  );
+  assert.equal(
+    scripts["test:phone-contact-sql-bounds"],
+    "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/phone-contact-sql-bounds.test.ts",
+    "A-2 contact SQL bounds must keep a focused root test command.",
+  );
+  assert.match(
+    apiPhase,
+    /pnpm run test:query-budgets && pnpm run test:phone-contact-sql-bounds/,
+    "A-2 must run beside the query-budget gate in release phase 3.",
+  );
+  assert.match(
+    apiPhase,
+    /pnpm run test:change-password-session-revocation && pnpm run test:owner-reset-password-session-revocation/,
+    "F1 must run beside the related password-session gate in release phase 3.",
+  );
+});
+
 test("branch CI runs the database-free release-chain gate before slower work", async () => {
   const workflow = await readFile(branchCiPath, "utf8");
 

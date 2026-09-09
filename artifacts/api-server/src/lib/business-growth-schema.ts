@@ -1,4 +1,8 @@
-import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db";
+import {
+  pool,
+  serbianPhoneNormalizedSqlExpression,
+  type DatabasePoolClient as PoolClient,
+} from "@workspace/db";
 import { logger } from "./logger";
 
 /**
@@ -17,14 +21,15 @@ import { logger } from "./logger";
  *    is always returned to the pool.
  *  - Every statement is independently idempotent (CREATE ... IF NOT EXISTS,
  *    ADD COLUMN IF NOT EXISTS, guarded enum-label/constraint creation) and never
- *    drops or recreates existing data.
+ *    drops business data. Obsolete derived schema objects may be retired
+ *    explicitly (v126 removes a lookup-only generated column).
  *  - Completion is logged only after ALL DDL succeeds; any error propagates so
  *    startup fails loudly.
  *
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 125;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 126;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -245,39 +250,25 @@ function paymentInstructionSnapshotBackfillStatements(s: string): string[] {
 }
 
 function tableStatements(s: string): string[] {
+  const legacyPhoneNormalized = serbianPhoneNormalizedSqlExpression("phone");
   return [
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
-     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone_lookup_normalized text
-        GENERATED ALWAYS AS (
-          CASE
-            WHEN (CASE
-              WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
-                THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
-              ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-            END) LIKE '0%'
-              THEN '381' || substring((CASE
-                WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
-                  THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
-                ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-              END) FROM 2)
-            ELSE (CASE
-              WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
-                THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
-              ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
-            END)
-          END
-        ) STORED`,
+    `DROP INDEX IF EXISTS ${s}.salon_customers_phone_lookup_normalized_idx`,
+    `ALTER TABLE ${s}.salon_customers DROP COLUMN IF EXISTS phone_lookup_normalized`,
+    `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone text`,
+    `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone_normalized text`,
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
     `CREATE INDEX IF NOT EXISTS salon_customers_salon_id_idx
        ON ${s}.salon_customers (salon_id, id)`,
-     `CREATE INDEX IF NOT EXISTS salon_customers_phone_normalized_idx
-        ON ${s}.salon_customers (phone_normalized) WHERE phone_normalized IS NOT NULL`,
-     `CREATE INDEX IF NOT EXISTS salon_customers_phone_lookup_normalized_idx
-        ON ${s}.salon_customers (phone_lookup_normalized) WHERE phone_lookup_normalized IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS salon_customers_phone_normalized_idx
+       ON ${s}.salon_customers (phone_normalized) WHERE phone_normalized IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS salon_customers_phone_legacy_normalized_expr_idx
+       ON ${s}.salon_customers ((${legacyPhoneNormalized}))
+       WHERE (${legacyPhoneNormalized}) IS NOT NULL`,
 
     // v12: Customer-safe retail storefront fields. These deliberately remain
     // separate from the owner-only B2B description and prices in `products`.
