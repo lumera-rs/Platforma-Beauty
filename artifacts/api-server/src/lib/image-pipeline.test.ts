@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import {
   db,
+  employeeLocationAssignmentsTable,
   employeesTable,
   imageAssetsTable,
   mediaAssetsTable,
@@ -116,6 +117,15 @@ async function run(): Promise<void> {
     avatarUrl: originalEmployeeAvatarUrl,
     email: employeeEmail,
   }).returning();
+  // Employee portal authorization requires an active salon assignment. The
+  // profile update below is then expected to reach its image-ownership check
+  // and reject the foreign asset with 400, rather than stopping at 403.
+  await db.insert(employeeLocationAssignmentsTable).values({
+    employeeId: employee!.id,
+    salonId: salon!.id,
+    active: true,
+    isDefault: true,
+  });
 
   let assetId: string | undefined;
   let legacyManagedAssetId: string | undefined;
@@ -295,7 +305,7 @@ async function run(): Promise<void> {
       headers: { "content-type": "application/json", cookie: employeeCookie },
       body: JSON.stringify({ avatarUrl: finalized.imageUrl }),
     });
-    assert.equal(rejectedEmployeeUpdate.status, 400);
+    assert.equal(rejectedEmployeeUpdate.status, 400, "an authorized employee must get the image ownership validation response");
     const [employeeAfterRejectedUpdate] = await db.select({ avatarUrl: employeesTable.avatarUrl })
       .from(employeesTable)
       .where(eq(employeesTable.id, employee!.id))
@@ -347,6 +357,9 @@ async function run(): Promise<void> {
     }
     if (legacyManagedAssetId) {
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, legacyManagedAssetId));
+    }
+    if (employee) {
+      await db.delete(employeeLocationAssignmentsTable).where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
     }
     if (employee) await db.delete(employeesTable).where(eq(employeesTable.id, employee.id));
     if (salon) await db.delete(salonsTable).where(eq(salonsTable.id, salon.id));
