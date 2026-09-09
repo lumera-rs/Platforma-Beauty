@@ -222,6 +222,7 @@ export async function canonicalAvailability(input: {
     }
     const granularity = context.settings?.slotGranularityMinutes ?? 15;
     const minimumLeadTimeMinutes = context.settings?.minimumLeadTimeMinutes ?? 0;
+    const maxBookingHorizonDays = context.settings?.maxBookingHorizonDays ?? null;
     const effectiveNow = input.now ?? wallClockNowInTimeZone(new Date(), DEFAULT_SALON_TIME_ZONE);
     const linked = new Set(context.employeeServiceLinks.filter((link) => link.serviceId === input.service.id).map((link) => link.employeeId));
     const candidates = context.employees.filter((employee) => linked.has(employee.id) && (!input.employeeId || employee.id === input.employeeId));
@@ -294,7 +295,7 @@ export async function canonicalAvailability(input: {
         })),
         ...(input.resourceReservations ?? []),
       ],
-      resourceDowntime, limit: input.limit, now: effectiveNow, minimumLeadTimeMinutes,
+      resourceDowntime, limit: input.limit, now: effectiveNow, minimumLeadTimeMinutes, maxBookingHorizonDays,
     });
   }
   const startDate = [...input.dates].sort()[0]!;
@@ -302,6 +303,7 @@ export async function canonicalAvailability(input: {
   const [policy] = await store.select({
     slotGranularityMinutes: sql<number | null>`(select ${salonBookingSettingsTable.slotGranularityMinutes} from ${salonBookingSettingsTable} where ${salonBookingSettingsTable.salonId} = ${input.salonId} limit 1)`,
     minimumLeadTimeMinutes: sql<number | null>`(select ${salonBookingSettingsTable.minimumLeadTimeMinutes} from ${salonBookingSettingsTable} where ${salonBookingSettingsTable.salonId} = ${input.salonId} limit 1)`,
+    maxBookingHorizonDays: sql<number | null>`(select ${salonBookingSettingsTable.maxBookingHorizonDays} from ${salonBookingSettingsTable} where ${salonBookingSettingsTable.salonId} = ${input.salonId} limit 1)`,
     dateHours: sql<Array<{ date: string; openTime: string; closeTime: string; closed: boolean }>>`coalesce((
       select jsonb_agg(jsonb_build_object(
         'date', ${salonDateHoursTable.date},
@@ -329,6 +331,7 @@ export async function canonicalAvailability(input: {
   // endpoint. Do not let a public query select an unconfigured cadence.
   const granularity = policy?.slotGranularityMinutes ?? 15;
   const minimumLeadTimeMinutes = policy?.minimumLeadTimeMinutes ?? 0;
+  const maxBookingHorizonDays = policy?.maxBookingHorizonDays ?? null;
   const effectiveNow = input.now ?? wallClockNowInTimeZone(new Date(), DEFAULT_SALON_TIME_ZONE);
   const dateHours = policy?.dateHours ?? [];
   const employeeRows = await store.select({ employee: employeesTable }).from(employeesTable)
@@ -558,6 +561,6 @@ export async function canonicalAvailability(input: {
     resourceDowntime,
     limit: input.limit,
     now: effectiveNow,
-    minimumLeadTimeMinutes,
+    minimumLeadTimeMinutes, maxBookingHorizonDays,
   });
 }

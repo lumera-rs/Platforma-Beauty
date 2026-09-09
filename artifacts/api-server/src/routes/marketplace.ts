@@ -2878,11 +2878,31 @@ export function normalizedPhone(phone: string) {
   return digits.startsWith("0") ? `381${digits.slice(1)}` : digits;
 }
 
-async function linkPhoneContactsToUser(store: any, userId: string, phone: string) {
+function salonCustomerPhoneMatches(phoneNormalized: string) {
+  return or(
+    eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+    eq(salonCustomersTable.phoneLookupNormalized, phoneNormalized),
+  )!;
+}
+
+export async function findSalonCustomerByPhone(store: any, salonId: string, phoneNormalized: string) {
+  const [contact] = await store.select().from(salonCustomersTable).where(and(
+    eq(salonCustomersTable.salonId, salonId),
+    salonCustomerPhoneMatches(phoneNormalized),
+  )).orderBy(sql`(${salonCustomersTable.phoneNormalized} = ${phoneNormalized}) DESC NULLS LAST`).limit(1);
+  return contact as typeof salonCustomersTable.$inferSelect | undefined;
+}
+
+export async function linkPhoneContactsToUser(store: any, userId: string, phone: string) {
   const phoneNormalized = normalizedPhone(phone);
   if (!phoneNormalized) return;
-  const contacts = (await store.select().from(salonCustomersTable)).filter((contact: typeof salonCustomersTable.$inferSelect) =>
-    contact.phoneNormalized === phoneNormalized || (!!contact.phone && normalizedPhone(contact.phone) === phoneNormalized));
+  const contacts = await store.select().from(salonCustomersTable)
+    .where(salonCustomerPhoneMatches(phoneNormalized))
+    .orderBy(
+      asc(salonCustomersTable.salonId),
+      sql`(${salonCustomersTable.phoneNormalized} = ${phoneNormalized}) DESC NULLS LAST`,
+      asc(salonCustomersTable.id),
+    ) as typeof salonCustomersTable.$inferSelect[];
   for (const salonId of [...new Set(contacts.map((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId))]) {
     const group = contacts.filter((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId === salonId);
     const canonical = group[0]!;
@@ -8921,6 +8941,22 @@ async function cancelAppointmentInTx(
     appointmentId: cancelled.id, status: "cancelled", action: "cancel",
     changedByUserId: input.actorId, occurredAt: input.occurredAt,
   });
+  // Persist the cancellation email outbox entry in this canonical transition.
+  // Delivery remains asynchronous; a rollback therefore cannot leave a
+  // cancelled appointment without its required email.
+  if (cancelled.customerId) {
+    const [customer] = await tx.select().from(usersTable)
+      .where(eq(usersTable.id, cancelled.customerId)).limit(1);
+    const [salon] = await tx.select().from(salonsTable)
+      .where(eq(salonsTable.id, cancelled.salonId)).limit(1);
+    const [service] = await tx.select().from(servicesTable)
+      .where(eq(servicesTable.id, cancelled.serviceId)).limit(1);
+    if (customer && salon && service) {
+      await sendAppointmentEmails({
+        event: "cancelled", appointment: cancelled, customer, salon, service, store: tx,
+      });
+    }
+  }
   await handleAppointmentCancellationReversalsInTx(tx, cancelled.id, cancelled.salonId, input.occurredAt);
   if (cancelled.customerId) {
     await recordAppointmentReferralTransitionInTx(tx, {
@@ -9204,7 +9240,6 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([]),
     getAllocationsForAppointment(db, appointment.id),
   ]);
-  await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
   if (lateCancellation) await publishSalonNotificationUpdate(appointment.salonId);
   const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true, null, allocatedResources);
   CancelAppointmentResponse.parse(response);
@@ -9782,6 +9817,7 @@ async function bookingSettingsView(salonId: string) {
     salonId, updatedAt: row?.updatedAt ?? new Date(),
     slotGranularityMinutes: row?.slotGranularityMinutes ?? 15,
     minimumLeadTimeMinutes: row?.minimumLeadTimeMinutes ?? 0,
+    maxBookingHorizonDays: row?.maxBookingHorizonDays ?? null,
     cancellationDeadlineMinutes: supportedCancellationDeadline(row?.cancellationDeadlineMinutes),
     reminderOffsetsMinutes: supportedReminderOffsets(row?.reminderOffsetsMinutes),
     reminderChannels: row?.reminderChannels ?? [],
@@ -10224,9 +10260,8 @@ admitBookingRequest, async (req, res): Promise<void> => {
     if (!contact) { res.status(404).json({ error: "CRM klijent ne pripada ovom salonu." }); return; }
   } else {
     const submittedPhone = normalizedPhone(parsed.data.guest!.phone);
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
     const [registeredUser] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, submittedPhone)).limit(1);
-    contact = contacts.find((item) => item.phoneNormalized === submittedPhone || (item.phone && normalizedPhone(item.phone) === submittedPhone));
+    contact = await findSalonCustomerByPhone(db, salon.id, submittedPhone);
     if (!contact) {
       [contact] = await db.insert(salonCustomersTable).values({
         salonId: salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
@@ -10600,8 +10635,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
     const phone = normalizedPhone(parsed.data.guest!.phone);
     if (!phone) { res.status(400).json({ error: "Unesite ispravan broj telefona klijenta." }); return; }
     const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    contact = await findSalonCustomerByPhone(db, access.salon.id, phone);
     if (!contact) {
       [contact] = await db.insert(salonCustomersTable).values({
         salonId: access.salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
@@ -12152,12 +12186,17 @@ router.post("/salon/employees/:employeeId/access/reset-password", async (req, re
     .where(and(eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"))).limit(1);
   if (!account) { res.status(403).json({ error: "Povezani nalog nije nalog zaposlenog." }); return; }
   const temporary = temporaryPassword();
-  await db.update(usersTable).set({
-    passwordHash: await hashPassword(temporary),
-    passwordSetAt: new Date(),
-    mustChangePassword: true,
-    updatedAt: new Date(),
-  }).where(eq(usersTable.id, account.id));
+  const passwordHash = await hashPassword(temporary);
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    await tx.update(usersTable).set({
+      passwordHash,
+      passwordSetAt: now,
+      mustChangePassword: true,
+      updatedAt: now,
+    }).where(eq(usersTable.id, account.id));
+    await tx.delete(sessionsTable).where(eq(sessionsTable.userId, account.id));
+  });
   res.json({ email: account.email, temporaryPassword: temporary, mustChangePassword: true });
 });
 
@@ -12593,8 +12632,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
   } else {
     const phone = normalizedPhone(parsed.data.guest!.phone);
     if (!phone || !parsed.data.guest!.firstName.trim()) { res.status(400).json({ error: "Unesite ime i ispravan telefon klijenta." }); return; }
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    contact = await findSalonCustomerByPhone(db, access.salon.id, phone);
     if (!contact) {
       const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
       [contact] = await db.insert(salonCustomersTable).values({
@@ -12684,8 +12722,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       if (!client) throw new EmployeeBookingError("Klijent ne pripada ovom salonu.", 403);
       contact = client;
     } else {
-      const contacts = await tx.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-      const existing = contacts.find((item) => item.phoneNormalized === guestPhoneNormalized || (item.phone && normalizedPhone(item.phone) === guestPhoneNormalized));
+      const existing = await findSalonCustomerByPhone(tx, access.salon.id, guestPhoneNormalized!);
       if (existing) {
         contact = existing;
       } else {

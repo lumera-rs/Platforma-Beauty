@@ -11402,6 +11402,7 @@ components:
       properties:
         slotGranularityMinutes: { type: integer, enum: [5, 10, 15, 30], default: 15 }
         minimumLeadTimeMinutes: { type: integer, minimum: 0 }
+        maxBookingHorizonDays: { type: ["integer", "null"], minimum: 0, maximum: 3650 }
         cancellationDeadlineMinutes:
           type: integer
           enum: [720, 1440, 2880]
@@ -11423,7 +11424,7 @@ components:
         resourceDowntime:
           type: array
           items: { $ref: "#/components/schemas/ResourceDowntime" }
-      required: [slotGranularityMinutes, minimumLeadTimeMinutes, cancellationDeadlineMinutes, reminderOffsetsMinutes, reminderChannels, maxVisitGapMinutes, minimumUsefulLateTreatmentMinutes, dateHours, resourceDowntime]
+      required: [slotGranularityMinutes, minimumLeadTimeMinutes, maxBookingHorizonDays, cancellationDeadlineMinutes, reminderOffsetsMinutes, reminderChannels, maxVisitGapMinutes, minimumUsefulLateTreatmentMinutes, dateHours, resourceDowntime]
     SalonBookingSettings:
       allOf:
         - $ref: "#/components/schemas/SalonBookingSettingsInput"

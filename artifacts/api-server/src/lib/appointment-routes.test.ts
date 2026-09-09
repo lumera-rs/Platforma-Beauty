@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { GetSalonResponse } from "@workspace/api-zod";
 import {
   appointmentResourceAllocationsTable,
@@ -13,6 +13,7 @@ import {
   customerNotificationsTable,
   customerPackagePurchasesTable,
   db,
+  emailDeliveriesTable,
   employeeLocationAssignmentsTable,
   employeeServicesTable,
   employeeTimeOffTable,
@@ -1143,6 +1144,57 @@ async function run(): Promise<void> {
       .where(eq(customerNotificationsTable.userId, customer!.id));
     assert.ok(cancellationNotifications.some((item) => item.eventKey.includes(`appointment:${createdCustomerAppointment.id}:lifecycle:cancel:`)),
       "successful cancellation enqueues its durable customer notification");
+    const committedCancellationEmails = await db.select().from(emailDeliveriesTable).where(sql`
+      ${emailDeliveriesTable.eventKey} IN (
+        ${`appointment:${createdCustomerAppointment.id}:customer:cancelled`},
+        ${`appointment:${createdCustomerAppointment.id}:salon:cancelled`}
+      )
+    `);
+    assert.equal(committedCancellationEmails.length, 2,
+      "a committed cancellation atomically includes customer and salon email outbox rows");
+
+    // Inject a failure while the canonical cancellation layer writes the
+    // required email outbox row. The appointment update and outbox insert must
+    // share the same transaction and therefore both roll back.
+    const faultFunction = "appointment_cancel_email_fault";
+    await db.execute(sql.raw(`
+      DROP TRIGGER IF EXISTS ${faultFunction}_trigger ON email_deliveries;
+      CREATE OR REPLACE FUNCTION ${faultFunction}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_key LIKE 'appointment:%:customer:cancelled' THEN
+          RAISE EXCEPTION 'injected cancellation email enqueue failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER ${faultFunction}_trigger
+      BEFORE INSERT ON email_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${faultFunction}();
+    `));
+    try {
+      const faultBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+        salonId: salon!.id, serviceId: service!.id, date: "2099-12-08", startTime: "12:00", employeeId: employee!.id,
+      });
+      assert.equal(faultBooking.status, 201, "fault-injection appointment fixture is created");
+      const faultAppointmentId = (faultBooking.body as { id: string }).id;
+      const faultCancellation = await request(baseUrl, customerSession, `/appointments/${faultAppointmentId}/cancel`, "POST", {
+        reason: "fault injection",
+      });
+      assert.equal(faultCancellation.status, 500, "injected email enqueue failure is surfaced");
+      const [rolledBackAppointment] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, faultAppointmentId));
+      assert.ok(["pending", "confirmed"].includes(rolledBackAppointment!.status),
+        "email enqueue failure rolls back cancellation");
+      const rolledBackEmails = await db.select().from(emailDeliveriesTable).where(sql`
+        ${emailDeliveriesTable.eventKey} IN (
+          ${`appointment:${faultAppointmentId}:customer:cancelled`},
+          ${`appointment:${faultAppointmentId}:salon:cancelled`}
+        )
+      `);
+      assert.equal(rolledBackEmails.length, 0, "failed cancellation leaves no required email outbox row");
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${faultFunction}_trigger ON email_deliveries; DROP FUNCTION IF EXISTS ${faultFunction}();`));
+    }
     const [arrivedCustomerAppointment] = await db.insert(appointmentsTable).values({
       salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
       employeeId: employee!.id, serviceId: service!.id, date: "2099-12-01",

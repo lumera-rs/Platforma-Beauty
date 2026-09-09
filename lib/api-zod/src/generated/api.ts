@@ -3628,6 +3628,7 @@ export const getSalonBookingSettingsResponseOneDateHoursItemCloseTimeRegExp = ne
 export const GetSalonBookingSettingsResponse = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(getSalonBookingSettingsResponseOneSlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(getSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin),
+  "maxBookingHorizonDays": zod.number().int().min(0).max(3650).nullable(),
   "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
   "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),
@@ -3672,6 +3673,7 @@ export const replaceSalonBookingSettingsBodyDateHoursItemCloseTimeRegExp = new R
 export const ReplaceSalonBookingSettingsBody = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(replaceSalonBookingSettingsBodySlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(replaceSalonBookingSettingsBodyMinimumLeadTimeMinutesMin),
+  "maxBookingHorizonDays": zod.number().int().min(0).max(3650).nullable(),
   "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
   "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),
@@ -3709,6 +3711,7 @@ export const replaceSalonBookingSettingsResponseOneDateHoursItemCloseTimeRegExp 
 export const ReplaceSalonBookingSettingsResponse = zod.object({
   "slotGranularityMinutes": zod.union([zod.literal(5),zod.literal(10),zod.literal(15),zod.literal(30)]).default(replaceSalonBookingSettingsResponseOneSlotGranularityMinutesDefault),
   "minimumLeadTimeMinutes": zod.number().int().min(replaceSalonBookingSettingsResponseOneMinimumLeadTimeMinutesMin),
+  "maxBookingHorizonDays": zod.number().int().min(0).max(3650).nullable(),
   "cancellationDeadlineMinutes": zod.union([zod.literal(720),zod.literal(1440),zod.literal(2880)]),
   "reminderOffsetsMinutes": zod.array(zod.union([zod.literal(120),zod.literal(720),zod.literal(1440)])),
   "reminderChannels": zod.array(zod.enum(['email', 'sms', 'push'])),

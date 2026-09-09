@@ -170,6 +170,8 @@ export type GenerateAvailabilityInput = {
   limit?: number;
   now?: { date: string; time: string };
   minimumLeadTimeMinutes?: number;
+  /** Inclusive number of calendar days from the Belgrade wall-clock date. */
+  maxBookingHorizonDays?: number | null;
   /** Segment shape of the treatment being booked. Absent means one block. */
   preProcessingMinutes?: number;
   processingMinutes?: number;
@@ -352,6 +354,15 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
   const requestedSeats = Math.max(1, input.seatCount ?? 1);
   if (requestedSeats > seatCapacity) return [];
   const minimumLead = Math.max(0, input.minimumLeadTimeMinutes ?? 0);
+  const horizonDate = input.now && input.maxBookingHorizonDays != null
+    && Number.isInteger(input.maxBookingHorizonDays)
+    && input.maxBookingHorizonDays >= 0 && input.maxBookingHorizonDays <= 3650
+    ? (() => {
+      const date = new Date(`${input.now!.date}T12:00:00.000Z`);
+      date.setUTCDate(date.getUTCDate() + input.maxBookingHorizonDays!);
+      return date.toISOString().slice(0, 10);
+    })()
+    : null;
   const nowMinutes = input.now ? minutes(input.now.time) + minimumLead : null;
   const leadCutoffDate = input.now && nowMinutes !== null
     ? new Date(`${input.now.date}T12:00:00.000Z`)
@@ -365,6 +376,7 @@ export function generateAvailability(input: GenerateAvailabilityInput): Availabi
   const cap = input.limit ?? Number.POSITIVE_INFINITY;
 
   for (const date of input.dates) {
+    if (horizonDate && date > horizonDate) continue;
     for (const window of locationWindows(input, date)) {
       for (let cursor = minutes(window.startTime); cursor < minutes(window.endTime) && slots.length < cap; cursor += granularity) {
         const startTime = `${String(Math.floor(cursor / 60)).padStart(2, "0")}:${String(cursor % 60).padStart(2, "0")}`;

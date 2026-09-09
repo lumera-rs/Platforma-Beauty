@@ -5,6 +5,7 @@ import { ReplaceSalonBookingSettingsBody } from "@workspace/api-zod";
 const validSettings = {
   slotGranularityMinutes: 15,
   minimumLeadTimeMinutes: 60,
+  maxBookingHorizonDays: null,
   cancellationDeadlineMinutes: 1440,
   reminderOffsetsMinutes: [120, 720, 1440],
   reminderChannels: ["sms", "email", "push"],
@@ -51,4 +52,22 @@ test("booking settings accept closed holidays and custom holiday hours", () => {
       reason: "Nova godina",
     }, validSettings.dateHours[0]],
   }).success, true);
+});
+
+test("booking horizon is nullable, inclusive, and capped at 3650 days", () => {
+  const { maxBookingHorizonDays: _omitted, ...settingsWithoutHorizon } = validSettings;
+  assert.equal(ReplaceSalonBookingSettingsBody.safeParse(settingsWithoutHorizon).success, false,
+    "replace semantics require an explicit horizon so an older payload cannot clear a configured value");
+  assert.equal(ReplaceSalonBookingSettingsBody.safeParse({
+    ...validSettings, maxBookingHorizonDays: null,
+  }).success, true);
+  assert.equal(ReplaceSalonBookingSettingsBody.safeParse({
+    ...validSettings, maxBookingHorizonDays: 0,
+  }).success, true);
+  assert.equal(ReplaceSalonBookingSettingsBody.safeParse({
+    ...validSettings, maxBookingHorizonDays: 3650,
+  }).success, true);
+  assert.equal(ReplaceSalonBookingSettingsBody.safeParse({
+    ...validSettings, maxBookingHorizonDays: 3651,
+  }).success, false);
 });

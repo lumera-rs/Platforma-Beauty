@@ -24,7 +24,7 @@ import { logger } from "./logger";
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 123;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 125;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -249,11 +249,35 @@ function tableStatements(s: string): string[] {
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone_lookup_normalized text
+        GENERATED ALWAYS AS (
+          CASE
+            WHEN (CASE
+              WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
+                THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
+              ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+            END) LIKE '0%'
+              THEN '381' || substring((CASE
+                WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
+                  THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
+                ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+              END) FROM 2)
+            ELSE (CASE
+              WHEN regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') LIKE '00%'
+                THEN substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') FROM 3)
+              ELSE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+            END)
+          END
+        ) STORED`,
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
     `CREATE INDEX IF NOT EXISTS salon_customers_salon_id_idx
        ON ${s}.salon_customers (salon_id, id)`,
+     `CREATE INDEX IF NOT EXISTS salon_customers_phone_normalized_idx
+        ON ${s}.salon_customers (phone_normalized) WHERE phone_normalized IS NOT NULL`,
+     `CREATE INDEX IF NOT EXISTS salon_customers_phone_lookup_normalized_idx
+        ON ${s}.salon_customers (phone_lookup_normalized) WHERE phone_lookup_normalized IS NOT NULL`,
 
     // v12: Customer-safe retail storefront fields. These deliberately remain
     // separate from the owner-only B2B description and prices in `products`.
@@ -3610,6 +3634,7 @@ function tableStatements(s: string): string[] {
        salon_id uuid PRIMARY KEY REFERENCES ${s}.salons(id) ON DELETE CASCADE,
        slot_granularity_minutes integer NOT NULL DEFAULT 15,
        minimum_lead_time_minutes integer NOT NULL DEFAULT 0,
+       max_booking_horizon_days integer,
        cancellation_deadline_minutes integer NOT NULL DEFAULT 0,
        reminder_offsets_minutes jsonb NOT NULL DEFAULT '[]'::jsonb,
        reminder_channels jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -3621,9 +3646,18 @@ function tableStatements(s: string): string[] {
        CONSTRAINT salon_booking_settings_granularity_check
          CHECK (slot_granularity_minutes IN (5, 10, 15, 30)),
        CONSTRAINT salon_booking_settings_nonnegative_check CHECK (
-         minimum_lead_time_minutes >= 0 AND cancellation_deadline_minutes >= 0
+          minimum_lead_time_minutes >= 0 AND (max_booking_horizon_days IS NULL OR max_booking_horizon_days BETWEEN 0 AND 3650) AND cancellation_deadline_minutes >= 0
          AND max_visit_gap_minutes >= 0 AND minimum_useful_late_treatment_minutes >= 0)
      )`,
+     `ALTER TABLE ${s}.salon_booking_settings ADD COLUMN IF NOT EXISTS max_booking_horizon_days integer`,
+     `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='salon_booking_settings_horizon_check'
+          AND conrelid='${s}.salon_booking_settings'::regclass) THEN
+          ALTER TABLE ${s}.salon_booking_settings ADD CONSTRAINT salon_booking_settings_horizon_check
+            CHECK (max_booking_horizon_days IS NULL OR max_booking_horizon_days BETWEEN 0 AND 3650) NOT VALID;
+        END IF;
+      END $$`,
+     `ALTER TABLE ${s}.salon_booking_settings VALIDATE CONSTRAINT salon_booking_settings_horizon_check`,
     `CREATE INDEX IF NOT EXISTS salon_booking_settings_updated_by_idx
        ON ${s}.salon_booking_settings (updated_by_user_id)`,
     `INSERT INTO ${s}.salon_booking_settings (salon_id)

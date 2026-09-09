@@ -53,6 +53,22 @@ async function patch(baseUrl: string, path: string, session: string, body: unkno
   return { status: response.status, body: await response.json() as Record<string, unknown> };
 }
 
+async function getRequest(baseUrl: string, session: string, path: string) {
+  const response = await fetch(`${baseUrl}/api${path}`, {
+    headers: { cookie: `${sessionCookieName}=${session}` },
+  });
+  return { status: response.status, body: await response.json() as unknown };
+}
+
+function belgradeDateOffset(days: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Belgrade", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const date = new Date(`${parts.find((item) => item.type === "year")!.value}-${parts.find((item) => item.type === "month")!.value}-${parts.find((item) => item.type === "day")!.value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 async function run(): Promise<void> {
   await ensureBookingCommandSchema();
   const suffix = randomUUID();
@@ -451,6 +467,65 @@ async function run(): Promise<void> {
     );
     const [notPartiallyMoved] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, appointment!.id));
     assert.equal(notPartiallyMoved!.date, "2099-12-01", "layout rejection must roll back the complete subset reschedule");
+
+    // A-6 integration coverage: the persisted policy must constrain both
+    // advertised candidates and forged customer commands, while legacy NULL
+    // remains unlimited and stored appointments remain manageable.
+    const horizonBoundary = belgradeDateOffset(1);
+    const horizonBeyond = belgradeDateOffset(2);
+    await db.update(salonBookingSettingsTable).set({ maxBookingHorizonDays: 1 })
+      .where(eq(salonBookingSettingsTable.salonId, salon!.id));
+    const boundedAvailability = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id }],
+      fromDate: horizonBoundary, toDate: horizonBeyond, allowMultipleDays: false,
+    });
+    assert.equal(boundedAvailability.status, 200);
+    const boundedDays = boundedAvailability.body.calendarDays as Array<{
+      date: string;
+      candidates: Array<{ startTime: string; treatments: Array<{ employeeId: string }> }>;
+    }>;
+    const boundaryCandidate = boundedDays.find((day) => day.date === horizonBoundary)!.candidates[0];
+    assert.ok(boundaryCandidate,
+      "configured horizon must advertise the exact last valid date");
+    assert.equal(boundedDays.find((day) => day.date === horizonBeyond)!.candidates.length, 0,
+      "configured horizon must suppress availability beyond the boundary");
+
+    const boundaryBooking = await post(baseUrl, "/appointments", customerSession, {
+      salonId: salon!.id, serviceId: service!.id,
+      employeeId: boundaryCandidate.treatments[0]!.employeeId,
+      date: horizonBoundary, startTime: boundaryCandidate.startTime,
+    });
+    assert.equal(boundaryBooking.status, 201, "a forged customer booking at the boundary must succeed");
+    const beyondBooking = await post(baseUrl, "/appointments", customerSession, {
+      salonId: salon!.id, serviceId: service!.id, employeeId: otherEmployee!.id,
+      date: horizonBeyond, startTime: "09:00",
+    });
+    assert.equal(beyondBooking.status, 409, "a forged customer booking beyond the horizon must be rejected");
+    const employeeBeyond = await post(baseUrl, "/employee/booking-groups", employeeSession, {
+      salonCustomerId: customerContact!.id,
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id, date: horizonBeyond, startTime: "09:00" }],
+    });
+    assert.notEqual(employeeBeyond.status, 201, "employee manual creation must share the horizon policy");
+    const preservedRead = await getRequest(baseUrl, ownerSession,
+      `/salon/appointments?from=2099-12-01&to=2099-12-01`);
+    assert.equal(preservedRead.status, 200, "stored appointments beyond a reduced horizon remain readable");
+    assert.ok((preservedRead.body as Array<{ id: string }>).some((item) => item.id === appointment!.id),
+      "the existing appointment remains in the owner calendar");
+    const preservedDate = (await db.select().from(appointmentsTable)
+      .where(eq(appointmentsTable.id, appointment!.id)))[0]!;
+    assert.equal(preservedDate.date, "2099-12-01",
+      "reducing the horizon must not modify an existing appointment date");
+
+    await db.update(salonBookingSettingsTable).set({ maxBookingHorizonDays: null })
+      .where(eq(salonBookingSettingsTable.salonId, salon!.id));
+    const unlimitedAvailability = await post(baseUrl, `/salons/${salon!.id}/grouped-availability`, ownerSession, {
+      resultMode: "calendar",
+      treatments: [{ serviceId: service!.id, employeeId: employee!.id }],
+      fromDate: horizonBeyond, toDate: horizonBeyond, allowMultipleDays: false,
+    });
+    assert.ok((unlimitedAvailability.body.calendarDays as Array<{ candidates: unknown[] }>)[0]!.candidates.length > 0,
+      "NULL horizon must preserve unlimited legacy availability");
 
     const anonymousCancel = await post(baseUrl, `/booking-groups/${group!.id}/cancel`, ownerSession, {
       appointmentIds: [appointment!.id],

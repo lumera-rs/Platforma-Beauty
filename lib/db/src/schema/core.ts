@@ -641,6 +641,7 @@ export const salonBookingSettingsTable = pgTable("salon_booking_settings", {
   salonId: uuid("salon_id").primaryKey().references(() => salonsTable.id, { onDelete: "cascade" }),
   slotGranularityMinutes: integer("slot_granularity_minutes").notNull().default(15),
   minimumLeadTimeMinutes: integer("minimum_lead_time_minutes").notNull().default(0),
+  maxBookingHorizonDays: integer("max_booking_horizon_days"),
   cancellationDeadlineMinutes: integer("cancellation_deadline_minutes").notNull().default(0),
   reminderOffsetsMinutes: jsonb("reminder_offsets_minutes").$type<number[]>().notNull().default([]),
   reminderChannels: jsonb("reminder_channels").$type<Array<"email" | "sms" | "push">>().notNull().default([]),
@@ -653,6 +654,7 @@ export const salonBookingSettingsTable = pgTable("salon_booking_settings", {
   check("salon_booking_settings_granularity_check", sql`${table.slotGranularityMinutes} in (5, 10, 15, 30)`),
   check("salon_booking_settings_nonnegative_check", sql`
     ${table.minimumLeadTimeMinutes} >= 0
+    and (${table.maxBookingHorizonDays} is null or ${table.maxBookingHorizonDays} between 0 and 3650)
     and ${table.cancellationDeadlineMinutes} >= 0
     and ${table.maxVisitGapMinutes} >= 0
     and ${table.minimumUsefulLateTreatmentMinutes} >= 0`),
@@ -687,6 +689,25 @@ export const salonCustomersTable = pgTable("salon_customers", {
   email: text("email"),
   phone: text("phone"),
   phoneNormalized: text("phone_normalized"),
+  phoneLookupNormalized: text("phone_lookup_normalized").generatedAlwaysAs(sql`
+    case
+      when (case
+        when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
+          then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
+        else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+      end) like '0%'
+        then '381' || substring((case
+          when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
+            then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
+          else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+        end) from 2)
+      else (case
+        when regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') like '00%'
+          then substring(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') from 3)
+        else regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g')
+      end)
+    end
+  `),
   smsOptOut: boolean("sms_opt_out").notNull().default(false),
   /** Optional date-of-birth for birthday automation trigger (format: YYYY-MM-DD) */
   birthDate: date("birth_date", { mode: "string" }),
@@ -695,6 +716,8 @@ export const salonCustomersTable = pgTable("salon_customers", {
 }, (table) => [
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
+  index("salon_customers_phone_normalized_idx").on(table.phoneNormalized).where(sql`${table.phoneNormalized} is not null`),
+  index("salon_customers_phone_lookup_normalized_idx").on(table.phoneLookupNormalized).where(sql`${table.phoneLookupNormalized} is not null`),
   // Per-salon retention samples seek from a random UUID cursor and take a
   // bounded circular range. This avoids sorting the platform-wide customer
   // table while still drawing a distinct sample inside every salon.
