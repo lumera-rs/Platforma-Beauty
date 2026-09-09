@@ -53,7 +53,7 @@ const defaultDescription = staticSeoByPath.get('/')?.description
   ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const defaultImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
 
-const defaultImageMetadata = { width: 1200, height: 630, type: 'image/svg+xml' };
+const defaultImageMetadata = { width: 1200, height: 630, type: 'image/png' };
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
@@ -115,7 +115,7 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   const publicPath = payload.canonicalPath ?? pathname;
   const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
   const canonical = new URL(cleanPublicPath, origin).href;
-  const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.svg`;
+  const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.png`;
   const title = clip(payload.title, 60);
   const description = clip(payload.description);
   const imageAlt = payload.image ? title : defaultImageAlt;

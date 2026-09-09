@@ -11,7 +11,7 @@ const distDir = path.join(here, 'dist', 'public');
 const fallbackDescription = staticPageDefinitions.find((page) => page.path === '/')?.description
   ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const fallbackImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
-const fallbackImageMetadata = { width: 1200, height: 630, type: 'image/svg+xml' };
+const fallbackImageMetadata = { width: 1200, height: 630, type: 'image/png' };
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
 const staticPages = new Map(staticPageDefinitions.map((page) => [page.path, page]));
@@ -26,7 +26,7 @@ function clip(value, limit = 158) {
 }
 
 function asAbsolute(origin, value) {
-  try { return new URL(value || '/og-lumera.svg', origin).href; } catch { return `${origin}/og-lumera.svg`; }
+  try { return new URL(value || '/og-lumera.png', origin).href; } catch { return `${origin}/og-lumera.png`; }
 }
 
 function imageTypeFromUrl(value) {
@@ -126,7 +126,7 @@ function makeMeta(pathname, title, description, options = {}) {
     pathname,
     title: clip(title, 60),
     description: clip(description),
-    image: options.image ?? '/og-lumera.svg',
+    image: options.image ?? '/og-lumera.png',
     imageAlt: options.imageAlt ?? (options.image ? clip(title, 60) : fallbackImageAlt),
     imageWidth: options.imageWidth ?? (usesFallbackImage ? fallbackImageMetadata.width : undefined),
     imageHeight: options.imageHeight ?? (usesFallbackImage ? fallbackImageMetadata.height : undefined),
@@ -247,7 +247,7 @@ async function renderPublicPage(req, pathname) {
               '@id': `${origin}/#organization`,
               name: 'LUMERA',
               url: `${origin}/`,
-              logo: asAbsolute(origin, '/og-lumera.svg'),
+              logo: asAbsolute(origin, '/og-lumera.png'),
             },
             {
               '@type': 'WebSite',

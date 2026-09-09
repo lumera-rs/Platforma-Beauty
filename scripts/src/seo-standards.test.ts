@@ -778,11 +778,11 @@ try {
       title: "LUMERA | Saloni, tretmani i edukacije",
       description: "Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.",
       url: `${seoOrigin}/`,
-      image: `${seoOrigin}/og-lumera.svg`,
+      image: `${seoOrigin}/og-lumera.png`,
       imageAlt: "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
       imageWidth: 1200,
       imageHeight: 630,
-      imageType: "image/svg+xml",
+      imageType: "image/png",
     },
     "the default LUMERA social image must publish its verified dimensions and MIME type",
   );
@@ -873,7 +873,7 @@ try {
     });
     assert.equal(nodes.get('meta[property="og:image:width"]')?.content, "1200");
     assert.equal(nodes.get('meta[property="og:image:height"]')?.content, "630");
-    assert.equal(nodes.get('meta[property="og:image:type"]')?.content, "image/svg+xml");
+    assert.equal(nodes.get('meta[property="og:image:type"]')?.content, "image/png");
 
     applySeo("/test", {
       title: "Test",
