@@ -12917,7 +12917,10 @@ router.get("/suppliers", async (_req, res): Promise<void> => {
     inArray(suppliersTable.scope, ["B2C", "BOTH"]),
   ))
     .orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
-  res.json(ListPublicSuppliersResponse.parse(rows));
+  res.json(ListPublicSuppliersResponse.parse(await Promise.all(rows.map(async (supplier) => ({
+    ...supplier,
+    socialImage: await publicSocialImage(supplier.logoUrl),
+  })))));
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res): Promise<void> => {
   const params = ListSupplierCategoriesParams.safeParse(req.params);
@@ -13032,7 +13035,10 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise
   const total = Number(totalRow?.count ?? 0);
   const directCounts = new Map(categoryCounts.map((row) => [row.id, Number(row.count)]));
   res.json(ListSupplierPublicProductsResponse.parse({
-    items: products.map(publicProductDto),
+    items: await Promise.all(products.map(async (product) => ({
+      ...publicProductDto(product),
+      socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
+    }))),
     total,
     page,
     pageSize,

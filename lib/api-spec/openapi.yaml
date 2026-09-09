@@ -6666,7 +6666,7 @@ paths:
     get:
       operationId: listPublicSuppliers
       tags: [shop]
-      summary: List active public suppliers
+      summary: List active public suppliers with verified social-image metadata when managed media is selected
       responses:
         "200": { description: Active suppliers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Supplier" } } } } }
   /suppliers/{supplierSlug}:
@@ -6707,7 +6707,7 @@ paths:
     get:
       operationId: listSupplierPublicProducts
       tags: [shop]
-      summary: List active retail products from one active supplier
+      summary: List active retail products with selected social-image metadata from one active supplier
       parameters:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: categoryId, in: query, schema: { type: string } }

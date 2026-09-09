@@ -537,6 +537,13 @@ test("public supplier and retail product details expose managed social image met
       height: 800,
       type: "image/png",
     });
+    const managedSupplierListResponse = await api("/suppliers");
+    assert.equal(managedSupplierListResponse.status, 200, await managedSupplierListResponse.clone().text());
+    const managedSupplierList = ListPublicSuppliersResponse.parse(await managedSupplierListResponse.json());
+    assert.deepEqual(
+      managedSupplierList.find((supplier) => supplier.id === supplierA.id)?.socialImage,
+      managedSupplier.socialImage,
+    );
 
     const managedSupplierProductResponse = await api(
       `/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`,
@@ -563,6 +570,19 @@ test("public supplier and retail product details expose managed social image met
       height: 1280,
       type: "image/jpeg",
     });
+    const managedSupplierProductListResponse = await api(`/suppliers/${supplierA.slug}/public-products`);
+    assert.equal(
+      managedSupplierProductListResponse.status,
+      200,
+      await managedSupplierProductListResponse.clone().text(),
+    );
+    const managedSupplierProductList = ListSupplierPublicProductsResponse.parse(
+      await managedSupplierProductListResponse.json(),
+    );
+    assert.deepEqual(
+      managedSupplierProductList.items.find((product) => product.id === orderedProduct.id)?.socialImage,
+      managedSupplierProduct.socialImage,
+    );
 
     const managedRetailProductResponse = await api(`/shop/public/products/${orderedProduct.id}`);
     assert.equal(managedRetailProductResponse.status, 200, await managedRetailProductResponse.clone().text());
@@ -575,6 +595,13 @@ test("public supplier and retail product details expose managed social image met
     assert.deepEqual(legacySupplier.socialImage, {
       url: "https://legacy.example.test/supplier-logo.jpg",
     });
+    const legacySupplierListResponse = await api("/suppliers");
+    assert.equal(legacySupplierListResponse.status, 200, await legacySupplierListResponse.clone().text());
+    const legacySupplierList = ListPublicSuppliersResponse.parse(await legacySupplierListResponse.json());
+    assert.deepEqual(
+      legacySupplierList.find((supplier) => supplier.id === supplierB.id)?.socialImage,
+      legacySupplier.socialImage,
+    );
 
     const legacySupplierProductResponse = await api(
       `/suppliers/${supplierB.slug}/public-products/${b2cProduct.id}`,
@@ -586,6 +613,19 @@ test("public supplier and retail product details expose managed social image met
     assert.deepEqual(legacySupplierProduct.socialImage, {
       url: "https://legacy.example.test/product-image.jpg",
     });
+    const legacySupplierProductListResponse = await api(`/suppliers/${supplierB.slug}/public-products`);
+    assert.equal(
+      legacySupplierProductListResponse.status,
+      200,
+      await legacySupplierProductListResponse.clone().text(),
+    );
+    const legacySupplierProductList = ListSupplierPublicProductsResponse.parse(
+      await legacySupplierProductListResponse.json(),
+    );
+    assert.deepEqual(
+      legacySupplierProductList.items.find((product) => product.id === b2cProduct.id)?.socialImage,
+      legacySupplierProduct.socialImage,
+    );
 
     const legacyRetailProductResponse = await api(`/shop/public/products/${b2cProduct.id}`);
     assert.equal(legacyRetailProductResponse.status, 200, await legacyRetailProductResponse.clone().text());

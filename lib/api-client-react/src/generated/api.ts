@@ -30364,7 +30364,7 @@ export const getListPublicSuppliersUrl = () => {
 }
 
 /**
- * @summary List active public suppliers
+ * @summary List active public suppliers with verified social-image metadata when managed media is selected
  */
 export const listPublicSuppliers = async ( options?: Parameters<typeof customFetch>[1]): Promise<Supplier[]> => {
 
@@ -30411,7 +30411,7 @@ export type ListPublicSuppliersQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List active public suppliers
+ * @summary List active public suppliers with verified social-image metadata when managed media is selected
  */
 
 export function useListPublicSuppliers<TData = Awaited<ReturnType<typeof listPublicSuppliers>>, TError = ErrorType<unknown>>(
@@ -30692,7 +30692,7 @@ export const getListSupplierPublicProductsUrl = (supplierSlug: string,
 }
 
 /**
- * @summary List active retail products from one active supplier
+ * @summary List active retail products with selected social-image metadata from one active supplier
  */
 export const listSupplierPublicProducts = async (supplierSlug: string,
     params?: ListSupplierPublicProductsParams, options?: Parameters<typeof customFetch>[1]): Promise<B2cProductSearchResponse> => {
@@ -30742,7 +30742,7 @@ export type ListSupplierPublicProductsQueryError = ErrorType<void>
 
 
 /**
- * @summary List active retail products from one active supplier
+ * @summary List active retail products with selected social-image metadata from one active supplier
  */
 
 export function useListSupplierPublicProducts<TData = Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError = ErrorType<void>>(

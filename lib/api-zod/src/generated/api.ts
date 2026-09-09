@@ -24701,7 +24701,7 @@ export const AdminUpdateSupplierResponse = zod.object({
 
 
 /**
- * @summary List active public suppliers
+ * @summary List active public suppliers with verified social-image metadata when managed media is selected
  */
 
 
@@ -24874,7 +24874,7 @@ export const ListSupplierProductsResponse = zod.object({
 
 
 /**
- * @summary List active retail products from one active supplier
+ * @summary List active retail products with selected social-image metadata from one active supplier
  */
 export const ListSupplierPublicProductsParams = zod.object({
   "supplierSlug": zod.coerce.string()
