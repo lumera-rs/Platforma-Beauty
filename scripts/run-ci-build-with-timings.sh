@@ -4,7 +4,26 @@ set -euo pipefail
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 baseline_file="$workspace_root/scripts/ci-build-timings.json"
 report_dir="${CI_TIMING_REPORT_DIR:-$workspace_root/ci-timings}"
-report_file="$report_dir/build-timings.json"
+job="${1:-build}"
+case "$job" in
+  build)
+    report_name="build-timings.json"
+    total_phase="validate:ci:build:total"
+    ;;
+  database)
+    report_name="database-timings.json"
+    total_phase="validate:ci:database:total"
+    ;;
+  browser)
+    report_name="browser-timings.json"
+    total_phase="validate:ci:browser:total"
+    ;;
+  *)
+    echo "Unknown CI timing job: $job (expected build, database, or browser)" >&2
+    exit 2
+    ;;
+esac
+report_file="$report_dir/$report_name"
 history_dir="${CI_TIMING_HISTORY_DIR:-$report_dir/history}"
 summary_file="${GITHUB_STEP_SUMMARY:-$report_dir/build-summary.md}"
 mkdir -p "$report_dir"
@@ -49,7 +68,7 @@ write_report() {
   local report_status=0
   local step_status=0
   local total_seconds="$((SECONDS - run_started_seconds))"
-  if record_timing "validate:ci:build:total" "$total_seconds"; then
+  if record_timing "$total_phase" "$total_seconds"; then
     :
   else
     step_status=$?
@@ -57,9 +76,9 @@ write_report() {
     echo "::error title=CI build report failed::Could not record total build timing (exit code $step_status)." >&2
   fi
 
-  if node - "$measurements_file" "$report_file" "$status" "$warning_multiplier" "$warning_minimum_increase_seconds" "$run_started_ms" <<'NODE'
+  if node - "$measurements_file" "$report_file" "$status" "$job" "$warning_multiplier" "$warning_minimum_increase_seconds" "$run_started_ms" <<'NODE'
 const fs = require("node:fs");
-const [measurementsPath, reportPath, status, multiplierRaw, minimumIncreaseRaw, startedAtRaw] = process.argv.slice(2);
+const [measurementsPath, reportPath, status, job, multiplierRaw, minimumIncreaseRaw, startedAtRaw] = process.argv.slice(2);
 const multiplier = Number(multiplierRaw);
 const minimumIncreaseSeconds = Number(minimumIncreaseRaw);
 const phases = fs.readFileSync(measurementsPath, "utf8").trim().split("\n").filter(Boolean).map((line) => {
@@ -78,7 +97,8 @@ const phases = fs.readFileSync(measurementsPath, "utf8").trim().split("\n").filt
   };
 });
 fs.writeFileSync(reportPath, JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
+  job,
   status,
   startedAt: new Date(Number(startedAtRaw)).toISOString(),
   commitSha: process.env.GITHUB_SHA || null,
@@ -110,7 +130,7 @@ NODE
   fi
 
   if {
-    echo "### Build timing trend"
+    echo "### CI timing trend"
     echo
     echo "| Phase | Duration | Baseline | Warning threshold | Result |"
     echo "| --- | ---: | ---: | ---: | --- |"
@@ -160,18 +180,32 @@ handle_build_failure() {
 }
 trap 'handle_build_failure' ERR
 
-run_phase "build:release" pnpm run build:release
-run_phase "scripts:typecheck" pnpm --filter @workspace/scripts run typecheck
-run_phase "internal-request-control-outputs" pnpm run test:internal-request-control-outputs
-run_phase "beauty-marketplace-typecheck" pnpm run test:beauty-marketplace-typecheck
-run_phase "frontend-generated-typecheck" pnpm run test:frontend-generated-typecheck
-run_phase "api-server-typecheck" pnpm run test:api-server-typecheck
-run_phase "browser-specs-typecheck" pnpm run test:browser-specs-typecheck
-run_phase "browser-fixtures" pnpm run test:browser-fixtures
-run_phase "bundle-budget" pnpm run test:bundle-budget
-run_phase "frontend-standards" pnpm run test:frontend-standards
-run_phase "seo-standards" pnpm run test:seo-standards
-run_phase "frontend-interactions" pnpm run test:frontend-interactions
+case "$job" in
+  build)
+    run_phase "build:release" pnpm run build:release
+    run_phase "scripts:typecheck" pnpm --filter @workspace/scripts run typecheck
+    run_phase "internal-request-control-outputs" pnpm run test:internal-request-control-outputs
+    run_phase "beauty-marketplace-typecheck" pnpm run test:beauty-marketplace-typecheck
+    run_phase "frontend-generated-typecheck" pnpm run test:frontend-generated-typecheck
+    run_phase "api-server-typecheck" pnpm run test:api-server-typecheck
+    run_phase "browser-specs-typecheck" pnpm run test:browser-specs-typecheck
+    run_phase "browser-fixtures" pnpm run test:browser-fixtures
+    run_phase "bundle-budget" pnpm run test:bundle-budget
+    run_phase "frontend-standards" pnpm run test:frontend-standards
+    run_phase "seo-standards" pnpm run test:seo-standards
+    run_phase "frontend-interactions" pnpm run test:frontend-interactions
+    ;;
+  database)
+    run_phase "database:test:monitoring" pnpm run test:monitoring
+    run_phase "database:test:backend-standards:static" pnpm run test:backend-standards:static
+    run_phase "database:release:2-backend" pnpm run validate:release:2-backend
+    run_phase "database:release:3-api" pnpm run validate:release:3-api
+    ;;
+  browser)
+    run_phase "browser:release:4-isolated" pnpm run validate:release:4-isolated
+    run_phase "browser:release:5-final" pnpm run validate:release:5-final
+    ;;
+esac
 
 trap - ERR
 if write_report "$status"; then

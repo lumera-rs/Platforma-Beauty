@@ -7,6 +7,14 @@
   "baselinesSeconds": {
     "build:release": 85,
     "scripts:typecheck": 25,
-    "validate:ci:build:total": 270
+    "validate:ci:build:total": 270,
+    "database:test:monitoring": 90,
+    "database:test:backend-standards:static": 30,
+    "database:release:2-backend": 900,
+    "database:release:3-api": 900,
+    "validate:ci:database:total": 2100,
+    "browser:release:4-isolated": 1800,
+    "browser:release:5-final": 900,
+    "validate:ci:browser:total": 3000
   }
 }

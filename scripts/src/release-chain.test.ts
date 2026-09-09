@@ -386,7 +386,7 @@ exit 0
     path.join(reportDir, "build-summary.md"),
     "utf8",
   );
-  assert.match(summary, /^### Build timing trend$/m);
+  assert.match(summary, /^### CI timing trend$/m);
   assert.match(summary, /\| scripts:typecheck \|/);
   assert.match(summary, /\| validate:ci:build:total \|/);
 
@@ -592,13 +592,13 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.ok((timingBaselines.warningMinimumIncreaseSeconds ?? 0) > 0);
   assert.equal(
     scripts["validate:ci:database"],
-    "export CI=true && pnpm run test:monitoring && pnpm run test:backend-standards:static && pnpm run validate:release:2-backend && pnpm run validate:release:3-api",
-    "The database CI command must preserve every phase-one database check plus ordered backend and API release phases.",
+    "export CI=true && bash scripts/run-ci-build-with-timings.sh database",
+    "The database CI command must use the timing-aware runner for every database phase.",
   );
   assert.equal(
     scripts["validate:ci:browser"],
-    "export CI=true && pnpm run validate:release:4-isolated && pnpm run validate:release:5-final",
-    "The browser CI command must preserve the remaining user-journey and final release phases.",
+    "export CI=true && bash scripts/run-ci-build-with-timings.sh browser",
+    "The browser CI command must use the timing-aware runner for every browser phase.",
   );
 
   const buildJob = workflow.slice(
@@ -671,6 +671,11 @@ test("branch CI isolates database checks and orders browser journeys after every
   );
   assert.match(databaseJob, /run: pnpm --filter @workspace\/db run push-force/);
   assert.match(databaseJob, /run: pnpm run validate:ci:database/);
+  assert.match(databaseJob, /name: Download recent successful database timing history/);
+  assert.match(databaseJob, /name: Upload database timing history/);
+  assert.match(databaseJob, /name: database-timings-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(databaseJob, /path: ci-timings\/database-timings\.json/);
+  assert.match(databaseJob, /retention-days: 90/);
   assert.doesNotMatch(
     databaseJob,
     /\$\{\{\s*secrets\./,
@@ -687,6 +692,11 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(browserJob, /POSTGRES_DB: lumera_ci_browser/);
   assert.match(browserJob, /playwright install --with-deps chromium/);
   assert.match(browserJob, /run: pnpm run validate:ci:browser/);
+  assert.match(browserJob, /name: Download recent successful browser timing history/);
+  assert.match(browserJob, /name: Upload browser timing history/);
+  assert.match(browserJob, /name: browser-timings-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(browserJob, /path: ci-timings\/browser-timings\.json/);
+  assert.match(browserJob, /retention-days: 90/);
   assert.match(
     browserJob,
     /if: \$\{\{ failure\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) \}\}/,
