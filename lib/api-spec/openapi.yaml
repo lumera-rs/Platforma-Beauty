@@ -9978,6 +9978,16 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    PublicSocialImage:
+      type: object
+      description: Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.
+      additionalProperties: false
+      properties:
+        url: { type: string }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        type: { type: string, enum: [image/avif, image/webp, image/jpeg, image/png] }
+      required: [url]
     AdminPriceInquiry:
       type: object
       required:
@@ -10878,6 +10888,7 @@ components:
         city: { type: string }
         municipality: { type: string }
         imageUrl: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         rating: { type: number }
         reviewCount: { type: number }
         shortDescription: { type: string }
@@ -13054,6 +13065,7 @@ components:
         images:
           type: array
           items: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         price: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         saleEndsAt: { type: ["string", "null"], format: date-time }
@@ -14029,6 +14041,7 @@ components:
         inquiryCount30d: { type: number, multipleOf: 1, minimum: 0 }
         viewCount30d: { type: number, multipleOf: 1, minimum: 0 }
         imageUrl: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         archived: { type: boolean }
@@ -14362,6 +14375,7 @@ components:
         city: { type: string }
         description: { type: string }
         imageUrl: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         websiteUrl: { type: ["string", "null"] }
         instagramUrl: { type: ["string", "null"] }
         verified: { type: boolean }
@@ -15429,6 +15443,7 @@ components:
         id: { type: string }
         name: { type: string }
         photoUrl: { type: ["string", "null"] }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         biography: { type: string }
         industryYears: { type: number }
         experienceYears: { type: number }
@@ -16529,6 +16544,7 @@ components:
         slug: { type: string }
         scope: { type: string, enum: [B2B, B2C, BOTH] }
         logoUrl: { type: ["string", "null"] }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -18037,6 +18053,7 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, items: { type: string } }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         status: { type: string }
         moderationStatus: { type: string }
         moderationReason: { type: [string, "null"] }

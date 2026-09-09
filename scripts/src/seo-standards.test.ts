@@ -553,7 +553,7 @@ type ComparableSeoHead = {
     imageAlt: string | null;
     imageWidth?: number;
     imageHeight?: number;
-    imageType?: string | null;
+    imageType?: string;
   };
   twitter: {
     title: string | null;
@@ -601,7 +601,7 @@ function ssrHead(html: string): ComparableSeoHead {
       imageAlt: optionalHtmlAttribute(html, /<meta property="og:image:alt" content="([^"]*)">/u),
       imageWidth: optionalHtmlNumber(html, /<meta property="og:image:width" content="([^"]*)">/u),
       imageHeight: optionalHtmlNumber(html, /<meta property="og:image:height" content="([^"]*)">/u),
-      imageType: optionalHtmlAttribute(html, /<meta property="og:image:type" content="([^"]*)">/u),
+      imageType: optionalHtmlAttribute(html, /<meta property="og:image:type" content="([^"]*)">/u) ?? undefined,
     },
     twitter: {
       title: optionalHtmlAttribute(html, /<meta name="twitter:title" content="([^"]*)">/u),
@@ -787,15 +787,15 @@ try {
     "the default LUMERA social image must publish its verified dimensions and MIME type",
   );
 
-  const recognizedImage = seoHeadMetadata("/test", {
+  const extensionOnlyImage = seoHeadMetadata("/test", {
     title: "Test",
     description: "Test",
     image: "/social-card.webp?version=2",
     indexable: true,
   }, seoOrigin).openGraph;
-  assert.equal(recognizedImage.imageType, "image/webp");
-  assert.equal(recognizedImage.imageWidth, undefined);
-  assert.equal(recognizedImage.imageHeight, undefined);
+  assert.equal(extensionOnlyImage.imageType, undefined);
+  assert.equal(extensionOnlyImage.imageWidth, undefined);
+  assert.equal(extensionOnlyImage.imageHeight, undefined);
 
   const unknownImage = seoHeadMetadata("/test", {
     title: "Test",
@@ -911,7 +911,7 @@ try {
       imageAlt: null,
       imageWidth: undefined,
       imageHeight: undefined,
-      imageType: null,
+      imageType: undefined,
     },
     "private query routes must not receive public Open Graph metadata",
   );

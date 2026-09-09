@@ -64,15 +64,6 @@ function clip(value: string, limit = 158): string {
     ? normalized
     : `${normalized.slice(0, limit - 1).trimEnd()}…`;
 }
-
-function imageTypeFromUrl(value: string): string | undefined {
-  try {
-    const extension = new URL(value, 'https://lumera.invalid').pathname.toLowerCase().match(/\.(avif|jpe?g|png|svg|webp)$/)?.[1];
-    return ({ avif: 'image/avif', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp' } as const)[extension as keyof typeof MIME_BY_EXTENSION];
-  } catch {
-    return undefined;
-  }
-}
 function isPublicRetailSupplier(value: any): boolean {
   return Boolean(value?.active && (value.scope === 'B2C' || value.scope === 'BOTH'));
 }
@@ -121,7 +112,7 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   const imageAlt = payload.image ? title : defaultImageAlt;
   const imageWidth = payload.imageWidth ?? (!payload.image ? defaultImageMetadata.width : undefined);
   const imageHeight = payload.imageHeight ?? (!payload.image ? defaultImageMetadata.height : undefined);
-  const imageType = payload.imageType ?? (!payload.image ? defaultImageMetadata.type : imageTypeFromUrl(payload.image));
+  const imageType = payload.imageType ?? (!payload.image ? defaultImageMetadata.type : undefined);
   return {
     title,
     description,
@@ -134,6 +125,15 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
   };
 }
 
+function socialImagePayload(entity: any, fallbackImage?: string): Pick<SeoPayload, 'image' | 'imageWidth' | 'imageHeight' | 'imageType'> {
+  const image = entity?.socialImage;
+  return {
+    image: text(image?.url, fallbackImage),
+    imageWidth: typeof image?.width === 'number' ? image.width : undefined,
+    imageHeight: typeof image?.height === 'number' ? image.height : undefined,
+    imageType: text(image?.type) || undefined,
+  };
+}
 export function applySeo(pathname: string, payload: SeoPayload) {
   const metadata = seoHeadMetadata(pathname, payload, window.location.origin);
   document.title = metadata.title;
@@ -184,7 +184,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} | ${supplierName}`,
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
-      image: item.images?.[0] ?? item.imageUrl,
+      ...socialImagePayload(item, item.images?.[0] ?? item.imageUrl),
       indexable: true,
       canonicalPath: `/shop/${encodeURIComponent(canonicalSupplierSlug)}/proizvod/${encodeURIComponent(canonicalProductId)}`,
     };
@@ -218,7 +218,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       description: category
         ? `${text(category.name, 'Beauty proizvodi')} dobavljača ${supplierName}. Pogledajte javno dostupne beauty proizvode, opise i cene za kupce.`
         : text(supplier.description, `Istražite javnu ponudu beauty proizvoda dobavljača ${supplierName} na LUMERA platformi.`),
-      image: supplier.logoUrl,
+      ...socialImagePayload(supplier, supplier.logoUrl),
       indexable: true,
       canonicalPath: `/shop/${encodeURIComponent(canonicalSupplierSlug)}${canonicalCategoryPath}`,
     };
@@ -232,7 +232,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} | LUMERA proizvodi`,
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
-      image: item.images?.[0] ?? item.imageUrl,
+      ...socialImagePayload(item, item.images?.[0] ?? item.imageUrl),
       indexable: true,
     };
   }
@@ -246,7 +246,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${name} u ${city} | LUMERA`,
       description: text(item.description, text(item.shortDescription, `${name} — salon i beauty tretmani u gradu ${city}.`)),
-      image: item.gallery?.[0] ?? item.imageUrl,
+      ...socialImagePayload(item, item.gallery?.[0] ?? item.imageUrl),
       indexable: true,
     };
   }
@@ -290,7 +290,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${title} | LUMERA edukacije`,
       description: text(item.description, `${title} — stručna beauty edukacija na LUMERA platformi.`),
-      image: item.imageUrl,
+      ...socialImagePayload(item, item.imageUrl),
       indexable: true,
     };
   }
@@ -312,7 +312,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Edukativni centar');
-    return { title: `${name} | LUMERA edukacije`, description: text(item.description, `Kursevi i edukacije centra ${name}.`), image: item.imageUrl, indexable: true };
+    return { title: `${name} | LUMERA edukacije`, description: text(item.description, `Kursevi i edukacije centra ${name}.`), ...socialImagePayload(item, item.imageUrl), indexable: true };
   }
   const instructor = pathname.match(/^\/edukacije\/instruktori\/([a-zA-Z0-9-]+)$/);
   if (instructor) {
@@ -320,7 +320,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Instruktor');
-    return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), image: item.photoUrl, indexable: true };
+    return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), ...socialImagePayload(item, item.photoUrl), indexable: true };
   }
   if (pathname === '/poslovi/nalog' || pathname.startsWith('/poslovi/nalog/')) {
     return null;
@@ -343,7 +343,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     return {
       title: `${title} | LUMERA Poslovi`,
       description: text(item.description, `${title} — beauty oglas na LUMERA platformi.`),
-      image: item.photos?.[0],
+      ...socialImagePayload(item, item.photos?.[0]),
       indexable: true,
     };
   }
@@ -391,12 +391,3 @@ export function ClientSeoMetadata() {
 
   return null;
 }
-
-const MIME_BY_EXTENSION = {
-  avif: 'image/avif',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  svg: 'image/svg+xml',
-  webp: 'image/webp',
-} as const;

@@ -261,6 +261,55 @@ test('education center and instructor detail pages expose entity schema and abso
   }
 });
 
+test('server metadata publishes verified social image values without guessing legacy dimensions or MIME', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const url = new URL(input);
+    const payload = url.pathname === '/api/salons/managed'
+      ? {
+          name: 'Managed salon',
+          city: 'Beograd',
+          description: 'Salon sa upravljanom slikom.',
+          imageUrl: '/legacy.jpg',
+          gallery: ['/legacy.jpg'],
+          socialImage: {
+            url: '/api/media/images/00000000-0000-4000-8000-000000000001?size=large&format=fallback',
+            width: 1920,
+            height: 1280,
+            type: 'image/png',
+          },
+          services: [],
+        }
+      : url.pathname === '/api/salons/legacy'
+        ? {
+            name: 'Legacy salon',
+            city: 'Beograd',
+            description: 'Salon sa legacy slikom.',
+            imageUrl: 'https://legacy.example/photo.jpg',
+            gallery: [],
+            services: [],
+          }
+        : null;
+    return new Response(JSON.stringify(payload), {
+      status: payload ? 200 : 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const managed = await createSeoResponse(request('/saloni/managed'), template);
+    assert.match(managed.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/00000000-0000-4000-8000-000000000001\?size=large&amp;format=fallback"/);
+    assert.match(managed.body, /property="og:image:width" content="1920"/);
+    assert.match(managed.body, /property="og:image:height" content="1280"/);
+    assert.match(managed.body, /property="og:image:type" content="image\/png"/);
+
+    const legacy = await createSeoResponse(request('/saloni/legacy'), template);
+    assert.match(legacy.body, /property="og:image" content="https:\/\/legacy\.example\/photo\.jpg"/);
+    assert.doesNotMatch(legacy.body, /property="og:image:(?:width|height|type)"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('server 404 offers useful public navigation and SPA-compatible salon search', async () => {
   const response = await createSeoResponse(request('/nepostojeca-stranica'), template);
   assert.equal(response.status, 404);

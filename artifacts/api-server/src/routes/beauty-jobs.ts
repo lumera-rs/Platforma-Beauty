@@ -38,7 +38,7 @@ import {
   UpdateBeautyJobSettingsBody, UpdateBeautyJobSettingsResponse,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
-import { attachReadyImageAssets } from "./image-media";
+import { attachReadyImageAssets, publicSocialImage } from "./image-media";
 import { expireBeautyJobListings } from "../lib/beauty-jobs-maintenance";
 import {
   deliverBeautyJobEmail,
@@ -1387,7 +1387,10 @@ router.get("/beauty-jobs/:listingId", async (req, res, next) => { try {
   });
   if (!row) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   const slotMap = await rentalSlotsByListing([row.listing.id]);
-  res.json(GetBeautyJobResponse.parse(view({ ...row.listing, ...row }, slotMap.get(row.listing.id))));
+  res.json(GetBeautyJobResponse.parse({
+    ...view({ ...row.listing, ...row }, slotMap.get(row.listing.id)),
+    socialImage: await publicSocialImage(row.listing.photos[0]),
+  }));
 } catch (e) { next(e); } });
 
 export default router;

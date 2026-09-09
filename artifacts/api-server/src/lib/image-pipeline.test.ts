@@ -8,6 +8,8 @@ import {
   db,
   employeesTable,
   imageAssetsTable,
+  mediaAssetsTable,
+  mediaVariantsTable,
   salonsTable,
   usersTable,
 } from "@workspace/db";
@@ -15,7 +17,7 @@ import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { deletePrivateObject } from "./image-storage";
 import { ensureMediaSchema } from "./media-schema";
-import { attachReadyImageAssets } from "../routes/image-media";
+import { attachReadyImageAssets, publicSocialImage } from "../routes/image-media";
 
 const password = "image-pipeline-test-password";
 const email = `image-pipeline-${randomUUID()}@example.test`;
@@ -116,6 +118,7 @@ async function run(): Promise<void> {
   }).returning();
 
   let assetId: string | undefined;
+  let legacyManagedAssetId: string | undefined;
   const additionalAssetIds: string[] = [];
   let server: Server | undefined;
 
@@ -187,6 +190,45 @@ async function run(): Promise<void> {
     assert.equal(finalized.imageUrl, `/api/media/images/${assetId}`);
     assert.equal(finalized.width, 2400);
     assert.equal(finalized.height, 1600);
+    assert.deepEqual(await publicSocialImage(finalized.imageUrl), {
+      url: `/api/media/images/${assetId}?size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/png",
+    });
+    assert.deepEqual(await publicSocialImage("https://legacy.example/image.jpg"), {
+      url: "https://legacy.example/image.jpg",
+    });
+    legacyManagedAssetId = randomUUID();
+    const legacyHash = "a".repeat(64);
+    await db.insert(mediaAssetsTable).values({
+      id: legacyManagedAssetId,
+      ownerUserId: user!.id,
+      scope: "salon-profile",
+      visibility: "public",
+      originalFileName: "legacy-managed.jpg",
+      originalContentType: "image/jpeg",
+      width: 2400,
+      height: 1600,
+      contentHash: legacyHash,
+    });
+    await db.insert(mediaVariantsTable).values({
+      assetId: legacyManagedAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${legacyManagedAssetId}/large.jpg`,
+      contentType: "image/jpeg",
+      width: 1920,
+      height: 1280,
+      byteSize: 123,
+      etag: `"${legacyManagedAssetId}"`,
+    });
+    assert.deepEqual(await publicSocialImage(`/api/media/${legacyManagedAssetId}?v=old-version`), {
+      url: `/api/media/${legacyManagedAssetId}?v=${legacyHash.slice(0, 16)}&size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/jpeg",
+    });
 
     const ownerCookie = await login(first.baseUrl, ownerEmail);
     const foreignAssetSave = await fetch(`${first.baseUrl}/api/salon/profile`, {
@@ -302,6 +344,9 @@ async function run(): Promise<void> {
         : [];
       await Promise.allSettled(objectPaths.map((path) => deletePrivateObject(path)));
       await db.delete(imageAssetsTable).where(eq(imageAssetsTable.id, cleanupAssetId));
+    }
+    if (legacyManagedAssetId) {
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, legacyManagedAssetId));
     }
     if (employee) await db.delete(employeesTable).where(eq(employeesTable.id, employee.id));
     if (salon) await db.delete(salonsTable).where(eq(salonsTable.id, salon.id));

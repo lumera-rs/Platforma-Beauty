@@ -9,6 +9,7 @@ import type { BeautyJobListingIntent } from './beautyJobListingIntent';
 import type { BeautyJobListingPostedByType } from './beautyJobListingPostedByType';
 import type { BeautyJobListingType } from './beautyJobListingType';
 import type { BeautyJobRentalSlot } from './beautyJobRentalSlot';
+import type { PublicSocialImage } from './publicSocialImage';
 
 export interface BeautyJobListing {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
@@ -34,6 +35,7 @@ export interface BeautyJobListing {
   negotiable: boolean;
   isUrgent: boolean;
   photos: string[];
+  socialImage?: PublicSocialImage;
   status: string;
   moderationStatus: string;
   /** @nullable */

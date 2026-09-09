@@ -1138,6 +1138,8 @@ export * from './publicRetailOrderTracking';
 export * from './publicRetailOrderTrackingStatus';
 export * from './publicRetailProductReview';
 export * from './publicRetailProductReviewList';
+export * from './publicSocialImage';
+export * from './publicSocialImageType';
 export * from './purchaseEducationBundle201';
 export * from './purchaseEducationBundleBody';
 export * from './purchaseEducationBundleBodyTargetType';

@@ -868,7 +868,8 @@ import
 
 import 
 {
- attachReadyImageAssets 
+ attachReadyImageAssets,
+ publicSocialImage,
 }
  from "./image-media"
 ;
@@ -7125,6 +7126,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     ),
     featured: Boolean(activeFeaturedPlacement),
     gallery: salon.gallery,
+    socialImage: await publicSocialImage(salon.gallery[0] ?? salon.imageUrl),
     videoUrl: salon.videoUrl,
     description: salon.description,
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
@@ -12909,7 +12911,10 @@ router.get("/suppliers/:supplierSlug", async (req, res): Promise<void> => {
     eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true),
   )).limit(1);
   if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
-  res.json(GetPublicSupplierResponse.parse(supplier));
+  res.json(GetPublicSupplierResponse.parse({
+    ...supplier,
+    socialImage: await publicSocialImage(supplier.logoUrl),
+  }));
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res): Promise<void> => {
   const params = ListSupplierCategoriesParams.safeParse(req.params);
@@ -13013,6 +13018,7 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
   if (!rows[0]) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
   res.json(GetSupplierPublicProductResponse.parse({
     ...publicProductDto(rows[0].product),
+    socialImage: await publicSocialImage(rows[0].product.images?.[0] ?? rows[0].product.imageUrl),
     relatedProducts: await similarProductCards(rows[0].product, "B2C"),
   }));
 });
@@ -14360,6 +14366,7 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   if (!product) { res.status(404).json({ error: "Javni proizvod nije pronađen." }); return; }
   res.json(GetPublicProductResponse.parse({
     ...publicProductDto(product),
+    socialImage: await publicSocialImage(product.images?.[0] ?? product.imageUrl),
     relatedProducts: await similarProductCards(product, "B2C"),
   }));
 });
@@ -22149,7 +22156,10 @@ router.get("/education/public/courses/:courseId", async (req, res): Promise<void
   }
   // Single-course detail: use educationCourseView for full center/session/gallery depth.
   const { modules: _privateModules, ...publicView } = await educationCourseView(course);
-  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(publicView)));
+  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse({
+    ...publicView,
+    socialImage: await publicSocialImage(course.imageUrl),
+  })));
 });
 
 router.get("/education/public/courses/:courseId/related", async (req, res): Promise<void> => {
@@ -22288,7 +22298,10 @@ router.get("/education/public/centers/:centerId", async (req, res): Promise<void
   );
   // Use batch assembler for card-level views (no deep center nesting needed here).
   const cards = await batchEducationCourseViews(publicCourses);
-  res.json(GetPublicEducationCenterResponse.parse(await centerPublicView(eligibility.center, cards)));
+  res.json(GetPublicEducationCenterResponse.parse({
+    ...await centerPublicView(eligibility.center, cards),
+    socialImage: await publicSocialImage(eligibility.center.imageUrl),
+  }));
 });
 
 function educationCenterReviewView(row: typeof educationCenterReviewsTable.$inferSelect) {
@@ -22961,6 +22974,7 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   const rating = Math.round(Number(publishedReviewAggregate?.rating ?? 0) * 10) / 10;
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
+    socialImage: await publicSocialImage(instructor.photoUrl),
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
     qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
     rating, reviewCount, ratingSource: "published_course_reviews", participantCount: enrollments.length,

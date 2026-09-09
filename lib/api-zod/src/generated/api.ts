@@ -795,6 +795,10 @@ export const ListSalonsQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listSalonsQueryPageSizeMax).default(listSalonsQueryPageSizeDefault).describe('Number of salons per page (1..100).')
 })
 
+
+
+
+
 export const ListSalonsResponseItem = zod.object({
   "id": zod.string(),
   "slug": zod.string(),
@@ -802,6 +806,12 @@ export const ListSalonsResponseItem = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -832,9 +842,19 @@ export const GetMarketplaceHomeDiscoveryQueryParams = zod.object({
 
 export const getMarketplaceHomeDiscoveryResponsePopularServicesItemBookingCountMin = 0;
 
+
+
+
+
+
+
 export const getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPriceMin = 0;
 
 export const getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPromoPriceMin = 0;
+
+
+
+
 
 
 
@@ -852,6 +872,12 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -877,6 +903,12 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -902,6 +934,12 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -933,6 +971,12 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -958,6 +1002,12 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -1020,6 +1070,8 @@ export const GetSalonParams = zod.object({
 })
 
 
+
+
 export const getSalonResponseTwoTopServicesItemPriceMin = 0;
 
 export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
@@ -1064,6 +1116,12 @@ export const GetSalonResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -2853,6 +2911,10 @@ export const getCustomerDashboardResponseUpcomingItemTreatmentsItemBufferMinutes
 
 
 
+
+
+
+
 export const GetCustomerDashboardResponse = zod.object({
   "upcoming": zod.array(zod.object({
   "id": zod.string(),
@@ -2939,6 +3001,12 @@ export const GetCustomerDashboardResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -2964,6 +3032,12 @@ export const GetCustomerDashboardResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -3116,6 +3190,10 @@ export const ReplaceJobseekerSalonInterestsResponse = zod.array(ReplaceJobseeker
 /**
  * @summary List favorite salons
  */
+
+
+
+
 export const ListFavoritesResponseItem = zod.object({
   "id": zod.string(),
   "slug": zod.string(),
@@ -3123,6 +3201,12 @@ export const ListFavoritesResponseItem = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -3248,6 +3332,8 @@ export const GetSalonDashboardQueryParams = zod.object({
   "scope": zod.enum(['location', 'all']).default(getSalonDashboardQueryScopeDefault)
 })
 
+
+
 export const getSalonDashboardResponseTodayAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
@@ -3276,6 +3362,12 @@ export const GetSalonDashboardResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -5634,6 +5726,8 @@ export const CreateSalonLocationBody = zod.object({
 })
 
 
+
+
 export const createSalonLocationResponseLocationTwoTopServicesItemPriceMin = 0;
 
 export const createSalonLocationResponseLocationTwoTopServicesItemPromoPriceMin = 0;
@@ -5668,6 +5762,8 @@ export const createSalonLocationResponseLocationTwoReturnClientRateMin = 0;
 export const createSalonLocationResponseLocationTwoReturnClientRateMax = 100;
 
 export const createSalonLocationResponseLocationTwoHomeServiceRadiusKmMax = 100;
+
+
 
 
 export const createSalonLocationResponseSalonTwoTopServicesItemPriceMin = 0;
@@ -5721,6 +5817,12 @@ export const CreateSalonLocationResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -5814,6 +5916,12 @@ export const CreateSalonLocationResponse = zod.object({
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "shortDescription": zod.string(),
@@ -6175,6 +6283,8 @@ export const ListPublicProductsQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listPublicProductsQueryPageSizeMax).default(listPublicProductsQueryPageSizeDefault)
 })
 
+
+
 export const listPublicProductsResponseItemsItemPriceMultipleOf = 1;
 
 export const listPublicProductsResponseItemsItemDiscountPriceMultipleOf = 1;
@@ -6208,6 +6318,12 @@ export const ListPublicProductsResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(listPublicProductsResponseItemsItemPriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(listPublicProductsResponseItemsItemDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -6261,6 +6377,8 @@ export const GetPublicProductParams = zod.object({
   "productId": zod.coerce.string()
 })
 
+
+
 export const getPublicProductResponseOnePriceMultipleOf = 1;
 
 export const getPublicProductResponseOneDiscountPriceMultipleOf = 1;
@@ -6295,6 +6413,12 @@ export const GetPublicProductResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(getPublicProductResponseOnePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(getPublicProductResponseOneDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -12651,6 +12775,8 @@ export const listCoursesResponseInquiryCount30dMultipleOf = 1;
 export const listCoursesResponseViewCount30dMin = 0;
 export const listCoursesResponseViewCount30dMultipleOf = 1;
 
+
+
 export const listCoursesResponseCancellationCutoffHoursMin = 0;
 export const listCoursesResponseCancellationCutoffHoursMax = 8760;
 
@@ -12721,6 +12847,12 @@ export const ListCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listCoursesResponseInquiryCount30dMin).multipleOf(listCoursesResponseInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listCoursesResponseViewCount30dMin).multipleOf(listCoursesResponseViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -12891,6 +13023,8 @@ export const createEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const createEducationCourseResponseOneOneViewCount30dMin = 0;
 export const createEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const createEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
 export const createEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -12910,6 +13044,8 @@ export const createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin
 export const createEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const createEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const createEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
 export const createEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -12944,6 +13080,8 @@ export const createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount
 
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const createEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -13017,6 +13155,12 @@ export const CreateEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(createEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(createEducationCourseResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(createEducationCourseResponseOneOneViewCount30dMin).multipleOf(createEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -13080,6 +13224,12 @@ export const CreateEducationCourseResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -13151,6 +13301,12 @@ export const CreateEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(createEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -13238,6 +13394,8 @@ export const getEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const getEducationCourseResponseOneOneViewCount30dMin = 0;
 export const getEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const getEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
 export const getEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -13257,6 +13415,8 @@ export const getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin = 
 export const getEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const getEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const getEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
 export const getEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -13291,6 +13451,8 @@ export const getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30d
 
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const getEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -13364,6 +13526,12 @@ export const GetEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(getEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(getEducationCourseResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getEducationCourseResponseOneOneViewCount30dMin).multipleOf(getEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -13427,6 +13595,12 @@ export const GetEducationCourseResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -13498,6 +13672,12 @@ export const GetEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -13699,6 +13879,8 @@ export const updateEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const updateEducationCourseResponseOneOneViewCount30dMin = 0;
 export const updateEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const updateEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
 export const updateEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -13718,6 +13900,8 @@ export const updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMin
 export const updateEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const updateEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const updateEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
 export const updateEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -13752,6 +13936,8 @@ export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount
 
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const updateEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -13825,6 +14011,12 @@ export const UpdateEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(updateEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(updateEducationCourseResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(updateEducationCourseResponseOneOneViewCount30dMin).multipleOf(updateEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -13888,6 +14080,12 @@ export const UpdateEducationCourseResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -13959,6 +14157,12 @@ export const UpdateEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(updateEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -14059,6 +14263,8 @@ export const publishEducationCourseResponseOneOneInquiryCount30dMultipleOf = 1;
 export const publishEducationCourseResponseOneOneViewCount30dMin = 0;
 export const publishEducationCourseResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const publishEducationCourseResponseOneOneCancellationCutoffHoursMin = 0;
 export const publishEducationCourseResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -14078,6 +14284,8 @@ export const publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMi
 export const publishEducationCourseResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const publishEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const publishEducationCourseResponseOneTwoCenterTwoReviewCountMin = 0;
 export const publishEducationCourseResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -14112,6 +14320,8 @@ export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCoun
 
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const publishEducationCourseResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -14185,6 +14395,12 @@ export const PublishEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(publishEducationCourseResponseOneOneInquiryCount30dMin).multipleOf(publishEducationCourseResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(publishEducationCourseResponseOneOneViewCount30dMin).multipleOf(publishEducationCourseResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -14248,6 +14464,12 @@ export const PublishEducationCourseResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -14319,6 +14541,12 @@ export const PublishEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(publishEducationCourseResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -16261,6 +16489,8 @@ export const getEducationLmsResponseCourseOneOneInquiryCount30dMultipleOf = 1;
 export const getEducationLmsResponseCourseOneOneViewCount30dMin = 0;
 export const getEducationLmsResponseCourseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const getEducationLmsResponseCourseOneOneCancellationCutoffHoursMin = 0;
 export const getEducationLmsResponseCourseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -16280,6 +16510,8 @@ export const getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMin
 export const getEducationLmsResponseCourseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const getEducationLmsResponseCourseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMin = 0;
 export const getEducationLmsResponseCourseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -16314,6 +16546,8 @@ export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount
 
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -16423,6 +16657,12 @@ export const GetEducationLmsResponse = zod.object({
   "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseOneOneInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getEducationLmsResponseCourseOneOneViewCount30dMin).multipleOf(getEducationLmsResponseCourseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -16486,6 +16726,12 @@ export const GetEducationLmsResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -16557,6 +16803,12 @@ export const GetEducationLmsResponse = zod.object({
   "inquiryCount30d": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -16806,6 +17058,8 @@ export const GetPublicInstructorProfileParams = zod.object({
   "instructorId": zod.coerce.string()
 })
 
+
+
 export const getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoIndustryYearsMin = 0;
 
 export const getPublicInstructorProfileResponseCoursesItemInstructorProfileTwoExperienceYearsMin = 0;
@@ -16832,6 +17086,8 @@ export const getPublicInstructorProfileResponseCoursesItemInquiryCount30dMultipl
 export const getPublicInstructorProfileResponseCoursesItemViewCount30dMin = 0;
 export const getPublicInstructorProfileResponseCoursesItemViewCount30dMultipleOf = 1;
 
+
+
 export const getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMin = 0;
 export const getPublicInstructorProfileResponseCoursesItemCancellationCutoffHoursMax = 8760;
 
@@ -16847,6 +17103,12 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "photoUrl": zod.string().nullish(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "biography": zod.string(),
   "industryYears": zod.number(),
   "experienceYears": zod.number(),
@@ -16916,6 +17178,12 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "inquiryCount30d": zod.number().min(getPublicInstructorProfileResponseCoursesItemInquiryCount30dMin).multipleOf(getPublicInstructorProfileResponseCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicInstructorProfileResponseCoursesItemViewCount30dMin).multipleOf(getPublicInstructorProfileResponseCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17047,6 +17315,8 @@ export const linkEducationCourseInstructorResponseOneOneInquiryCount30dMultipleO
 export const linkEducationCourseInstructorResponseOneOneViewCount30dMin = 0;
 export const linkEducationCourseInstructorResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMin = 0;
 export const linkEducationCourseInstructorResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -17066,6 +17336,8 @@ export const linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMi
 export const linkEducationCourseInstructorResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const linkEducationCourseInstructorResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMin = 0;
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -17100,6 +17372,8 @@ export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInqu
 
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -17173,6 +17447,12 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseOneOneInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseOneOneViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17236,6 +17516,12 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -17307,6 +17593,12 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "inquiryCount30d": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17419,6 +17711,8 @@ export const replaceEducationCourseDaysResponseOneOneInquiryCount30dMultipleOf =
 export const replaceEducationCourseDaysResponseOneOneViewCount30dMin = 0;
 export const replaceEducationCourseDaysResponseOneOneViewCount30dMultipleOf = 1;
 
+
+
 export const replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMin = 0;
 export const replaceEducationCourseDaysResponseOneOneCancellationCutoffHoursMax = 8760;
 
@@ -17438,6 +17732,8 @@ export const replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinut
 export const replaceEducationCourseDaysResponseOneTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const replaceEducationCourseDaysResponseOneTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMin = 0;
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoReviewCountMultipleOf = 1;
@@ -17472,6 +17768,8 @@ export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiry
 
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -17545,6 +17843,12 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseOneOneInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseOneOneViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17608,6 +17912,12 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -17679,6 +17989,12 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "inquiryCount30d": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17803,6 +18119,8 @@ export const listPublicEducationCoursesResponseOneInquiryCount30dMultipleOf = 1;
 export const listPublicEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPublicEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+
+
 export const listPublicEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
 export const listPublicEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
 
@@ -17822,6 +18140,8 @@ export const listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesM
 export const listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const listPublicEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const listPublicEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -17856,6 +18176,8 @@ export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCou
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const listPublicEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -17929,6 +18251,12 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listPublicEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listPublicEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPublicEducationCoursesResponseOneViewCount30dMin).multipleOf(listPublicEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -17992,6 +18320,12 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -18063,6 +18397,12 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -18135,6 +18475,8 @@ export const getPublicEducationCourseResponseOneInquiryCount30dMultipleOf = 1;
 export const getPublicEducationCourseResponseOneViewCount30dMin = 0;
 export const getPublicEducationCourseResponseOneViewCount30dMultipleOf = 1;
 
+
+
 export const getPublicEducationCourseResponseOneCancellationCutoffHoursMin = 0;
 export const getPublicEducationCourseResponseOneCancellationCutoffHoursMax = 8760;
 
@@ -18154,6 +18496,8 @@ export const getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMin
 export const getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const getPublicEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const getPublicEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -18188,6 +18532,8 @@ export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const getPublicEducationCourseResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -18261,6 +18607,12 @@ export const GetPublicEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(getPublicEducationCourseResponseOneInquiryCount30dMin).multipleOf(getPublicEducationCourseResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCourseResponseOneViewCount30dMin).multipleOf(getPublicEducationCourseResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -18324,6 +18676,12 @@ export const GetPublicEducationCourseResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -18395,6 +18753,12 @@ export const GetPublicEducationCourseResponse = zod.object({
   "inquiryCount30d": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -18475,6 +18839,8 @@ export const listRelatedEducationCoursesResponseOneInquiryCount30dMultipleOf = 1
 export const listRelatedEducationCoursesResponseOneViewCount30dMin = 0;
 export const listRelatedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+
+
 export const listRelatedEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
 export const listRelatedEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
 
@@ -18494,6 +18860,8 @@ export const listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutes
 export const listRelatedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const listRelatedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
 export const listRelatedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -18528,6 +18896,8 @@ export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCo
 
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -18601,6 +18971,12 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listRelatedEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listRelatedEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listRelatedEducationCoursesResponseOneViewCount30dMin).multipleOf(listRelatedEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -18664,6 +19040,12 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -18735,6 +19117,12 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19002,6 +19390,8 @@ export const listPopularEducationCoursesResponseOneInquiryCount30dMultipleOf = 1
 export const listPopularEducationCoursesResponseOneViewCount30dMin = 0;
 export const listPopularEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+
+
 export const listPopularEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
 export const listPopularEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
 
@@ -19021,6 +19411,8 @@ export const listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutes
 export const listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const listPopularEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const listPopularEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -19055,6 +19447,8 @@ export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCo
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const listPopularEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -19128,6 +19522,12 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listPopularEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listPopularEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPopularEducationCoursesResponseOneViewCount30dMin).multipleOf(listPopularEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19191,6 +19591,12 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -19262,6 +19668,12 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19305,6 +19717,8 @@ export const GetPublicEducationCenterParams = zod.object({
   "centerId": zod.coerce.string()
 })
 
+
+
 export const getPublicEducationCenterResponseReviewCountMin = 0;
 export const getPublicEducationCenterResponseReviewCountMultipleOf = 1;
 
@@ -19339,6 +19753,8 @@ export const getPublicEducationCenterResponseCoursesItemInquiryCount30dMultipleO
 export const getPublicEducationCenterResponseCoursesItemViewCount30dMin = 0;
 export const getPublicEducationCenterResponseCoursesItemViewCount30dMultipleOf = 1;
 
+
+
 export const getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMin = 0;
 export const getPublicEducationCenterResponseCoursesItemCancellationCutoffHoursMax = 8760;
 
@@ -19356,6 +19772,12 @@ export const GetPublicEducationCenterResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -19427,6 +19849,12 @@ export const GetPublicEducationCenterResponse = zod.object({
   "inquiryCount30d": zod.number().min(getPublicEducationCenterResponseCoursesItemInquiryCount30dMin).multipleOf(getPublicEducationCenterResponseCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(getPublicEducationCenterResponseCoursesItemViewCount30dMin).multipleOf(getPublicEducationCenterResponseCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19642,6 +20070,8 @@ export const listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMulti
 export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMin = 0;
 export const listEducationWishlistResponseItemsItemCourseOneViewCount30dMultipleOf = 1;
 
+
+
 export const listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMin = 0;
 export const listEducationWishlistResponseItemsItemCourseOneCancellationCutoffHoursMax = 8760;
 
@@ -19661,6 +20091,8 @@ export const listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurati
 export const listEducationWishlistResponseItemsItemCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const listEducationWishlistResponseItemsItemCourseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMin = 0;
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -19695,6 +20127,8 @@ export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItem
 
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -19772,6 +20206,12 @@ export const ListEducationWishlistResponse = zod.object({
   "inquiryCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseOneViewCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19835,6 +20275,12 @@ export const ListEducationWishlistResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -19906,6 +20352,12 @@ export const ListEducationWishlistResponse = zod.object({
   "inquiryCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -19976,6 +20428,8 @@ export const addEducationWishlistItemResponseCourseOneInquiryCount30dMultipleOf 
 export const addEducationWishlistItemResponseCourseOneViewCount30dMin = 0;
 export const addEducationWishlistItemResponseCourseOneViewCount30dMultipleOf = 1;
 
+
+
 export const addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMin = 0;
 export const addEducationWishlistItemResponseCourseOneCancellationCutoffHoursMax = 8760;
 
@@ -19995,6 +20449,8 @@ export const addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinu
 export const addEducationWishlistItemResponseCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const addEducationWishlistItemResponseCourseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMin = 0;
 export const addEducationWishlistItemResponseCourseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -20029,6 +20485,8 @@ export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquir
 
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -20105,6 +20563,12 @@ export const AddEducationWishlistItemResponse = zod.object({
   "inquiryCount30d": zod.number().min(addEducationWishlistItemResponseCourseOneInquiryCount30dMin).multipleOf(addEducationWishlistItemResponseCourseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(addEducationWishlistItemResponseCourseOneViewCount30dMin).multipleOf(addEducationWishlistItemResponseCourseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -20168,6 +20632,12 @@ export const AddEducationWishlistItemResponse = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -20239,6 +20709,12 @@ export const AddEducationWishlistItemResponse = zod.object({
   "inquiryCount30d": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -20588,6 +21064,8 @@ export const listFeaturedEducationCoursesResponseOneInquiryCount30dMultipleOf = 
 export const listFeaturedEducationCoursesResponseOneViewCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseOneViewCount30dMultipleOf = 1;
 
+
+
 export const listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMin = 0;
 export const listFeaturedEducationCoursesResponseOneCancellationCutoffHoursMax = 8760;
 
@@ -20607,6 +21085,8 @@ export const listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinute
 export const listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
 
 export const listFeaturedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
@@ -20641,6 +21121,8 @@ export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryC
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf = 1;
+
+
 
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMin = 0;
 export const listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemCancellationCutoffHoursMax = 8760;
@@ -20714,6 +21196,12 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listFeaturedEducationCoursesResponseOneInquiryCount30dMin).multipleOf(listFeaturedEducationCoursesResponseOneInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listFeaturedEducationCoursesResponseOneViewCount30dMin).multipleOf(listFeaturedEducationCoursesResponseOneViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -20777,6 +21265,12 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "city": zod.string(),
   "description": zod.string(),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "websiteUrl": zod.string().nullish(),
   "instagramUrl": zod.string().nullish(),
   "verified": zod.boolean(),
@@ -20848,6 +21342,12 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "inquiryCount30d": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemInquiryCount30dMultipleOf),
   "viewCount30d": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCoursesItemViewCount30dMultipleOf),
   "imageUrl": zod.string(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
@@ -24070,12 +24570,22 @@ export const AdminDeleteProductCategoryResponse = zod.void()
 /**
  * @summary List platform-managed suppliers
  */
+
+
+
+
 export const AdminListSuppliersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24100,12 +24610,22 @@ export const AdminCreateSupplierBody = zod.object({
   "active": zod.boolean().optional()
 }).strict()
 
+
+
+
+
 export const AdminCreateSupplierResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24119,12 +24639,22 @@ export const AdminGetSupplierParams = zod.object({
   "supplierId": zod.coerce.string()
 })
 
+
+
+
+
 export const AdminGetSupplierResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24148,12 +24678,22 @@ export const AdminUpdateSupplierBody = zod.object({
   "active": zod.boolean().optional()
 }).strict()
 
+
+
+
+
 export const AdminUpdateSupplierResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24163,12 +24703,22 @@ export const AdminUpdateSupplierResponse = zod.object({
 /**
  * @summary List active public suppliers
  */
+
+
+
+
 export const ListPublicSuppliersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24183,12 +24733,22 @@ export const GetPublicSupplierParams = zod.object({
   "supplierSlug": zod.coerce.string()
 })
 
+
+
+
+
 export const GetPublicSupplierResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
   "scope": zod.enum(['B2B', 'B2C', 'BOTH']),
   "logoUrl": zod.string().nullable(),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -24344,6 +24904,8 @@ export const ListSupplierPublicProductsQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listSupplierPublicProductsQueryPageSizeMax).default(listSupplierPublicProductsQueryPageSizeDefault)
 })
 
+
+
 export const listSupplierPublicProductsResponseOneItemsItemPriceMultipleOf = 1;
 
 export const listSupplierPublicProductsResponseOneItemsItemDiscountPriceMultipleOf = 1;
@@ -24385,6 +24947,12 @@ export const ListSupplierPublicProductsResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseOneItemsItemPriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(listSupplierPublicProductsResponseOneItemsItemDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -24569,6 +25137,8 @@ export const GetSupplierPublicProductParams = zod.object({
   "productId": zod.coerce.string()
 })
 
+
+
 export const getSupplierPublicProductResponseOnePriceMultipleOf = 1;
 
 export const getSupplierPublicProductResponseOneDiscountPriceMultipleOf = 1;
@@ -24603,6 +25173,12 @@ export const GetSupplierPublicProductResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(getSupplierPublicProductResponseOnePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(getSupplierPublicProductResponseOneDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -24673,6 +25249,8 @@ export const ListRecentlyViewedProductsParams = zod.object({
   "supplierSlug": zod.coerce.string()
 })
 
+
+
 export const listRecentlyViewedProductsResponsePriceMultipleOf = 1;
 
 export const listRecentlyViewedProductsResponseDiscountPriceMultipleOf = 1;
@@ -24705,6 +25283,12 @@ export const ListRecentlyViewedProductsResponseItem = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(listRecentlyViewedProductsResponsePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(listRecentlyViewedProductsResponseDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -28336,6 +28920,8 @@ export const CreateWidgetBookingGroupResponse = zod.object({
 /**
  * @summary List the signed-in customer's saved B2C products, including unavailable items
  */
+
+
 export const listProductWishlistResponseProductOnePriceMultipleOf = 1;
 
 export const listProductWishlistResponseProductOneDiscountPriceMultipleOf = 1;
@@ -28375,6 +28961,12 @@ export const ListProductWishlistResponseItem = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(listProductWishlistResponseProductOnePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(listProductWishlistResponseProductOneDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -28430,6 +29022,8 @@ export const AddProductWishlistItemBody = zod.object({
   "variantValue": zod.string().min(1).nullish()
 })
 
+
+
 export const addProductWishlistItemResponseProductOnePriceMultipleOf = 1;
 
 export const addProductWishlistItemResponseProductOneDiscountPriceMultipleOf = 1;
@@ -28469,6 +29063,12 @@ export const AddProductWishlistItemResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOnePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(addProductWishlistItemResponseProductOneDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -28523,6 +29123,8 @@ export const ToggleProductWishlistItemBody = zod.object({
   "variantValue": zod.string().min(1).nullish()
 })
 
+
+
 export const toggleProductWishlistItemResponseItemOneProductOnePriceMultipleOf = 1;
 
 export const toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf = 1;
@@ -28564,6 +29166,12 @@ export const ToggleProductWishlistItemResponse = zod.object({
   "description": zod.string(),
   "imageUrl": zod.string(),
   "images": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "price": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOnePriceMultipleOf).nullable(),
   "discountPrice": zod.number().min(1).multipleOf(toggleProductWishlistItemResponseItemOneProductOneDiscountPriceMultipleOf).nullable(),
   "saleEndsAt": zod.coerce.date().nullable(),
@@ -30679,6 +31287,8 @@ export const ListBeautyJobsQueryParams = zod.object({
 
 export const listBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const listBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -30702,6 +31312,12 @@ export const ListBeautyJobsResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -30790,6 +31406,8 @@ export const CreateBeautyJobBody = zod.object({
 
 export const createBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const createBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const createBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const createBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -30812,6 +31430,12 @@ export const CreateBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -30864,6 +31488,8 @@ export const ListMyBeautyJobsQueryParams = zod.object({
 
 export const listMyBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listMyBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const listMyBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listMyBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -30887,6 +31513,12 @@ export const ListMyBeautyJobsResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31005,6 +31637,8 @@ export const DecideBeautyJobApplicantsResponse = zod.object({
 
 export const listSavedBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listSavedBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const listSavedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listSavedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31028,6 +31662,12 @@ export const ListSavedBeautyJobsResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31193,6 +31833,8 @@ export const GetBeautyJobParams = zod.object({
 
 export const getBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const getBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31215,6 +31857,12 @@ export const GetBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31306,6 +31954,8 @@ export const UpdateBeautyJobBody = zod.object({
 
 export const updateBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const updateBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const updateBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const updateBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31328,6 +31978,12 @@ export const UpdateBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31362,6 +32018,8 @@ export const RenewBeautyJobParams = zod.object({
 
 export const renewBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const renewBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const renewBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const renewBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31384,6 +32042,12 @@ export const RenewBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31418,6 +32082,8 @@ export const CloseBeautyJobParams = zod.object({
 
 export const closeBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const closeBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const closeBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const closeBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31440,6 +32106,12 @@ export const CloseBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31764,6 +32436,8 @@ export const GetBeautyJobModerationQueueQueryParams = zod.object({
 
 export const getBeautyJobModerationQueueResponseListingsItemOneIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobModerationQueueResponseListingsItemOneCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31787,6 +32461,12 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31882,6 +32562,8 @@ export const ListRejectedBeautyJobsQueryParams = zod.object({
 
 export const listRejectedBeautyJobsResponseItemsItemOneIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listRejectedBeautyJobsResponseItemsItemOneCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -31905,6 +32587,12 @@ export const ListRejectedBeautyJobsResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -31948,6 +32636,8 @@ export const GetBeautyJobAdminPreviewParams = zod.object({
 
 export const getBeautyJobAdminPreviewResponseListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobAdminPreviewResponseListingCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const getBeautyJobAdminPreviewResponseListingAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobAdminPreviewResponseListingAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobAdminPreviewResponseModerationHistoryItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
@@ -31973,6 +32663,12 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),
@@ -32029,6 +32725,8 @@ export const ModerateBeautyJobBody = zod.object({
 
 export const moderateBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const moderateBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
 export const moderateBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const moderateBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
@@ -32051,6 +32749,12 @@ export const ModerateBeautyJobResponse = zod.object({
   "negotiable": zod.boolean(),
   "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
+  "socialImage": zod.object({
+  "url": zod.string(),
+  "width": zod.number().int().min(1).optional(),
+  "height": zod.number().int().min(1).optional(),
+  "type": zod.enum(['image/avif', 'image/webp', 'image/jpeg', 'image/png']).optional()
+}).optional().describe('Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.'),
   "status": zod.string(),
   "moderationStatus": zod.string(),
   "moderationReason": zod.string().nullable(),

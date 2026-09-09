@@ -7,12 +7,14 @@
  */
 import type { Course } from './course';
 import type { EducationInstructorPublicProfileRatingSource } from './educationInstructorPublicProfileRatingSource';
+import type { PublicSocialImage } from './publicSocialImage';
 
 export interface EducationInstructorPublicProfile {
   id: string;
   name: string;
   /** @nullable */
   photoUrl?: string | null;
+  socialImage?: PublicSocialImage;
   biography: string;
   industryYears: number;
   experienceYears: number;

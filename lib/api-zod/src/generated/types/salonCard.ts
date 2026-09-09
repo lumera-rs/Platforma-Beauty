@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicSocialImage } from './publicSocialImage';
 
 export interface SalonCard {
   id: string;
@@ -13,6 +14,7 @@ export interface SalonCard {
   city: string;
   municipality: string;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   rating: number;
   reviewCount: number;
   shortDescription: string;

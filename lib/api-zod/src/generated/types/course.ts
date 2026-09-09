@@ -15,6 +15,7 @@ import type { CoursePaymentMode } from './coursePaymentMode';
 import type { CoursePublisherType } from './coursePublisherType';
 import type { CourseSchedulingMode } from './courseSchedulingMode';
 import type { EducationInstructorSummary } from './educationInstructorSummary';
+import type { PublicSocialImage } from './publicSocialImage';
 
 export interface Course {
   id: string;
@@ -96,6 +97,7 @@ export interface Course {
   /** @minimum 0 */
   viewCount30d: number;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   startDate?: Date | null;
   published: boolean;

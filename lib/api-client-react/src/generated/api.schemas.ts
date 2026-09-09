@@ -5,6 +5,28 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type PublicSocialImageType = typeof PublicSocialImageType[keyof typeof PublicSocialImageType];
+
+
+export const PublicSocialImageType = {
+  'image/avif': 'image/avif',
+  'image/webp': 'image/webp',
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+} as const;
+
+/**
+ * Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.
+ */
+export interface PublicSocialImage {
+  url: string;
+  /** @minimum 1 */
+  width?: number;
+  /** @minimum 1 */
+  height?: number;
+  type?: PublicSocialImageType;
+}
+
 export type AdminPriceInquiryStatus = typeof AdminPriceInquiryStatus[keyof typeof AdminPriceInquiryStatus];
 
 
@@ -1382,6 +1404,7 @@ export interface SalonCard {
   city: string;
   municipality: string;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   rating: number;
   reviewCount: number;
   shortDescription: string;
@@ -4735,6 +4758,7 @@ export interface PublicProduct {
   description: string;
   imageUrl: string;
   images: string[];
+  socialImage?: PublicSocialImage;
   /**
      * @minimum 1
      * @nullable
@@ -6242,6 +6266,7 @@ export interface Course {
   /** @minimum 0 */
   viewCount30d: number;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   startDate?: string | null;
   published: boolean;
@@ -6835,6 +6860,7 @@ export interface EducationCenterPublic {
   city: string;
   description: string;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   websiteUrl?: string | null;
   /** @nullable */
@@ -8694,6 +8720,7 @@ export interface EducationInstructorPublicProfile {
   name: string;
   /** @nullable */
   photoUrl?: string | null;
+  socialImage?: PublicSocialImage;
   biography: string;
   industryYears: number;
   experienceYears: number;
@@ -10493,6 +10520,7 @@ export interface Supplier {
   scope: SupplierScope;
   /** @nullable */
   logoUrl: string | null;
+  socialImage?: PublicSocialImage;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -12545,6 +12573,7 @@ export interface BeautyJobListing {
   negotiable: boolean;
   isUrgent: boolean;
   photos: string[];
+  socialImage?: PublicSocialImage;
   status: string;
   moderationStatus: string;
   /** @nullable */
