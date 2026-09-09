@@ -47,10 +47,8 @@ import {
   GetPublicSupplierResponse,
   GetShopApprovalRequestResponse,
   GetSupplierPublicProductResponse,
-  ListPublicSuppliersResponse,
   ListMyShopApprovalRequestsResponseItem,
   ListShopApprovalRequestsResponseItem,
-  ListSupplierPublicProductsResponse,
   RejectShopApprovalRequestResponse,
 } from "@workspace/api-zod";
 
@@ -237,12 +235,60 @@ test.before(async () => {
   categoryIds.push(rootA.id, rootB.id);
   supplierBRootId = rootB.id;
 
-  const products = ListSupplierPublicProductsResponse.parse(await productResponse.json());
-
-  const [b2cDiscoverySource, marketplaceSource] = await Promise.all([
-    readFile(new URL("../routes/b2c-discovery.ts", import.meta.url), "utf8"),
-    readFile(new URL("../routes/marketplace.ts", import.meta.url), "utf8"),
-  ]);
+  const products = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id,
+      categoryId: rootA.id,
+      categoryName: rootA.name,
+      name: `${marker} ordered`,
+      description: "Wholesale secret description",
+      publicDescription: "Public description",
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 4_000,
+      discountPrice: 3_500,
+      publicPrice: 5_000,
+      publicDiscountPrice: 4_500,
+      retailEnabled: true,
+      professionalEnabled: true,
+      stock: 20,
+      sku: `${marker}-ordered`,
+      unit: "kom",
+      weightGrams: 750,
+      variants: [{ label: "Secret variant", value: "secret", stock: 20, sku: `${marker}-variant` }],
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: rootA.id,
+      categoryName: rootA.name,
+      name: `${marker} conflict`,
+      description: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_000,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 2,
+      sku: `${marker}-conflict`,
+      unit: "kom",
+      weightGrams: 100,
+    },
+    {
+      supplierId: supplierB.id,
+      categoryId: rootB.id,
+      categoryName: rootB.name,
+      name: `${marker} b2c`,
+      description: marker,
+      publicDescription: marker,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 3_000,
+      publicPrice: 3_500,
+      professionalEnabled: false,
+      retailEnabled: true,
+      stock: 3,
+      sku: `${marker}-b2c`,
+      unit: "kom",
+      weightGrams: 100,
+    },
+  ]).returning();
   [orderedProduct, conflictProduct, b2cProduct] = products as [
     typeof productsTable.$inferSelect,
     typeof productsTable.$inferSelect,
@@ -401,11 +447,10 @@ test("supplier category trees support arbitrary depth and safe subtree moves", a
   assert.equal((await validMove.json() as CategoryResponse).parentId, validParent.id);
   const [unchangedDescendant] = await db.select().from(productCategoriesTable)
     .where(eq(productCategoriesTable.id, level4.id));
+  assert.equal(unchangedDescendant?.parentId, level3.id);
+});
 
-  const [supplierResponse, productResponse] = await Promise.all([
-    api("/suppliers"),
-    api(`/suppliers/${supplierA.slug}/public-products`),
-  ]);
+test("supplier B2B products require authentication and public products expose only the allowlist", async () => {
   const privateResponse = await api(`/suppliers/${supplierA.slug}/products`);
   assert.equal(privateResponse.status, 401);
 
@@ -426,18 +471,18 @@ test("supplier category trees support arbitrary depth and safe subtree moves", a
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
 });
 
-test("canonical public supplier details follow supplier scope and active visibility", async () => {
+test("canonical public supplier detail, history, and reviews follow supplier scope and active visibility", async () => {
   const [supplier] = await db.insert(suppliersTable).values({
-    name: `${marker} concurrent supplier`,
-    slug: `${marker}-concurrent-supplier`,
+    name: `${marker} visibility`,
+    slug: `${marker}-visibility`,
     scope: "BOTH",
   }).returning();
   assert.ok(supplier);
   supplierIds.push(supplier.id);
   const [category] = await db.insert(productCategoriesTable).values({
-    supplierId: supplierA.id,
-    name: `${marker} cancellation category`,
-    slug: `${marker}-cancellation-category`,
+    supplierId: supplier.id,
+    name: `${marker} visibility category`,
+    slug: `${marker}-visibility-category`,
   }).returning();
   assert.ok(category);
   categoryIds.push(category.id);
@@ -464,6 +509,10 @@ test("canonical public supplier details follow supplier scope and active visibil
 
   const supplierPath = `/suppliers/${supplier.slug}`;
   const productPath = `/suppliers/${supplier.slug}/public-products/${product.id}`;
+  const recentlyViewedPath = `/suppliers/${supplier.slug}/recently-viewed`;
+  const recentlyViewedProductPath = `${recentlyViewedPath}/${product.id}`;
+  const reviewsPath = `${productPath}/reviews`;
+  let viewerCookie = "";
   const assertPublic = async () => {
     const supplierResponse = await api(supplierPath);
     const supplierBody = await supplierResponse.text();
@@ -476,10 +525,34 @@ test("canonical public supplier details follow supplier scope and active visibil
     assert.equal(productResponse.status, 200, productBody);
     const publicProduct = GetSupplierPublicProductResponse.parse(JSON.parse(productBody));
     assert.equal(publicProduct.id, product.id);
+
+    const recentWrite = await api(recentlyViewedProductPath, viewerCookie, { method: "POST" });
+    assert.equal(recentWrite.status, 204, await recentWrite.text());
+    const viewerToken = recentWrite.headers.get("set-cookie")?.match(/lumera_b2c_viewer=([^;]+)/)?.[1];
+    if (viewerToken) viewerCookie = `lumera_b2c_viewer=${viewerToken}`;
+    assert.ok(viewerCookie, "public recently-viewed POST must establish or reuse viewer identity");
+
+    const recentRead = await api(recentlyViewedPath, viewerCookie);
+    assert.equal(recentRead.status, 200, await recentRead.clone().text());
+    const recentItems = await recentRead.json() as Array<{ id: string }>;
+    assert.ok(recentItems.some((item) => item.id === product.id));
+
+    const reviewsResponse = await api(reviewsPath);
+    assert.equal(reviewsResponse.status, 200, await reviewsResponse.clone().text());
+    assert.deepEqual(await reviewsResponse.json(), {
+      summary: { averageRating: 0, reviewCount: 0 },
+      items: [],
+    });
   };
   const assertHidden = async () => {
-    for (const path of [supplierPath, productPath]) {
-      const response = await api(path);
+    for (const [path, init] of [
+      [supplierPath, undefined],
+      [productPath, undefined],
+      [recentlyViewedPath, undefined],
+      [recentlyViewedProductPath, { method: "POST" }],
+      [reviewsPath, undefined],
+    ] as const) {
+      const response = await api(path, viewerCookie, init);
       assert.equal(response.status, 404, `${path} must remain hidden, got ${response.status}`);
       assert.deepEqual(await response.json(), { error: "Supplier not found." });
     }
@@ -764,7 +837,10 @@ test("product merchandising validates, canonicalizes, isolates suppliers and ret
   const manualProduct = await manual.json() as { relatedProducts: Array<Record<string, unknown>> };
   assert.deepEqual(manualProduct.relatedProducts.map((product) => product.id), [candidates[1]!.id, candidates[0]!.id]);
 
-  const supplierChange = await pool.connect();
+  const supplierChange = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ supplierId: supplierB.id, categoryId: supplierBRootId }),
+  });
   assert.equal(supplierChange.status, 400);
 
   const publicManualUpdate = await api(`/admin/products/${orderedProduct.id}`, adminCookie, {
@@ -812,20 +888,8 @@ test("product merchandising validates, canonicalizes, isolates suppliers and ret
 test("order item supplier and commercial snapshots survive catalog edits and reject direct updates", async () => {
   await db.update(productsTable).set({ variants: null }).where(eq(productsTable.id, orderedProduct.id));
   await addToCart(orderedProduct.id);
-  const response = await api("/shop/checkout", ownerCookie, {
-    method: "POST",
-    body: JSON.stringify({
-      useSalonAddress: true,
-      paymentMethod: "BANK_TRANSFER",
-      deliveryMethod: "courier",
-      termsAccepted: true,
-      desiredReferralCreditRsd: 10_000,
-      expectedSubtotal: preview.cart.subtotal,
-      expectedShippingCost: preview.shipping.shippingCost,
-      expectedTotal: preview.total,
-    }),
-  });
-  assert.equal(response.status, 201, await response.clone().text());
+  const response = await checkout();
+  assert.equal(response.status, 201);
   const created = await response.json() as { id: string };
   orderIds.push(created.id);
 
@@ -874,25 +938,16 @@ test("order item supplier and commercial snapshots survive catalog edits and rej
   await assert.rejects(
     db.execute(sql`update order_items set unit_price = unit_price + 1 where id = ${before.id}`),
     (error: unknown) => {
-    const cause = error instanceof Error ? error.cause : undefined;
+      const cause = error instanceof Error ? error.cause : undefined;
       return cause instanceof Error && /Order item commercial snapshot is immutable/.test(cause.message);
     },
   );
 });
 
 test("supplier scope changes reject existing incompatible product channels", async () => {
-  const response = await api("/shop/checkout", ownerCookie, {
-    method: "POST",
-    body: JSON.stringify({
-      useSalonAddress: true,
-      paymentMethod: "BANK_TRANSFER",
-      deliveryMethod: "courier",
-      termsAccepted: true,
-      desiredReferralCreditRsd: 10_000,
-      expectedSubtotal: preview.cart.subtotal,
-      expectedShippingCost: preview.shipping.shippingCost,
-      expectedTotal: preview.total,
-    }),
+  const response = await api(`/admin/suppliers/${supplierA.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ scope: "B2C" }),
   });
   assert.equal(response.status, 409, await response.text());
   const [unchanged] = await db.select().from(suppliersTable).where(eq(suppliersTable.id, supplierA.id));
@@ -908,9 +963,9 @@ test("supplier scope changes serialize with concurrent product creation at the d
   assert.ok(supplier);
   supplierIds.push(supplier.id);
   const [category] = await db.insert(productCategoriesTable).values({
-    supplierId: supplierA.id,
-    name: `${marker} cancellation category`,
-    slug: `${marker}-cancellation-category`,
+    supplierId: supplier.id,
+    name: `${marker} concurrent category`,
+    slug: `${marker}-concurrent-category`,
   }).returning();
   assert.ok(category);
   categoryIds.push(category.id);
@@ -997,7 +1052,7 @@ test("supplier and category changes serialize with checkout and return stable co
   const repeatedConflict = await checkout();
   assert.equal(repeatedConflict.status, 409, await repeatedConflict.text());
 
-  const [savedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, created.id));
+  const [savedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderIds[0]!));
   const [savedItem] = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderIds[0]!));
   assert.ok(savedOrder);
   assert.ok(savedItem);
@@ -1408,5 +1463,3 @@ test("ApprovalRequest schemas omit aftercare while the B2B checkout contract rem
     .where(eq(retailOrderItemsTable.aftercareRecommendationId, rejectedRecommendationId));
   assert.equal(aftercareEvidence.length, 0);
 });
-
-  const suppliers = ListPublicSuppliersResponse.parse(await supplierResponse.json());
