@@ -424,6 +424,7 @@ exit 0
     failureCode,
     `The timed runner must preserve the failed phase's exit code. stderr: ${result.stderr}`,
   );
+
   const invocations = (await readFile(invocationLog, "utf8")).trim().split("\n");
   assert.deepEqual(invocations, [
     "run build:release",
@@ -1322,7 +1323,6 @@ test("CI timing history keeps the newest successful reports regardless of API or
   const scriptsDir = path.join(tempDir, "scripts");
   const configPath = path.join(scriptsDir, "ci-build-timings.json");
   const fakeGhPath = path.join(binDir, "gh");
-
   const phase = (durationSeconds: number, significantSlowdown: boolean) => ({
     name: "scripts:typecheck",
     durationSeconds,
@@ -1343,7 +1343,6 @@ test("CI timing history keeps the newest successful reports regardless of API or
       { ...phase(durationSeconds, significantSlowdown), name: "validate:ci:build:total" },
     ],
   });
-
   const historicalRuns = [
     { id: "run-oldest", run_attempt: 1, run_started_at: "2026-09-01T12:00:00Z", duration: 1, slow: false },
     { id: "run-newest", run_attempt: 1, run_started_at: "2026-09-09T12:00:00Z", duration: 60, slow: true },
@@ -1366,10 +1365,7 @@ test("CI timing history keeps the newest successful reports regardless of API or
       })),
     }]),
   );
-  await writeFile(
-    configPath,
-    JSON.stringify({ historyLimit: 3, sustainedSlowdownRuns: 4 }),
-  );
+  await writeFile(configPath, JSON.stringify({ historyLimit: 3, sustainedSlowdownRuns: 4 }));
   await writeFile(
     path.join(tempDir, "current-build-timings.json"),
     JSON.stringify(buildReport("2026-09-10T12:00:00Z", 10, true)),
@@ -1380,12 +1376,7 @@ test("CI timing history keeps the newest successful reports regardless of API or
     const zipPath = path.join(artifactZipDir, `artifact-${run.id}.zip`);
     await mkdir(path.dirname(reportPath));
     await writeFile(reportPath, JSON.stringify(buildReport(run.run_started_at, run.duration, run.slow)));
-    const zipResult = await runCommand(
-      "zip",
-      ["-q", "-j", zipPath, reportPath],
-      process.env,
-      tempDir,
-    );
+    const zipResult = await runCommand("zip", ["-q", "-j", zipPath, reportPath], process.env, tempDir);
     assert.equal(zipResult.code, 0, `Could not create test artifact ZIP: ${zipResult.stderr}`);
   }
 
@@ -1446,21 +1437,13 @@ esac
     tempDir,
   );
   assert.equal(downloadResult.code, 0, `History download failed: ${downloadResult.stderr}`);
-  assert.match(
-    await readFile(outputPath, "utf8"),
-    /^history_count=3$/m,
-    `Unexpected downloader output. stdout: ${downloadResult.stdout}; stderr: ${downloadResult.stderr}`,
-  );
+  assert.match(await readFile(outputPath, "utf8"), /^history_count=3$/m);
 
   const historyEntries = await readdir(historyDir, { withFileTypes: true });
   assert.deepEqual(
     historyEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
     ["run-middle", "run-newest", "run-second-newest"],
     "Only the three newest successful reports may be downloaded.",
-  );
-  assert.match(
-    await readFile(summaryPath, "utf8"),
-    /Historical reports downloaded: \*\*3\*\* \(expected up to \*\*3\*\*\)/,
   );
 
   const trendResult = await runCommand(
@@ -1483,4 +1466,172 @@ esac
     /\| scripts:typecheck \| 45s \| — \| — \| 4 \| 4 \| ⚠️ Sustained slowdown \|/,
     "The trend must use the current report plus the three newest historical reports.",
   );
+});
+
+test("database and browser timing history keep newest reports regardless of API order", async () => {
+  const jobs = {
+    database: [
+      "database:test:monitoring",
+      "database:test:backend-standards:static",
+      "database:release:2-backend",
+      "database:release:3-api",
+      "validate:ci:database:total",
+    ],
+    browser: [
+      "browser:release:4-isolated",
+      "browser:release:5-final",
+      "validate:ci:browser:total",
+    ],
+  } as const;
+  const workflow = await readFile(branchCiPath, "utf8");
+
+  for (const [job, phaseNames] of Object.entries(jobs)) {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), `lumera-${job}-timings-history-limit-`));
+    const binDir = path.join(tempDir, "bin");
+    const artifactZipDir = path.join(tempDir, "artifact-zips");
+    const reportDir = path.join(tempDir, "reports");
+    const historyDir = path.join(tempDir, "ci-timings", "history");
+    const summaryPath = path.join(tempDir, "step-summary.md");
+    const runsJsonPath = path.join(tempDir, "runs.json");
+    const scriptsDir = path.join(tempDir, "scripts");
+    const configPath = path.join(scriptsDir, "ci-build-timings.json");
+    const fakeGhPath = path.join(binDir, "gh");
+
+    const report = (startedAt: string, durationSeconds: number) => ({
+      schemaVersion: 2,
+      job,
+      status: "passed",
+      startedAt,
+      phases: phaseNames.map((name) => ({
+        name,
+        durationSeconds,
+        significantSlowdown: true,
+      })),
+    });
+
+    const historicalRuns = [
+      { id: `${job}-oldest`, run_started_at: "2026-09-01T12:00:00Z", duration: 1 },
+      { id: `${job}-newest`, run_started_at: "2026-09-09T12:00:00Z", duration: 60 },
+      { id: `${job}-middle`, run_started_at: "2026-09-08T12:00:00Z", duration: 50 },
+      { id: `${job}-second-newest`, run_started_at: "2026-09-07T12:00:00Z", duration: 40 },
+      { id: `${job}-second-oldest`, run_started_at: "2026-09-02T12:00:00Z", duration: 2 },
+    ];
+
+  await mkdir(binDir);
+  await mkdir(artifactZipDir);
+  await mkdir(reportDir);
+  await mkdir(scriptsDir);
+  await writeFile(
+    runsJsonPath,
+    JSON.stringify([{
+      workflow_runs: historicalRuns.map(({ id, run_started_at }) => ({ id, run_started_at })),
+    }]),
+  );
+  await writeFile(
+    configPath,
+    JSON.stringify({ historyLimit: 3, sustainedSlowdownRuns: 4 }),
+  );
+    const currentPath = path.join(tempDir, `current-${job}-timings.json`);
+    await writeFile(currentPath, JSON.stringify(report("2026-09-10T12:00:00Z", 10)));
+
+    for (const run of historicalRuns) {
+      const reportPath = path.join(reportDir, run.id, `${job}-timings.json`);
+      const zipPath = path.join(artifactZipDir, `artifact-${run.id}.zip`);
+      await mkdir(path.dirname(reportPath));
+      await writeFile(reportPath, JSON.stringify(report(run.run_started_at, run.duration)));
+      const zipResult = await runCommand("zip", ["-q", "-j", zipPath, reportPath], process.env, tempDir);
+      assert.equal(zipResult.code, 0, `Could not create ${job} test artifact ZIP: ${zipResult.stderr}`);
+    }
+
+    await writeFile(
+      fakeGhPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+endpoint=""
+has_jq=false
+for arg in "$@"; do
+  case "$arg" in
+    repos/example/lumera|repos/example/lumera/*) endpoint="$arg" ;;
+    --jq) has_jq=true ;;
+  esac
+done
+case "$endpoint" in
+  repos/example/lumera)
+    printf '%s\\n' 'main'
+    ;;
+  repos/example/lumera/actions/workflows/ci.yml/runs)
+    cat "$FAKE_RUNS_JSON"
+    ;;
+  repos/example/lumera/actions/runs/*/artifacts)
+    run_id="\${endpoint##*/actions/runs/}"
+    run_id="\${run_id%/artifacts}"
+    if [[ "$has_jq" == true ]]; then
+      printf 'artifact-%s\\n' "$run_id"
+    else
+      printf '{"artifacts":[{"id":"artifact-%s","name":"${job}-timings-1","expired":false,"created_at":"2026-09-10T12:00:00Z"}]}\\n' "$run_id"
+    fi
+    ;;
+  repos/example/lumera/actions/artifacts/*/zip)
+    artifact_id="\${endpoint##*/artifacts/}"
+    artifact_id="\${artifact_id%/zip}"
+    cat "$FAKE_ARTIFACT_ZIP_DIR/\${artifact_id}.zip"
+    ;;
+  *)
+    echo "Unexpected GitHub API endpoint: $endpoint" >&2
+    exit 1
+    ;;
+esac
+`,
+    );
+    await chmod(fakeGhPath, 0o755);
+
+    const downloadScript = extractWorkflowRunStep(
+      workflow,
+      `Download recent successful ${job} timing history`,
+    );
+    const downloadResult = await runCommand(
+      "bash",
+      ["-euo", "pipefail", "-c", downloadScript],
+      {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        GITHUB_REPOSITORY: "example/lumera",
+        GITHUB_STEP_SUMMARY: summaryPath,
+        FAKE_RUNS_JSON: runsJsonPath,
+        FAKE_ARTIFACT_ZIP_DIR: artifactZipDir,
+        GH_TOKEN: "test-token",
+      },
+      tempDir,
+    );
+    assert.equal(downloadResult.code, 0, `${job} history download failed: ${downloadResult.stderr}`);
+
+    const historyEntries = await readdir(historyDir, { withFileTypes: true });
+    assert.deepEqual(
+      historyEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
+      [`${job}-middle`, `${job}-newest`, `${job}-second-newest`],
+      `Only the three newest ${job} reports may be downloaded.`,
+    );
+
+    const trendResult = await runCommand(
+      "node",
+      [
+        path.join(workspaceRoot, "scripts", "summarize-ci-build-trend.mjs"),
+        currentPath,
+        historyDir,
+        summaryPath,
+        configPath,
+      ],
+      process.env,
+      tempDir,
+    );
+    assert.equal(trendResult.code, 0, `${job} trend summary failed: ${trendResult.stderr}`);
+    const summary = await readFile(summaryPath, "utf8");
+
+    assert.match(summary, /Historical reports found: 3\./);
+    assert.match(
+      summary,
+      new RegExp(`\\| ${phaseNames[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\| 45s \\| — \\| — \\| 4 \\| 4 \\|`),
+      `The ${job} trend must exclude older reports outside historyLimit.`,
+    );
+  }
 });

@@ -151,4 +151,3 @@
 - [Public social image metadata](public-social-image-metadata.md) — pin OG metadata to an explicit managed variant; URL-only legacy images must never gain inferred dimensions or MIME.
 - [CI timing calibration](ci-timing-calibration.md) — pre-instrumentation Actions runs provide provisional job totals, not phase observations; recalibrate after timing artifacts accumulate.
 - [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.
-- [Release-chain merge safety](release-chain-merge-safety.md) — central CI test edits need a post-rebase compile and full-suite check when timing tasks merge concurrently.
