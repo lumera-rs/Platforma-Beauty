@@ -11,15 +11,30 @@ import {
   validateDirectoryName,
   verifyMigrationContract,
 } from "./contract";
+import "./header.test";
 
 async function fixture(migrations: Array<[string, string]>, extras: string[] = []): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "lumera-migration-contract-"));
   for (const [directory, sql] of migrations) {
     await mkdir(path.join(root, directory), { recursive: true });
-    await writeFile(path.join(root, directory, "migration.sql"), sql);
+    await writeFile(path.join(root, directory, "migration.sql"), migrationSql(directory.slice(0, 6), sql));
   }
   for (const extra of extras) await writeFile(path.join(root, extra), "unexpected");
   return root;
+}
+
+function migrationSql(id: string, body: string): string {
+  return [
+    "-- lumera:migration-format 1",
+    `-- lumera:id ${id}`,
+    "-- lumera:mode transactional",
+    "-- lumera:description Contract fixture migration.",
+    "-- lumera:min-postgres 16",
+    "-- lumera:max-postgres 16",
+    "-- lumera:recovery Restore the prior schema from the reviewed migration plan.",
+    "-- lumera:end-header",
+    body,
+  ].join("\n");
 }
 
 async function rejectsWith(root: string, pattern: RegExp): Promise<void> {
@@ -36,9 +51,19 @@ test("accepts a valid sequence and returns deterministic ordering and hashes", a
   const second = await readMigrationSet(root);
   assert.deepEqual(first, second);
   assert.deepEqual(first.map((record) => record.sequence), [1, 2]);
-  assert.equal(first[0]?.sha256, sha256("select 1;\n"));
+  assert.equal(first[0]?.sha256, sha256(migrationSql("000001", "select 1;\n")));
+  assert.equal(first[0]?.metadata.migrationId, "000001");
   assert.equal(sha256("same bytes"), sha256("same bytes"));
   assert.notEqual(sha256("same bytes"), sha256("different bytes"));
+});
+
+test("checksum covers the complete header as well as the SQL body", () => {
+  const original = migrationSql("000001", "SELECT 1;\n");
+  const metadataEdit = original.replace(
+    "Contract fixture migration.",
+    "Contract fixture migration with changed metadata.",
+  );
+  assert.notEqual(sha256(original), sha256(metadataEdit));
 });
 
 test("rejects sequence gaps and duplicate numbers", async (t) => {

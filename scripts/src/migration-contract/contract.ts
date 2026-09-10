@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import {
+  MigrationHeaderError,
+  type MigrationMetadata,
+  parseMigrationHeader,
+} from "./header";
+
+export type { MigrationMetadata, MigrationMode } from "./header";
 
 const DIRECTORY_PATTERN = /^(\d{6})_([a-z][a-z0-9]*(?:_[a-z0-9]+)*)$/;
 const GENERIC_PURPOSES = new Set([
@@ -36,6 +43,7 @@ export interface MigrationRecord {
   sequence: number;
   purpose: string;
   sha256: string;
+  metadata: MigrationMetadata;
 }
 
 export interface VerificationResult {
@@ -117,7 +125,20 @@ export async function readMigrationSet(root: string): Promise<MigrationRecord[]>
       );
     }
     const contents = await readFile(sqlPath);
-    records.push({ directory: entry.name, sequence, purpose, sha256: sha256(contents) });
+    let metadata: MigrationMetadata;
+    try {
+      metadata = parseMigrationHeader(contents, entry.name.slice(0, 6));
+    } catch (error) {
+      if (!(error instanceof MigrationHeaderError)) throw error;
+      throw new MigrationContractError(`Migration "${entry.name}": ${error.message}`);
+    }
+    records.push({
+      directory: entry.name,
+      sequence,
+      purpose,
+      sha256: sha256(contents),
+      metadata,
+    });
   }
 
   records.sort((left, right) =>
