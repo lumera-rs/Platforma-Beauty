@@ -3,6 +3,9 @@
 Every `migration.sql` starts at byte zero with this header. UTF-8 BOMs are
 forbidden. Lines use LF or CRLF; lone CR and control characters are rejected.
 
+Tabs are not permitted anywhere in `migration.sql`, including the SQL body.
+Use spaces for indentation.
+
 ```text
 -- lumera:migration-format 1
 -- lumera:id NNNNNN
@@ -41,6 +44,9 @@ protects the directive namespace; it does not parse or validate SQL.
 Conditions are parsed and stored only. Read-only safety and execution are
 deferred to P.2e/P.2g because a catalog-regex validator is not a SQL parser.
 Mode-specific body validation is likewise deferred to P.2g.
+P.2g must reject migration bodies containing no executable SQL statement.
+Bodies containing only semicolons or comments can currently pass the
+non-empty-body check; that behavior is not changed by this documentation.
 
 The migration checksum is SHA-256 over the original complete byte stream,
 including the directive header, never over the parsed body.

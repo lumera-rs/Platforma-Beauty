@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import {
   MigrationContractError,
   compareWithReference,
@@ -197,25 +198,86 @@ test("rejects self-reference through the same path or a symlink alias", async (t
   );
 });
 
+// Inspect syntax without resolving or executing any fixture imports.
+function assertNoCapabilities(source: string): void {
+  const tree = ts.createSourceFile("capability-fixture.ts", source, ts.ScriptTarget.Latest, true);
+  const forbiddenModule = /^(?:node:)?(?:pg|postgres|drizzle-kit|drizzle-orm|child_process|http|https|http2|net|tls|dgram|undici)(?:\/|$)|^(?:https?:|@workspace\/db(?:\/|$))|(?:^|\/)(?:bootstrap|runtime)(?:[./-]|$)/;
+  const forbiddenCall = /^(?:execFile|execSync|execFileSync|spawn|spawnSync|fetch)$/;
+  function checkModule(node: ts.Expression | undefined): void {
+    if (node && ts.isStringLiteralLike(node)) {
+      assert.equal(forbiddenModule.test(node.text), false, `forbidden module: ${node.text}`);
+    }
+  }
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      checkModule(node.moduleSpecifier);
+    } else if (ts.isExternalModuleReference(node)) {
+      checkModule(node.expression);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const name = ts.isIdentifier(callee) ? callee.text
+        : ts.isPropertyAccessExpression(callee) ? callee.name.text
+        : ts.isElementAccessExpression(callee) && ts.isStringLiteralLike(callee.argumentExpression)
+          ? callee.argumentExpression.text : undefined;
+      if (callee.kind === ts.SyntaxKind.ImportKeyword || name === "require") {
+        checkModule(node.arguments[0]);
+      }
+      if (name) assert.equal(forbiddenCall.test(name), false, `forbidden call: ${name}`);
+    }
+    if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) {
+      assert.notEqual(node.text, "DATABASE_URL", "forbidden DATABASE_URL access");
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+}
+
 test("implementation has no database, network, drizzle-kit, bootstrap, or shell capability", async () => {
   const sourceFiles = [
     new URL("./contract.ts", import.meta.url),
     new URL("./verify-migration-contract.ts", import.meta.url),
+    new URL("./header.ts", import.meta.url),
   ];
-  const source = (await Promise.all(sourceFiles.map((file) => readFile(file, "utf8")))).join("\n");
-  for (const forbidden of [
-    "DATABASE_URL",
-    "from \"pg\"",
-    "from 'pg'",
-    "postgres",
-    "drizzle-kit",
-    "child_process",
-    "execFile",
-    "execSync",
-    "spawn(",
-    "fetch(",
-    "http:",
-    "https:",
-    "bootstrap",
-  ]) assert.equal(source.includes(forbidden), false, forbidden);
+  for (const file of sourceFiles) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotThrow(() => assertNoCapabilities(source), file.pathname);
+  }
+});
+
+test("capability guard rejects actual pg imports and requires without executing them", () => {
+  for (const source of [
+    'import { Pool } from "pg";',
+    "import pg from 'pg';",
+    'import "pg";',
+    'const pg = require /* spacing */ ("pg");',
+    'import pg = require("pg");',
+    'const pg = import("pg");',
+    'export { Pool } from "pg";',
+  ]) assert.throws(() => assertNoCapabilities(source), /forbidden module: pg/, source);
+});
+
+test("capability guard preserves other forbidden modules, calls, and database configuration coverage", () => {
+  for (const module of [
+    "postgres", "drizzle-kit", "drizzle-orm/pg-core", "@workspace/db",
+    "child_process", "node:child_process", "http", "node:https", "https://example.invalid/module",
+    "../bootstrap", "../runtime",
+  ]) {
+    assert.throws(() => assertNoCapabilities(`import capability from "${module}";`), /forbidden module/);
+    assert.throws(() => assertNoCapabilities(`const capability = require("${module}");`), /forbidden module/);
+  }
+  for (const source of [
+    'execFile("command");', 'execSync("command");', 'spawn ("command");',
+    'fetch ("https://example.invalid");', 'globalThis.fetch("https://example.invalid");',
+    "process.env.DATABASE_URL;", 'process.env["DATABASE_URL"];',
+  ]) assert.throws(() => assertNoCapabilities(source), /forbidden (call|DATABASE_URL)/, source);
+});
+
+test("capability guard permits harmless PostgreSQL terminology and import-like text", () => {
+  assert.doesNotThrow(() => assertNoCapabilities(`
+    import { SUPPORTED_POSTGRES_MAJOR_VERSIONS } from "../schema-drift/model";
+    const keys = ["min-postgres", "max-postgres"];
+    function postgresMajor() { return SUPPORTED_POSTGRES_MAJOR_VERSIONS; }
+    // import pg from "pg";
+    const example = 'import pg from "pg"; fetch("example")';
+  `));
 });

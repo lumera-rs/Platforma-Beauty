@@ -139,6 +139,27 @@ test("rejects bad format, IDs, modes, and directory/header mismatch", () => {
   rejects(validHeader({ mode: "transaction" }), /mode must be exactly/i);
 });
 
+test("rejects mode spelling and separator variants", () => {
+  for (const mode of [
+    "TRANSACTIONAL",
+    "Transactional",
+    "non-transactional",
+    "non_transactional",
+  ]) {
+    rejects(validHeader({ mode }), /mode must be exactly transactional or nontransactional/i);
+  }
+});
+
+test("rejects non-canonical migration IDs", () => {
+  for (const id of [
+    "000001 trailing",
+    "0000001",
+    "\u0660\u0660\u0660\u0660\u0660\u0661",
+  ]) {
+    rejects(validHeader({ id }), /id must contain exactly six digits/i);
+  }
+});
+
 test("validates the complete PostgreSQL range against supported majors", () => {
   for (const [min, max, pattern] of [
     ["sixteen", "16", /integer/i],
@@ -148,6 +169,32 @@ test("validates the complete PostgreSQL range against supported majors", () => {
     ["15", "16", /unsupported/i],
     ["16", "17", /unsupported/i],
   ] as const) rejects(validHeader({ min, max }), pattern);
+});
+
+test("rejects non-canonical PostgreSQL numbers at either range endpoint", () => {
+  for (const [value, pattern] of [
+    ["-1", /integer/i],
+    ["+16", /integer/i],
+    ["0x10", /integer/i],
+    ["1e1", /integer/i],
+    ["\uff11\uff16", /integer/i],
+    ["9007199254740992", /safe integer/i],
+  ] as const) {
+    rejects(validHeader({ min: value }), pattern);
+    rejects(validHeader({ max: value }), pattern);
+  }
+
+  rejects(validHeader({ min: "0" }), /PostgreSQL major 0 is unsupported/i);
+  rejects(validHeader({ max: "0" }), /min-postgres must not exceed max-postgres/i);
+});
+
+test("rejects Unicode lookalikes in directive punctuation", () => {
+  for (const source of [
+    validHeader().replace("-- lumera:id 000001", "-- lumera\uff1aid 000001"),
+    validHeader().replace("-- lumera:min-postgres 16", "-- lumera:min\u2011postgres 16"),
+  ]) {
+    rejects(source, /malformed directive line/i);
+  }
 });
 
 test("rejects empty, padded, and overlong bounded values and condition counts", () => {
@@ -216,6 +263,20 @@ test("rejects BOM, lone CR, controls, and fatally malformed UTF-8", () => {
   rejects(validHeader().replace("\n", "\r"), /lone CR/i);
   rejects(validHeader({ description: "bad\u0001value" }), /control character/i);
   rejects(new Uint8Array([0xc3, 0x28]), /valid UTF-8/i);
+});
+
+test("rejects U+0009 TAB in the SQL body with the exact typed error", () => {
+  assert.throws(
+    () => parseMigrationHeader(validHeader({ body: "SELECT\t1;\n" }), "000001"),
+    (error: unknown) => {
+      assert.ok(error instanceof MigrationHeaderError);
+      assert.equal(
+        error.message,
+        "Invalid Lumera migration header: control character U+0009 is not allowed",
+      );
+      return true;
+    },
+  );
 });
 
 test("rejects Unicode controls, separators, and format/bidi characters in header values", () => {
