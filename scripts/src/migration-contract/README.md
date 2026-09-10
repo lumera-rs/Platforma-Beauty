@@ -50,3 +50,16 @@ non-empty-body check; that behavior is not changed by this documentation.
 
 The migration checksum is SHA-256 over the original complete byte stream,
 including the directive header, never over the parsed body.
+
+## CI command
+
+`pnpm run validate:ci:migration-contract` accepts no path arguments. When run
+locally it validates only the complete working migration set. In Branch CI,
+the workflow supplies the event name and, for pull requests, the exact base
+commit SHA from the GitHub event after fetching only that immutable commit.
+Pull requests compare protected history; pushes and manual dispatches validate
+the current set only. The command refuses every nonempty `DATABASE_URL`-style
+environment variable and removes those variables from its Git subprocesses.
+Inside GitHub Actions, the native `GITHUB_EVENT_NAME` is authoritative; an
+optional custom event value must match it, and missing native context fails
+closed. Local mode is available only outside GitHub Actions.

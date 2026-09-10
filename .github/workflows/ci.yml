@@ -26,8 +26,48 @@ permissions:
   contents: read
 
 jobs:
+  migration-contract:
+    name: Migration contract (database-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: "true"
+      DATABASE_URL: ""
+      LUMERA_MIGRATION_DATABASE_URL: ""
+      LUMERA_CI_EVENT_NAME: ${{ github.event_name }}
+      LUMERA_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its direct parents are enough to prove that
+          # the exact event base below is an ancestor; no broader history is needed.
+          fetch-depth: 2
+      - name: Fetch exact pull-request base commit
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Pull-request base SHA is missing or malformed." >&2
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test migration contract and capability guard
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migration-contract
+      - name: Validate migration contract
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:migration-contract
+
   release-chain:
     name: Release chain (database-free)
+    needs: migration-contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

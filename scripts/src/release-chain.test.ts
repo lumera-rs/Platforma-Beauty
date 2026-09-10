@@ -975,6 +975,41 @@ test("branch CI isolates database checks and orders browser journeys after every
     "The browser CI command must use the timing-aware runner for every browser phase.",
   );
 
+  const migrationContractJob = workflow.slice(
+    workflow.indexOf("  migration-contract:"),
+    workflow.indexOf("\n  release-chain:"),
+  );
+  assert.match(migrationContractJob, /name: Migration contract \(database-free\)/);
+  assert.match(
+    migrationContractJob,
+    /fetch-depth: 2/,
+    "Only the checked-out commit and direct parents should be present before the exact base fetch.",
+  );
+  assert.match(
+    migrationContractJob,
+    /if: \$\{\{ github\.event_name == 'pull_request' \}\}[\s\S]*?PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}[\s\S]*?git fetch --no-tags --depth=1 origin "\$PR_BASE_SHA"/,
+    "Pull requests must minimally fetch the immutable base SHA from the event.",
+  );
+  assert.match(
+    migrationContractJob,
+    /LUMERA_CI_PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/,
+  );
+  assert.match(migrationContractJob, /pnpm run test:migration-contract/);
+  assert.match(migrationContractJob, /pnpm run validate:ci:migration-contract/);
+  assert.doesNotMatch(migrationContractJob, /services:|image: postgres|\$\{\{\s*secrets\./);
+  assert.match(migrationContractJob, /DATABASE_URL: ""/);
+  assert.match(migrationContractJob, /LUMERA_MIGRATION_DATABASE_URL: ""/);
+
+  const releaseChainJob = workflow.slice(
+    workflow.indexOf("  release-chain:"),
+    workflow.indexOf("\n  build:"),
+  );
+  assert.match(
+    releaseChainJob,
+    /needs: migration-contract/,
+    "The migration contract must block the complete downstream release chain.",
+  );
+
   const buildJob = workflow.slice(
     workflow.indexOf("  build:"),
     workflow.indexOf("\n  database:"),
