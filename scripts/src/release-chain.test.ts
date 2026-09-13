@@ -1245,6 +1245,17 @@ test("branch CI isolates database checks and orders browser journeys after every
     workflow.indexOf("  database:"),
     workflow.indexOf("\n  browser:"),
   );
+  const databaseWorkflowJob = parsedWorkflow.jobs?.database;
+  assert.ok(databaseWorkflowJob, "The database CI job must exist.");
+  const databaseSteps = databaseWorkflowJob.steps ?? [];
+  const databaseStepRuns = databaseSteps
+    .map((step) => step.run?.trim())
+    .filter((run): run is string => typeof run === "string");
+  const findDatabaseStep = (command: string): number => {
+    const index = databaseSteps.findIndex((step) => step.run?.trim() === command);
+    assert.notEqual(index, -1, `Database CI must run ${command}.`);
+    return index;
+  };
   assert.match(databaseJob, /needs: release-chain/);
   assert.match(databaseJob, /image: postgres:16/);
   assert.match(databaseJob, /POSTGRES_DB: lumera_ci_database/);
@@ -1252,8 +1263,59 @@ test("branch CI isolates database checks and orders browser journeys after every
     databaseJob,
     /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@localhost:5432\/lumera_ci_database/,
   );
-  assert.match(databaseJob, /run: pnpm --filter @workspace\/db run push-force/);
-  assert.match(databaseJob, /run: pnpm run validate:ci:database/);
+  const databasePreparationCommands = [
+    "pnpm --filter @workspace/db run push-force",
+    "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
+    "pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation",
+    "pnpm run validate:ci:database",
+  ];
+  let previousDatabasePreparationIndex = -1;
+  for (const command of databasePreparationCommands) {
+    const commandIndex = findDatabaseStep(command);
+    assert.ok(
+      commandIndex > previousDatabasePreparationIndex,
+      `Database CI must order ${command} after the preceding preparation step and before the audit.`,
+    );
+    previousDatabasePreparationIndex = commandIndex;
+  }
+  assert.equal(
+    databaseStepRuns.filter((run) => run === "pnpm --filter @workspace/db run push-force").length,
+    1,
+    "The isolated database schema must be prepared exactly once.",
+  );
+  assert.equal(
+    databaseStepRuns.filter(
+      (run) => run === "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
+    ).length,
+    1,
+    "The isolated CI retail cart reconciliation must run exactly once.",
+  );
+  assert.equal(
+    databaseStepRuns.filter(
+      (run) => run === "pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation",
+    ).length,
+    1,
+    "The isolated CI retail cart preparation test must run exactly once.",
+  );
+  assert.equal(
+    databaseStepRuns.filter((run) => run === "pnpm run validate:ci:database").length,
+    1,
+    "The database backend-standard audit must run exactly once.",
+  );
+  assert.doesNotMatch(
+    databaseStepRuns.join("\n"),
+    /ensure(?::|-)?development-schema/,
+    "CI must use the narrow retail cart reconciliation rather than broad development-schema reconciliation.",
+  );
+  const pushForceStepIndex = findDatabaseStep("pnpm --filter @workspace/db run push-force");
+  const reconciliationStepIndex = findDatabaseStep(
+    "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
+  );
+  assert.equal(
+    reconciliationStepIndex,
+    pushForceStepIndex + 1,
+    "Retail cart reconciliation must be the step immediately after isolated schema preparation.",
+  );
   assert.match(databaseJob, /name: Download recent successful database timing history/);
   assert.match(databaseJob, /name: Upload database timing history/);
   assert.match(databaseJob, /name: database-timings-\$\{\{ github\.run_attempt \}\}/);

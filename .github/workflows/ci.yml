@@ -328,6 +328,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Prepare isolated test schema
         run: pnpm --filter @workspace/db run push-force
+      - name: Reconcile retail cart index for isolated CI
+        run: pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci
+      - name: Verify retail cart index CI preparation
+        run: pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation
       - name: Download recent successful database timing history
         continue-on-error: true
         env:
