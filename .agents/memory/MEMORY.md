@@ -154,3 +154,4 @@
 - [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
 - [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
 - [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.
+- [Shallow Git ancestry evidence](shallow-git-ancestry-evidence.md) — incidental local shallow negotiation can mask a wrong fetch anchor; distinguish object presence from ancestry proof.

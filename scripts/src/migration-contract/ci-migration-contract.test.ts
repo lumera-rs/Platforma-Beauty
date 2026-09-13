@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -12,6 +12,16 @@ import {
 } from "./validate-ci-migration-contract";
 
 const execFileAsync = promisify(execFile);
+
+function gitEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([key]) =>
+        !/^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/.test(key)),
+    ),
+    ...overrides,
+  };
+}
 
 function migrationSql(id: string, body = "select 1;\n"): string {
   return [
@@ -30,10 +40,7 @@ function migrationSql(id: string, body = "select 1;\n"): string {
 async function git(root: string, ...args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
     cwd: root,
-    env: Object.fromEntries(
-      Object.entries(process.env).filter(([key]) =>
-        !/^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/.test(key)),
-    ),
+    env: gitEnvironment(),
   });
   return result.stdout.trim();
 }
@@ -56,7 +63,13 @@ async function repository(withMigration = true): Promise<{ root: string; base: s
   await writeFile(path.join(root, "lib", "db", "migrations", "README.md"), "Migrations.\n");
   if (withMigration) await writeMigration(root, "000001_create_customer_profile");
   await git(root, "add", ".");
-  await git(root, "commit", "-qm", "base");
+  await execFileAsync("git", ["commit", "-qm", "base"], {
+    cwd: root,
+    env: gitEnvironment({
+      GIT_AUTHOR_DATE: "2001-01-01T00:00:00Z",
+      GIT_COMMITTER_DATE: "2001-01-01T00:00:00Z",
+    }),
+  });
   await git(root, "remote", "add", "origin", `file://${root}`);
   return { root, base: await git(root, "rev-parse", "HEAD") };
 }
@@ -65,6 +78,43 @@ async function commit(root: string, message = "current"): Promise<string> {
   await git(root, "add", "-A");
   await git(root, "commit", "-qm", message);
   return await git(root, "rev-parse", "HEAD");
+}
+
+async function commitAt(
+  root: string,
+  message: string,
+  timestamp: string,
+): Promise<string> {
+  await git(root, "add", "-A");
+  await execFileAsync("git", ["commit", "-qm", message], {
+    cwd: root,
+    env: gitEnvironment({
+      GIT_AUTHOR_DATE: timestamp,
+      GIT_COMMITTER_DATE: timestamp,
+    }),
+  });
+  return await git(root, "rev-parse", "HEAD");
+}
+
+async function commitTreeAt(
+  root: string,
+  tree: string,
+  parents: string[],
+  message: string,
+  timestamp: string,
+): Promise<string> {
+  const result = await execFileAsync(
+    "git",
+    ["commit-tree", tree, ...parents.flatMap((parent) => ["-p", parent]), "-m", message],
+    {
+      cwd: root,
+      env: gitEnvironment({
+        GIT_AUTHOR_DATE: timestamp,
+        GIT_COMMITTER_DATE: timestamp,
+      }),
+    },
+  );
+  return result.stdout.trim();
 }
 
 type NativeEvent = "pull_request" | "merge_group" | "push" | "workflow_dispatch";
@@ -322,16 +372,29 @@ test("bounded exact-SHA deepening proves older B0 and rejects unrelated/nonexist
   ]));
 
   const b0 = source.base;
+  // Fixed dates keep shallow negotiation ordering stable across Git versions.
   await writeFile(path.join(source.root, "b1"), "b1");
-  await commit(source.root, "B1");
+  await commitAt(source.root, "B1", "2001-01-02T00:00:00Z");
   await writeFile(path.join(source.root, "b2"), "b2");
-  const b2 = await commit(source.root, "B2");
+  const b2 = await commitAt(source.root, "B2", "2001-01-03T00:00:00Z");
   await git(source.root, "checkout", "-qb", "feature", b0);
   await writeMigration(source.root, "000002_add_customer_preferences", migrationSql("000002"));
-  const feature = await commit(source.root, "F");
+  const feature = await commitAt(source.root, "F", "2001-01-04T00:00:00Z");
   const mergeTree = await git(source.root, "merge-tree", "--write-tree", b2, feature);
-  const merge = await git(source.root, "commit-tree", mergeTree, "-p", b2, "-p", feature, "-m", "merge");
-  const unrelated = await git(source.root, "commit-tree", `${merge}^{tree}`, "-m", "unrelated");
+  const merge = await commitTreeAt(
+    source.root,
+    mergeTree,
+    [b2, feature],
+    "merge",
+    "2001-01-05T00:00:00Z",
+  );
+  const unrelated = await commitTreeAt(
+    source.root,
+    `${merge}^{tree}`,
+    [],
+    "unrelated",
+    "2001-01-06T00:00:00Z",
+  );
   await git(temp, "clone", "-q", "--bare", source.root, origin);
   await git(origin, "update-ref", "refs/pull/1/merge", merge);
   await git(origin, "update-ref", "refs/heads/unrelated", unrelated);
@@ -343,13 +406,38 @@ test("bounded exact-SHA deepening proves older B0 and rejects unrelated/nonexist
     execFileAsync("git", ["merge-base", "--is-ancestor", b0, "HEAD"], { cwd: checkout }),
     "the initial shallow checkout must not prove the older base",
   );
+  await git(checkout, "fetch", "-q", "--no-tags", "--depth=1", "origin", b0);
+  assert.equal(await git(checkout, "cat-file", "-e", `${b0}^{commit}`).then(() => "present"), "present");
+  await assert.rejects(
+    execFileAsync("git", ["merge-base", "--is-ancestor", b0, "HEAD"], { cwd: checkout }),
+    "fetching the exact base object must not substitute for proving ancestry",
+  );
 
+  // Newer Git may incidentally clear the shallow boundaries while deepening B0.
+  // Trace the validator's fetch anchor so this regression remains meaningful across Git versions.
+  const checkoutHead = await git(checkout, "rev-parse", "HEAD^{commit}");
+  const tracePath = path.join(temp, "git-trace.log");
+  const environment = await ciEnvironment(checkout, "pull_request", b0);
+  environment.GIT_TRACE = tracePath;
   const accepted = await runCiMigrationContract({
     repoRoot: checkout,
-    environment: await ciEnvironment(checkout, "pull_request", b0),
+    environment,
   });
   assert.equal(accepted.protectedMigrations, 1);
   assert.equal(await git(checkout, "merge-base", "--is-ancestor", b0, "HEAD").then(() => "yes"), "yes");
+  const trace = await readFile(tracePath, "utf8");
+  const deepeningCommands = trace
+    .split("\n")
+    .filter((line) => line.includes("fetch --no-tags --deepen="));
+  assert.ok(deepeningCommands.length > 0, "the shallow fixture must require bounded deepening");
+  assert.ok(
+    deepeningCommands.every((line) => line.includes(`origin ${checkoutHead}`)),
+    "bounded deepening must fetch from the pinned checkout HEAD SHA",
+  );
+  assert.ok(
+    deepeningCommands.every((line) => !line.includes(`origin ${b0}`)),
+    "bounded deepening must not use the trusted base SHA as its traversal anchor",
+  );
 
   for (const [sha, pattern] of [
     [unrelated, /not an ancestor/i],

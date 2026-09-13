@@ -161,23 +161,42 @@ async function fetchExactReference(
   });
 }
 
+async function checkoutHeadSha(
+  repoRoot: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<string> {
+  const resolved = await gitCommand(
+    ["rev-parse", "--verify", "HEAD^{commit}"],
+    repoRoot,
+    environment,
+  ).catch(() => {
+    throw new Error("The checkout HEAD commit is unavailable");
+  });
+  const headSha = resolved.stdout.toString("ascii").trim();
+  if (!COMMIT_SHA_PATTERN.test(headSha)) {
+    throw new Error(`The checkout HEAD did not resolve to an exact commit SHA: ${headSha}`);
+  }
+  return headSha;
+}
+
 async function proveAncestryWithBoundedDeepening(
   repoRoot: string,
   baseSha: string,
+  headSha: string,
   environment: NodeJS.ProcessEnv,
 ): Promise<void> {
   for (const deepenBy of [0, ...HISTORY_DEPTH_STEPS]) {
     if (deepenBy !== 0) {
       await gitCommand(
-        ["fetch", "--no-tags", `--deepen=${deepenBy}`, "origin", baseSha],
+        ["fetch", "--no-tags", `--deepen=${deepenBy}`, "origin", headSha],
         repoRoot,
         environment,
       ).catch(() => {
-        throw new Error(`Unable to deepen history for exact trusted base commit: ${baseSha}`);
+        throw new Error(`Unable to deepen history for checkout HEAD commit: ${headSha}`);
       });
     }
     const ancestry = await gitCommand(
-      ["merge-base", "--is-ancestor", baseSha, "HEAD"],
+      ["merge-base", "--is-ancestor", baseSha, headSha],
       repoRoot,
       environment,
       [0, 1],
@@ -195,6 +214,7 @@ async function validateHistoricalReference(
   if (!baseSha || !COMMIT_SHA_PATTERN.test(baseSha)) {
     throw new Error("Historical migration validation requires the exact base commit SHA");
   }
+  const headSha = await checkoutHeadSha(repoRoot, environment);
   await fetchExactReference(repoRoot, baseSha, environment);
   const resolved = await gitCommand(
     ["rev-parse", "--verify", `${baseSha}^{commit}`],
@@ -206,7 +226,7 @@ async function validateHistoricalReference(
   if (resolved.stdout.toString("ascii").trim().toLowerCase() !== baseSha.toLowerCase()) {
     throw new Error(`Trusted base did not resolve exactly: ${baseSha}`);
   }
-  await proveAncestryWithBoundedDeepening(repoRoot, baseSha, environment);
+  await proveAncestryWithBoundedDeepening(repoRoot, baseSha, headSha, environment);
 
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-migration-reference-"));
   try {
