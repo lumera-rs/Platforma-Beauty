@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
@@ -52,6 +52,25 @@ interface HarnessDatabaseManifest {
 }
 
 const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
+const lifecycleProgressFileEnvironmentName = "LUMERA_LIFECYCLE_PROGRESS_FILE";
+const lifecycleSetupReadyFileEnvironmentName = "LUMERA_LIFECYCLE_SETUP_READY_FILE";
+
+async function reportLifecycleProgress(
+  environment: NodeJS.ProcessEnv,
+  phase: string,
+): Promise<void> {
+  const progressFile = environment[lifecycleProgressFileEnvironmentName];
+  if (!progressFile) return;
+  await appendFile(progressFile, `${Date.now()} ${phase}\n`, "utf8");
+}
+
+async function markLifecycleSetupReady(environment: NodeJS.ProcessEnv): Promise<void> {
+  const setupReadyFile = environment[lifecycleSetupReadyFileEnvironmentName];
+  if (setupReadyFile) {
+    await writeFile(setupReadyFile, `${Date.now()}\n`, "utf8");
+  }
+  await reportLifecycleProgress(environment, "setup-ready");
+}
 
 function requireDevelopmentDatabaseUrl(): string {
   assertDestructiveTestRuntimeAllowed(process.env, "Isolated test harnesses");
@@ -545,12 +564,18 @@ export async function recoverInterruptedHarnessDatabaseSuites(
 export async function runIsolatedBrowserSuite(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
+  await reportLifecycleProgress(process.env, "browser-spec-types-start");
   await runCommand(
     path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
     [path.join(workspaceRoot, "scripts", "src", "check-browser-spec-types.ts")],
     process.env,
     "Browser spec static checks",
   );
+  await reportLifecycleProgress(process.env, "browser-spec-types-ready");
+  await markLifecycleSetupReady({
+    ...process.env,
+    ...configuration.environment,
+  });
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
@@ -572,7 +597,7 @@ export async function runIsolatedBrowserSuite(
   const webPort = await findAvailablePort();
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const webBaseUrl = `http://127.0.0.1:${webPort}`;
-  const testEnvironment = {
+  const testEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
@@ -625,13 +650,16 @@ export async function runIsolatedBrowserSuite(
 
   try {
     databaseMayExist = true;
+    await reportLifecycleProgress(testEnvironment, "createdb-start");
     await runBrowserCommand(
       "createdb",
       ["--maintenance-db", developmentDatabaseUrl, databaseName],
       process.env,
       "Creating the disposable browser test database",
     );
+    await reportLifecycleProgress(testEnvironment, "createdb-ready");
 
+    await reportLifecycleProgress(testEnvironment, "schema-start");
     await runBrowserCommand(
       "pnpm",
       ["--filter", "@workspace/db", "run", "push-force"],
@@ -639,6 +667,7 @@ export async function runIsolatedBrowserSuite(
       "Preparing the disposable browser test schema",
       { failOnOutput: /(?:^|\n)error(?: response from server)?:/i },
     );
+    await reportLifecycleProgress(testEnvironment, "schema-ready");
 
     apiProcess = startProcess(
       path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
@@ -646,11 +675,13 @@ export async function runIsolatedBrowserSuite(
       { ...testEnvironment, PORT: String(apiPort) },
       "Disposable API server",
     );
+    await reportLifecycleProgress(testEnvironment, "api-start");
     await waitForHttp(
       `${apiBaseUrl}/api/healthz`,
       "Disposable API server",
       () => Boolean(interruptedSignal),
     );
+    await reportLifecycleProgress(testEnvironment, "api-ready");
 
     throwIfInterrupted();
     webProcess = startProcess(
@@ -669,7 +700,9 @@ export async function runIsolatedBrowserSuite(
       "Disposable browser frontend",
       () => Boolean(interruptedSignal),
     );
+    await reportLifecycleProgress(testEnvironment, "frontend-ready");
 
+    await reportLifecycleProgress(testEnvironment, "browser-check-start");
     await runBrowserCommand(
       "pnpm",
       [
@@ -686,6 +719,7 @@ export async function runIsolatedBrowserSuite(
       { ...testEnvironment, LUMERA_WEB_BASE_URL: webBaseUrl },
       configuration.testLabel,
     );
+    await reportLifecycleProgress(testEnvironment, "browser-check-complete");
   } catch (error) {
     if (!interruptedSignal) throw error;
   } finally {

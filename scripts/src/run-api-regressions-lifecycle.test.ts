@@ -70,6 +70,20 @@ async function waitForFile(filePath: string, timeoutMilliseconds = 60_000): Prom
   throw new Error(`Timed out waiting for lifecycle phase marker ${filePath}.`);
 }
 
+type LifecycleMarkerWaiter = (
+  filePath: string,
+  timeoutMilliseconds?: number,
+) => Promise<void>;
+
+async function waitForBrowserLifecyclePhase(
+  setupReadyPath: string,
+  phaseMarkerPath: string,
+  waitForMarker: LifecycleMarkerWaiter = waitForFile,
+): Promise<void> {
+  await waitForMarker(setupReadyPath);
+  await waitForMarker(phaseMarkerPath);
+}
+
 async function waitForExit(child: ChildProcess, timeoutMilliseconds = 60_000): Promise<ChildExit> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return { code: child.exitCode, signal: child.signalCode };
@@ -1434,6 +1448,8 @@ async function runInterruptedBrowserScenario(
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const setupReadyPath = path.join(temporaryRoot, "setup-ready");
+  const progressPath = path.join(temporaryRoot, "progress.log");
   const dropDatabaseFailureMarkerPath = path.join(temporaryRoot, "dropdb-failed");
   const frontendPidPath = path.join(temporaryRoot, "frontend-pid");
   const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
@@ -1490,6 +1506,8 @@ void runIsolatedBrowserSuiteCommand({
       LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
       LUMERA_LIFECYCLE_FRONTEND_PID: frontendPidPath,
       LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
+      LUMERA_LIFECYCLE_SETUP_READY_FILE: setupReadyPath,
+      LUMERA_LIFECYCLE_PROGRESS_FILE: progressPath,
       LUMERA_LIFECYCLE_REAL_NODE: process.execPath,
       LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
       ...(failDatabaseCleanup
@@ -1508,7 +1526,21 @@ void runIsolatedBrowserSuiteCommand({
     child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
 
-    await waitForFile(phaseMarkerPath);
+    try {
+      await waitForBrowserLifecyclePhase(setupReadyPath, phaseMarkerPath);
+    } catch (error) {
+      const lifecycleProgress = await readFile(progressPath, "utf8").catch(() => "");
+      console.error(
+        `Browser lifecycle progress before phase-marker wait failed:\n${
+          lifecycleProgress.trim() || "<none>"
+        }\nChild output:\n${output || "<none>"}`,
+      );
+      throw error;
+    }
+    const lifecycleProgress = await readFile(progressPath, "utf8").catch(() => "");
+    if (lifecycleProgress) {
+      console.error(`Browser lifecycle progress:\n${lifecycleProgress.trim()}`);
+    }
     const manifest = await readManifest(manifestDirectory);
     manifestPath = manifest.manifestPath;
     databaseName = manifest.manifest.databaseName;
@@ -1615,6 +1647,8 @@ void runIsolatedBrowserSuiteCommand({
     }
     await rm(manifestDirectory, { recursive: true, force: true });
     await unlink(phaseMarkerPath).catch(() => undefined);
+    await unlink(setupReadyPath).catch(() => undefined);
+    await unlink(progressPath).catch(() => undefined);
     await unlink(dropDatabaseFailureMarkerPath).catch(() => undefined);
     await unlink(frontendPidPath).catch(() => undefined);
     await unlink(blockerPidPath).catch(() => undefined);
@@ -2156,6 +2190,44 @@ test("failed disposable browser database cleanup remains recoverable", async () 
 
 test("failed disposable API test database cleanup remains recoverable", async () => {
   await runFailedApiSuiteCleanupScenario();
+});
+
+test("browser lifecycle phase waits isolate delayed preflight from the marker budget", async () => {
+  const setupDelayMilliseconds = 45_000;
+  const lifecycleDelayMilliseconds = 45_000;
+  const observedWaits: Array<{ filePath: string; timeoutMilliseconds: number }> = [];
+  let virtualNow = 0;
+  const waitForMarker: LifecycleMarkerWaiter = async (filePath, timeoutMilliseconds = 60_000) => {
+    observedWaits.push({ filePath, timeoutMilliseconds });
+    const delay = filePath === "setup-ready"
+      ? setupDelayMilliseconds
+      : lifecycleDelayMilliseconds;
+    const phaseStart = virtualNow;
+    virtualNow += delay;
+    assert.ok(
+      virtualNow - phaseStart <= timeoutMilliseconds,
+      `The ${filePath} phase exceeded its independent marker budget.`,
+    );
+  };
+
+  await waitForBrowserLifecyclePhase("setup-ready", "phase-reached", waitForMarker);
+  assert.deepEqual(observedWaits, [
+    { filePath: "setup-ready", timeoutMilliseconds: 60_000 },
+    { filePath: "phase-reached", timeoutMilliseconds: 60_000 },
+  ]);
+  assert.equal(virtualNow, setupDelayMilliseconds + lifecycleDelayMilliseconds);
+  assert.ok(
+    setupDelayMilliseconds + lifecycleDelayMilliseconds > 60_000,
+    "The delayed fixture must exceed the old aggregate marker budget.",
+  );
+  assert.throws(
+    () => {
+      if (setupDelayMilliseconds + lifecycleDelayMilliseconds > 60_000) {
+        throw new Error("Old aggregate phase-marker wait would time out.");
+      }
+    },
+    /Old aggregate phase-marker wait would time out/,
+  );
 });
 
 test("SIGINT during disposable API regression schema setup cleans every resource", async () => {

@@ -1,0 +1,109 @@
+P.2b REAL-CI FOLLOW-UP — INVESTIGATE THE TWO REMAINING LIFECYCLE TIMEOUTS
+
+The original database safety/guard coverage failure is fixed and its exact
+subtest now passes, including zero PostgreSQL connections in prohibited
+production/deployment runtimes.
+
+Current full lifecycle result:
+
+18 PASS / 2 FAIL
+
+Remaining failures:
+
+1. "SIGTERM during a disposable browser check cleans every owned resource"
+2. "SIGTERM during disposable browser frontend readiness cleans every owned resource"
+
+Both time out after 60 seconds waiting for their expected phase markers.
+
+IMPORTANT:
+
+Do NOT increase the timeout as the first fix.
+Do NOT skip, weaken, quarantine, retry-away, or mark these tests flaky.
+Do NOT weaken SIGTERM/resource cleanup assertions.
+Do NOT change production runtime behavior without proven root cause.
+Do NOT start P.2c.
+Do NOT push yet.
+
+FIRST perform a read-only/root-cause investigation.
+
+For BOTH failing tests determine:
+
+A. Exact expected phase marker and where it is emitted.
+B. Exact child process / browser process / frontend process that must reach it.
+C. Full lifecycle from spawn -> readiness -> marker -> SIGTERM -> cleanup -> exit.
+D. Whether the marker is never emitted, emitted too late, buffered, lost, or the
+   harness is waiting on the wrong stream/state.
+E. Whether the process is actually hung, merely slow, or waiting on another
+   service/resource.
+F. Whether there is a race between:
+   - browser startup,
+   - frontend readiness,
+   - test API readiness,
+   - PostgreSQL readiness,
+   - SIGTERM delivery,
+   - stdout/stderr marker capture,
+   - child ownership registration,
+   - cleanup.
+G. Compare local execution timing with the GitHub Actions execution model.
+H. Check whether the new destructive-runtime guard changes process startup order,
+   module loading, or timing in a way that exposes a pre-existing race.
+I. Use git provenance to establish whether these two tests were already capable
+   of timing out before the current guard fix.
+J. Confirm whether the failures reproduce deterministically or intermittently.
+
+Instrument ONLY if needed, with diagnostic timestamps/phase logging that does
+not alter synchronization semantics.
+
+Prefer proving the state machine rather than increasing waits.
+
+A valid fix should address the underlying lifecycle synchronization problem,
+for example explicit readiness/phase coordination, if the evidence supports it.
+
+Do not substitute an arbitrary larger sleep/timeout.
+
+After root cause is established, implement the smallest safe fix.
+
+Required regression proof:
+
+- both exact failing lifecycle tests PASS repeatedly;
+- original destructive-harness guard test remains PASS;
+- prohibited production/deployment modes still open ZERO DB connections;
+- SIGTERM cleanup still proves every owned resource is terminated;
+- no orphan browser/frontend/API/Postgres processes remain;
+- no timeout weakening;
+- no unconditional retry added.
+
+Run the two failing tests repeatedly enough to expose timing races, then run
+the complete lifecycle suite.
+
+Also run:
+- migration-contract 53/53
+- release-chain 23/23
+- schema-drift/fingerprint suites
+- eligibility suite
+- typecheck
+- workflow validation
+- git diff --check
+
+Return:
+
+ROOT CAUSE TEST 1
+ROOT CAUSE TEST 2
+REPRODUCTION EVIDENCE
+RELATION TO CURRENT GUARD FIX
+FIX APPLIED
+WHY THIS FIXES THE RACE
+TIMEOUTS CHANGED: YES/NO
+ASSERTIONS WEAKENED: YES/NO
+RETRY ADDED: YES/NO
+RESOURCE CLEANUP PROOF
+REPEATED TEST RESULTS
+FULL LIFECYCLE RESULT
+OTHER TEST RESULTS
+FILES CHANGED
+P.2b REGRESSION: YES/NO
+P.2c STARTED: YES/NO
+SAFE FOR INDEPENDENT REVIEW: YES/NO
+
+STOP.
+Do not push or merge.
