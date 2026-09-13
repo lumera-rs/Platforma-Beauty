@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, rmdir, unlink, writeFile 
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { createServer, type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -179,6 +180,33 @@ async function dropDatabase(databaseName: string): Promise<void> {
   ]);
 }
 
+async function startLoopbackConnectionSentinel(): Promise<{
+  databaseUrl: string;
+  connectionCount: () => number;
+  close: () => Promise<void>;
+}> {
+  let connectionCount = 0;
+  const server = createServer((socket) => {
+    connectionCount += 1;
+    socket.destroy();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
+    throw new Error("Could not start the loopback database connection sentinel.");
+  }
+  const { port } = address as AddressInfo;
+  return {
+    databaseUrl: `postgresql://guard-sentinel:guard-sentinel@127.0.0.1:${port}/guard_sentinel`,
+    connectionCount: () => connectionCount,
+    close: () => new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve())),
+  };
+}
+
 async function discoverDestructiveHarnessSources(root = workspaceRoot): Promise<string[]> {
   const candidates: string[] = [];
   const collectFiles = async (
@@ -231,6 +259,20 @@ async function discoverDestructiveHarnessSources(root = workspaceRoot): Promise<
     }
   }
   return [...new Set(discovered)].sort();
+}
+
+function assertDiscoveredHarnessesHaveGuardCoverage(
+  discoveredSources: readonly string[],
+  registeredSources: readonly string[],
+  automaticallyGuardedDatabaseTests: readonly string[],
+): void {
+  assert.deepEqual(
+    discoveredSources.filter((sourcePath) =>
+      !registeredSources.includes(sourcePath)
+      && !automaticallyGuardedDatabaseTests.includes(sourcePath)),
+    [],
+    "Every sink-discovered harness must use the mandatory database-test boundary or be registered for guard execution.",
+  );
 }
 
 test("destructive harnesses refuse deployment runtimes before database commands", async () => {
@@ -304,6 +346,7 @@ void main();
         ? browserPreflightRunnerPath
         : path.join(workspaceRoot, registration.sourcePath),
   }));
+  const loopbackSentinel = await startLoopbackConnectionSentinel();
 
   try {
     const registeredSources = [...new Set(
@@ -325,12 +368,10 @@ void main();
         automaticallyGuardedDatabaseTests.push(sourcePath);
       }
     }
-    assert.deepEqual(
-      discoveredSources.filter((sourcePath) =>
-        !registeredSources.includes(sourcePath)
-        && !automaticallyGuardedDatabaseTests.includes(sourcePath)),
-      [],
-      "Every sink-discovered harness must use the mandatory database-test boundary or be registered for guard execution.",
+    assertDiscoveredHarnessesHaveGuardCoverage(
+      discoveredSources,
+      registeredSources,
+      automaticallyGuardedDatabaseTests,
     );
 
     const omissionFixtureRoot = path.join(temporaryRoot, "omission-fixture");
@@ -340,10 +381,28 @@ void main();
       "#!/usr/bin/env bash\nset -euo pipefail\npsql \"$DATABASE_URL\" -c 'DELETE FROM users'\n",
       { mode: 0o755 },
     );
+    await writeFile(
+      path.join(omissionFixtureRoot, "scripts", "unsafe-pg-harness.test.ts"),
+      `import pg from "pg";
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+void pool.query("DELETE FROM users");
+`,
+      "utf8",
+    );
+    const omissionDiscoveredSources = await discoverDestructiveHarnessSources(omissionFixtureRoot);
     assert.deepEqual(
-      await discoverDestructiveHarnessSources(omissionFixtureRoot),
-      ["scripts/unsafe-psql-harness.sh"],
-      "An unguarded psql mutation harness must be discovered even without a guard identifier or registration.",
+      omissionDiscoveredSources,
+      ["scripts/unsafe-pg-harness.test.ts", "scripts/unsafe-psql-harness.sh"],
+      "An unguarded PostgreSQL harness must be discovered even without a guard identifier or registration.",
+    );
+    assert.throws(
+      () => assertDiscoveredHarnessesHaveGuardCoverage(
+        omissionDiscoveredSources,
+        registeredSources,
+        [],
+      ),
+      /Every sink-discovered harness must use the mandatory database-test boundary or be registered for guard execution/,
+      "An unregistered PostgreSQL harness must be rejected by guard enforcement, not merely discovered.",
     );
 
     const drizzleFixturePath = path.join(temporaryRoot, "unsafe-drizzle.test.ts");
@@ -397,7 +456,7 @@ void db.insert({} as never);
             REPLIT_DEPLOYMENT: "0",
             REPL_DEPLOYMENT: "0",
             ...guardedEnvironment.values,
-            DATABASE_URL: databaseUrl,
+            DATABASE_URL: loopbackSentinel.databaseUrl,
             LUMERA_BOOKING_LOAD: "1",
             LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
             LUMERA_GUARD_HARNESS: harness.mode,
@@ -417,6 +476,11 @@ void db.insert({} as never);
           readFile(commandLogPath),
           { code: "ENOENT" },
           `${harness.name} invoked a database command for ${guardedEnvironment.name}`,
+        );
+        assert.equal(
+          loopbackSentinel.connectionCount(),
+          0,
+          `${harness.name} opened a PostgreSQL connection before refusing ${guardedEnvironment.name}`,
         );
       }
 
@@ -445,6 +509,7 @@ void db.insert({} as never);
       }
     }
   } finally {
+    await loopbackSentinel.close();
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });

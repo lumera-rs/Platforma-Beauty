@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import ts from "typescript";
@@ -45,6 +45,94 @@ const runtimeAllowlist = new Set([
 
 const forbiddenRuntimeCapability =
   /\b(?:BEGIN\s+READ\s+WRITE|CREATE\s+(?:SCHEMA|TABLE)|INSERT\s+INTO|UPDATE\s+\S+\s+SET|DELETE\s+FROM|LOCK\s+TABLE|ACCESS\s+EXCLUSIVE|pg_advisory_lock|adoptKnownLegacy|baseline_adoptions)\b/i;
+const runtimePackageSpecifier = "@workspace/db/destructive-test-runtime";
+
+type PackageManifest = {
+  exports?: unknown;
+};
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error
+    && (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+function splitPackageSpecifier(specifier: string): {
+  packageName: string;
+  exportName: string;
+} {
+  const segments = specifier.split("/");
+  const packageSegmentCount = specifier.startsWith("@") ? 2 : 1;
+  const packageName = segments.slice(0, packageSegmentCount).join("/");
+  return {
+    packageName,
+    exportName: `./${segments.slice(packageSegmentCount).join("/")}`,
+  };
+}
+
+async function resolveExactPackageExport(
+  specifier: string,
+  importerPath: string,
+  load: (path: string) => Promise<string>,
+): Promise<string> {
+  const { packageName, exportName } = splitPackageSpecifier(specifier);
+  let directory = dirname(importerPath);
+  let packageRoot: string | undefined;
+  let manifest: PackageManifest | undefined;
+
+  while (true) {
+    const candidate = resolve(directory, "node_modules", packageName);
+    const manifestPath = resolve(candidate, "package.json");
+    try {
+      manifest = JSON.parse(await load(manifestPath)) as PackageManifest;
+      packageRoot = candidate;
+      break;
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+
+  assert.ok(packageRoot, `package manifest not found: ${packageName}`);
+  assert.ok(manifest, `package manifest not found: ${packageName}`);
+
+  const packageExports = manifest.exports;
+  assert.ok(
+    packageExports
+      && typeof packageExports === "object"
+      && !Array.isArray(packageExports),
+    `package exports must be an object: ${packageName}`,
+  );
+  const exportTarget = (packageExports as Record<string, unknown>)[exportName];
+  assert.equal(
+    typeof exportTarget,
+    "string",
+    `package export is not an exact string: ${specifier}`,
+  );
+  if (typeof exportTarget !== "string") {
+    throw new Error(`package export is not an exact string: ${specifier}`);
+  }
+  assert.equal(
+    exportTarget.startsWith("./"),
+    true,
+    `package export must stay within its package: ${specifier}`,
+  );
+
+  try {
+    packageRoot = await realpath(packageRoot);
+  } catch (error) {
+    if (!isMissingFileError(error)) throw error;
+  }
+  const target = resolve(packageRoot, exportTarget);
+  const packageRelativeTarget = relative(packageRoot, target);
+  assert.equal(
+    isAbsolute(packageRelativeTarget) || packageRelativeTarget.startsWith(".."),
+    false,
+    `package export escapes its package: ${specifier}`,
+  );
+  return target;
+}
 
 function runtimeModuleSpecifiers(source: string, fileName: string): string[] {
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
@@ -98,6 +186,10 @@ async function auditRuntimeGraph(
     );
     for (const specifier of runtimeModuleSpecifiers(source, path)) {
       if (specifier.startsWith("node:") || specifier === "pg") continue;
+      if (specifier === runtimePackageSpecifier) {
+        pending.push(await resolveExactPackageExport(specifier, path, load));
+        continue;
+      }
       assert.equal(specifier.startsWith("."), true, `unreviewed package import: ${specifier}`);
       pending.push(resolve(dirname(path), `${specifier}.ts`));
     }
@@ -107,13 +199,65 @@ async function auditRuntimeGraph(
 
 test("eligibility CLI runtime dependency graph is explicitly read-only", async () => {
   const root = dirname(fileURLToPath(import.meta.url));
-  const allowed = new Set([...runtimeAllowlist].map((file) => resolve(root, file)));
+  const workspaceRoot = resolve(root, "../../..");
+  const allowed = new Set([
+    ...[...runtimeAllowlist].map((file) => resolve(root, file)),
+    resolve(workspaceRoot, "lib/db/src/destructive-test-runtime.ts"),
+  ]);
   const visited = await auditRuntimeGraph(
     resolve(root, "eligibility-cli.ts"),
     allowed,
     (path) => readFile(path, "utf8"),
   );
   assert.deepEqual(visited, allowed);
+});
+
+test("runtime dependency audit rejects writes introduced into the resolved package export", async () => {
+  const sources = new Map([
+    ["/virtual/entry.ts", `import "${runtimePackageSpecifier}";`],
+    [
+      "/virtual/node_modules/@workspace/db/package.json",
+      JSON.stringify({
+        exports: {
+          "./destructive-test-runtime": "./src/destructive-test-runtime.ts",
+        },
+      }),
+    ],
+    [
+      "/virtual/node_modules/@workspace/db/src/destructive-test-runtime.ts",
+      'export const sql = "INSERT INTO baseline_adoptions VALUES (1)";',
+    ],
+  ]);
+  await assert.rejects(
+    () => auditRuntimeGraph(
+      "/virtual/entry.ts",
+      new Set(sources.keys()),
+      async (path) => {
+        const source = sources.get(path);
+        if (source === undefined) {
+          const error = new Error(`missing fixture: ${path}`) as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
+        return source;
+      },
+    ),
+    /write-capable runtime dependency: \/virtual\/node_modules\/@workspace\/db\/src\/destructive-test-runtime\.ts/,
+  );
+});
+
+test("runtime dependency audit still rejects unrecognized package imports", async () => {
+  const sources = new Map([
+    ["/virtual/entry.ts", 'import "@workspace/unrecognized";'],
+  ]);
+  await assert.rejects(
+    () => auditRuntimeGraph(
+      "/virtual/entry.ts",
+      new Set(sources.keys()),
+      async (path) => sources.get(path)!,
+    ),
+    /unreviewed package import: @workspace\/unrecognized/,
+  );
 });
 
 test("runtime dependency audit rejects an indirect write path without executing it", async () => {

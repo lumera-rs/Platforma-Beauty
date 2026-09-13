@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { readPostgresFingerprintCompatibility, readPostgresSnapshot } from "./catalog";
 import { fingerprintSnapshot } from "./fingerprint";
 import { beginFingerprintTransaction } from "./fingerprint-transaction";
 import { ownershipExceptions } from "./ownership";
 import { readOnlyQueryLayer } from "./read-only-query";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema fingerprint integration tests");
 
 if (!process.env.DATABASE_URL && process.env.SCHEMA_DRIFT_UNIT_ONLY !== "1") {
   throw new Error("DATABASE_URL is required for fingerprint integration tests; set SCHEMA_DRIFT_UNIT_ONLY=1 to skip deliberately");

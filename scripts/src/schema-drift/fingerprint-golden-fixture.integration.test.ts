@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { readPostgresFingerprintCompatibility, readPostgresSnapshot } from "./catalog";
 import { fingerprintSnapshot } from "./fingerprint";
 import { pinFingerprintEnvironment } from "./fingerprint-transaction";
 import { readOnlyQueryLayer } from "./read-only-query";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema fingerprint golden fixture");
 
 if (process.env.SCHEMA_DRIFT_DISPOSABLE_DB !== "1" || !process.env.DATABASE_URL) {
   throw new Error(

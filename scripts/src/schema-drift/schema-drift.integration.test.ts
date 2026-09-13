@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { buildCanonicalSnapshot } from "./canonical";
 import { readPostgresSnapshot } from "./catalog";
 import { compareSchemas } from "./compare";
 import { ownershipExceptions } from "./ownership";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema drift integration tests");
 
 // CI contract: provision DATABASE_URL. Local unit-only runs must opt out
 // explicitly with SCHEMA_DRIFT_UNIT_ONLY=1; absence never silently passes.

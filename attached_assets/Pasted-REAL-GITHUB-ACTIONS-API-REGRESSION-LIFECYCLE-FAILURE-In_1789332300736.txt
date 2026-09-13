@@ -1,0 +1,104 @@
+REAL GITHUB ACTIONS — API REGRESSION LIFECYCLE FAILURE
+
+Investigate first. Do not weaken or bypass the database safety guard.
+
+The latest real GitHub Actions Database checks progressed past the previous
+retail cart NULLS NOT DISTINCT failure.
+
+It now fails in:
+
+database:release:3-api
+test:api-regressions-lifecycle
+scripts/src/run-api-regressions-lifecycle.test.ts
+
+Exact failing subtest:
+
+"destructive harnesses refuse deployment runtimes before database commands"
+
+Exact assertion:
+
+"Every sink-discovered harness must use the mandatory database-test boundary
+or be registered for guard execution."
+
+The actual sink-discovered files shown by real CI are:
+
+- scripts/src/audit-schema-drift.ts
+- scripts/src/fingerprint-schema.ts
+- scripts/src/schema-drift/eligibility-cli.ts
+- scripts/src/schema-drift/fingerprint-golden-fixture.integration.test.ts
+- scripts/src/schema-drift/fingerprint.integration.test.ts
+- scripts/src/schema-drift/schema-drift.integration.test.ts
+
+IMPORTANT SAFETY REQUIREMENTS:
+
+1. Do NOT simply add these files to an allowlist.
+2. Do NOT weaken, skip, disable, mock away, or broaden the lifecycle guard.
+3. Do NOT make deployment/production database credentials acceptable to test harnesses.
+4. Do NOT introduce a bypass based only on CI=true, NODE_ENV=test, filename, command name, or environment naming.
+5. Preserve fail-closed behavior.
+6. No production DB writes.
+7. No migration execution.
+8. Do not start P.2c.
+9. Do not modify fingerprint semantics, eligibility semantics, adoption, ledger, migrations, runtime, or bootstrap unless root-cause evidence proves it is necessary.
+10. P.2b migration-contract must remain database-free.
+
+FIRST perform root-cause analysis.
+
+For each of the six files determine:
+
+A. Why sink discovery classifies it as a database-capable harness.
+B. Whether it can actually open a PostgreSQL connection.
+C. Whether it already uses the mandatory database-test boundary.
+D. Whether it is intentionally registered for guard execution.
+E. Whether it is READ ONLY by design.
+F. Whether the lifecycle test's discovery model is stale after the recent schema-drift/fingerprint tooling.
+G. Whether the correct fix belongs in:
+   - the harness itself,
+   - mandatory database-test boundary wiring,
+   - guard registration,
+   - sink discovery,
+   - or the lifecycle test.
+
+Inspect git provenance and determine when each of these six files became discoverable and why local validation did not expose this while real GitHub Actions did.
+
+Then implement ONLY the smallest safety-preserving fix if the root cause is unambiguous.
+
+The final state must prove:
+
+- every database-capable executable/test is protected by the mandatory database-test boundary OR intentionally covered by the guard execution model;
+- deployment/production runtimes are rejected BEFORE any database command or connection is opened;
+- no new bypass exists;
+- READ ONLY schema-drift/fingerprint tools retain their read-only guarantees;
+- P.2b remains database-free;
+- P.2c remains NOT STARTED.
+
+Add adversarial regression tests proving that an unregistered new DB-capable harness is still detected and fails closed.
+
+Run at minimum:
+
+- the exact failing run-api-regressions-lifecycle test
+- migration-contract suite
+- release-chain suite
+- schema-drift/fingerprint relevant suites
+- typecheck
+- workflow validation
+- git diff --check
+
+Do not use the live production database.
+
+Return:
+
+ROOT CAUSE
+SIX-FILE CLASSIFICATION
+WHY REAL CI EXPOSED IT
+FIX APPLIED
+SAFETY PROOF
+ADVERSARIAL TESTS
+TEST RESULTS
+FILES CHANGED
+P.2b REGRESSION: YES/NO
+P.2c STARTED: YES/NO
+SAFE TO PUSH TO seo-max-p2b-verification: YES/NO
+
+STOP after implementation and validation.
+Do not push until independently reviewed.

@@ -1,4 +1,5 @@
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   readPostgresFingerprintCompatibility,
   readPostgresSnapshot,
@@ -7,6 +8,8 @@ import { fingerprintSnapshot, serializeFingerprint } from "./schema-drift/finger
 import { beginFingerprintTransaction } from "./schema-drift/fingerprint-transaction";
 import { ownershipExceptions } from "./schema-drift/ownership";
 import { readOnlyQueryLayer } from "./schema-drift/read-only-query";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema fingerprint CLI");
 
 const { Pool } = pg;
 

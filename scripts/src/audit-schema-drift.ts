@@ -1,10 +1,13 @@
 import pg from "pg";
 import { writeFile } from "node:fs/promises";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { buildCanonicalSnapshot } from "./schema-drift/canonical";
 import { readPostgresSnapshot } from "./schema-drift/catalog";
 import { compareSchemas, serializeReport, summarizeReport } from "./schema-drift/compare";
 import { ownershipExceptions } from "./schema-drift/ownership";
 import { readOnlyQueryLayer } from "./schema-drift/read-only-query";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema drift audit");
 
 const { Pool } = pg;
 

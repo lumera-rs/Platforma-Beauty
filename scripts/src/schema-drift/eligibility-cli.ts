@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   readPostgresFingerprintCompatibility,
   readPostgresSnapshot,
@@ -20,6 +21,8 @@ export const REPOSITORY_BASELINE_MANIFEST_URL = new URL(
   "./baseline-manifest.json",
   import.meta.url,
 );
+
+assertDestructiveTestRuntimeAllowed(process.env, "Schema baseline eligibility CLI");
 
 export function validateEligibilityCliArguments(arguments_: readonly string[]): void {
   if (arguments_.length > 0) {
