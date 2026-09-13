@@ -552,6 +552,7 @@ test("branch CI runs the database-free release-chain gate before slower work", a
     types: ["checks_requested"],
   });
   assert.ok(parsedWorkflow.on?.push !== undefined);
+  assert.ok(parsedWorkflow.on?.workflow_dispatch !== undefined);
   assert.match(
     workflow,
     /release-chain:\n(?: {4}.*\n)*? {4}env:\n(?: {6}.*\n)*? {6}DATABASE_URL: ""/,
@@ -1145,13 +1146,10 @@ test("branch CI isolates database checks and orders browser journeys after every
   const migrationContractJob = parsedWorkflow.jobs?.["migration-contract"];
   assert.ok(migrationContractJob, "The migration-contract job must exist.");
   assert.equal(migrationContractJob.name, "Migration contract (database-free)");
-  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'pull_request'/);
-  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'merge_group'/);
-  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'push'/);
-  assert.match(
-    migrationContractJob.if ?? "",
-    /github\.event_name == 'workflow_dispatch'/,
-    "Manual Branch CI dispatches must run the migration contract so downstream jobs are not skipped.",
+  assert.equal(
+    migrationContractJob.if,
+    undefined,
+    "Workflow on must be the sole event allowlist: every triggered event must run the migration contract.",
   );
   assert.equal(migrationContractJob.services, undefined);
   assert.equal(migrationContractJob.env?.DATABASE_URL, "");

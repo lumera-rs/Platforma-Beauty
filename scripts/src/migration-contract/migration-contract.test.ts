@@ -237,9 +237,47 @@ function assertNoCapabilities(source: string): void {
 function assertNarrowCiGitCapabilities(source: string): void {
   const tree = ts.createSourceFile("ci-capability-fixture.ts", source, ts.ScriptTarget.Latest, true);
   const forbiddenModule = /^(?:node:)?(?:pg|postgres|drizzle-kit|drizzle-orm|http|https|http2|net|tls|dgram|undici)(?:\/|$)|^(?:https?:|@workspace\/db(?:\/|$))|(?:^|\/)(?:bootstrap|runtime)(?:[./-]|$)/;
+  const databaseEnvironmentKey = /^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/;
 
   function moduleText(node: ts.Expression | undefined): string | undefined {
     return node && ts.isStringLiteralLike(node) ? node.text : undefined;
+  }
+  function isProcessEnvironment(node: ts.Expression): boolean {
+    return (ts.isPropertyAccessExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "process"
+      && node.name.text === "env")
+      || (ts.isElementAccessExpression(node)
+        && ts.isIdentifier(node.expression)
+        && node.expression.text === "process"
+        && ts.isStringLiteralLike(node.argumentExpression)
+        && node.argumentExpression.text === "env");
+  }
+  function directDatabaseEnvironmentKey(node: ts.Node): string | undefined {
+    let object: ts.Expression;
+    let key: string | undefined;
+    if (ts.isPropertyAccessExpression(node)) {
+      object = node.expression;
+      key = node.name.text;
+    } else if (ts.isElementAccessExpression(node)) {
+      object = node.expression;
+      key = moduleText(node.argumentExpression);
+    } else {
+      return undefined;
+    }
+    const isEnvironmentObject = ts.isIdentifier(object) && object.text === "environment";
+    if ((isEnvironmentObject || isProcessEnvironment(object))
+      && key
+      && databaseEnvironmentKey.test(key)) {
+      return key;
+    }
+    return undefined;
+  }
+  function calleeName(callee: ts.Expression): string | undefined {
+    return ts.isIdentifier(callee) ? callee.text
+      : ts.isPropertyAccessExpression(callee) ? callee.name.text
+      : ts.isElementAccessExpression(callee) && ts.isStringLiteralLike(callee.argumentExpression)
+        ? callee.argumentExpression.text : undefined;
   }
   function enclosingFunctionName(node: ts.Node): string | undefined {
     let current: ts.Node | undefined = node.parent;
@@ -250,6 +288,10 @@ function assertNarrowCiGitCapabilities(source: string): void {
     return undefined;
   }
   function visit(node: ts.Node): void {
+    const databaseKey = directDatabaseEnvironmentKey(node);
+    if (databaseKey) {
+      assert.fail(`forbidden database credential access: ${databaseKey}`);
+    }
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const imported = moduleText(node.moduleSpecifier);
       if (imported) {
@@ -268,16 +310,14 @@ function assertNarrowCiGitCapabilities(source: string): void {
       assert.fail("require/import-equals is forbidden in the CI validator");
     } else if (ts.isCallExpression(node)) {
       const callee = node.expression;
-      const name = ts.isIdentifier(callee) ? callee.text
-        : ts.isPropertyAccessExpression(callee) ? callee.name.text
-        : undefined;
+      const name = calleeName(callee);
       if (callee.kind === ts.SyntaxKind.ImportKeyword || name === "require") {
         assert.fail("dynamic import/require is forbidden in the CI validator");
       }
       const regexExec = name === "exec"
         && ts.isPropertyAccessExpression(callee)
         && callee.expression.kind === ts.SyntaxKind.RegularExpressionLiteral;
-      if (name && /^(?:exec|execFile|execSync|execFileSync|spawnSync|fetch|eval|Function)$/.test(name)
+      if (name && /^(?:exec|execFile|execSync|execFileSync|spawnSync|fetch|eval|Function|exit)$/.test(name)
         && !regexExec) {
         assert.fail(`forbidden call: ${name}`);
       }
@@ -339,7 +379,11 @@ test("CI validator has only the narrow literal-git subprocess capability", async
 test("CI capability guard rejects arbitrary executables, dynamic argv, shells, eval, and imports", () => {
   for (const source of [
     'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("node", argumentsToPass, { shell: false }); }',
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("sh", ["-c", ...argumentsToPass], { shell: false }); }',
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("bash", ["-c", ...argumentsToPass], { shell: false }); }',
     'import { spawn } from "node:child_process"; const args = ["status"]; spawn("git", args, { shell: false });',
+    'import { spawn } from "node:child_process"; spawn("git", ["status"], { shell: false });',
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { const executable = "git"; spawn(executable, argumentsToPass, { shell: false }); }',
     'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("git", argumentsToPass, { shell: true }); }',
     'import { execFile } from "node:child_process"; execFile("git", ["status"]);',
     'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("git", argumentsToPass, { shell: false }); } gitCommand(dynamicArgs);',
@@ -349,13 +393,40 @@ test("CI capability guard rejects arbitrary executables, dynamic argv, shells, e
     'import runtime from "../runtime";',
     'exec("git status");',
     'some.exec("git status");',
+    'const pg = import("pg");',
     'eval("code");',
     'new Function("code");',
+    'globalThis["fetch"]("https://example.invalid");',
+    'globalThis["eval"]("code");',
+    'process["exit"](1);',
   ]) assert.throws(
     () => assertNarrowCiGitCapabilities(source),
     () => true,
     source,
   );
+});
+
+test("CI capability guard rejects direct database credential access but permits generic Gate N filtering", () => {
+  for (const source of [
+    "const u = process.env.DATABASE_URL;",
+    'const u = process.env["DATABASE_URL"];',
+    "const u = environment.DATABASE_URL;",
+    'const u = environment["DATABASE_URL"];',
+  ]) assert.throws(
+    () => assertNarrowCiGitCapabilities(source),
+    /forbidden database credential access/,
+    source,
+  );
+  assert.doesNotThrow(() => assertNarrowCiGitCapabilities(`
+    const DATABASE_ENV_PATTERN = /^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/;
+    function databaseFreeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+      const blocked = Object.entries(environment)
+        .filter(([key, value]) => DATABASE_ENV_PATTERN.test(key) && value !== undefined && value !== "");
+      return Object.fromEntries(
+        Object.entries(environment).filter(([key]) => !DATABASE_ENV_PATTERN.test(key)),
+      );
+    }
+  `));
 });
 
 test("capability guard rejects actual pg imports and requires without executing them", () => {
