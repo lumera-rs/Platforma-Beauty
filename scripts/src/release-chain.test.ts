@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
@@ -26,6 +27,87 @@ const rulesetAuditScriptPath = path.join(
   "scripts",
   "verify-github-ruleset.sh",
 );
+
+type WorkflowJob = {
+  name?: string;
+  if?: string;
+  needs?: string | string[];
+  services?: unknown;
+  env?: Record<string, unknown>;
+  steps?: Array<{
+    uses?: string;
+    name?: string;
+    run?: string;
+    with?: Record<string, unknown>;
+  }>;
+};
+
+type GitHubWorkflow = {
+  on?: Record<string, unknown>;
+  jobs?: Record<string, WorkflowJob>;
+};
+
+function parseWorkflow(source: string): GitHubWorkflow {
+  return parseYaml(source) as GitHubWorkflow;
+}
+
+async function writeRulesetAuditFixture(
+  fixtureDir: string,
+  requiredContexts: string[],
+): Promise<void> {
+  await Promise.all([
+    writeFile(
+      path.join(fixtureDir, "repository.json"),
+      JSON.stringify({
+        delete_branch_on_merge: true,
+        owner: { type: "Organization" },
+        visibility: "public",
+      }),
+    ),
+    writeFile(
+      path.join(fixtureDir, "rulesets.json"),
+      JSON.stringify([{ id: 22142708, name: "Protect default branch CI", target: "branch" }]),
+    ),
+    writeFile(
+      path.join(fixtureDir, "ruleset.json"),
+      JSON.stringify({
+        name: "Protect default branch CI",
+        target: "branch",
+        enforcement: "active",
+        conditions: { ref_name: { include: ["~DEFAULT_BRANCH"] } },
+        bypass_actors: [],
+        rules: [
+          { type: "pull_request" },
+          {
+            type: "merge_queue",
+            parameters: { merge_method: "SQUASH", min_entries_to_merge: 1 },
+          },
+          {
+            type: "required_status_checks",
+            parameters: {
+              strict_required_status_checks_policy: true,
+              do_not_enforce_on_create: true,
+              required_status_checks: requiredContexts.map((context) => ({ context })),
+            },
+          },
+        ],
+      }),
+    ),
+    writeFile(
+      path.join(fixtureDir, "merge-group-runs.json"),
+      JSON.stringify({
+        workflow_runs: [{
+          event: "merge_group",
+          status: "completed",
+          conclusion: "success",
+          head_branch: "gh-readonly-queue/main/pr-1",
+          created_at: "2026-09-03T00:00:00Z",
+          html_url: "https://example.invalid/actions/runs/1",
+        }],
+      }),
+    ),
+  ]);
+}
 
 async function runCommand(
   command: string,
@@ -458,13 +540,18 @@ test("Batch 1 F1 and A-2 regressions stay in the API release phase", async () =>
 
 test("branch CI runs the database-free release-chain gate before slower work", async () => {
   const workflow = await readFile(branchCiPath, "utf8");
+  const parsedWorkflow = parseWorkflow(workflow);
 
   const downloadScript = extractWorkflowRunStep(
     workflow,
     "Download recent successful build timing history",
   );
 
-  assert.match(workflow, /^on:\n  pull_request:\n  push:/m);
+  assert.ok(parsedWorkflow.on?.pull_request !== undefined);
+  assert.deepEqual(parsedWorkflow.on?.merge_group, {
+    types: ["checks_requested"],
+  });
+  assert.ok(parsedWorkflow.on?.push !== undefined);
   assert.match(
     workflow,
     /release-chain:\n(?: {4}.*\n)*? {4}env:\n(?: {6}.*\n)*? {6}DATABASE_URL: ""/,
@@ -857,6 +944,16 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   );
   assert.match(
     auditScript,
+    /migration_contract_context=.*[\s\S]*Migration contract \(database-free\)/,
+    "The audit must derive and verify the migration-contract job's exact check name.",
+  );
+  assert.match(
+    auditScript,
+    /all\(\$contexts\[\];/,
+    "The same strict status-check rule must contain every required context.",
+  );
+  assert.match(
+    auditScript,
     /actions\/workflows\/\$\{workflow_file\}\/runs\?event=merge_group&status=success/,
     "The audit must query successful merge-group workflow runs.",
   );
@@ -865,6 +962,69 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
     /\.head_branch \| startswith\("gh-readonly-queue\/"\)/,
     "The audit must prove the workflow ran on a GitHub merge queue ref.",
   );
+
+  const fixtureDir = await mkdtemp(path.join(os.tmpdir(), "lumera-ruleset-audit-"));
+  const requiredContexts = [
+    "GitHub Actions syntax and expressions",
+    "Migration contract (database-free)",
+  ];
+  try {
+    await writeRulesetAuditFixture(fixtureDir, requiredContexts);
+    // Fixture runs are intentionally offline even when this test suite runs in
+    // GitHub Actions; never inherit the native Actions marker.
+    const fixtureEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      GITHUB_REPOSITORY: "lumera-rs/Platforma-Beauty",
+      LUMERA_RULESET_AUDIT_FIXTURE_DIR: fixtureDir,
+    };
+    delete fixtureEnv.GITHUB_ACTIONS;
+    const validResult = await runCommand(
+      "bash",
+      [rulesetAuditScriptPath],
+      fixtureEnv,
+    );
+    assert.equal(
+      validResult.code,
+      0,
+      `A complete offline ruleset fixture must pass without API credentials. stderr: ${validResult.stderr}`,
+    );
+
+    const nativeActionsFixtureResult = await runCommand(
+      "bash",
+      [rulesetAuditScriptPath],
+      {
+        ...fixtureEnv,
+        GITHUB_ACTIONS: "true",
+      },
+    );
+    assert.equal(
+      nativeActionsFixtureResult.code,
+      1,
+      "Fixture mode must be rejected under native GitHub Actions context.",
+    );
+    assert.match(
+      nativeActionsFixtureResult.stderr,
+      /fixture mode is forbidden in native GitHub Actions context/i,
+    );
+
+    await writeRulesetAuditFixture(fixtureDir, [requiredContexts[0]]);
+    const missingMigrationContextResult = await runCommand(
+      "bash",
+      [rulesetAuditScriptPath],
+      fixtureEnv,
+    );
+    assert.equal(
+      missingMigrationContextResult.code,
+      1,
+      "Removing Migration contract (database-free) from an offline fixture must fail closed.",
+    );
+    assert.match(
+      missingMigrationContextResult.stderr,
+      /ruleset is missing or invalid/,
+    );
+  } finally {
+    await rm(fixtureDir, { recursive: true, force: true });
+  }
 });
 
 test("branch CI isolates database checks and orders browser journeys after every prerequisite", async () => {
@@ -877,6 +1037,7 @@ test("branch CI isolates database checks and orders browser journeys after every
   const scripts =
     (JSON.parse(packageJsonSource) as { scripts?: Record<string, string> })
       .scripts ?? {};
+  const parsedWorkflow = parseWorkflow(workflow);
 
   assert.equal(
     scripts["validate:ci:build"],
@@ -975,38 +1136,53 @@ test("branch CI isolates database checks and orders browser journeys after every
     "The browser CI command must use the timing-aware runner for every browser phase.",
   );
 
-  const migrationContractJob = workflow.slice(
-    workflow.indexOf("  migration-contract:"),
-    workflow.indexOf("\n  release-chain:"),
-  );
-  assert.match(migrationContractJob, /name: Migration contract \(database-free\)/);
-  assert.match(
-    migrationContractJob,
-    /fetch-depth: 2/,
-    "Only the checked-out commit and direct parents should be present before the exact base fetch.",
-  );
-  assert.match(
-    migrationContractJob,
-    /if: \$\{\{ github\.event_name == 'pull_request' \}\}[\s\S]*?PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}[\s\S]*?git fetch --no-tags --depth=1 origin "\$PR_BASE_SHA"/,
-    "Pull requests must minimally fetch the immutable base SHA from the event.",
-  );
-  assert.match(
-    migrationContractJob,
-    /LUMERA_CI_PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/,
-  );
-  assert.match(migrationContractJob, /pnpm run test:migration-contract/);
-  assert.match(migrationContractJob, /pnpm run validate:ci:migration-contract/);
-  assert.doesNotMatch(migrationContractJob, /services:|image: postgres|\$\{\{\s*secrets\./);
-  assert.match(migrationContractJob, /DATABASE_URL: ""/);
-  assert.match(migrationContractJob, /LUMERA_MIGRATION_DATABASE_URL: ""/);
+  assert.ok(parsedWorkflow.on?.pull_request !== undefined);
+  assert.deepEqual(parsedWorkflow.on?.merge_group, {
+    types: ["checks_requested"],
+  });
+  assert.ok(parsedWorkflow.on?.push !== undefined);
 
-  const releaseChainJob = workflow.slice(
-    workflow.indexOf("  release-chain:"),
-    workflow.indexOf("\n  build:"),
-  );
+  const migrationContractJob = parsedWorkflow.jobs?.["migration-contract"];
+  assert.ok(migrationContractJob, "The migration-contract job must exist.");
+  assert.equal(migrationContractJob.name, "Migration contract (database-free)");
+  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'pull_request'/);
+  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'merge_group'/);
+  assert.match(migrationContractJob.if ?? "", /github\.event_name == 'push'/);
   assert.match(
-    releaseChainJob,
-    /needs: migration-contract/,
+    migrationContractJob.if ?? "",
+    /github\.event_name == 'workflow_dispatch'/,
+    "Manual Branch CI dispatches must run the migration contract so downstream jobs are not skipped.",
+  );
+  assert.equal(migrationContractJob.services, undefined);
+  assert.equal(migrationContractJob.env?.DATABASE_URL, "");
+  assert.equal(migrationContractJob.env?.LUMERA_MIGRATION_DATABASE_URL, "");
+  assert.equal(
+    migrationContractJob.env?.LUMERA_CI_PR_BASE_SHA,
+    "${{ github.event.pull_request.base.sha }}",
+  );
+  assert.equal(
+    migrationContractJob.env?.LUMERA_CI_MERGE_GROUP_BASE_SHA,
+    "${{ github.event.merge_group.base_sha }}",
+  );
+  const checkoutStep = migrationContractJob.steps?.find(
+    (step) => step.uses === "actions/checkout@v4",
+  );
+  assert.equal(
+    checkoutStep?.with?.["fetch-depth"],
+    2,
+    "The gate must retain a shallow depth-two checkout before validator-owned bounded deepening.",
+  );
+  const migrationRuns = migrationContractJob.steps
+    ?.map((step) => step.run)
+    .filter((run): run is string => typeof run === "string") ?? [];
+  assert.ok(migrationRuns.some((run) => run.includes("pnpm run test:migration-contract")));
+  assert.ok(migrationRuns.some((run) => run.includes("pnpm run validate:ci:migration-contract")));
+  assert.doesNotMatch(JSON.stringify(migrationContractJob), /\$\{\{\s*secrets\./);
+
+  const releaseChainJob = parsedWorkflow.jobs?.["release-chain"];
+  assert.equal(
+    releaseChainJob?.needs,
+    "migration-contract",
     "The migration contract must block the complete downstream release chain.",
   );
 

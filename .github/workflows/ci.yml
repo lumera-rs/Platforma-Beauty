@@ -2,6 +2,8 @@ name: Branch CI
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
   workflow_dispatch:
     inputs:
@@ -28,6 +30,7 @@ permissions:
 jobs:
   migration-contract:
     name: Migration contract (database-free)
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -36,22 +39,13 @@ jobs:
       LUMERA_MIGRATION_DATABASE_URL: ""
       LUMERA_CI_EVENT_NAME: ${{ github.event_name }}
       LUMERA_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      LUMERA_CI_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # The PR merge commit and its direct parents are enough to prove that
-          # the exact event base below is an ancestor; no broader history is needed.
+          # The validator reads the exact native-event base SHA and performs its
+          # own bounded fetch/deepening when this shallow history is insufficient.
           fetch-depth: 2
-      - name: Fetch exact pull-request base commit
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [[ ! "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "Pull-request base SHA is missing or malformed." >&2
-            exit 1
-          fi
-          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
       - uses: pnpm/action-setup@v4
         with:
           version: 10

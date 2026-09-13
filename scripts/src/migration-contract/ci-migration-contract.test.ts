@@ -5,7 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { runCiMigrationContract } from "./validate-ci-migration-contract";
+import {
+  main,
+  runCiMigrationContract,
+  safeTreePath,
+} from "./validate-ci-migration-contract";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +31,8 @@ async function git(root: string, ...args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
     cwd: root,
     env: Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !/(?:^|_)DATABASE_URL$/.test(key)),
+      Object.entries(process.env).filter(([key]) =>
+        !/^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/.test(key)),
     ),
   });
   return result.stdout.trim();
@@ -42,269 +47,326 @@ async function writeMigration(root: string, directory: string, contents?: string
   );
 }
 
-async function repository(): Promise<{ root: string; base: string }> {
+async function repository(withMigration = true): Promise<{ root: string; base: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-migration-git-"));
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "migration-contract@example.invalid");
   await git(root, "config", "user.name", "Migration Contract Test");
   await mkdir(path.join(root, "lib", "db", "migrations"), { recursive: true });
   await writeFile(path.join(root, "lib", "db", "migrations", "README.md"), "Migrations.\n");
-  await writeMigration(root, "000001_create_customer_profile");
+  if (withMigration) await writeMigration(root, "000001_create_customer_profile");
   await git(root, "add", ".");
   await git(root, "commit", "-qm", "base");
+  await git(root, "remote", "add", "origin", `file://${root}`);
   return { root, base: await git(root, "rev-parse", "HEAD") };
 }
 
-async function commit(root: string, message = "current"): Promise<void> {
+async function commit(root: string, message = "current"): Promise<string> {
   await git(root, "add", "-A");
   await git(root, "commit", "-qm", message);
+  return await git(root, "rev-parse", "HEAD");
 }
 
-function ciEnvironment(
-  eventName: "pull_request" | "push" | "workflow_dispatch",
+type NativeEvent = "pull_request" | "merge_group" | "push" | "workflow_dispatch";
+
+async function ciEnvironment(
+  root: string,
+  eventName: NativeEvent,
   base?: string,
-): NodeJS.ProcessEnv {
+): Promise<NodeJS.ProcessEnv> {
+  const eventPath = path.join(root, `.event-${eventName}.json`);
+  const payload = eventName === "pull_request"
+    ? { pull_request: { base: { sha: base } } }
+    : eventName === "merge_group"
+      ? { merge_group: { base_sha: base } }
+      : {};
+  await writeFile(eventPath, JSON.stringify(payload));
   return {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     GITHUB_ACTIONS: "true",
     GITHUB_EVENT_NAME: eventName,
+    GITHUB_EVENT_PATH: eventPath,
+    GITHUB_SHA: await git(root, "rev-parse", "HEAD"),
+    GITHUB_REF: eventName === "merge_group" ? "refs/heads/gh-readonly-queue/main/test" : "refs/pull/1/merge",
     LUMERA_CI_EVENT_NAME: eventName,
-    ...(base ? { LUMERA_CI_PR_BASE_SHA: base } : {}),
+    ...(eventName === "pull_request" && base ? { LUMERA_CI_PR_BASE_SHA: base } : {}),
+    ...(eventName === "merge_group" && base ? { LUMERA_CI_MERGE_GROUP_BASE_SHA: base } : {}),
   };
 }
 
-test("PR orchestration validates a trusted base and appended migration without a database", async (t) => {
+test("native PR and merge_group validate payload-authoritative immutable history", async (t) => {
   const repo = await repository();
   t.after(() => rm(repo.root, { recursive: true, force: true }));
   await writeMigration(repo.root, "000002_add_customer_preferences", migrationSql("000002", "select 2;\n"));
   await commit(repo.root);
+  for (const event of ["pull_request", "merge_group"] as const) {
+    const result = await runCiMigrationContract({
+      repoRoot: repo.root,
+      environment: await ciEnvironment(repo.root, event, repo.base),
+    });
+    assert.equal(result.eventName, event);
+    assert.equal(result.protectedMigrations, 1);
+    assert.deepEqual(result.current.map(({ sequence }) => sequence), [1, 2]);
+  }
+});
+
+test("empty protected base permits the first 000001 append", async (t) => {
+  const repo = await repository(false);
+  t.after(() => rm(repo.root, { recursive: true, force: true }));
+  await writeMigration(repo.root, "000001_create_customer_profile");
+  await commit(repo.root);
   const result = await runCiMigrationContract({
     repoRoot: repo.root,
-    environment: ciEnvironment("pull_request", repo.base),
+    environment: await ciEnvironment(repo.root, "pull_request", repo.base),
   });
-  assert.equal(result.eventName, "pull_request");
-  assert.equal(result.protectedMigrations, 1);
-  assert.deepEqual(result.current.map((record) => record.sequence), [1, 2]);
+  assert.equal(result.protectedMigrations, 0);
+  assert.deepEqual(result.current.map(({ sequence }) => sequence), [1]);
 });
 
-test("PR orchestration rejects malformed headers, sequence gaps, and duplicate IDs", async (t) => {
-  for (const scenario of ["header", "gap", "duplicate"] as const) {
-    await t.test(scenario, async (t) => {
-      const repo = await repository();
-      t.after(() => rm(repo.root, { recursive: true, force: true }));
-      if (scenario === "header") {
-        await writeMigration(
-          repo.root,
-          "000002_add_customer_preferences",
-          migrationSql("000002").replace("-- lumera:mode transactional", "-- lumera:mode invalid"),
-        );
-      } else if (scenario === "gap") {
-        await writeMigration(repo.root, "000003_add_customer_preferences", migrationSql("000003"));
-      } else {
-        await writeMigration(repo.root, "000001_add_customer_preferences", migrationSql("000001"));
-      }
-      await commit(repo.root);
-      await assert.rejects(
-        runCiMigrationContract({
-          repoRoot: repo.root,
-          environment: ciEnvironment("pull_request", repo.base),
-        }),
-        scenario === "header" ? /mode/i : scenario === "gap" ? /gap/i : /duplicate|reused/i,
-      );
-    });
-  }
-});
-
-test("PR orchestration rejects edited body, header metadata, and line-ending history", async (t) => {
-  for (const scenario of ["body", "header", "line-ending"] as const) {
-    await t.test(scenario, async (t) => {
-      const repo = await repository();
-      t.after(() => rm(repo.root, { recursive: true, force: true }));
-      const file = path.join(
-        repo.root,
-        "lib/db/migrations/000001_create_customer_profile/migration.sql",
-      );
-      const original = migrationSql("000001");
-      const edited = scenario === "body"
-        ? original.replace("select 1;", "select 2;")
-        : scenario === "header"
-          ? original.replace("CI orchestration fixture", "Edited CI orchestration fixture")
-          : original.replaceAll("\n", "\r\n");
-      await writeFile(file, edited);
-      await commit(repo.root);
-      await assert.rejects(
-        runCiMigrationContract({
-          repoRoot: repo.root,
-          environment: ciEnvironment("pull_request", repo.base),
-        }),
-        /edited or replaced/i,
-      );
-    });
-  }
-});
-
-test("PR orchestration rejects deleted and renamed protected migrations", async (t) => {
-  for (const scenario of ["deleted", "renamed"] as const) {
+test("PR rejects edits, removals, renames, malformed additions, gaps, and CRLF rewrites", async (t) => {
+  for (const scenario of ["body", "header", "deleted", "renamed", "gap", "crlf"] as const) {
     await t.test(scenario, async (t) => {
       const repo = await repository();
       t.after(() => rm(repo.root, { recursive: true, force: true }));
       const original = path.join(repo.root, "lib/db/migrations/000001_create_customer_profile");
-      if (scenario === "deleted") {
-        await rm(original, { recursive: true });
-      } else {
+      const sql = path.join(original, "migration.sql");
+      if (scenario === "body") await writeFile(sql, migrationSql("000001", "select 2;\n"));
+      if (scenario === "header") {
+        await writeFile(sql, migrationSql("000001").replace("fixture migration", "changed fixture migration"));
+      }
+      if (scenario === "deleted") await rm(original, { recursive: true });
+      if (scenario === "renamed") {
         const renamed = path.join(repo.root, "lib/db/migrations/000001_create_customer_account");
         await mkdir(renamed);
         await writeFile(path.join(renamed, "migration.sql"), migrationSql("000001"));
         await rm(original, { recursive: true });
       }
+      if (scenario === "gap") await writeMigration(repo.root, "000003_add_customer_preferences", migrationSql("000003"));
+      if (scenario === "crlf") await writeFile(sql, migrationSql("000001").replaceAll("\n", "\r\n"));
       await commit(repo.root);
       await assert.rejects(
         runCiMigrationContract({
           repoRoot: repo.root,
-          environment: ciEnvironment("pull_request", repo.base),
+          environment: await ciEnvironment(repo.root, "pull_request", repo.base),
         }),
-        scenario === "deleted" ? /removed/i : /renamed|reused/i,
+        /edited|replaced|removed|renamed|reused|gap/i,
       );
     });
   }
 });
 
-test("PR orchestration fails closed for unavailable, malformed, and non-ancestor bases", async (t) => {
+test("partial native context, unsupported events, bad payloads, and compatibility mismatches fail closed", async (t) => {
   const repo = await repository();
   t.after(() => rm(repo.root, { recursive: true, force: true }));
-  await writeMigration(repo.root, "000002_add_customer_preferences", migrationSql("000002"));
-  await commit(repo.root);
-  const tree = await git(repo.root, "rev-parse", "HEAD^{tree}");
-  const unrelated = await git(repo.root, "commit-tree", tree, "-m", "unrelated");
-  for (const [base, pattern] of [
-    ["not-a-sha", /exact base commit SHA/i],
-    ["f".repeat(40), /unavailable/i],
-    [unrelated, /not an ancestor/i],
-  ] as const) {
+
+  for (const key of ["GITHUB_ACTIONS", "GITHUB_EVENT_NAME", "GITHUB_EVENT_PATH", "GITHUB_SHA", "GITHUB_REF"] as const) {
+    const environment = await ciEnvironment(repo.root, "push");
+    delete environment[key];
     await assert.rejects(
-      runCiMigrationContract({
-        repoRoot: repo.root,
-        environment: ciEnvironment("pull_request", base),
-      }),
-      pattern,
+      runCiMigrationContract({ repoRoot: repo.root, environment }),
+      /incomplete GitHub event context/i,
     );
   }
+  await assert.rejects(
+    runCiMigrationContract({
+      repoRoot: repo.root,
+      environment: { PATH: process.env.PATH, GITHUB_EVENT_NAME: "push" },
+    }),
+    /incomplete GitHub event context/i,
+  );
+
+  const unsupported = await ciEnvironment(repo.root, "push");
+  unsupported.GITHUB_EVENT_NAME = "issues";
+  unsupported.LUMERA_CI_EVENT_NAME = "issues";
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: unsupported }),
+    /unsupported migration-contract event/i,
+  );
+
+  const malformed = await ciEnvironment(repo.root, "pull_request", repo.base);
+  await writeFile(malformed.GITHUB_EVENT_PATH!, "{");
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: malformed }),
+    /missing or malformed/i,
+  );
+  const missing = await ciEnvironment(repo.root, "pull_request", repo.base);
+  missing.GITHUB_EVENT_PATH = path.join(repo.root, "absent.json");
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: missing }),
+    /missing or malformed/i,
+  );
+  const mismatch = await ciEnvironment(repo.root, "pull_request", repo.base);
+  mismatch.LUMERA_CI_PR_BASE_SHA = "f".repeat(40);
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: mismatch }),
+    /must be present and equal/i,
+  );
+  const missingPrCompatibility = await ciEnvironment(repo.root, "pull_request", repo.base);
+  delete missingPrCompatibility.LUMERA_CI_PR_BASE_SHA;
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: missingPrCompatibility }),
+    /must be present and equal/i,
+  );
+  const mergeGroupMismatch = await ciEnvironment(repo.root, "merge_group", repo.base);
+  mergeGroupMismatch.LUMERA_CI_MERGE_GROUP_BASE_SHA = "f".repeat(40);
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: mergeGroupMismatch }),
+    /must be present and equal/i,
+  );
+  const missingMergeGroupCompatibility = await ciEnvironment(repo.root, "merge_group", repo.base);
+  delete missingMergeGroupCompatibility.LUMERA_CI_MERGE_GROUP_BASE_SHA;
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: missingMergeGroupCompatibility }),
+    /must be present and equal/i,
+  );
+  const eventMismatch = await ciEnvironment(repo.root, "push");
+  eventMismatch.LUMERA_CI_EVENT_NAME = "workflow_dispatch";
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: eventMismatch }),
+    /event mismatch/i,
+  );
 });
 
-test("push and workflow dispatch validate only the complete current set", async (t) => {
+test("push and workflow_dispatch validate current state while local mode needs no GitHub context", async (t) => {
   const repo = await repository();
   t.after(() => rm(repo.root, { recursive: true, force: true }));
-  await writeFile(
-    path.join(repo.root, "lib/db/migrations/000001_create_customer_profile/migration.sql"),
-    migrationSql("000001", "select changed;\n"),
-  );
-  await commit(repo.root);
-  for (const eventName of ["push", "workflow_dispatch"] as const) {
+  for (const event of ["push", "workflow_dispatch"] as const) {
     const result = await runCiMigrationContract({
       repoRoot: repo.root,
-      environment: ciEnvironment(eventName),
+      environment: await ciEnvironment(repo.root, event),
     });
-    assert.equal(result.eventName, eventName);
+    assert.equal(result.eventName, event);
     assert.equal(result.protectedMigrations, 0);
   }
+  const local = await runCiMigrationContract({
+    repoRoot: repo.root,
+    environment: { PATH: process.env.PATH, HOME: process.env.HOME },
+  });
+  assert.equal(local.eventName, "local");
+  await assert.rejects(
+    runCiMigrationContract({
+      repoRoot: repo.root,
+      environment: { PATH: process.env.PATH, LUMERA_CI_MERGE_GROUP_BASE_SHA: repo.base },
+    }),
+    /forbidden in local mode/i,
+  );
 });
 
-test("orchestration rejects nonempty database environments before invoking git", async (t) => {
+test("Gate N rejects each documented database credential family before Git", async (t) => {
   const repo = await repository();
   t.after(() => rm(repo.root, { recursive: true, force: true }));
-  for (const key of ["DATABASE_URL", "LUMERA_MIGRATION_DATABASE_URL"]) {
+  for (const key of [
+    "DATABASE_URL", "LUMERA_DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL",
+    "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD",
+  ]) {
     await assert.rejects(
       runCiMigrationContract({
-        repoRoot: path.join(repo.root, "does-not-exist"),
-        environment: { ...ciEnvironment("push"), [key]: "postgres://forbidden.invalid/db" },
+        repoRoot: path.join(repo.root, "missing"),
+        environment: { PATH: process.env.PATH, [key]: "forbidden" },
       }),
       new RegExp(key),
     );
   }
 });
 
-test("GitHub Actions derives the native event and rejects missing or mismatched context", async (t) => {
-  const repo = await repository();
-  t.after(() => rm(repo.root, { recursive: true, force: true }));
-  await writeMigration(repo.root, "000002_add_customer_preferences", migrationSql("000002"));
-  await commit(repo.root);
-
-  for (const configured of [undefined, ""] as const) {
-    const derived = ciEnvironment("pull_request", repo.base);
-    if (configured === undefined) delete derived.LUMERA_CI_EVENT_NAME;
-    else derived.LUMERA_CI_EVENT_NAME = configured;
-    const result = await runCiMigrationContract({ repoRoot: repo.root, environment: derived });
-    assert.equal(result.eventName, "pull_request");
-    assert.equal(result.protectedMigrations, 1);
-  }
-
-  const missingNative = ciEnvironment("push");
-  delete missingNative.GITHUB_EVENT_NAME;
-  delete missingNative.LUMERA_CI_EVENT_NAME;
-  await assert.rejects(
-    runCiMigrationContract({ repoRoot: repo.root, environment: missingNative }),
-    /GITHUB_EVENT_NAME is required/i,
-  );
-
-  await assert.rejects(
-    runCiMigrationContract({
-      repoRoot: repo.root,
-      environment: {
-        ...ciEnvironment("push"),
-        LUMERA_CI_EVENT_NAME: "workflow_dispatch",
-      },
-    }),
-    /event mismatch/i,
-  );
+test("safeTreePath rejects traversal, absolute, backslash, and outside-tree paths", () => {
+  for (const unsafe of [
+    "../migration.sql",
+    "/lib/db/migrations/000001_x/migration.sql",
+    "lib/db/migrations/../migration.sql",
+    "lib\\db\\migrations\\migration.sql",
+    "other/migration.sql",
+  ]) assert.throws(() => safeTreePath(Buffer.from(unsafe)), /unsafe/i);
 });
 
-test("shallow synthetic merge checkout validates its exact first-parent base", async (t) => {
+test("historical symlinks and gitlinks are rejected during native materialization", async (t) => {
+  for (const kind of ["symlink", "gitlink"] as const) {
+    await t.test(kind, async (t) => {
+      const repo = await repository(false);
+      t.after(() => rm(repo.root, { recursive: true, force: true }));
+      const migrationPath = "lib/db/migrations/000001_create_customer_profile/migration.sql";
+      if (kind === "symlink") {
+        await mkdir(path.dirname(path.join(repo.root, migrationPath)), { recursive: true });
+        await writeFile(path.join(repo.root, "target.sql"), migrationSql("000001"));
+        await execFileAsync("ln", ["-s", "../../../../target.sql", path.join(repo.root, migrationPath)]);
+        await git(repo.root, "add", "-A");
+      } else {
+        await git(repo.root, "update-index", "--add", "--cacheinfo", "160000", repo.base, migrationPath);
+      }
+      await git(repo.root, "commit", "-qm", kind);
+      const badBase = await git(repo.root, "rev-parse", "HEAD");
+      if (kind === "symlink") await rm(path.join(repo.root, migrationPath));
+      else await git(repo.root, "rm", "--cached", "-q", migrationPath);
+      await writeMigration(repo.root, "000001_create_customer_profile");
+      await commit(repo.root, "regular current");
+      await assert.rejects(
+        runCiMigrationContract({
+          repoRoot: repo.root,
+          environment: await ciEnvironment(repo.root, "pull_request", badBase),
+        }),
+        /not a regular file/i,
+      );
+    });
+  }
+});
+
+test("bounded exact-SHA deepening proves older B0 and rejects unrelated/nonexistent SHAs", async (t) => {
   const source = await repository();
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-merge-ref-"));
-  const origin = path.join(temporaryRoot, "origin.git");
-  const checkout = path.join(temporaryRoot, "checkout");
+  const temp = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-deepen-"));
+  const origin = path.join(temp, "origin.git");
+  const checkout = path.join(temp, "checkout");
   t.after(() => Promise.all([
     rm(source.root, { recursive: true, force: true }),
-    rm(temporaryRoot, { recursive: true, force: true }),
+    rm(temp, { recursive: true, force: true }),
   ]));
 
-  await git(source.root, "checkout", "-qb", "fork-head", source.base);
+  const b0 = source.base;
+  await writeFile(path.join(source.root, "b1"), "b1");
+  await commit(source.root, "B1");
+  await writeFile(path.join(source.root, "b2"), "b2");
+  const b2 = await commit(source.root, "B2");
+  await git(source.root, "checkout", "-qb", "feature", b0);
   await writeMigration(source.root, "000002_add_customer_preferences", migrationSql("000002"));
-  await commit(source.root, "fork head");
-  const forkHead = await git(source.root, "rev-parse", "HEAD");
-  await git(source.root, "checkout", "-q", "-b", "protected-base", source.base);
-  await writeFile(path.join(source.root, "protected-note.txt"), "new protected tip\n");
-  await commit(source.root, "protected tip");
-  const exactBase = await git(source.root, "rev-parse", "HEAD");
-  const mergeTree = await git(source.root, "merge-tree", "--write-tree", exactBase, forkHead);
-  const mergeCommit = await git(
-    source.root,
-    "commit-tree",
-    mergeTree,
-    "-p",
-    exactBase,
-    "-p",
-    forkHead,
-    "-m",
-    "synthetic pull request merge",
-  );
-
-  await git(temporaryRoot, "clone", "-q", "--bare", source.root, origin);
-  await git(origin, "update-ref", "refs/pull/1/merge", mergeCommit);
-  await git(origin, "update-ref", "-d", "refs/heads/fork-head");
-  await git(temporaryRoot, "init", "-q", checkout);
+  const feature = await commit(source.root, "F");
+  const mergeTree = await git(source.root, "merge-tree", "--write-tree", b2, feature);
+  const merge = await git(source.root, "commit-tree", mergeTree, "-p", b2, "-p", feature, "-m", "merge");
+  const unrelated = await git(source.root, "commit-tree", `${merge}^{tree}`, "-m", "unrelated");
+  await git(temp, "clone", "-q", "--bare", source.root, origin);
+  await git(origin, "update-ref", "refs/pull/1/merge", merge);
+  await git(origin, "update-ref", "refs/heads/unrelated", unrelated);
+  await git(temp, "init", "-q", checkout);
   await git(checkout, "remote", "add", "origin", `file://${origin}`);
   await git(checkout, "fetch", "-q", "--depth=2", "origin", "refs/pull/1/merge");
   await git(checkout, "checkout", "-q", "--detach", "FETCH_HEAD");
-  await git(checkout, "fetch", "-q", "--no-tags", "--depth=1", "origin", exactBase);
+  await assert.rejects(
+    execFileAsync("git", ["merge-base", "--is-ancestor", b0, "HEAD"], { cwd: checkout }),
+    "the initial shallow checkout must not prove the older base",
+  );
 
-  const result = await runCiMigrationContract({
+  const accepted = await runCiMigrationContract({
     repoRoot: checkout,
-    environment: ciEnvironment("pull_request", exactBase),
+    environment: await ciEnvironment(checkout, "pull_request", b0),
   });
-  assert.equal(result.protectedMigrations, 1);
-  assert.deepEqual(result.current.map((record) => record.sequence), [1, 2]);
-  assert.equal(await git(checkout, "rev-parse", "HEAD^1"), exactBase);
-  assert.equal(await git(checkout, "rev-list", "--count", "HEAD"), "3");
+  assert.equal(accepted.protectedMigrations, 1);
+  assert.equal(await git(checkout, "merge-base", "--is-ancestor", b0, "HEAD").then(() => "yes"), "yes");
+
+  for (const [sha, pattern] of [
+    [unrelated, /not an ancestor/i],
+    ["f".repeat(40), /unavailable from origin/i],
+  ] as const) {
+    await assert.rejects(
+      runCiMigrationContract({
+        repoRoot: checkout,
+        environment: await ciEnvironment(checkout, "pull_request", sha),
+      }),
+      pattern,
+    );
+  }
+  const remotes = await git(checkout, "for-each-ref", "--format=%(refname)", "refs/remotes");
+  assert.equal(remotes, "", "validator must not fetch a mutable branch ref");
+});
+
+test("CI CLI rejects every argument, including event payload paths", async () => {
+  assert.equal(await main(["--event-path=/tmp/untrusted.json"]), 1);
 });

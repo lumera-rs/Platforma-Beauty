@@ -138,7 +138,8 @@
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "^8.23.0",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "yaml": "2.9.0"
   },
   "focusedAdministratorBrowserGates": {
     "scriptNamePattern": "test:admin-*",

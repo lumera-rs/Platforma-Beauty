@@ -2,27 +2,64 @@
 
 set -euo pipefail
 
-: "${GITHUB_TOKEN:?GITHUB_TOKEN with repository Administration read access is required}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be owner/repository}"
 
 api_url="${GITHUB_API_URL:-https://api.github.com}"
 expected_repository="lumera-rs/Platforma-Beauty"
 ruleset_name="${GITHUB_RULESET_NAME:-Protect default branch CI}"
-required_context="GitHub Actions syntax and expressions"
+workflow_lint_context="GitHub Actions syntax and expressions"
 workflow_file="workflow-lint.yml"
+branch_ci_file="${LUMERA_BRANCH_CI_FILE:-.github/workflows/ci.yml}"
+fixture_dir="${LUMERA_RULESET_AUDIT_FIXTURE_DIR:-}"
+
+if [[ -n "$fixture_dir" && "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  echo "Ruleset audit fixture mode is forbidden in native GitHub Actions context." >&2
+  exit 1
+fi
+
+migration_contract_context="$(
+  awk '
+    /^  migration-contract:$/ { in_job = 1; next }
+    in_job && /^  [[:alnum:]_-]+:$/ { exit }
+    in_job && /^    name: / { sub(/^    name: /, ""); print; exit }
+  ' "$branch_ci_file"
+)"
+if [[ "$migration_contract_context" != "Migration contract (database-free)" ]]; then
+  echo "Could not derive the exact Migration contract (database-free) check name from ${branch_ci_file}." >&2
+  exit 1
+fi
+
+required_contexts_json="$(
+  jq -cn \
+    --arg lint "$workflow_lint_context" \
+    --arg migration "$migration_contract_context" \
+    '[$lint, $migration]'
+)"
+
+if [[ -z "$fixture_dir" ]]; then
+  : "${GITHUB_TOKEN:?GITHUB_TOKEN with repository Administration read access is required}"
+fi
 
 if [[ "$GITHUB_REPOSITORY" != "$expected_repository" ]]; then
   echo "Refusing to audit unexpected repository ${GITHUB_REPOSITORY}; expected ${expected_repository}." >&2
   exit 1
 fi
 
-repository="$(
-  curl --fail-with-body --silent --show-error \
-    --header "Accept: application/vnd.github+json" \
-    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-    --header "X-GitHub-Api-Version: 2022-11-28" \
-    "${api_url}/repos/${GITHUB_REPOSITORY}"
-)"
+read_api_or_fixture() {
+  local fixture_name="$1"
+  local endpoint="$2"
+  if [[ -n "$fixture_dir" ]]; then
+    cat "${fixture_dir}/${fixture_name}.json"
+  else
+    curl --fail-with-body --silent --show-error \
+      --header "Accept: application/vnd.github+json" \
+      --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+      --header "X-GitHub-Api-Version: 2022-11-28" \
+      "${api_url}${endpoint}"
+  fi
+}
+
+repository="$(read_api_or_fixture repository "/repos/${GITHUB_REPOSITORY}")"
 
 if ! jq -e '.delete_branch_on_merge == true' <<<"$repository" >/dev/null; then
   echo "Automatic deletion of merged branches is disabled for ${GITHUB_REPOSITORY}; enable delete_branch_on_merge." >&2
@@ -37,13 +74,7 @@ if ! jq -e '
   exit 1
 fi
 
-rulesets="$(
-  curl --fail-with-body --silent --show-error \
-    --header "Accept: application/vnd.github+json" \
-    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-    --header "X-GitHub-Api-Version: 2022-11-28" \
-    "${api_url}/repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true"
-)"
+rulesets="$(read_api_or_fixture rulesets "/repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true")"
 
 mapfile -t ruleset_ids < <(
   jq -r \
@@ -57,17 +88,11 @@ if ((${#ruleset_ids[@]} != 1)); then
   exit 1
 fi
 
-ruleset="$(
-  curl --fail-with-body --silent --show-error \
-    --header "Accept: application/vnd.github+json" \
-    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-    --header "X-GitHub-Api-Version: 2022-11-28" \
-    "${api_url}/repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_ids[0]}?includes_parents=true"
-)"
+ruleset="$(read_api_or_fixture ruleset "/repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_ids[0]}?includes_parents=true")"
 
 if ! jq -e \
   --arg name "$ruleset_name" \
-  --arg context "$required_context" \
+  --argjson contexts "$required_contexts_json" \
   '
     (.name == $name)
     and (.target == "branch")
@@ -84,20 +109,19 @@ if ! jq -e \
       .type == "required_status_checks"
       and (.parameters.strict_required_status_checks_policy == true)
       and (.parameters.do_not_enforce_on_create == true)
-      and any(.parameters.required_status_checks[]?; .context == $context)
+      and (
+        [.parameters.required_status_checks[]?.context] as $actual_contexts
+        | all($contexts[];
+            . as $context | $actual_contexts | index($context) != null
+          )
+      )
     )
   ' <<<"$ruleset" >/dev/null; then
   echo "Required GitHub default-branch CI ruleset is missing or invalid." >&2
   exit 1
 fi
 
-merge_group_runs="$(
-  curl --fail-with-body --silent --show-error \
-    --header "Accept: application/vnd.github+json" \
-    --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-    --header "X-GitHub-Api-Version: 2022-11-28" \
-    "${api_url}/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?event=merge_group&status=success&per_page=20"
-)"
+merge_group_runs="$(read_api_or_fixture merge-group-runs "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?event=merge_group&status=success&per_page=20")"
 
 if ! jq -e '
   any(.workflow_runs[]?;
@@ -127,4 +151,4 @@ latest_merge_group_url="$(
   ' <<<"$merge_group_runs"
 )"
 
-echo "Automatic merged-branch deletion is enabled. GitHub merge queue is active, requires ${required_context}, and has a successful merge-group run: ${latest_merge_group_url}"
+echo "Automatic merged-branch deletion is enabled. GitHub merge queue is active, requires ${workflow_lint_context} and ${migration_contract_context}, and has a successful merge-group run: ${latest_merge_group_url}"

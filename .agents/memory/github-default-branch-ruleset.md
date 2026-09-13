@@ -20,3 +20,9 @@ After a transfer, verify both repository visibility and organization OAuth-app a
 **Why:** A transferred repository can be private on a free organization, which makes repository rulesets unavailable, and an organization with restricted third-party access returns 403 until the connected OAuth app is granted access.
 
 **How to apply:** Confirm the destination URL and admin access, grant the existing GitHub OAuth app access to the organization, and verify that the repository is public or the organization plan supports private-repository rulesets before updating the merge queue rule.
+
+Repository-side required-check expectations and passing offline fixtures do not prove that the live ruleset enforces a new check.
+
+**Why:** Independent review distinguished implementation readiness from operational closure: a working CI job can still be optional in GitHub governance.
+
+**How to apply:** Report code validation separately from a real Actions run and live ruleset verification. Do not describe a newly expected context as already required without observing the live configuration.

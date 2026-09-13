@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,7 +11,15 @@ import {
 
 const MIGRATION_PATH = "lib/db/migrations";
 const COMMIT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
-const DATABASE_ENV_PATTERN = /(?:^|_)DATABASE_URL$/;
+const DATABASE_ENV_PATTERN = /^(?:DATABASE_URL(?:_UNPOOLED)?|POSTGRES_URL|PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|.+_DATABASE_URL)$/;
+const GITHUB_CONTEXT_KEYS = [
+  "GITHUB_ACTIONS",
+  "GITHUB_EVENT_NAME",
+  "GITHUB_EVENT_PATH",
+  "GITHUB_SHA",
+  "GITHUB_REF",
+] as const;
+const HISTORY_DEPTH_STEPS = [32, 128, 512] as const;
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 
 export interface CiMigrationContractOptions {
@@ -20,7 +28,7 @@ export interface CiMigrationContractOptions {
 }
 
 export interface CiMigrationContractResult {
-  eventName: "local" | "pull_request" | "push" | "workflow_dispatch";
+  eventName: "local" | "pull_request" | "merge_group" | "push" | "workflow_dispatch";
   current: MigrationRecord[];
   protectedMigrations: number;
 }
@@ -46,17 +54,17 @@ function databaseFreeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.Process
   );
 }
 
-async function command(
-  executable: string,
+async function gitCommand(
   argumentsToPass: string[],
   cwd: string,
   environment: NodeJS.ProcessEnv,
   acceptedCodes = [0],
 ): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(executable, argumentsToPass, {
+    const child = spawn("git", argumentsToPass, {
       cwd,
       env: environment,
+      shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
@@ -72,7 +80,7 @@ async function command(
       };
       if (!acceptedCodes.includes(result.code)) {
         reject(new Error(
-          `${executable} ${argumentsToPass[0] ?? ""} failed (${result.code}): `
+          `git ${argumentsToPass[0] ?? ""} failed (${result.code}): `
           + result.stderr.toString("utf8").trim(),
         ));
         return;
@@ -82,7 +90,7 @@ async function command(
   });
 }
 
-function safeTreePath(rawPath: Buffer): string {
+export function safeTreePath(rawPath: Buffer): string {
   const treePath = rawPath.toString("utf8");
   if (!rawPath.equals(Buffer.from(treePath, "utf8"))) {
     throw new Error("Protected migration tree contains a non-UTF-8 path");
@@ -105,9 +113,8 @@ async function materializeReference(
   environment: NodeJS.ProcessEnv,
   destination: string,
 ): Promise<void> {
-  await command("git", ["cat-file", "-e", `${commit}:${MIGRATION_PATH}`], repoRoot, environment);
-  const listing = await command(
-    "git",
+  await gitCommand(["cat-file", "-e", `${commit}:${MIGRATION_PATH}`], repoRoot, environment);
+  const listing = await gitCommand(
     ["ls-tree", "-rz", "--full-tree", commit, "--", MIGRATION_PATH],
     repoRoot,
     environment,
@@ -133,42 +140,73 @@ async function materializeReference(
       throw new Error(`Duplicate protected migration tree path: ${treePath}`);
     }
     seen.add(relativePath);
-    const contents = await command("git", ["cat-file", "blob", match[2]!], repoRoot, environment);
+    const contents = await gitCommand(["cat-file", "blob", match[2]!], repoRoot, environment);
     const outputPath = path.join(destination, ...relativePath.split("/"));
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, contents.stdout);
   }
 }
 
-async function validatePullRequestReference(
+async function fetchExactReference(
+  repoRoot: string,
+  baseSha: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<void> {
+  await gitCommand(
+    ["fetch", "--no-tags", "--depth=1", "origin", baseSha],
+    repoRoot,
+    environment,
+  ).catch(() => {
+    throw new Error(`Trusted base commit is unavailable from origin: ${baseSha}`);
+  });
+}
+
+async function proveAncestryWithBoundedDeepening(
+  repoRoot: string,
+  baseSha: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<void> {
+  for (const deepenBy of [0, ...HISTORY_DEPTH_STEPS]) {
+    if (deepenBy !== 0) {
+      await gitCommand(
+        ["fetch", "--no-tags", `--deepen=${deepenBy}`, "origin", baseSha],
+        repoRoot,
+        environment,
+      ).catch(() => {
+        throw new Error(`Unable to deepen history for exact trusted base commit: ${baseSha}`);
+      });
+    }
+    const ancestry = await gitCommand(
+      ["merge-base", "--is-ancestor", baseSha, "HEAD"],
+      repoRoot,
+      environment,
+      [0, 1],
+    );
+    if (ancestry.code === 0) return;
+  }
+  throw new Error(`Trusted base commit is not an ancestor of HEAD after bounded deepening: ${baseSha}`);
+}
+
+async function validateHistoricalReference(
   repoRoot: string,
   baseSha: string | undefined,
   environment: NodeJS.ProcessEnv,
 ): Promise<MigrationRecord[]> {
   if (!baseSha || !COMMIT_SHA_PATTERN.test(baseSha)) {
-    throw new Error("Pull-request migration validation requires the exact base commit SHA");
+    throw new Error("Historical migration validation requires the exact base commit SHA");
   }
-  const resolved = await command(
-    "git",
+  await fetchExactReference(repoRoot, baseSha, environment);
+  const resolved = await gitCommand(
     ["rev-parse", "--verify", `${baseSha}^{commit}`],
     repoRoot,
     environment,
   ).catch(() => {
-    throw new Error(`Trusted pull-request base commit is unavailable: ${baseSha}`);
+    throw new Error(`Trusted base commit is unavailable: ${baseSha}`);
   });
   if (resolved.stdout.toString("ascii").trim().toLowerCase() !== baseSha.toLowerCase()) {
-    throw new Error(`Trusted pull-request base did not resolve exactly: ${baseSha}`);
+    throw new Error(`Trusted base did not resolve exactly: ${baseSha}`);
   }
-  const ancestry = await command(
-    "git",
-    ["merge-base", "--is-ancestor", baseSha, "HEAD"],
-    repoRoot,
-    environment,
-    [0, 1],
-  );
-  if (ancestry.code !== 0) {
-    throw new Error(`Trusted pull-request base is not an ancestor of HEAD: ${baseSha}`);
-  }
+  await proveAncestryWithBoundedDeepening(repoRoot, baseSha, environment);
 
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-migration-reference-"));
   try {
@@ -180,6 +218,42 @@ async function validatePullRequestReference(
   }
 }
 
+interface GitHubEventPayload {
+  pull_request?: { base?: { sha?: unknown } };
+  merge_group?: { base_sha?: unknown };
+}
+
+async function readGitHubPayload(eventPath: string): Promise<GitHubEventPayload> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(eventPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `GitHub event payload is missing or malformed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("GitHub event payload must be a JSON object");
+  }
+  return parsed as GitHubEventPayload;
+}
+
+function payloadBaseSha(
+  eventName: string,
+  payload: GitHubEventPayload,
+): string | undefined {
+  const value = eventName === "pull_request"
+    ? payload.pull_request?.base?.sha
+    : eventName === "merge_group"
+      ? payload.merge_group?.base_sha
+      : undefined;
+  if ((eventName === "pull_request" || eventName === "merge_group")
+    && (typeof value !== "string" || !COMMIT_SHA_PATTERN.test(value))) {
+    throw new Error(`GitHub ${eventName} payload requires an exact base SHA`);
+  }
+  return typeof value === "string" ? value : undefined;
+}
+
 export async function runCiMigrationContract(
   options: CiMigrationContractOptions = {},
 ): Promise<CiMigrationContractResult> {
@@ -187,36 +261,68 @@ export async function runCiMigrationContract(
   const environment = options.environment ?? process.env;
   const gitEnvironment = databaseFreeEnvironment(environment);
   const configuredEventName = environment.LUMERA_CI_EVENT_NAME;
-  const inGitHubActions = environment.GITHUB_ACTIONS === "true";
+  const hasNativeContext = GITHUB_CONTEXT_KEYS.some((key) => Boolean(environment[key]));
   let eventName: string;
-  if (inGitHubActions) {
-    const nativeEventName = environment.GITHUB_EVENT_NAME;
-    if (!nativeEventName) {
-      throw new Error("GITHUB_EVENT_NAME is required in GitHub Actions");
+  let baseSha: string | undefined;
+  if (hasNativeContext) {
+    const missing = GITHUB_CONTEXT_KEYS.filter((key) => !environment[key]);
+    if (environment.GITHUB_ACTIONS !== "true" || missing.length > 0) {
+      throw new Error(
+        `Incomplete GitHub event context: ${missing.length > 0 ? `missing ${missing.join(", ")}` : "GITHUB_ACTIONS must equal true"}`,
+      );
     }
+    const nativeEventName = environment.GITHUB_EVENT_NAME;
     if (configuredEventName && configuredEventName !== nativeEventName) {
       throw new Error(
         `Migration-contract event mismatch: LUMERA_CI_EVENT_NAME=${configuredEventName}, `
         + `GITHUB_EVENT_NAME=${nativeEventName}`,
       );
     }
-    eventName = nativeEventName;
+    eventName = nativeEventName!;
+    const payload = await readGitHubPayload(environment.GITHUB_EVENT_PATH!);
+    baseSha = payloadBaseSha(eventName, payload);
+    if (eventName === "pull_request" && environment.LUMERA_CI_PR_BASE_SHA !== baseSha) {
+      throw new Error(
+        "LUMERA_CI_PR_BASE_SHA must be present and equal pull_request.base.sha from the native payload",
+      );
+    }
+    if (eventName === "merge_group"
+      && environment.LUMERA_CI_MERGE_GROUP_BASE_SHA !== baseSha) {
+      throw new Error(
+        "LUMERA_CI_MERGE_GROUP_BASE_SHA must be present and equal merge_group.base_sha from the native payload",
+      );
+    }
+    if (eventName !== "pull_request" && environment.LUMERA_CI_PR_BASE_SHA) {
+      throw new Error("LUMERA_CI_PR_BASE_SHA is permitted only for pull_request events");
+    }
+    if (eventName !== "merge_group" && environment.LUMERA_CI_MERGE_GROUP_BASE_SHA) {
+      throw new Error("LUMERA_CI_MERGE_GROUP_BASE_SHA is permitted only for merge_group events");
+    }
   } else {
     eventName = configuredEventName || "local";
+    if (eventName !== "local") {
+      throw new Error("Compatibility CI event context without complete native GitHub context is forbidden");
+    }
+    if (environment.LUMERA_CI_PR_BASE_SHA) {
+      throw new Error("LUMERA_CI_PR_BASE_SHA is forbidden in local mode");
+    }
+    if (environment.LUMERA_CI_MERGE_GROUP_BASE_SHA) {
+      throw new Error("LUMERA_CI_MERGE_GROUP_BASE_SHA is forbidden in local mode");
+    }
   }
-  if (!["local", "pull_request", "push", "workflow_dispatch"].includes(eventName)) {
+  if (!["local", "pull_request", "merge_group", "push", "workflow_dispatch"].includes(eventName)) {
     throw new Error(`Unsupported migration-contract event: ${eventName}`);
   }
-  if (inGitHubActions && eventName === "local") {
+  if (hasNativeContext && eventName === "local") {
     throw new Error("Local migration-contract mode is forbidden in GitHub Actions");
   }
 
   const current = await readMigrationSet(path.join(repoRoot, MIGRATION_PATH));
   let reference: MigrationRecord[] = [];
-  if (eventName === "pull_request") {
-    reference = await validatePullRequestReference(
+  if (eventName === "pull_request" || eventName === "merge_group") {
+    reference = await validateHistoricalReference(
       repoRoot,
-      environment.LUMERA_CI_PR_BASE_SHA,
+      baseSha,
       gitEnvironment,
     );
     compareWithReference(current, reference);

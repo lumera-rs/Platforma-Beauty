@@ -1,0 +1,533 @@
+LUMERA — A-5 MIGRATION TRANSITION
+P.2b-FIX — CLOSE REQUIRED INDEPENDENT REVIEW FINDINGS
+
+Independent Claude review verdict:
+
+P.2b FINAL INDEPENDENT REVIEW VERDICT:
+PASS WITH REQUIRED FIXES
+
+P.2b CODE CLOSED:
+NO
+
+SAFE TO START P.2c:
+NO
+
+This task fixes P.2b only.
+
+DO NOT START P.2c.
+
+STRICT SCOPE:
+CI / GitHub ruleset verification / migration-contract CI tooling /
+tests / documentation only.
+
+NO DATABASE ACCESS.
+NO DATABASE WRITE.
+NO MIGRATION EXECUTION.
+NO LEDGER.
+NO ADOPTION.
+NO FINGERPRINT V4.
+NO CANONICAL SCHEMA CHANGE.
+NO APPLICATION RUNTIME CHANGE.
+NO BOOTSTRAP CHANGE.
+
+==================================================
+REQUIRED FIX 1 — P1-1
+MAKE MIGRATION-CONTRACT AN ENFORCED GATE
+==================================================
+
+Independent review found:
+
+The migration-contract job exists and works, but its enforcement still
+depends on repository governance.
+
+Currently:
+
+- ci.yml does not run on merge_group
+- the audited GitHub ruleset does not require the
+  "Migration contract (database-free)" status check
+- a PR could theoretically modify/remove the migration-contract job and
+  edit historical migrations
+- the current ruleset audit would not detect that missing required check
+
+Fix this.
+
+--------------------------------------------------
+1A. MERGE QUEUE
+--------------------------------------------------
+
+Add the appropriate:
+
+merge_group:
+
+trigger to .github/workflows/ci.yml.
+
+Ensure migration-contract runs on merge_group.
+
+Do not silently treat merge_group as local mode.
+
+The validator must explicitly recognize the native merge_group event.
+
+For merge_group, determine the correct immutable-history reference.
+
+Do NOT invent or trust an author-controlled reference.
+
+Inspect GitHub merge_group event semantics and the repository's existing
+merge-queue workflow patterns.
+
+Use an authoritative GitHub-provided SHA/reference.
+
+If immutable Gate B cannot be safely established for merge_group using
+the available event data, then:
+
+- Gate A/C/N must still run
+- immutable history must already have been enforced by the required PR
+  check
+- document the exact trust boundary
+
+But do not silently skip Gate B without an explicit architectural reason
+and test.
+
+Prefer re-validating history in merge_group if a trustworthy base
+reference can be established.
+
+--------------------------------------------------
+1B. REQUIRED STATUS CHECK
+--------------------------------------------------
+
+Inspect:
+
+scripts/verify-github-ruleset.sh
+.github/workflows/ruleset-audit.yml
+and any existing ruleset configuration/automation.
+
+Update the repository-side expected required status checks so the
+migration-contract job is REQUIRED.
+
+Expected check context should match the actual GitHub check name exactly:
+
+Migration contract (database-free)
+
+Do not guess the context name.
+
+Derive/verify it from the workflow job name.
+
+The ruleset audit must fail if this required context is absent.
+
+Preserve the existing required workflow-lint check.
+
+Do not weaken:
+- pull request requirement
+- merge queue requirement
+- strict required status check policy
+- bypass_actors == []
+
+--------------------------------------------------
+1C. SELF-PROTECTION
+--------------------------------------------------
+
+Add regression coverage proving:
+
+- ci.yml contains merge_group trigger
+- migration-contract is present for merge_group
+- ruleset audit expects migration-contract as a required status check
+- release-chain still depends on migration-contract
+- removal of the migration-contract requirement would fail tests/audit
+
+Do not rely only on comments/documentation.
+
+==================================================
+REQUIRED FIX 2 — P1-2
+ROBUST BASE-SHA ANCESTRY UNDER SHALLOW CHECKOUT
+==================================================
+
+Independent review reproduced a real false failure.
+
+Current behavior:
+
+checkout fetch-depth: 2
+
+then:
+
+git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+
+then validator performs:
+
+git merge-base --is-ancestor "$PR_BASE_SHA" HEAD
+
+Problem:
+
+if the recorded trusted base SHA is older than the current merge
+commit's first parent, the shallow graft can sever the ancestry chain.
+
+The base object exists but Git cannot prove ancestry.
+
+This causes legitimate PRs/job re-runs to fail.
+
+Fix this WITHOUT weakening the trust model.
+
+Critical invariants:
+
+- exact trusted base SHA remains authoritative
+- NEVER substitute branch tip for the recorded SHA
+- NEVER fall back to a mutable branch name as the comparison identity
+- ancestry proof remains mandatory where Gate B requires it
+- if ancestry cannot be proven, fail closed
+
+Use a bounded/deepening strategy.
+
+Possible safe shape:
+
+1. fetch exact trusted base SHA
+2. attempt ancestry proof
+3. if shallow history prevents proof, deepen history in controlled steps
+4. retry ancestry proof
+5. optionally unshallow only as final bounded fallback if justified
+6. still compare against the SAME exact trusted base SHA
+
+Do not change reference identity during retry.
+
+Do not simply remove merge-base --is-ancestor.
+
+Do not accept "object exists" as sufficient.
+
+--------------------------------------------------
+2A. REGRESSION TEST
+--------------------------------------------------
+
+Extend the existing synthetic Git shallow/merge-ref fixture.
+
+Required scenario:
+
+B0 -- B1 -- B2
+ \
+  F
+
+PR event records an older trusted base SHA.
+
+Merge ref/check-out history is shallow and based on a newer base tip.
+
+Initial shallow ancestry proof should be unable to prove B0 ancestry.
+
+After the new deepening strategy:
+
+- exact B0 remains the reference
+- ancestry becomes provable
+- legitimate PR validation succeeds
+
+Also test:
+
+- unrelated SHA remains rejected after deepening
+- nonexistent SHA remains rejected
+- no mutable branch fallback occurs
+
+==================================================
+FIX P2-1 — FAIL CLOSED ON PARTIAL GITHUB CONTEXT
+==================================================
+
+Independent review found:
+
+GITHUB_EVENT_NAME present
++
+GITHUB_ACTIONS unset
+
+currently degrades to local mode.
+
+Fix this.
+
+If GitHub-native event context is present, the validator must not enter
+local mode merely because GITHUB_ACTIONS is missing.
+
+At minimum consider:
+
+GITHUB_EVENT_NAME
+GITHUB_EVENT_PATH
+GITHUB_SHA
+GITHUB_REF
+
+If GitHub context indicates CI but required native context is incomplete,
+fail closed.
+
+Do not make local development inconvenient when none of the GitHub
+context variables are present.
+
+Add regression tests.
+
+==================================================
+FIX P2-2 — EVENT PAYLOAD AUTHORITY
+==================================================
+
+Where practical in this task, strengthen PR reference derivation by
+reading the native GitHub event payload from GITHUB_EVENT_PATH.
+
+For pull_request:
+
+derive pull_request.base.sha from the GitHub event JSON.
+
+Treat this as authoritative.
+
+If a workflow-provided compatibility env value is retained, require it
+to match the native payload rather than trusting it independently.
+
+Malformed/missing event JSON in GitHub PR mode must fail closed.
+
+Do not accept arbitrary event JSON paths in normal CLI arguments.
+
+Tests should use controlled temporary event payload fixtures.
+
+==================================================
+FIX P2-3 — STRUCTURAL WORKFLOW TESTS
+==================================================
+
+Current release-chain.test.ts validates workflow structure with fragile
+string slicing/regex.
+
+Improve this if the repository already has a safe YAML parser available.
+
+Prefer structural assertions:
+
+workflow.jobs["migration-contract"]
+workflow.jobs["release-chain"].needs
+workflow.jobs["migration-contract"].services
+workflow.on.pull_request
+workflow.on.merge_group
+
+Do not add a heavy dependency solely for this if an existing YAML parser
+is unavailable.
+
+If keeping textual assertions, make them narrowly scoped and document
+the limitation.
+
+Do not widen this into rewriting all workflow tests.
+
+==================================================
+FIX P2-4 — CAPABILITY GUARD POLICY FOR NEW CI TOOL
+==================================================
+
+Independent review found that:
+
+validate-ci-migration-contract.ts
+
+is not included in the P.2a capability guard.
+
+It legitimately needs:
+
+node:child_process
+
+to execute Git commands.
+
+Make the policy explicit.
+
+Preferred approach:
+
+extend the guard to include validate-ci-migration-contract.ts with a
+narrow, explicit allowance for Git subprocess execution only.
+
+Do NOT allow arbitrary shell capability.
+
+Allowed:
+- spawn/execFile style invocation of git with argv arrays
+  if that matches existing implementation
+
+Forbidden:
+- shell: true
+- sh -c
+- bash -c
+- eval
+- arbitrary command strings
+- DB/network/runtime imports
+- DATABASE_URL access beyond the explicit Gate N environment refusal
+
+If a single guard becomes overly complex, create a dedicated CI-tool
+capability test.
+
+The security property should be machine-tested, not merely documented.
+
+==================================================
+LOW-RISK HARDENING
+==================================================
+
+If clean and local to P.2b, also address:
+
+1. Gate N documentation:
+   Either widen DB environment detection or change README wording so it
+   accurately describes what is blocked.
+
+Prefer blocking obvious DB credential families if safe:
+
+DATABASE_URL
+*_DATABASE_URL
+DATABASE_URL_UNPOOLED
+POSTGRES_URL
+PGHOST
+PGPORT
+PGDATABASE
+PGUSER
+PGPASSWORD
+
+Be careful:
+CI may legitimately contain harmless PG variables elsewhere, but the
+migration-contract job should not need any.
+
+2. Add tests for:
+- historical symlink
+- gitlink/submodule
+- safeTreePath traversal
+- empty base → 000001
+- unsupported native event
+- CLI argument rejection
+- CRLF → LF
+
+3. Remove the accidentally committed inert task transcript under
+attached_assets/ if it was introduced only by P.2b and is not required
+by repository policy.
+
+Do NOT remove unrelated user assets.
+
+==================================================
+GITHUB ACTIONS OPERATIONAL PROOF
+==================================================
+
+After code changes and local validation, do NOT claim P.2b operationally
+closed solely from local tests.
+
+We require a real GitHub Actions run.
+
+At minimum the final report should identify that the next step is:
+
+1. push/PR the P.2b-FIX changes
+2. observe actual:
+   Migration contract (database-free)
+3. verify it passes in GitHub Actions
+4. verify release-chain waits for it
+5. verify ruleset sees it as required
+
+If practical in the existing development workflow and without bypassing
+user approval, prepare the code for that verification.
+
+Do not change repository settings outside code unless this task is
+already explicitly authorized to do so.
+
+==================================================
+VALIDATION
+==================================================
+
+Run:
+
+pnpm run test:migration-contract
+pnpm run test:schema-drift
+pnpm run test:release-chain
+pnpm run typecheck
+pnpm run test:github-workflows
+git diff --check
+
+Run exact database-free validator:
+
+env -u DATABASE_URL \
+    -u LUMERA_MIGRATION_DATABASE_URL \
+    pnpm run validate:ci:migration-contract
+
+Also run any ruleset-audit unit/static tests that can run safely without
+modifying GitHub settings.
+
+NO DATABASE TESTS.
+
+NO DATABASE CONNECTION.
+
+==================================================
+SELF-REVIEW
+==================================================
+
+Before finishing inspect:
+
+git status
+git diff
+git diff --check
+
+Confirm:
+
+- P1-1 fixed in code/configuration expectations
+- P1-2 fixed without weakening exact SHA trust
+- P2-1 fixed
+- P2-2 handled or explicitly justified
+- P2-3 handled or explicitly justified
+- P2-4 handled
+- no DB access
+- no migration created
+- no migration execution
+- no ledger
+- no adoption
+- no fingerprint changes
+- no canonical schema changes
+- no runtime/bootstrap changes
+- P.2c not started
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. exact files changed
+
+2. P1-1:
+   - merge_group behavior
+   - required status-check enforcement
+   - ruleset audit change
+
+3. P1-2:
+   - exact deepening strategy
+   - proof same base SHA remains authoritative
+   - regression scenario/result
+
+4. P2-1 event-context fix
+
+5. P2-2 native event payload behavior
+
+6. P2-3 workflow structural test result
+
+7. P2-4 capability guard result
+
+8. Gate N hardening/documentation
+
+9. additional tests added
+
+10. exact validation results
+
+11. GitHub Actions run status:
+    RUN / NOT YET RUN
+
+12. ruleset operational verification status:
+    VERIFIED / NOT YET VERIFIED
+
+Explicitly state:
+
+DATABASE CONNECTED: NO
+DATABASE MODIFIED: NO
+PRODUCTION DB ACCESSED: NO
+SHARED DEV DB ACCESSED: NO
+MIGRATION CREATED: NO
+MIGRATION EXECUTION ADDED: NO
+LEDGER ADDED: NO
+ADOPTION ADDED: NO
+FINGERPRINT V4 STARTED: NO
+CANONICAL SCHEMA CHANGED: NO
+APPLICATION RUNTIME CHANGED: NO
+BOOTSTRAP CHANGED: NO
+P.2c STARTED: NO
+
+Then:
+
+P.2b-FIX IMPLEMENTATION VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+READY FOR SHORT INDEPENDENT CLAUDE RE-REVIEW:
+YES / NO
+
+READY FOR REAL GITHUB ACTIONS VERIFICATION:
+YES / NO
+
+STOP.
+
+Do not start P.2c.

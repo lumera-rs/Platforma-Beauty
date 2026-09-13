@@ -232,6 +232,90 @@ function assertNoCapabilities(source: string): void {
   visit(tree);
 }
 
+// Deliberately specific to the CI validator's one Git helper; this is not a
+// data-flow analyzer and does not attempt to prove arbitrary TypeScript safe.
+function assertNarrowCiGitCapabilities(source: string): void {
+  const tree = ts.createSourceFile("ci-capability-fixture.ts", source, ts.ScriptTarget.Latest, true);
+  const forbiddenModule = /^(?:node:)?(?:pg|postgres|drizzle-kit|drizzle-orm|http|https|http2|net|tls|dgram|undici)(?:\/|$)|^(?:https?:|@workspace\/db(?:\/|$))|(?:^|\/)(?:bootstrap|runtime)(?:[./-]|$)/;
+
+  function moduleText(node: ts.Expression | undefined): string | undefined {
+    return node && ts.isStringLiteralLike(node) ? node.text : undefined;
+  }
+  function enclosingFunctionName(node: ts.Node): string | undefined {
+    let current: ts.Node | undefined = node.parent;
+    while (current) {
+      if (ts.isFunctionDeclaration(current)) return current.name?.text;
+      current = current.parent;
+    }
+    return undefined;
+  }
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const imported = moduleText(node.moduleSpecifier);
+      if (imported) {
+        assert.equal(forbiddenModule.test(imported), false, `forbidden module: ${imported}`);
+        if (/(?:^|:)child_process$/.test(imported)) {
+          assert.ok(ts.isImportDeclaration(node), "child_process may only be imported");
+          const names = node.importClause?.namedBindings;
+          assert.ok(names && ts.isNamedImports(names), "child_process requires a named import");
+          assert.equal(node.importClause?.name, undefined, "child_process does not allow a default import");
+          assert.deepEqual(names.elements.map(({ name }) => name.text), ["spawn"]);
+        }
+      }
+    } else if (ts.isExternalModuleReference(node)) {
+      const imported = moduleText(node.expression);
+      if (imported) assert.equal(forbiddenModule.test(imported), false, `forbidden module: ${imported}`);
+      assert.fail("require/import-equals is forbidden in the CI validator");
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const name = ts.isIdentifier(callee) ? callee.text
+        : ts.isPropertyAccessExpression(callee) ? callee.name.text
+        : undefined;
+      if (callee.kind === ts.SyntaxKind.ImportKeyword || name === "require") {
+        assert.fail("dynamic import/require is forbidden in the CI validator");
+      }
+      const regexExec = name === "exec"
+        && ts.isPropertyAccessExpression(callee)
+        && callee.expression.kind === ts.SyntaxKind.RegularExpressionLiteral;
+      if (name && /^(?:exec|execFile|execSync|execFileSync|spawnSync|fetch|eval|Function)$/.test(name)
+        && !regexExec) {
+        assert.fail(`forbidden call: ${name}`);
+      }
+      if (name === "spawn") {
+        assert.equal(enclosingFunctionName(node), "gitCommand", "spawn is allowed only in gitCommand");
+        assert.ok(ts.isStringLiteral(node.arguments[0]!) && node.arguments[0].text === "git",
+          "spawn executable must be literal git");
+        assert.ok(ts.isIdentifier(node.arguments[1]!)
+          && node.arguments[1].text === "argumentsToPass",
+        "spawn argv must be the gitCommand argv parameter");
+        const options = node.arguments[2];
+        assert.ok(options && ts.isObjectLiteralExpression(options), "spawn options must be literal");
+        const shell = options.properties.find((property) =>
+          ts.isPropertyAssignment(property)
+          && ts.isIdentifier(property.name)
+          && property.name.text === "shell");
+        assert.ok(shell && ts.isPropertyAssignment(shell)
+          && shell.initializer.kind === ts.SyntaxKind.FalseKeyword,
+        "spawn must explicitly set shell: false");
+      }
+      if (name === "gitCommand" && enclosingFunctionName(node) !== "gitCommand") {
+        assert.ok(ts.isArrayLiteralExpression(node.arguments[0]!),
+          "gitCommand argv must be an array literal at every call site");
+      }
+    } else if (ts.isNewExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "Function") {
+      assert.fail("new Function is forbidden");
+    } else if (ts.isPropertyAssignment(node)
+      && ((ts.isIdentifier(node.name) && node.name.text === "shell")
+        || (ts.isStringLiteralLike(node.name) && node.name.text === "shell"))) {
+      assert.notEqual(node.initializer.kind, ts.SyntaxKind.TrueKeyword, "shell: true is forbidden");
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+}
+
 test("implementation has no database, network, drizzle-kit, bootstrap, or shell capability", async () => {
   const sourceFiles = [
     new URL("./contract.ts", import.meta.url),
@@ -242,6 +326,36 @@ test("implementation has no database, network, drizzle-kit, bootstrap, or shell 
     const source = await readFile(file, "utf8");
     assert.doesNotThrow(() => assertNoCapabilities(source), file.pathname);
   }
+});
+
+test("CI validator has only the narrow literal-git subprocess capability", async () => {
+  const source = await readFile(
+    new URL("./validate-ci-migration-contract.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotThrow(() => assertNarrowCiGitCapabilities(source));
+});
+
+test("CI capability guard rejects arbitrary executables, dynamic argv, shells, eval, and imports", () => {
+  for (const source of [
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("node", argumentsToPass, { shell: false }); }',
+    'import { spawn } from "node:child_process"; const args = ["status"]; spawn("git", args, { shell: false });',
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("git", argumentsToPass, { shell: true }); }',
+    'import { execFile } from "node:child_process"; execFile("git", ["status"]);',
+    'import { spawn } from "node:child_process"; function gitCommand(argumentsToPass: string[]) { spawn("git", argumentsToPass, { shell: false }); } gitCommand(dynamicArgs);',
+    'import database from "@workspace/db";',
+    'import capability, { spawn } from "node:child_process";',
+    'import network from "node:https";',
+    'import runtime from "../runtime";',
+    'exec("git status");',
+    'some.exec("git status");',
+    'eval("code");',
+    'new Function("code");',
+  ]) assert.throws(
+    () => assertNarrowCiGitCapabilities(source),
+    () => true,
+    source,
+  );
 });
 
 test("capability guard rejects actual pg imports and requires without executing them", () => {

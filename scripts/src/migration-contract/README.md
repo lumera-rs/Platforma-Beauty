@@ -55,11 +55,27 @@ including the directive header, never over the parsed body.
 
 `pnpm run validate:ci:migration-contract` accepts no path arguments. When run
 locally it validates only the complete working migration set. In Branch CI,
-the workflow supplies the event name and, for pull requests, the exact base
-commit SHA from the GitHub event after fetching only that immutable commit.
-Pull requests compare protected history; pushes and manual dispatches validate
-the current set only. The command refuses every nonempty `DATABASE_URL`-style
-environment variable and removes those variables from its Git subprocesses.
-Inside GitHub Actions, the native `GITHUB_EVENT_NAME` is authoritative; an
-optional custom event value must match it, and missing native context fails
-closed. Local mode is available only outside GitHub Actions.
+the native event payload is authoritative: pull requests use
+`pull_request.base.sha` and merge groups use `merge_group.base_sha`. The
+workflow compatibility base value is required for pull requests and merge
+groups, and must equal the corresponding native payload SHA. The validator
+fetches only that exact SHA and retries ancestry proof with bounded deepen
+counts of 32, 128, and 512;
+it never substitutes a branch or performs an unbounded/full fetch. Pull
+requests and merge groups compare protected history; pushes and manual
+dispatches validate the current set only.
+
+The command rejects nonempty `DATABASE_URL`, `*_DATABASE_URL`,
+`DATABASE_URL_UNPOOLED`, `POSTGRES_URL`, `PGHOST`, `PGPORT`, `PGDATABASE`,
+`PGUSER`, and `PGPASSWORD`, and removes those names from Git subprocesses.
+If any native GitHub context variable is present, all of `GITHUB_ACTIONS=true`,
+`GITHUB_EVENT_NAME`, `GITHUB_EVENT_PATH`, `GITHUB_SHA`, and `GITHUB_REF` are
+required. The payload must be valid JSON, and the optional custom event value
+must match the native event. Local mode is available only when no native
+GitHub context is present.
+
+The AST capability test is intentionally narrow rather than a general-purpose
+security analyzer. It allows this CI validator's single `spawn("git", argv)`
+helper with array-literal call sites and `shell: false`, while rejecting other
+executables, shell enabling, DB/network/runtime imports, eval-like execution,
+and unexpected subprocess forms.
