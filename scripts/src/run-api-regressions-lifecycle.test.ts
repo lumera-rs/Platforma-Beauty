@@ -18,6 +18,7 @@ import {
   runIsolatedApiSuiteCommand,
   runIsolatedBrowserSuiteCommand,
 } from "./run-isolated-browser-suite";
+import { redactDatabaseCommandOutput } from "./safe-child-process-output";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -43,6 +44,18 @@ const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 type ChildExit = {
   code: number | null;
   signal: NodeJS.Signals | null;
+};
+
+type LifecycleChildOutput = {
+  stdout: string;
+  stderr: string;
+};
+
+type LifecycleWaitContext = {
+  child: ChildProcess;
+  phase: string;
+  progressPath?: string;
+  getChildOutput: () => LifecycleChildOutput;
 };
 
 assert.ok(databaseUrl, "DATABASE_URL is required for the API regression lifecycle test.");
@@ -73,15 +86,285 @@ async function waitForFile(filePath: string, timeoutMilliseconds = 60_000): Prom
 type LifecycleMarkerWaiter = (
   filePath: string,
   timeoutMilliseconds?: number,
+  context?: LifecycleWaitContext,
 ) => Promise<void>;
+
+function captureLifecycleChildOutput(child: ChildProcess): LifecycleChildOutput {
+  const output: LifecycleChildOutput = { stdout: "", stderr: "" };
+  child.stdout?.on("data", (chunk: Buffer) => {
+    output.stdout += chunk.toString();
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    output.stderr += chunk.toString();
+  });
+  return output;
+}
+
+function formatLifecycleChildOutput(output: LifecycleChildOutput): string {
+  const stdout = redactDatabaseCommandOutput(output.stdout).trim();
+  const stderr = redactDatabaseCommandOutput(output.stderr).trim();
+  return [
+    `stdout:\n${stdout || "<none>"}`,
+    `stderr:\n${stderr || "<none>"}`,
+  ].join("\n");
+}
+
+async function readLifecycleProgress(progressPath: string | undefined): Promise<{
+  content: string;
+  lastPhase?: string;
+}> {
+  if (!progressPath) return { content: "" };
+  let rawContent: string;
+  try {
+    rawContent = await readFile(progressPath, "utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return { content: "" };
+    }
+    return {
+      content: `<progress log read failed: ${redactDatabaseCommandOutput(
+        error instanceof Error ? error.message : String(error),
+      )}>`,
+    };
+  }
+  const content = redactDatabaseCommandOutput(rawContent).trim();
+  if (!content) return { content: "" };
+
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lastLine = lines.at(-1);
+  const lastPhase = lastLine?.replace(/^\S+\s+/, "") || lastLine;
+  return { content, lastPhase };
+}
+
+function formatLifecycleDiagnostics(
+  context: LifecycleWaitContext | undefined,
+  progress: { content: string; lastPhase?: string },
+): string {
+  const output = context
+    ? formatLifecycleChildOutput(context.getChildOutput())
+    : "stdout/stderr: <unavailable>";
+  return [
+    "Child diagnostics:",
+    output,
+    `Lifecycle progress${context?.progressPath ? ` (${context.progressPath})` : ""}:`,
+    progress.content || "<none>",
+    `Last observed lifecycle progress phase: ${progress.lastPhase || "<none>"}`,
+  ].join("\n");
+}
+
+function getImmediateChildExit(child: ChildProcess): ChildExit | undefined {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return { code: child.exitCode, signal: child.signalCode };
+  }
+  return undefined;
+}
+
+async function markerCanBeRead(filePath: string): Promise<boolean> {
+  try {
+    await readFile(filePath);
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function waitForLifecycleMarker(
+  filePath: string,
+  timeoutMilliseconds = 60_000,
+  context?: LifecycleWaitContext,
+): Promise<void> {
+  if (!context) {
+    await waitForFile(filePath, timeoutMilliseconds);
+    return;
+  }
+
+  type MarkerWaitResult = "marker" | "cancelled";
+  type ChildWaitResult =
+    | { kind: "exit"; exit: ChildExit }
+    | { kind: "error"; error: unknown }
+    | { kind: "cancelled" };
+
+  let stopMarkerWait: () => void = () => undefined;
+  let stopChildWait: () => void = () => undefined;
+  const createDiagnosticError = async (
+    message: string,
+    exit?: ChildExit,
+    error?: unknown,
+  ): Promise<Error> => {
+    const progress = await readLifecycleProgress(context.progressPath);
+    const exitDetails = exit
+      ? `Child exit code: ${exit.code ?? "<none>"}\nChild signal: ${exit.signal ?? "<none>"}`
+      : "";
+    const errorDetails = error
+      ? `Child error: ${redactDatabaseCommandOutput(error instanceof Error ? error.message : String(error))}`
+      : "";
+    return new Error([
+      message,
+      `Awaited lifecycle phase: ${context.phase}`,
+      `Awaited lifecycle marker: ${filePath}`,
+      exitDetails,
+      errorDetails,
+      formatLifecycleDiagnostics(context, progress),
+    ].filter(Boolean).join("\n"));
+  };
+
+  const markerWait = new Promise<MarkerWaitResult>((resolve, reject) => {
+    let stopped = false;
+    let pollTimer: NodeJS.Timeout | undefined;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      if (pollTimer !== undefined) clearTimeout(pollTimer);
+      if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
+      resolve("cancelled");
+    };
+    stopMarkerWait = stop;
+
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        if (await markerCanBeRead(filePath)) {
+          if (!stopped) resolve("marker");
+          return;
+        }
+      } catch (error) {
+        if (!stopped) {
+          reject(await createDiagnosticError(
+            `Could not read lifecycle marker ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+          ));
+        }
+        return;
+      }
+      if (!stopped) pollTimer = setTimeout(() => void poll(), 100);
+    };
+
+    const onTimeout = async () => {
+      if (stopped) return;
+      try {
+        // Preserve marker-vs-timeout ordering when the marker is created at
+        // the end of the per-phase wait budget.
+        if (await markerCanBeRead(filePath)) {
+          if (!stopped) resolve("marker");
+          return;
+        }
+      } catch (error) {
+        if (!stopped) {
+          reject(await createDiagnosticError(
+            `Could not read lifecycle marker after its wait budget expired: ${error instanceof Error ? error.message : String(error)}`,
+          ));
+        }
+        return;
+      }
+      if (!stopped) {
+        reject(await createDiagnosticError(
+          `Timed out waiting for lifecycle phase marker ${filePath}.`,
+        ));
+      }
+    };
+
+    pollTimer = setTimeout(() => void poll(), 0);
+    timeoutTimer = setTimeout(() => void onTimeout(), timeoutMilliseconds);
+  });
+
+  const childWait = new Promise<ChildWaitResult>((resolve) => {
+    let stopped = false;
+    let exitListenerAttached = false;
+    let errorListenerAttached = false;
+
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      if (exitListenerAttached) {
+        context.child.removeListener("exit", onExit);
+        exitListenerAttached = false;
+      }
+      if (errorListenerAttached) {
+        context.child.removeListener("error", onError);
+        errorListenerAttached = false;
+      }
+      resolve({ kind: "cancelled" });
+    };
+    stopChildWait = stop;
+
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (!stopped) resolve({ kind: "exit", exit: { code, signal } });
+    };
+    const onError = (error: Error) => {
+      if (!stopped) resolve({ kind: "error", error });
+    };
+
+    // Check state before subscribing, then check it again after subscribing.
+    // The second check closes the small race where the process exits between
+    // the first state read and event-listener registration.
+    const alreadyExited = getImmediateChildExit(context.child);
+    if (!alreadyExited) {
+      context.child.once("exit", onExit);
+      exitListenerAttached = true;
+      context.child.once("error", onError);
+      errorListenerAttached = true;
+      const exitedDuringSubscription = getImmediateChildExit(context.child);
+      if (exitedDuringSubscription) onExit(exitedDuringSubscription.code, exitedDuringSubscription.signal);
+    } else {
+      onExit(alreadyExited.code, alreadyExited.signal);
+    }
+  });
+
+  try {
+    const winner = await Promise.race([markerWait, childWait]);
+    stopMarkerWait();
+    stopChildWait();
+    if (winner === "marker") return;
+    if (winner === "cancelled" || winner.kind === "cancelled") {
+      throw new Error("Lifecycle marker wait was cancelled before a result.");
+    }
+    if (winner.kind === "error") {
+      throw await createDiagnosticError(
+        "The spawned browser-suite runner failed before the awaited lifecycle marker was created.",
+        undefined,
+        winner.error,
+      );
+    }
+
+    // An exit event can be delivered before the filesystem event that
+    // created the marker is observed by this process. Read it one final time
+    // before classifying the producer as unreachable.
+    try {
+      if (await markerCanBeRead(filePath)) return;
+    } catch (error) {
+      throw await createDiagnosticError(
+        `Could not read lifecycle marker after the child exited: ${error instanceof Error ? error.message : String(error)}`,
+        winner.exit,
+      );
+    }
+    throw await createDiagnosticError(
+      "The spawned browser-suite runner exited before the awaited lifecycle marker was created.",
+      winner.exit,
+    );
+  } finally {
+    stopMarkerWait();
+    stopChildWait();
+  }
+}
 
 async function waitForBrowserLifecyclePhase(
   setupReadyPath: string,
   phaseMarkerPath: string,
-  waitForMarker: LifecycleMarkerWaiter = waitForFile,
+  context: LifecycleWaitContext,
+  waitForMarker: LifecycleMarkerWaiter = waitForLifecycleMarker,
 ): Promise<void> {
-  await waitForMarker(setupReadyPath);
-  await waitForMarker(phaseMarkerPath);
+  await waitForMarker(setupReadyPath, 60_000, {
+    ...context,
+    phase: "browser setup/preflight",
+  });
+  await waitForMarker(phaseMarkerPath, 60_000, {
+    ...context,
+    phase: "browser lifecycle phase",
+  });
 }
 
 async function waitForExit(child: ChildProcess, timeoutMilliseconds = 60_000): Promise<ChildExit> {
@@ -1255,6 +1538,8 @@ async function runForcedBrowserStopScenario(): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-forced-stop-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const setupReadyPath = path.join(temporaryRoot, "setup-ready");
+  const progressPath = path.join(temporaryRoot, "progress.log");
   const frontendPidPath = path.join(temporaryRoot, "frontend-pid");
   const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
   const browserRunnerScriptPath = path.join(temporaryRoot, "run-browser-suite.ts");
@@ -1305,6 +1590,8 @@ void runIsolatedBrowserSuiteCommand({
       LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
       LUMERA_LIFECYCLE_FRONTEND_PID: frontendPidPath,
       LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
+      LUMERA_LIFECYCLE_SETUP_READY_FILE: setupReadyPath,
+      LUMERA_LIFECYCLE_PROGRESS_FILE: progressPath,
       LUMERA_LIFECYCLE_REAL_NODE: process.execPath,
       LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
     };
@@ -1313,11 +1600,14 @@ void runIsolatedBrowserSuiteCommand({
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let output = "";
-    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    const childOutput = captureLifecycleChildOutput(child);
 
-    await waitForFile(phaseMarkerPath);
+    await waitForBrowserLifecyclePhase(setupReadyPath, phaseMarkerPath, {
+      child,
+      progressPath,
+      getChildOutput: () => childOutput,
+      phase: "browser setup/preflight",
+    });
     staleManifest = await readManifest(manifestDirectory);
     staleProcessMarker = staleManifest.manifest.processMarker;
     assert.ok(staleProcessMarker, "The browser process marker was not recorded.");
@@ -1326,7 +1616,11 @@ void runIsolatedBrowserSuiteCommand({
     const isolatedDatabaseUrl = new URL(databaseUrl!);
     isolatedDatabaseUrl.pathname = `/${staleDatabaseName}`;
     const testDatabaseUrl = isolatedDatabaseUrl.toString();
-    assert.equal(await databaseExists(staleDatabaseName), true, `Disposable database was not created.\n${output}`);
+    assert.equal(
+      await databaseExists(staleDatabaseName),
+      true,
+      `Disposable database was not created.\n${formatLifecycleChildOutput(childOutput)}`,
+    );
     await waitForOwnedTestServers(testDatabaseUrl);
 
     const frontendPid = Number(await readFile(frontendPidPath, "utf8"));
@@ -1350,7 +1644,11 @@ void runIsolatedBrowserSuiteCommand({
 
     process.kill(staleManifest.manifest.ownerPid, "SIGKILL");
     const exit = await waitForExit(child);
-    assert.notEqual(exit.code, 0, `Browser runner was not force-stopped.\n${output}`);
+    assert.notEqual(
+      exit.code,
+      0,
+      `Browser runner was not force-stopped.\n${formatLifecycleChildOutput(childOutput)}`,
+    );
     await waitForProcess(frontendPid, "The orphaned disposable browser frontend");
     await waitForProcess(blockerPid, "The orphaned disposable Playwright check");
 
@@ -1434,6 +1732,8 @@ void runIsolatedBrowserSuiteCommand({
     await Promise.all(databaseNames.map((databaseName) => dropDatabase(databaseName).catch(() => undefined)));
     await rm(manifestDirectory, { recursive: true, force: true });
     await unlink(phaseMarkerPath).catch(() => undefined);
+    await unlink(setupReadyPath).catch(() => undefined);
+    await unlink(progressPath).catch(() => undefined);
     await unlink(frontendPidPath).catch(() => undefined);
     await unlink(blockerPidPath).catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
@@ -1522,24 +1822,27 @@ void runIsolatedBrowserSuiteCommand({
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let output = "";
-    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    const childOutput = captureLifecycleChildOutput(child);
 
     try {
-      await waitForBrowserLifecyclePhase(setupReadyPath, phaseMarkerPath);
+      await waitForBrowserLifecyclePhase(setupReadyPath, phaseMarkerPath, {
+        child,
+        progressPath,
+        getChildOutput: () => childOutput,
+        phase: "browser setup/preflight",
+      });
     } catch (error) {
       const lifecycleProgress = await readFile(progressPath, "utf8").catch(() => "");
       console.error(
         `Browser lifecycle progress before phase-marker wait failed:\n${
-          lifecycleProgress.trim() || "<none>"
-        }\nChild output:\n${output || "<none>"}`,
+          redactDatabaseCommandOutput(lifecycleProgress).trim() || "<none>"
+        }\n${formatLifecycleChildOutput(childOutput)}`,
       );
       throw error;
     }
     const lifecycleProgress = await readFile(progressPath, "utf8").catch(() => "");
     if (lifecycleProgress) {
-      console.error(`Browser lifecycle progress:\n${lifecycleProgress.trim()}`);
+      console.error(`Browser lifecycle progress:\n${redactDatabaseCommandOutput(lifecycleProgress).trim()}`);
     }
     const manifest = await readManifest(manifestDirectory);
     manifestPath = manifest.manifestPath;
@@ -1547,7 +1850,11 @@ void runIsolatedBrowserSuiteCommand({
     const isolatedDatabaseUrl = new URL(databaseUrl!);
     isolatedDatabaseUrl.pathname = `/${databaseName}`;
     const testDatabaseUrl = isolatedDatabaseUrl.toString();
-    assert.equal(await databaseExists(databaseName), true, `Disposable database was not created.\n${output}`);
+    assert.equal(
+      await databaseExists(databaseName),
+      true,
+      `Disposable database was not created.\n${formatLifecycleChildOutput(childOutput)}`,
+    );
     await waitForOwnedTestServers(testDatabaseUrl);
 
     const frontendPid = Number(await readFile(frontendPidPath, "utf8"));
@@ -1573,15 +1880,19 @@ void runIsolatedBrowserSuiteCommand({
 
     child.kill(signal);
     const exit = await waitForExit(child);
-    assert.equal(exit.signal, null, `Runner was terminated directly instead of handling ${signal}.\n${output}`);
+    assert.equal(
+      exit.signal,
+      null,
+      `Runner was terminated directly instead of handling ${signal}.\n${formatLifecycleChildOutput(childOutput)}`,
+    );
     const expectedExitCode = 128 + (signal === "SIGINT" ? 2 : 15);
     if (failDatabaseCleanup) {
-      assert.equal(exit.code, 1, `Cleanup failure was not reported.\n${output}`);
+      assert.equal(exit.code, 1, `Cleanup failure was not reported.\n${formatLifecycleChildOutput(childOutput)}`);
     } else {
       assert.equal(
         exit.code,
         expectedExitCode,
-        `Runner did not report ${signal} status ${expectedExitCode}.\n${output}`,
+        `Runner did not report ${signal} status ${expectedExitCode}.\n${formatLifecycleChildOutput(childOutput)}`,
       );
     }
 
@@ -2192,42 +2503,167 @@ test("failed disposable API test database cleanup remains recoverable", async ()
   await runFailedApiSuiteCleanupScenario();
 });
 
-test("browser lifecycle phase waits isolate delayed preflight from the marker budget", async () => {
-  const setupDelayMilliseconds = 45_000;
-  const lifecycleDelayMilliseconds = 45_000;
-  const observedWaits: Array<{ filePath: string; timeoutMilliseconds: number }> = [];
-  let virtualNow = 0;
-  const waitForMarker: LifecycleMarkerWaiter = async (filePath, timeoutMilliseconds = 60_000) => {
-    observedWaits.push({ filePath, timeoutMilliseconds });
-    const delay = filePath === "setup-ready"
-      ? setupDelayMilliseconds
-      : lifecycleDelayMilliseconds;
-    const phaseStart = virtualNow;
-    virtualNow += delay;
-    assert.ok(
-      virtualNow - phaseStart <= timeoutMilliseconds,
-      `The ${filePath} phase exceeded its independent marker budget.`,
-    );
-  };
+async function stopLifecycleFixture(child: ChildProcess | undefined): Promise<void> {
+  if (!child || (child.exitCode === null && child.signalCode === null)) {
+    child?.kill("SIGKILL");
+  }
+  if (child) await waitForExit(child, 5_000).catch(() => undefined);
+}
 
-  await waitForBrowserLifecyclePhase("setup-ready", "phase-reached", waitForMarker);
-  assert.deepEqual(observedWaits, [
-    { filePath: "setup-ready", timeoutMilliseconds: 60_000 },
-    { filePath: "phase-reached", timeoutMilliseconds: 60_000 },
-  ]);
-  assert.equal(virtualNow, setupDelayMilliseconds + lifecycleDelayMilliseconds);
-  assert.ok(
-    setupDelayMilliseconds + lifecycleDelayMilliseconds > 60_000,
-    "The delayed fixture must exceed the old aggregate marker budget.",
-  );
-  assert.throws(
-    () => {
-      if (setupDelayMilliseconds + lifecycleDelayMilliseconds > 60_000) {
-        throw new Error("Old aggregate phase-marker wait would time out.");
-      }
-    },
-    /Old aggregate phase-marker wait would time out/,
-  );
+test("browser lifecycle marker waiter passes when a marker appears while the child remains alive", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-lifecycle-waiter-pass-"));
+  const markerPath = path.join(temporaryRoot, "setup-ready");
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const fs = require("node:fs"); setTimeout(() => fs.writeFileSync(${JSON.stringify(markerPath)}, "ready"), 20); setInterval(() => {}, 1000);`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const childOutput = captureLifecycleChildOutput(child);
+    await waitForLifecycleMarker(markerPath, 1_000, {
+      child,
+      phase: "browser setup/preflight",
+      getChildOutput: () => childOutput,
+    });
+    assert.equal(await readFile(markerPath, "utf8"), "ready");
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+  } finally {
+    await stopLifecycleFixture(child);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser lifecycle marker waiter fails immediately with child diagnostics when the child exits first", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-lifecycle-waiter-exit-"));
+  const markerPath = path.join(temporaryRoot, "phase-reached");
+  const progressPath = path.join(temporaryRoot, "progress.log");
+  await writeFile(progressPath, "100 schema-start\n101 schema-failed\n", "utf8");
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        "process.stdout.write('child stdout\\n'); process.stderr.write('postgresql://user:pass@example.test/db\\n'); setTimeout(() => process.exit(7), 20);",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const childOutput = captureLifecycleChildOutput(child);
+    await assert.rejects(
+      waitForLifecycleMarker(markerPath, 1_000, {
+        child,
+        phase: "browser lifecycle phase",
+        progressPath,
+        getChildOutput: () => childOutput,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /exited before the awaited lifecycle marker was created/);
+        assert.match(error.message, /Child exit code: 7/);
+        assert.match(error.message, /Child signal: <none>/);
+        assert.match(error.message, /Awaited lifecycle phase: browser lifecycle phase/);
+        assert.match(error.message, new RegExp(`Awaited lifecycle marker: ${markerPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+        assert.match(error.message, /child stdout/);
+        assert.doesNotMatch(error.message, /user:pass@example\.test/);
+        assert.match(error.message, /<redacted-database-url>/);
+        assert.match(error.message, /schema-failed/);
+        assert.match(error.message, /Last observed lifecycle progress phase: schema-failed/);
+        return true;
+      },
+    );
+  } finally {
+    await stopLifecycleFixture(child);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser lifecycle marker wins when the marker is created concurrently with child exit", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-lifecycle-waiter-concurrent-"));
+  const markerPath = path.join(temporaryRoot, "phase-reached");
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "phase-reached"); process.exit(9);`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const childOutput = captureLifecycleChildOutput(child);
+    await waitForLifecycleMarker(markerPath, 1_000, {
+      child,
+      phase: "browser lifecycle phase",
+      getChildOutput: () => childOutput,
+    });
+    assert.equal(await readFile(markerPath, "utf8"), "phase-reached");
+    const exit = await waitForExit(child);
+    assert.equal(exit.code, 9);
+  } finally {
+    await stopLifecycleFixture(child);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser lifecycle marker waiter remains fail-closed when a live child never creates the marker", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-lifecycle-waiter-timeout-"));
+  const markerPath = path.join(temporaryRoot, "phase-reached");
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const childOutput = captureLifecycleChildOutput(child);
+    await assert.rejects(
+      waitForLifecycleMarker(markerPath, 150, {
+        child,
+        phase: "browser lifecycle phase",
+        getChildOutput: () => childOutput,
+      }),
+      /Timed out waiting for lifecycle phase marker/,
+    );
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+  } finally {
+    await stopLifecycleFixture(child);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("browser lifecycle marker waiter does not accept an unregistered marker for another phase", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-lifecycle-waiter-wrong-marker-"));
+  const expectedMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const incorrectMarkerPath = path.join(temporaryRoot, "setup-ready");
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(incorrectMarkerPath)}, "setup-ready"); setInterval(() => {}, 1000);`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const childOutput = captureLifecycleChildOutput(child);
+    await assert.rejects(
+      waitForLifecycleMarker(expectedMarkerPath, 150, {
+        child,
+        phase: "browser lifecycle phase",
+        getChildOutput: () => childOutput,
+      }),
+      /Timed out waiting for lifecycle phase marker/,
+    );
+    assert.equal(await readFile(incorrectMarkerPath, "utf8"), "setup-ready");
+    await assert.rejects(readFile(expectedMarkerPath), { code: "ENOENT" });
+  } finally {
+    await stopLifecycleFixture(child);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 });
 
 test("SIGINT during disposable API regression schema setup cleans every resource", async () => {
