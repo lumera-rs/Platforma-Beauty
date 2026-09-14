@@ -113,13 +113,31 @@ async function materializeReference(
   environment: NodeJS.ProcessEnv,
   destination: string,
 ): Promise<void> {
-  await gitCommand(["cat-file", "-e", `${commit}:${MIGRATION_PATH}`], repoRoot, environment);
+  const rootListing = await gitCommand(
+    ["ls-tree", "-z", "--full-tree", commit, "--", MIGRATION_PATH],
+    repoRoot,
+    environment,
+  );
+  const rootEntries = rootListing.stdout.subarray(0, rootListing.stdout.length - (
+    rootListing.stdout.at(-1) === 0 ? 1 : 0
+  )).toString("binary").split("\0").filter(Boolean);
+  if (rootEntries.length > 1) {
+    throw new Error("Malformed protected migration root tree listing");
+  }
   const listing = await gitCommand(
     ["ls-tree", "-rz", "--full-tree", commit, "--", MIGRATION_PATH],
     repoRoot,
     environment,
   );
   await mkdir(destination, { recursive: true });
+  if (rootEntries.length === 0) return;
+  const rootEntry = Buffer.from(rootEntries[0]!, "binary");
+  const rootTab = rootEntry.indexOf(0x09);
+  if (rootTab < 0
+    || !/^040000 tree [0-9a-f]+$/.test(rootEntry.subarray(0, rootTab).toString("ascii"))
+    || !rootEntry.subarray(rootTab + 1).equals(Buffer.from(MIGRATION_PATH, "utf8"))) {
+    throw new Error(`Protected migration path is not a tree: ${MIGRATION_PATH}`);
+  }
   const entries = listing.stdout.subarray(0, listing.stdout.length - (
     listing.stdout.at(-1) === 0 ? 1 : 0
   )).toString("binary").split("\0");

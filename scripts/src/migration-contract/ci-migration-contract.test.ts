@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -59,9 +59,12 @@ async function repository(withMigration = true): Promise<{ root: string; base: s
   await git(root, "init", "-q");
   await git(root, "config", "user.email", "migration-contract@example.invalid");
   await git(root, "config", "user.name", "Migration Contract Test");
-  await mkdir(path.join(root, "lib", "db", "migrations"), { recursive: true });
-  await writeFile(path.join(root, "lib", "db", "migrations", "README.md"), "Migrations.\n");
-  if (withMigration) await writeMigration(root, "000001_create_customer_profile");
+  await writeFile(path.join(root, "base.txt"), "base\n");
+  if (withMigration) {
+    await mkdir(path.join(root, "lib", "db", "migrations"), { recursive: true });
+    await writeFile(path.join(root, "lib", "db", "migrations", "README.md"), "Migrations.\n");
+    await writeMigration(root, "000001_create_customer_profile");
+  }
   await git(root, "add", ".");
   await execFileAsync("git", ["commit", "-qm", "base"], {
     cwd: root,
@@ -117,6 +120,28 @@ async function commitTreeAt(
   return result.stdout.trim();
 }
 
+async function malformedMigrationRoot(
+  repo: { root: string; base: string },
+  kind: "blob" | "symlink" | "gitlink",
+): Promise<string> {
+  const migrationRoot = path.join(repo.root, "lib", "db", "migrations");
+  await rm(migrationRoot, { recursive: true, force: true });
+  await git(repo.root, "rm", "-r", "--cached", "-q", "lib/db/migrations");
+  if (kind === "blob") {
+    await writeFile(migrationRoot, "not a migration tree\n");
+  } else if (kind === "symlink") {
+    await writeFile(path.join(repo.root, "target.sql"), migrationSql("000001"));
+    await symlink("../../target.sql", migrationRoot);
+  } else {
+    await git(repo.root, "update-index", "--add", "--cacheinfo", "160000", repo.base, "lib/db/migrations");
+  }
+  if (kind === "gitlink") {
+    await git(repo.root, "commit", "-qm", `malformed ${kind}`);
+    return await git(repo.root, "rev-parse", "HEAD");
+  }
+  return await commit(repo.root, `malformed ${kind}`);
+}
+
 type NativeEvent = "pull_request" | "merge_group" | "push" | "workflow_dispatch";
 
 async function ciEnvironment(
@@ -161,9 +186,14 @@ test("native PR and merge_group validate payload-authoritative immutable history
   }
 });
 
-test("empty protected base permits the first 000001 append", async (t) => {
+test("trusted base predating the migration directory permits additions but not current contract violations", async (t) => {
   const repo = await repository(false);
   t.after(() => rm(repo.root, { recursive: true, force: true }));
+  assert.equal(
+    await git(repo.root, "ls-tree", "--full-tree", repo.base, "--", "lib/db/migrations"),
+    "",
+    "the trusted base must genuinely predate the migration directory",
+  );
   await writeMigration(repo.root, "000001_create_customer_profile");
   await commit(repo.root);
   const result = await runCiMigrationContract({
@@ -172,6 +202,14 @@ test("empty protected base permits the first 000001 append", async (t) => {
   });
   assert.equal(result.protectedMigrations, 0);
   assert.deepEqual(result.current.map(({ sequence }) => sequence), [1]);
+  await writeMigration(repo.root, "000003_add_customer_preferences", migrationSql("000003"));
+  await assert.rejects(
+    runCiMigrationContract({
+      repoRoot: repo.root,
+      environment: await ciEnvironment(repo.root, "pull_request", repo.base),
+    }),
+    /gap/i,
+  );
 });
 
 test("PR rejects edits, removals, renames, malformed additions, gaps, and CRLF rewrites", async (t) => {
@@ -356,6 +394,29 @@ test("historical symlinks and gitlinks are rejected during native materializatio
           environment: await ciEnvironment(repo.root, "pull_request", badBase),
         }),
         /not a regular file/i,
+      );
+    });
+  }
+});
+
+test("historical migration roots must be trees, not blobs, symlinks, or gitlinks", async (t) => {
+  for (const kind of ["blob", "symlink", "gitlink"] as const) {
+    await t.test(kind, async (t) => {
+      const repo = await repository();
+      t.after(() => rm(repo.root, { recursive: true, force: true }));
+      const badBase = await malformedMigrationRoot(repo, kind);
+      await rm(path.join(repo.root, "lib", "db", "migrations"), { recursive: true, force: true });
+      if (kind === "gitlink") {
+        await git(repo.root, "rm", "-r", "--cached", "-q", "lib/db/migrations");
+      }
+      await writeMigration(repo.root, "000001_create_customer_profile");
+      await commit(repo.root, "regular current");
+      await assert.rejects(
+        runCiMigrationContract({
+          repoRoot: repo.root,
+          environment: await ciEnvironment(repo.root, "pull_request", badBase),
+        }),
+        /not a tree/i,
       );
     });
   }
