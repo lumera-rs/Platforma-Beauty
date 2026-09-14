@@ -367,6 +367,15 @@ async function run(): Promise<void> {
     )).length;
     const expectedNewSalonsThisMonth = salons.filter((salon) => salon.createdAt >= thisMonthStart).length;
 
+    // Measure warm endpoint latency separately from first-request bootstrap.
+    const warmupResponse = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
+    const warmupResponseText = await warmupResponse.text();
+    assert.equal(
+      warmupResponse.status,
+      200,
+      `GET /admin/summary warm-up: ${warmupResponseText.slice(0, 500)}`,
+    );
+
     const observedSummaryQueries: string[] = [];
     let aggregateQuery: { sql: string; params: unknown[] } | undefined;
     const startedAt = performance.now();
