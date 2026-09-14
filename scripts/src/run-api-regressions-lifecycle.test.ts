@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, rmdir, unlink, writeFile } from "node:fs/promises";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -14,6 +16,7 @@ import {
 } from "./destructive-test-runtime";
 import { registeredDestructiveHarnesses } from "./destructive-harness-registry";
 import {
+  recoverInterruptedHarnessDatabases,
   runIsolatedApiRegressionSuiteCommand,
   runIsolatedApiSuiteCommand,
   runIsolatedBrowserSuiteCommand,
@@ -834,10 +837,10 @@ async function stopMarkedProcessGroups(processMarker: string): Promise<void> {
 }
 
 async function findProcessesWithMarker(processMarker: string): Promise<number[]> {
-  const processEntries = await readdir("/proc", { withFileTypes: true });
+  const processEntries = await readdir("/proc");
   const processIds = processEntries
-    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
-    .map((entry) => Number(entry.name));
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(Number);
   const ownedPids: number[] = [];
 
   await Promise.all(processIds.map(async (processId) => {
@@ -904,10 +907,10 @@ async function waitForMarkerProcessesToStop(processMarker: string): Promise<void
 }
 
 async function findOwnedTestServers(testDatabaseUrl: string): Promise<number[]> {
-  const processEntries = await readdir("/proc", { withFileTypes: true });
+  const processEntries = await readdir("/proc");
   const processIds = processEntries
-    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
-    .map((entry) => Number(entry.name));
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(Number);
   const ownedPids: number[] = [];
 
   await Promise.all(processIds.map(async (processId) => {
@@ -943,6 +946,122 @@ async function waitForOwnedTestServersToStop(testDatabaseUrl: string): Promise<v
   }
   assert.deepEqual(remaining, [], `Owned disposable test-server processes remain: ${remaining.join(", ")}`);
 }
+
+test("proc discovery handles an exited PID without hiding enumeration errors or losing ownership guards", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-proc-discovery-"));
+  const originalPath = process.env.PATH;
+  const originalReaddir = fsPromises.readdir;
+  const marker = `proc-discovery-${randomUUID()}`;
+  const configuration = {
+    databasePrefix: `lumera_proc_discovery_${process.pid}_`,
+    manifestDirectoryName: `proc-discovery-${randomUUID()}`,
+    testLabel: "Proc discovery checks",
+    environment: {},
+  };
+  const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", configuration.manifestDirectoryName);
+  const dropLog = path.join(temporaryRoot, "dropped");
+  const child = spawn(process.execPath, ["-e", "process.send('ready'); setInterval(() => {}, 1000);"], {
+    env: { ...process.env, [processMarkerEnvironmentName]: marker },
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+  });
+
+  try {
+    await once(child, "message");
+    assert.ok(child.pid);
+    const pid = child.pid;
+    const discoveredNames = await originalReaddir("/proc");
+    assert.ok(discoveredNames.includes(String(pid)), "The owned child must exist during discovery.");
+    const snapshot = [String(pid), String(process.pid), "self", "sys"];
+    let enumerationError: NodeJS.ErrnoException | undefined;
+    let scans = 0;
+
+    t.mock.method(fsPromises, "readdir", (async (
+      directory: Parameters<typeof readdir>[0],
+      options?: { withFileTypes?: boolean },
+    ) => {
+      if (directory !== "/proc") return Reflect.apply(originalReaddir, fsPromises, [directory, options]);
+      scans += 1;
+      if (enumerationError) throw enumerationError;
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, "exit");
+        child.kill("SIGTERM");
+        await exited;
+      }
+      // Model Node's hidden lstat fallback for UV_DIRENT_UNKNOWN. The PID
+      // existed in the snapshot but has disappeared before Dirent conversion.
+      if (options?.withFileTypes) {
+        throw Object.assign(new Error(`ENOENT: lstat '/proc/${pid}'`), {
+          code: "ENOENT", syscall: "lstat", path: `/proc/${pid}`,
+        });
+      }
+      return snapshot;
+    }) as typeof readdir);
+    syncBuiltinESMExports();
+
+    assert.deepEqual(await findProcessesWithMarker(marker), []);
+    assert.deepEqual(await findOwnedTestServers("postgres://unused/proc-discovery"), []);
+    await assert.rejects(readFile(`/proc/${pid}/environ`), { code: "ENOENT" });
+
+    await writeFile(path.join(temporaryRoot, "dropdb"),
+      `#!/bin/sh\nprintf 'drop\\n' >> '${dropLog}'\n`, { mode: 0o755 });
+    process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+    const currentIdentity = await getProcessIdentity(process.pid);
+    await mkdir(manifestDirectory, { recursive: true });
+    const staleManifest = {
+      version: 1 as const,
+      databaseName: `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`,
+      databaseTarget: getDatabaseTarget(),
+      // A live numeric PID with a different identity must not count as the
+      // original owner. Cleanup must still be restricted to matching markers.
+      ownerPid: process.pid,
+      ownerProcessIdentity: `${currentIdentity}-previous-process`,
+      processMarker: marker,
+    };
+    const stalePath = await writeManifest(manifestDirectory, staleManifest);
+    const activePath = await writeManifest(manifestDirectory, {
+      ...staleManifest,
+      databaseName: `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`,
+      ownerProcessIdentity: currentIdentity,
+    });
+    const killMock = t.mock.method(process, "kill", () => {
+      assert.fail("No process may be signaled: the marked child exited and the live PID is unrelated.");
+    });
+
+    await recoverInterruptedHarnessDatabases(configuration, "API regression");
+    assert.equal(scans, 3, "Both test scanners and the shared recovery scanner must be exercised.");
+    assert.equal(await readFile(dropLog, "utf8"), "drop\n");
+    await assert.rejects(readFile(stalePath), { code: "ENOENT" });
+    await readFile(activePath); // Matching PID + identity must remain active.
+    assert.equal(killMock.mock.callCount(), 0);
+
+    for (const code of ["ENOENT", "EACCES", "EPERM", "EIO"]) {
+      enumerationError = Object.assign(new Error(`Cannot enumerate /proc: ${code}`), { code });
+      await writeManifest(manifestDirectory, staleManifest);
+      await assert.rejects(findProcessesWithMarker(marker), (error) => error === enumerationError);
+      await assert.rejects(findOwnedTestServers("postgres://unused/proc-discovery"), (error) => error === enumerationError);
+      await assert.rejects(
+        recoverInterruptedHarnessDatabases(configuration, "API regression"),
+        (error) => error instanceof AggregateError && error.errors.includes(enumerationError),
+      );
+      await readFile(stalePath); // Failed inspection must leave recovery retryable.
+      await readFile(activePath);
+      assert.equal(await readFile(dropLog, "utf8"), "drop\n", "Failed inspection must not drop a database.");
+      assert.equal(killMock.mock.callCount(), 0);
+    }
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit");
+      child.kill("SIGKILL");
+      await exited;
+    }
+    await rm(manifestDirectory, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test("recovery dispatch sends each wrapper's originating suite label", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-recovery-dispatch-"));

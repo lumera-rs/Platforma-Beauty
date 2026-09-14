@@ -324,10 +324,12 @@ function startProcess(
 async function findProcessGroups(processMarker: string | undefined): Promise<number[]> {
   if (process.platform === "win32" || !processMarker) return [];
 
-  const processEntries = await readdir("/proc", { withFileTypes: true });
+  // Dirent conversion can lstat a PID that exited during enumeration. Names
+  // avoid that hidden race; the reads below still verify marker ownership.
+  const processEntries = await readdir("/proc");
   const processIds = processEntries
-    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
-    .map((entry) => Number(entry.name));
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(Number);
   const processGroups = new Set<number>();
 
   await Promise.all(processIds.map(async (processId) => {

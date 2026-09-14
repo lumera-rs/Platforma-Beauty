@@ -9,6 +9,12 @@ Persist one opaque, per-run environment marker with the run’s durable recovery
 
 **How to apply:** Keep the owner-identity guard before any process scan, match an exact null-delimited environment entry, terminate only the discovered groups, and treat `ENOENT`, `EACCES`, and `EPERM` while scanning foreign `/proc` entries as non-matches rather than cleanup failures.
 
+Enumerate `/proc` as names, not typed directory entries.
+
+**Why:** Node's `withFileTypes` conversion can perform a hidden `lstat` for an unknown entry type. An exiting PID can disappear before that call, rejecting the entire enumeration before any per-PID error handling runs.
+
+**How to apply:** Filter numeric names and retain the existing marker and process-identity checks. Do not catch errors from enumerating `/proc` itself; permission, I/O, and missing-root errors must remain visible. A vanished PID is not evidence that every owned process has exited.
+
 Graceful harness cancellation must capture the first interrupt signal, stop the active command and every owned service group, then wait for those stops before removing the disposable database and its manifest.
 
 **Why:** Installing a signal listener disables Node's default immediate termination; cleanup must therefore preserve process-group ownership while releasing resources before reporting the conventional interrupted exit status.
