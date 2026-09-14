@@ -2130,7 +2130,11 @@ export interface SalonBookingSettingsInput {
   slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
   /** @minimum 0 */
   minimumLeadTimeMinutes: number;
-  /** Inclusive calendar days from the current Belgrade date; null is unlimited. */
+  /**
+     * @minimum 0
+     * @maximum 3650
+     * @nullable
+     */
   maxBookingHorizonDays: number | null;
   cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes;
   reminderOffsetsMinutes: SalonBookingSettingsInputReminderOffsetsMinutesItem[];
