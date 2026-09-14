@@ -83,6 +83,7 @@ function bookingSettingsPayload() {
   return {
     slotGranularityMinutes: 15,
     minimumLeadTimeMinutes: 60,
+    maxBookingHorizonDays: null,
     cancellationDeadlineMinutes: 2880,
     reminderOffsetsMinutes: [120, 720],
     reminderChannels: ["sms", "email", "push"],

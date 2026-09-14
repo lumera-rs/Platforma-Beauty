@@ -98,7 +98,7 @@ test("PostgreSQL 16 DDL golden fixture on a proven disposable database", async (
       {
         name: whenTriggerName, enabled: "origin", timing: "before",
         events: ["update"], updateColumns: ["amount"], level: "row",
-        when: '("old"."amount" IS DISTINCT FROM "new"."amount")',
+        when: '"old"."amount" IS DISTINCT FROM "new"."amount"',
         constraint: false, deferrable: false, initiallyDeferred: false,
         functionSchema: "public", functionName, argumentsBase64: "YXVkaXQA",
       },

@@ -1154,7 +1154,7 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
   expect(browserErrors, "The forced-colors admin mobile journey must not produce browser errors.").toEqual([]);
 });
 
-test("admin desktop navigation keeps focus indicators visible with forced colors", async ({ page }) => {
+test("admin navigation keeps forced-colors focus after switching to the mobile viewport", async ({ page }) => {
   const browserErrors = collectBrowserErrors(page);
   await page.emulateMedia({ forcedColors: "active" });
   await openAdminPage(page, "/admin");
@@ -1208,8 +1208,13 @@ test("admin desktop navigation keeps focus indicators visible with forced colors
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
   test.setTimeout(120_000);
-  const customerFixture = await createUser("CUSTOMER", "api-customer");
   const customer = await createUser("CUSTOMER", "api-customer");
+  const customerUser = {
+    ...admin,
+    id: customer.id,
+    email: customer.email,
+    role: "CUSTOMER" as const,
+  };
   try {
     const adminRequests: string[] = [];
     await page.route("**/api/**", async (route) => {
@@ -1217,7 +1222,7 @@ test("a customer is redirected from every admin route without admin requests", a
       if (path.startsWith("/api/admin/")) adminRequests.push(path);
       if (path === "/api/auth/me") {
         await route.fulfill({
-          json: checkedApiFixture("/api/auth/me", apiSchemas.GetCurrentUserResponse, { user: customer }),
+          json: checkedApiFixture("/api/auth/me", apiSchemas.GetCurrentUserResponse, { user: customerUser }),
         });
         return;
       }
@@ -1230,7 +1235,7 @@ test("a customer is redirected from every admin route without admin requests", a
     }
     expect(adminRequests).toEqual([]);
   } finally {
-    await db.delete(usersTable).where(eq(usersTable.id, customerFixture.id));
+    await db.delete(usersTable).where(eq(usersTable.id, customer.id));
   }
 });
 

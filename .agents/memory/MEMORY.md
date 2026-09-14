@@ -156,3 +156,4 @@
 - [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.
 - [Shallow Git ancestry evidence](shallow-git-ancestry-evidence.md) — incidental local shallow negotiation can mask a wrong fetch anchor; distinguish object presence from ancestry proof.
 - [Lifecycle verification evidence](lifecycle-verification-evidence.md) — lost phase logs prevent causal claims; interrupted suites never count as complete validation.
+- [Browser fixture failure classification](browser-fixture-failure-classification.md) — a rejected mocked identity can cause secondary redirect failures without exercising application authorization.

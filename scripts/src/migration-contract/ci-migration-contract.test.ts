@@ -186,6 +186,55 @@ test("native PR and merge_group validate payload-authoritative immutable history
   }
 });
 
+test("native merge_group accepts a trusted base that predates the migration directory", async (t) => {
+  const repo = await repository(false);
+  t.after(() => rm(repo.root, { recursive: true, force: true }));
+  assert.equal(
+    await git(repo.root, "ls-tree", "--full-tree", repo.base, "--", "lib/db/migrations"),
+    "",
+    "the trusted merge-group base must genuinely predate the migration directory",
+  );
+  await writeMigration(repo.root, "000001_create_customer_profile");
+  await commit(repo.root);
+
+  const result = await runCiMigrationContract({
+    repoRoot: repo.root,
+    environment: await ciEnvironment(repo.root, "merge_group", repo.base),
+  });
+  assert.equal(result.eventName, "merge_group");
+  assert.equal(result.protectedMigrations, 0);
+  assert.deepEqual(result.current.map(({ sequence }) => sequence), [1]);
+
+  const invalidBase = await ciEnvironment(repo.root, "merge_group", "f".repeat(40));
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: repo.root, environment: invalidBase }),
+    /unavailable from origin/i,
+    "an invalid trusted base must fail before an absent migration path can be treated as empty",
+  );
+});
+
+test("historical validation works from a detached HEAD without branch-ref assumptions", async (t) => {
+  const repo = await repository();
+  t.after(() => rm(repo.root, { recursive: true, force: true }));
+  await writeMigration(repo.root, "000002_add_customer_preferences", migrationSql("000002", "select 2;\n"));
+  const head = await commit(repo.root);
+  await git(repo.root, "checkout", "-q", "--detach", head);
+  await assert.rejects(
+    execFileAsync("git", ["symbolic-ref", "--short", "-q", "HEAD"], {
+      cwd: repo.root,
+      env: gitEnvironment(),
+    }),
+    "detached HEAD must not resolve to a symbolic branch ref",
+  );
+
+  const result = await runCiMigrationContract({
+    repoRoot: repo.root,
+    environment: await ciEnvironment(repo.root, "pull_request", repo.base),
+  });
+  assert.equal(result.protectedMigrations, 1);
+  assert.deepEqual(result.current.map(({ sequence }) => sequence), [1, 2]);
+});
+
 test("trusted base predating the migration directory permits additions but not current contract violations", async (t) => {
   const repo = await repository(false);
   t.after(() => rm(repo.root, { recursive: true, force: true }));
@@ -514,6 +563,50 @@ test("bounded exact-SHA deepening proves older B0 and rejects unrelated/nonexist
   }
   const remotes = await git(checkout, "for-each-ref", "--format=%(refname)", "refs/remotes");
   assert.equal(remotes, "", "validator must not fetch a mutable branch ref");
+});
+
+test("fails closed when a valid trusted base remains beyond the bounded ancestry proof", async (t) => {
+  const source = await repository();
+  const temp = await mkdtemp(path.join(os.tmpdir(), "lumera-ci-unavailable-ancestry-"));
+  const origin = path.join(temp, "origin.git");
+  const checkout = path.join(temp, "checkout");
+  t.after(() => Promise.all([
+    rm(source.root, { recursive: true, force: true }),
+    rm(temp, { recursive: true, force: true }),
+  ]));
+
+  const tree = await git(source.root, "rev-parse", `${source.base}^{tree}`);
+  let tip = source.base;
+  // Keep the trusted base real and fetchable, but beyond 32 + 128 + 512
+  // commits of permitted deepening from the shallow checkout HEAD.
+  for (let index = 1; index <= 700; index += 1) {
+    tip = await commitTreeAt(
+      source.root,
+      tree,
+      [tip],
+      `unavailable ancestry ${index}`,
+      `2001-01-${String(Math.min(index + 1, 28)).padStart(2, "0")}T00:00:00Z`,
+    );
+  }
+  await git(temp, "clone", "-q", "--bare", source.root, origin);
+  await git(origin, "update-ref", "refs/pull/1/merge", tip);
+  await git(temp, "init", "-q", checkout);
+  await git(checkout, "remote", "add", "origin", `file://${origin}`);
+  await git(checkout, "fetch", "-q", "--depth=1", "origin", "refs/pull/1/merge");
+  await git(checkout, "checkout", "-q", "--detach", "FETCH_HEAD");
+
+  const environment = await ciEnvironment(checkout, "pull_request", source.base);
+  await assert.rejects(
+    runCiMigrationContract({ repoRoot: checkout, environment }),
+    /not an ancestor of HEAD after bounded deepening/i,
+  );
+  assert.equal(
+    await git(checkout, "merge-base", "--is-ancestor", source.base, "HEAD")
+      .then(() => true)
+      .catch(() => false),
+    false,
+    "the bounded proof must not accidentally reach the trusted base",
+  );
 });
 
 test("CI CLI rejects every argument, including event payload paths", async () => {
