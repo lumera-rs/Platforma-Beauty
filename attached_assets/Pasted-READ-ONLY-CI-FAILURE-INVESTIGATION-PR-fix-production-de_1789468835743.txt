@@ -1,0 +1,89 @@
+READ-ONLY CI FAILURE INVESTIGATION — PR fix-production-demo-seed-boundary
+
+DO NOT modify any files.
+DO NOT commit.
+DO NOT push.
+DO NOT deploy.
+DO NOT change database/schema/migrations.
+DO NOT weaken or bypass the new production demo-seeding security boundary.
+
+GitHub CI fails in:
+
+test:appointment-concurrency
+
+The first command passes:
+
+appointment-locks.test.ts
+- Appointment concurrency regression passed
+- Resource capacity concurrency tests passed
+
+The failure is in:
+
+artifacts/api-server/src/lib/appointment-routes.test.ts:214
+
+Assertion:
+
+"a salon with seeded men's services must be discoverable as serving men"
+
+Actual:
+false
+
+Expected:
+true
+
+The test is executed through:
+
+export NODE_ENV=test &&
+pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts &&
+pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts
+
+GitHub CI then exits with code 1.
+
+INVESTIGATE ONLY.
+
+Determine:
+
+1. Exactly what data/setup appointment-routes.test.ts expects before this assertion.
+2. How that data was previously created before the ensureDemoData production-safety refactor.
+3. How initializeDevelopmentTestFixtures() now initializes the same test.
+4. Whether the men's-service / servesMen fixture setup was accidentally moved into:
+   - maintenance-only logic,
+   - production-only logic,
+   - a fixture path not invoked by this test,
+   - or otherwise omitted.
+5. Trace the exact before/after code path from github/main to the current PR.
+6. Determine whether this is:
+   A. a legitimate product regression,
+   B. a test-fixture regression,
+   C. an incorrect/obsolete assertion,
+   D. another root cause.
+
+CRITICAL SECURITY REQUIREMENT:
+
+The solution MUST NOT restore request-reachable demo seeding.
+The solution MUST NOT make production ensureDemoData query/write the DB.
+The solution MUST NOT allow production/deployment fixture activation.
+The solution MUST NOT weaken the security boundary/static guard.
+
+Do not change the assertion merely to make CI green unless you prove the
+assertion is no longer a valid product contract.
+
+Also inspect whether the same missing fixture/setup could cause other
+converted tests to fail later in the release chain.
+
+Return:
+
+A. ROOT CAUSE
+B. EXACT OLD CODE PATH
+C. EXACT NEW CODE PATH
+D. WHY servesMen IS FALSE
+E. CLASSIFICATION: PRODUCT REGRESSION / TEST FIXTURE REGRESSION / OBSOLETE TEST / OTHER
+F. CORRECT FIX DESIGN
+G. FILES THAT WOULD NEED CHANGING
+H. OTHER TESTS POTENTIALLY AFFECTED
+I. SECURITY IMPACT OF PROPOSED FIX
+J. CONFIDENCE: HIGH/MEDIUM/LOW
+
+READ ONLY.
+STOP after investigation.
+DO NOT IMPLEMENT.

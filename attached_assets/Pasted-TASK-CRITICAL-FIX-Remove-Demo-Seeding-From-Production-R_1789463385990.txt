@@ -1,0 +1,680 @@
+TASK — CRITICAL FIX: Remove Demo Seeding From Production Request Paths
+
+IMPLEMENTATION TASK — CODE CHANGES ALLOWED
+
+DO NOT DEPLOY.
+DO NOT PUBLISH.
+DO NOT MODIFY ANY EXISTING DATABASE DATA MANUALLY.
+
+Context:
+
+Two independent audits have confirmed a CRITICAL production data-safety issue.
+
+Current main allows normal HTTP request handling to reach:
+
+ensureDemoData()
+→ seed()
+
+When any user already exists, seed() enters an existing-users branch BEFORE
+the production demo-seed opt-in is checked.
+
+Confirmed consequences include:
+
+- demo services can be assigned to real salons
+- confirmed demo appointments can be created using real salons,
+  employees, services and CUSTOMER accounts
+- backfillSalonCustomers can then associate those customers and their
+  contact information with those salons
+- real salon settings can be modified
+- taxonomy/catalog records can be modified
+- qualifying product visibility/pricing can be modified
+- process-local seedPromise does not protect across Autoscale instances
+
+This task must remove that architecture safely.
+
+==================================================
+0. HARD SAFETY BOUNDARIES
+==================================================
+
+You MAY modify source code and tests.
+
+You MAY run tests that are proven isolated from production/development
+persistent data.
+
+DO NOT:
+
+- deploy
+- publish
+- restart production
+- restart the managed development API if startup can write data
+- modify Replit deployment configuration
+- modify Secrets
+- modify environment variables
+- manually modify database data
+- run production seed
+- run development seed against an existing persistent DB
+- run migrations
+- apply schema changes
+- run drizzle push
+- run schema ensure commands
+- execute destructive database commands
+- commit
+- push
+- merge
+- rebase
+- reset
+- switch branches
+- delete unrelated files
+
+Do NOT automatically create a follow-up task.
+
+Do NOT modify the four audit/instruction attachments if they exist.
+
+Before running any test, determine whether it can touch the workspace
+DATABASE_URL.
+
+Prefer isolated temporary PostgreSQL/test harnesses already established by
+the repository.
+
+==================================================
+1. GIT PRE-FLIGHT
+==================================================
+
+Report:
+
+current branch
+HEAD
+github/main
+ahead/behind
+git status --short
+
+Expected:
+
+branch = main
+HEAD = github/main
+ahead/behind = 0/0
+tracked working tree clean
+
+If TRACKED files are already modified:
+
+STOP.
+
+Do not overwrite unrelated work.
+
+==================================================
+2. ARCHITECTURAL TARGET
+==================================================
+
+The final architecture MUST satisfy all of these invariants:
+
+INVARIANT A
+
+Normal production HTTP request handling must NEVER execute demo fixture
+initialization or demo reconciliation.
+
+INVARIANT B
+
+Authentication/authorization helpers such as:
+
+current()
+requireCustomer()
+requireSalonOwner()
+requireSalonEmployee()
+requireAdmin()
+requireSuperAdmin()
+requireEducationAccess()
+requireLmsAccess()
+
+must NOT depend on demo seeding in production.
+
+INVARIANT C
+
+Public routes such as:
+
+GET /api/salons
+GET /api/salons/:slug
+GET /api/cities
+GET /api/discovery/home
+GET /api/platform/trust-stats
+GET /api/inspiracija
+GET /api/recnik
+GET /api/brendovi
+GET /api/widget/salons/:slug
+
+must never cause demo writes in production.
+
+INVARIANT D
+
+Production startup must not invoke demo fixture creation merely because
+data is missing.
+
+INVARIANT E
+
+Development/test fixtures must remain available only through an explicit,
+clearly named mechanism.
+
+INVARIANT F
+
+Production reconciliation/backfill behavior must NOT be hidden inside a
+function named or architected as demo seeding.
+
+If any existing reconciliation is genuinely required in production, separate
+it from demo fixture initialization.
+
+It must NOT automatically run from arbitrary HTTP requests.
+
+INVARIANT G
+
+Production missing-data behavior must FAIL EXPLICITLY or return the real
+empty/not-found state.
+
+It must NEVER silently manufacture demo data.
+
+INVARIANT H
+
+Do not delete or rewrite existing production data as part of this fix.
+
+This task changes FUTURE execution paths only.
+
+==================================================
+3. FIRST CLASSIFY THE EXISTING seed() OPERATIONS
+==================================================
+
+Before editing, classify every helper in the existing-users branch into:
+
+A. DEMO FIXTURE ONLY
+B. LEGITIMATE DATA RECONCILIATION/BACKFILL
+C. TAXONOMY/REFERENCE INITIALIZATION
+D. TEST FIXTURE
+E. AMBIGUOUS
+
+At minimum classify:
+
+- password_set_at backfill
+- postal-code backfill
+- restoreDemoEducationOwnerRole
+- seedEducationTaxonomy
+- seedEducationContent
+- seedEducationMonetization
+- seedMarketplaceTaxonomy
+- seedServiceTemplateLibrary
+- seedB2BShopTaxonomy
+- ensureLegacyCatalogSupplier
+- seedShippingConfig
+- synchronizeInferredServesMen
+- seedCourierServices
+- seedFutureBookingAvailability
+- backfillSalonCustomers
+- setDemoLotosActiveSalon
+- seedDemoRetailCatalog
+
+Do NOT preserve request-time execution merely because a helper looks useful.
+
+A legitimate backfill still does not belong in an arbitrary HTTP request.
+
+==================================================
+4. REMOVE REQUEST-TIME DEMO SEED DEPENDENCY
+==================================================
+
+Refactor the request architecture so production request handling no longer
+depends on ensureDemoData().
+
+Do NOT solve this by adding hundreds of route-specific conditionals.
+
+Fix the dependency at the appropriate architectural boundary.
+
+Audit:
+
+current()
+require* helpers
+direct public route callers
+widget caller
+education/LMS helpers
+other direct ensureDemoData callers
+
+The result should minimize duplicated logic.
+
+IMPORTANT:
+
+Development behavior must not accidentally leak into production.
+
+A production request must never be able to activate demo initialization
+through an indirect wrapper.
+
+==================================================
+5. MAKE ensureDemoData EXPLICITLY NON-PRODUCTION
+==================================================
+
+Redesign ensureDemoData() so its contract is unmistakable.
+
+Preferred semantic contract:
+
+ensureDemoData() is a development/test fixture facility.
+
+It must NOT execute demo writes in normal production runtime.
+
+Do not rely solely on callers remembering not to invoke it.
+
+Add defense in depth at the function boundary.
+
+Production behavior must be safe even if a future developer accidentally
+calls ensureDemoData() from a new route.
+
+Preferred production behavior:
+
+- deterministic no-op where compatibility requires it, OR
+- explicit safe refusal for direct fixture invocation
+
+Choose whichever best preserves current application request behavior while
+making writes impossible.
+
+Do NOT make public production routes start returning 500 merely because an
+obsolete ensureDemoData call remains during transition.
+
+The important invariant is:
+
+PRODUCTION ensureDemoData => ZERO DEMO WRITES.
+
+==================================================
+6. SEPARATE LEGITIMATE RECONCILIATION
+==================================================
+
+Do not simply delete potentially legitimate maintenance logic.
+
+For each operation classified as legitimate reconciliation/backfill:
+
+- remove it from demo seed/request-time coupling
+- place it behind an explicit, separately named maintenance mechanism if
+  one is genuinely needed
+- do NOT automatically execute that maintenance mechanism in this task
+- do NOT wire it into production startup
+- do NOT wire it into normal HTTP requests
+
+If no current production requirement proves it is necessary, leave it
+uninvoked rather than inventing a new automatic execution path.
+
+Document the distinction in code:
+
+DEMO FIXTURE INITIALIZATION
+vs
+PRODUCTION MAINTENANCE
+
+No ambiguous seed function should contain both.
+
+==================================================
+7. ELIMINATE REAL-TENANT CONTAMINATION CAPABILITY
+==================================================
+
+The following behavior must become impossible from production request paths:
+
+A. Demo service assignment to arbitrary salons.
+
+B. Demo appointment creation using arbitrary:
+- salons
+- employees
+- services
+- CUSTOMER users
+
+C. Creation of salon_customers associations originating from demo-generated
+appointments.
+
+D. Demo-driven mass changes to servesMen.
+
+E. Demo-driven product retailEnabled/public pricing changes.
+
+F. Demo education identities/content modifying production entities.
+
+Do not solve this merely by changing the demo selection algorithm.
+
+Production request paths must not execute these demo helpers at all.
+
+==================================================
+8. AUTOSCALE SAFETY
+==================================================
+
+Do not treat seedPromise as a production lock.
+
+After the fix:
+
+A fresh Node process must be safe.
+
+Two simultaneous Autoscale instances must be safe.
+
+An anonymous first request to either instance must be safe.
+
+No correctness assumption may depend on process-local memoization.
+
+==================================================
+9. TEST ARCHITECTURE
+==================================================
+
+Add regression tests that prove the security boundary.
+
+Tests must not rely only on source-string matching.
+
+Where practical, test observable behavior using isolated DB/test harnesses.
+
+At minimum prove:
+
+PRODUCTION REQUEST SAFETY
+
+1. GET /api/salons
+   → zero demo fixture writes
+
+2. GET /api/salons/:slug
+   → zero demo fixture writes
+
+3. GET /api/widget/salons/:slug
+   → zero demo fixture writes
+
+4. POST /api/auth/login
+   → zero demo fixture writes
+
+5. POST /api/auth/register
+   → zero demo fixture writes
+
+6. private route hit anonymously
+   → authorization failure without demo fixture writes
+
+PRODUCTION FIXTURE SAFETY
+
+7. ensureDemoData invoked under NODE_ENV=production without explicit
+   fixture authorization
+   → zero demo writes
+
+8. existing users in production
+   → does NOT activate former existing-users seed branch
+
+9. empty production database
+   → does NOT silently initialize demo data
+
+10. fresh process/cold-start equivalent
+    → still zero demo initialization
+
+REAL-DATA CONTAMINATION REGRESSIONS
+
+11. real salon does not receive demo service
+
+12. real salon/employee/customer combination does not receive demo
+    appointment
+
+13. no demo-created appointment produces salon_customers association
+
+14. real salon servesMen is not changed by demo fixture initialization
+
+15. existing product retailEnabled/public price is not changed
+
+DEVELOPMENT/TEST FIXTURE BEHAVIOR
+
+16. explicit development fixture initialization still works where required
+
+17. explicit test fixture initialization still works
+
+18. production protection cannot be bypassed accidentally by ordinary route
+    invocation
+
+AUTH/BOOKING REGRESSIONS
+
+19. authentication behavior remains correct
+
+20. authorization behavior remains correct
+
+21. booking happy path remains correct
+
+22. booking concurrency protection remains correct
+
+23. cancellation/rescheduling behavior remains correct
+
+24. tenant isolation remains correct
+
+==================================================
+10. ADD A STATIC ARCHITECTURAL GUARD
+==================================================
+
+Add a regression/static test preventing this class of bug from returning.
+
+It should fail if production route modules or authentication helpers become
+directly dependent on demo fixture initialization again.
+
+Prefer an explicit architectural rule over a fragile list of all current
+route line numbers.
+
+The test should make it difficult for a future developer to accidentally add:
+
+ensureDemoData()
+
+back into a production HTTP request path.
+
+==================================================
+11. DO NOT TOUCH STARTUP DDL YET
+==================================================
+
+IMPORTANT SCOPE CONTROL:
+
+The independent audits also found production startup DDL and scheduler/outbox
+risks.
+
+DO NOT fix those in this task.
+
+Do not change:
+
+- ensureBusinessGrowthSchema
+- ensureMediaSchema
+- ensureShippingConfigSchema
+- ensureMarketplacePerformanceIndexes
+- ensureReferralSchema
+- ensureWebPushSchema
+- ensureBookingCommandSchema
+- ensureEducationBundlePurchaseSchema
+- scheduler startup sweep
+- email/SMS/push workers
+- deployment configuration
+
+Those require separate tasks.
+
+This task is ONLY about:
+
+ensureDemoData / seed / demo fixture coupling to production requests.
+
+==================================================
+12. RUN SAFE TARGETED TESTS
+==================================================
+
+Run the new targeted regression tests first.
+
+Then run relevant existing tests ONLY if they are proven isolated.
+
+At minimum attempt, where safely supported:
+
+- new production seed-safety suite
+- seed unit tests
+- auth regressions
+- booking regressions
+- tenant isolation
+- backend static standards
+- TypeScript check
+
+Do NOT run a test suite that can mutate the persistent workspace database.
+
+If a test cannot be safely run:
+
+SKIPPED — SAFETY
+
+and explain why.
+
+Do not weaken assertions merely to get green tests.
+
+==================================================
+13. REVIEW THE DIFF
+==================================================
+
+Before finishing:
+
+- inspect git diff
+- inspect git diff --check
+- confirm no schema files changed unless absolutely required
+- confirm no deployment config changed
+- confirm no unrelated feature changed
+- confirm no generated artifact pollution
+- confirm no attached_assets files are included
+
+Do not commit.
+
+==================================================
+14. SECURITY SELF-REVIEW
+==================================================
+
+Try to bypass your own fix statically.
+
+Search for every remaining:
+
+ensureDemoData(
+seed(
+seedFutureBookingAvailability(
+seedMarketplaceTaxonomy(
+seedDemoRetailCatalog(
+
+Determine whether any production HTTP request can still transitively reach
+demo fixture writes.
+
+Also inspect dynamically imported or wrapper-based call paths.
+
+Return:
+
+ANONYMOUS REQUEST → DEMO WRITE:
+IMPOSSIBLE / STILL POSSIBLE / UNKNOWN
+
+AUTHENTICATED REQUEST → DEMO WRITE:
+IMPOSSIBLE / STILL POSSIBLE / UNKNOWN
+
+PRODUCTION ensureDemoData → DEMO WRITE:
+IMPOSSIBLE / STILL POSSIBLE / UNKNOWN
+
+Do not declare success unless all three are IMPOSSIBLE.
+
+==================================================
+15. FINAL REPORT
+==================================================
+
+Return:
+
+A. IMPLEMENTATION RESULT
+
+PASS
+PARTIAL
+FAIL
+
+B. ORIGINAL ROOT CAUSE
+
+Brief explanation.
+
+C. ARCHITECTURE BEFORE
+
+Request
+→ ...
+→ ensureDemoData
+→ seed
+→ writes
+
+D. ARCHITECTURE AFTER
+
+Show new request and fixture paths separately.
+
+E. FILES CHANGED
+
+Exact list.
+
+F. OPERATION CLASSIFICATION
+
+For each former existing-users helper:
+
+DEMO / MAINTENANCE / REFERENCE / TEST / AMBIGUOUS
+
+and what happened to it.
+
+G. PRODUCTION SAFETY
+
+Anonymous request → demo write:
+Authenticated request → demo write:
+Production ensureDemoData → demo write:
+Autoscale new process → demo write:
+
+H. REAL-DATA CONTAMINATION
+
+Demo service → real salon:
+Demo appointment → real salon/employee/customer:
+Demo CRM association:
+Demo servesMen modification:
+Demo product visibility/pricing modification:
+
+All must be impossible through normal production requests.
+
+I. DEVELOPMENT / TEST FIXTURES
+
+Explain how explicit fixture initialization now works.
+
+J. TEST RESULTS
+
+Command:
+Result:
+Assertions/tests:
+
+Include SKIPPED — SAFETY where applicable.
+
+K. STATIC ARCHITECTURAL GUARD
+
+Explain the new guard.
+
+L. REGRESSION RISK
+
+Booking:
+Auth:
+Education:
+Shop:
+Salon:
+Admin:
+
+M. REMAINING OUT-OF-SCOPE RELEASE RISKS
+
+Explicitly repeat that these are NOT fixed by this task:
+
+- startup DDL
+- scheduler/outbox boot sweep
+- deployment schema ownership
+- production start command
+- release SHA identity
+- readiness/rollback
+
+N. DIFF REVIEW
+
+git diff --stat
+git diff --check
+
+O. FINAL GIT STATE
+
+git status --short
+git rev-parse HEAD
+git rev-parse github/main
+git rev-list --left-right --count HEAD...github/main
+
+P. INTEGRITY
+
+Confirm:
+
+CODE MODIFIED: YES
+TESTS MODIFIED/ADDED: YES if applicable
+DATABASE MODIFIED: NO
+SCHEMA APPLIED: NO
+MIGRATIONS RUN: NO
+SERVER RESTARTED: NO
+DEPLOYMENT PERFORMED: NO
+SECRETS MODIFIED: NO
+COMMITS CREATED: NO
+PUSH PERFORMED: NO
+
+STOP after the report.
+
+Do not commit.
+Do not push.
+Do not deploy.
+Do not automatically begin another task.

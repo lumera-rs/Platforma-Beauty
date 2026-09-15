@@ -1,0 +1,705 @@
+TASK — Independent CRITICAL Audit of ensureDemoData() Production Reachability
+
+READ-ONLY INVESTIGATION ONLY.
+DO NOT FIX ANYTHING.
+
+Context:
+
+An independent Claude Code audit reported a potentially CRITICAL production
+safety issue involving ensureDemoData() / seed().
+
+DO NOT assume Claude's conclusion is correct.
+
+Independently trace the current source code on main and either CONFIRM,
+PARTIALLY CONFIRM, or REFUTE every claim.
+
+Current expected Git state:
+
+branch: main
+HEAD = github/main
+expected SHA:
+1ac882c8a732a308da8cfbe17686ec2f00f57762
+
+This investigation is specifically about production data safety.
+
+==================================================
+STRICT SAFETY RULES
+==================================================
+
+THIS TASK IS READ ONLY.
+
+DO NOT:
+
+- modify source code
+- modify tests
+- create files
+- delete files
+- modify attached_assets
+- modify configuration
+- modify environment variables
+- modify Secrets
+- modify database data
+- run seed functions
+- run migrations
+- run schema ensure routines
+- run application startup if it can write data
+- restart any server
+- restart API
+- deploy
+- publish
+- commit
+- push
+- pull
+- merge
+- rebase
+- reset
+- checkout/switch branches
+- clean the repository
+
+Do NOT execute tests or scripts unless you first prove they are read-only
+and cannot initialize application code that writes to the database.
+
+Prefer static source-code tracing.
+
+Do not call public application routes merely to test ensureDemoData(),
+because the issue being investigated is whether those routes themselves
+can trigger database writes.
+
+If something cannot safely be established, report UNKNOWN.
+
+==================================================
+0. GIT PRE-FLIGHT
+==================================================
+
+Using read-only Git commands report:
+
+Current branch:
+HEAD:
+github/main:
+Ahead/behind:
+git status --short:
+
+Expected:
+
+branch = main
+HEAD = github/main
+ahead/behind = 0/0
+tracked working tree clean
+
+If this is not true:
+
+STOP.
+
+Do not change Git state.
+
+==================================================
+1. LOCATE ensureDemoData()
+==================================================
+
+Find the current implementation of:
+
+ensureDemoData()
+
+and the underlying:
+
+seed()
+
+Trace the implementation completely.
+
+Report:
+
+- file
+- line/range
+- memoization behavior
+- environment checks
+- production checks
+- development checks
+- test checks
+- opt-in/opt-out flags
+- database-existence checks
+- user-count checks
+- any branch based on whether users already exist
+
+Do not summarize only the happy path.
+
+Trace EVERY production-reachable branch.
+
+==================================================
+2. ENUMERATE EVERY CALLER
+==================================================
+
+Find EVERY direct and indirect caller of ensureDemoData().
+
+Do not rely only on text search.
+
+Trace aliases, wrappers and helper functions where applicable.
+
+For every caller report:
+
+Caller:
+File:
+Route/function:
+HTTP method:
+Authentication required:
+Public/Private:
+Can anonymous user reach it:
+Does ensureDemoData execute before or after authorization:
+Production reachable:
+
+Pay special attention to:
+
+- widget routes
+- /api/salons
+- /api/salons/:slug
+- /api/cities
+- /api/discovery/home
+- /api/platform/trust-stats
+- /api/inspiracija
+- /api/recnik
+- /api/brendovi
+- login
+- registration
+- education access
+- LMS access
+
+Count the exact number of production-reachable HTTP entry points.
+
+==================================================
+3. PUBLIC REQUEST REACHABILITY
+==================================================
+
+Answer the critical question:
+
+CAN AN UNAUTHENTICATED PRODUCTION HTTP REQUEST CAUSE
+ensureDemoData() TO EXECUTE?
+
+Choose exactly:
+
+YES
+NO
+CONDITIONAL
+UNKNOWN
+
+Prove the answer from source.
+
+For at least three representative anonymous routes, provide the complete
+call chain:
+
+HTTP request
+→ route
+→ helper/wrapper
+→ ensureDemoData
+→ seed
+→ production branch
+
+Do not execute those requests.
+
+==================================================
+4. PRODUCTION GATING
+==================================================
+
+Trace every environment or safety gate related to seeding.
+
+Specifically determine:
+
+- what productionDemoSeedAllowed controls
+- whether it protects all seed behavior
+- whether it protects only the empty-database/full-seed branch
+- whether the existing-users branch bypasses it
+- whether NODE_ENV=production changes the path
+- whether REPLIT_DEPLOYMENT changes the path
+- whether any other environment flag protects production
+
+Answer:
+
+IS ALL ensureDemoData WRITE BEHAVIOR PROTECTED BY AN EXPLICIT
+PRODUCTION OPT-IN?
+
+YES / NO / PARTIAL / UNKNOWN
+
+Show exact evidence.
+
+==================================================
+5. EXISTING-USERS PRODUCTION BRANCH
+==================================================
+
+Claude reported that when users already exist, seed() enters a branch that
+is not protected by the production seed opt-in.
+
+Independently verify this.
+
+Trace the branch from:
+
+existing users detected
+
+through every function called before seed() returns.
+
+For EVERY function determine whether it can:
+
+SELECT only
+INSERT
+UPDATE
+DELETE
+DDL
+external side effect
+
+Report exact affected tables.
+
+Do not execute any function.
+
+==================================================
+6. VERIFY EACH CLAIMED WRITE
+==================================================
+
+Independently verify or refute each of these claimed production-reachable
+effects.
+
+CLAIM A:
+UPDATE users SET password_set_at...
+
+Determine:
+- exact condition
+- affected users
+- whether real production users could be affected
+
+CLAIM B:
+Salon postal-code normalization/backfill.
+
+Determine:
+- affected rows
+- whether real salons could be changed
+
+CLAIM C:
+restoreDemoEducationOwnerRole()
+
+Determine:
+- exact target
+- whether it can override role/active state
+
+CLAIM D:
+seedEducationContent()
+
+Determine:
+- INSERT/UPDATE behavior
+- whether existing real course rows can be changed
+
+CLAIM E:
+seedMarketplaceTaxonomy()
+
+This one requires especially deep inspection.
+
+Determine whether it can:
+
+- insert taxonomy records
+- create services
+- attach services to existing salons
+- create brands
+- attach brands to salons
+- create glossary entries
+- create inspiration content
+
+Most importantly:
+
+CAN DEMO SERVICES BE INSERTED INTO REAL PRODUCTION SALONS?
+
+YES / NO / CONDITIONAL
+
+Explain the salon selection logic.
+
+CLAIM F:
+synchronizeInferredServesMen()
+
+Determine whether it can mass-update real salons.
+
+CLAIM G:
+seedFutureBookingAvailability()
+
+This is extremely important.
+
+Determine whether it can create:
+
+- appointments
+- confirmed appointments
+- customers
+- employee assignments
+- salon assignments
+
+Most importantly:
+
+CAN IT CREATE FAKE/DEMO APPOINTMENTS ASSOCIATED WITH REAL
+PRODUCTION SALONS OR EMPLOYEES?
+
+YES / NO / CONDITIONAL
+
+Trace exact selection logic.
+
+CLAIM H:
+backfillSalonCustomers()
+
+Determine whether it INSERTs salon_customers or UPDATEs appointments.
+
+CLAIM I:
+seedDemoRetailCatalog()
+
+Determine whether it modifies existing products, retailEnabled,
+pricing or public visibility.
+
+For each claim return:
+
+CONFIRMED
+PARTIALLY CONFIRMED
+REFUTED
+UNKNOWN
+
+with source evidence.
+
+==================================================
+7. MEMOIZATION / AUTOSCALE RISK
+==================================================
+
+Inspect seedPromise or equivalent memoization.
+
+Determine:
+
+- process lifetime behavior
+- whether it runs once per Node process
+- what happens after process restart
+- what happens on Autoscale cold start
+- whether multiple instances each get independent memoization
+- whether concurrent first requests are deduplicated within one process
+- whether different instances can run seed concurrently
+
+Answer:
+
+DOES PROCESS-LOCAL MEMOIZATION PROVIDE A PRODUCTION SAFETY BOUNDARY?
+
+YES / NO / PARTIAL
+
+Explain.
+
+==================================================
+8. TRANSACTION / CONCURRENCY SAFETY
+==================================================
+
+Determine whether the existing-users branch is:
+
+- one transaction
+- multiple transactions
+- individual autocommit statements
+- advisory-lock protected
+- process-lock protected
+- cross-instance protected
+
+Determine what happens if:
+
+- two Autoscale instances start simultaneously
+- two anonymous first requests arrive on separate instances
+- one seed helper fails halfway through
+
+Could production be left partially modified?
+
+YES / NO / CONDITIONAL
+
+Do not simulate this.
+
+==================================================
+9. HISTORICAL INTENT
+==================================================
+
+Use read-only Git history to determine why ensureDemoData exists and whether
+production behavior is intentional or legacy/demo behavior.
+
+Inspect relevant historical commits.
+
+Pay particular attention to prior work concerning:
+
+- demo SUPER_ADMIN production safety
+- demo seeding
+- production demo marketplace content
+- ensureDemoData
+- public routes
+- seed guards
+
+Do not assume historical intent overrides current behavior.
+
+Report:
+
+CURRENT BEHAVIOR:
+INTENDED / LEGACY / CONTRADICTORY / UNKNOWN
+
+with evidence.
+
+==================================================
+10. DETERMINE WHETHER PRODUCTION MAY ALREADY BE AFFECTED
+==================================================
+
+DO NOT query or modify production DB.
+
+Based only on code and safe existing evidence, determine whether this issue
+is:
+
+A. Only a future deployment risk
+
+or
+
+B. Potentially already active in the currently deployed production
+
+Consider:
+
+- whether current published backend likely contains ensureDemoData behavior
+- whether public routes call it
+- whether process startup/request traffic would trigger it
+
+Do NOT claim actual production data was modified unless evidence proves it.
+
+Return:
+
+CURRENT PRODUCTION EXPOSURE:
+
+NOT PRESENT
+POTENTIALLY PRESENT
+CONFIRMED PRESENT
+UNKNOWN
+
+Distinguish code reachability from proof of actual data mutation.
+
+==================================================
+11. SECURITY / DATA-INTEGRITY SEVERITY
+==================================================
+
+Rate separately:
+
+Public reachability:
+Production data mutation:
+Booking-data risk:
+User-data risk:
+Salon-data risk:
+Catalog-data risk:
+Operational risk:
+
+Use:
+
+NONE
+LOW
+MEDIUM
+HIGH
+CRITICAL
+
+Then give an overall severity.
+
+Do not inflate severity merely because Claude called it CRITICAL.
+
+Base it on independently verified blast radius.
+
+==================================================
+12. MINIMUM SAFE FIX — DESIGN ONLY
+==================================================
+
+DO NOT IMPLEMENT.
+
+Design the smallest safe architectural correction.
+
+The target properties should be:
+
+1. Normal production HTTP requests must never invoke demo seeding.
+2. Production startup must not depend on ensureDemoData().
+3. Demo/test data initialization must require explicit non-production
+   context or explicit administrative/manual invocation.
+4. Existing legitimate production data must not be deleted or altered
+   merely to remove demo behavior.
+5. Existing booking/auth/salon functionality must remain unchanged.
+6. Development/test workflows that genuinely require fixtures should
+   continue to have an explicit safe mechanism.
+7. No silent fallback should seed production if data is missing.
+8. Failure should be explicit rather than auto-populating production.
+
+Determine whether the best minimal approach is:
+
+A. remove ensureDemoData calls from production request paths
+B. make ensureDemoData a guaranteed no-op in production
+C. split production reconciliation from demo seeding
+D. remove seed coupling entirely from request handling
+E. combination
+
+Recommend ONE architecture.
+
+Do not edit anything.
+
+==================================================
+13. REGRESSION TEST PLAN — DESIGN ONLY
+==================================================
+
+Design tests that would prove a future fix.
+
+At minimum include:
+
+- anonymous GET /api/salons in production mode causes zero seed writes
+- salon profile causes zero seed writes
+- widget route causes zero seed writes
+- login causes zero seed writes
+- registration causes zero seed writes
+- missing production data does not trigger demo initialization
+- production cold start does not invoke demo seed
+- development fixture setup still works explicitly
+- test fixture setup still works explicitly
+- booking behavior remains unchanged
+- no demo appointment is created in production
+- no real salon receives demo services
+- no product visibility/pricing is modified by demo setup
+- multiple instances cannot independently seed production
+
+Do not run these tests yet.
+
+==================================================
+14. COMPARE AGAINST CLAUDE FINDING
+==================================================
+
+Claude independently claimed:
+
+1. ensureDemoData is called from 21 route handlers.
+2. Anonymous production requests can reach it.
+3. Production opt-in protects only one branch.
+4. Existing-users branch can write production data.
+5. Demo services can be inserted into real salons.
+6. Future confirmed appointments can be inserted using real
+   salons/employees/customers.
+7. Product visibility/pricing can be modified.
+8. Memoization is only process-local.
+9. Autoscale cold starts can re-arm the behavior.
+10. Overall production demo seed risk is CRITICAL.
+
+For EACH claim return:
+
+CONFIRMED
+PARTIALLY CONFIRMED
+REFUTED
+UNKNOWN
+
+Do not defer to Claude.
+
+==================================================
+15. FINAL REPORT
+==================================================
+
+Return exactly:
+
+A. EXECUTIVE VERDICT
+
+Choose:
+
+CRITICAL ISSUE CONFIRMED
+HIGH-RISK ISSUE CONFIRMED
+PARTIAL ISSUE
+CLAUDE FINDING REFUTED
+UNRESOLVED
+
+B. GIT PRE-FLIGHT
+
+Branch:
+HEAD:
+github/main:
+Ahead/behind:
+Tracked state:
+
+C. ensureDemoData IMPLEMENTATION
+
+File:
+Memoization:
+Production behavior:
+Safety gates:
+
+D. CALLER INVENTORY
+
+Provide complete caller table.
+
+E. ANONYMOUS PRODUCTION REACHABILITY
+
+YES / NO / CONDITIONAL / UNKNOWN
+
+Representative call chains:
+
+F. EXISTING-USERS BRANCH
+
+List every write-capable helper.
+
+G. CLAIM VERIFICATION
+
+A through I:
+CONFIRMED / PARTIALLY CONFIRMED / REFUTED / UNKNOWN
+
+H. REAL SALON CONTAMINATION
+
+Can demo services reach real salons:
+Can demo appointments reach real salons/employees/customers:
+Evidence:
+
+I. AUTOSCALE / CONCURRENCY
+
+Process-local behavior:
+Cross-instance protection:
+Cold-start behavior:
+Partial-state risk:
+
+J. CURRENT PRODUCTION EXPOSURE
+
+NOT PRESENT / POTENTIALLY PRESENT / CONFIRMED PRESENT / UNKNOWN
+
+K. SEVERITY
+
+Public reachability:
+Production data:
+Booking:
+Users:
+Salons:
+Catalog:
+Operational:
+OVERALL:
+
+L. CLAUDE COMPARISON
+
+Claims 1–10 with individual verdicts.
+
+M. MINIMUM SAFE FIX DESIGN
+
+ONE recommended architecture only.
+
+N. REGRESSION TEST PLAN
+
+Tests required before any deployment.
+
+O. RELEASE CONSEQUENCE
+
+Answer:
+
+SHOULD CURRENT MAIN BE PUBLISHED BEFORE THIS ISSUE IS FIXED?
+
+YES / NO / UNKNOWN
+
+Explain.
+
+P. FINAL INTEGRITY
+
+Report:
+
+git status --short
+git rev-parse HEAD
+git rev-parse github/main
+git rev-list --left-right --count HEAD...github/main
+
+Confirm:
+
+CODE MODIFIED: NO
+FILES CREATED: NO
+FILES DELETED: NO
+COMMITS CREATED: NO
+PUSH PERFORMED: NO
+DEPLOYMENT PERFORMED: NO
+SERVER RESTARTED: NO
+DATABASE MODIFIED: NO
+SECRETS MODIFIED: NO
+
+STOP.
+
+Do not implement the fix.
+Do not propose a follow-up task automatically.
+Do not deploy.

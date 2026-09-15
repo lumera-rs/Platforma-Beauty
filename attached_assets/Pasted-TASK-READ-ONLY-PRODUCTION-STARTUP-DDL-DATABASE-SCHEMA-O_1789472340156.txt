@@ -1,0 +1,323 @@
+TASK — READ-ONLY PRODUCTION STARTUP DDL & DATABASE SCHEMA OWNERSHIP AUDIT
+
+THIS IS INVESTIGATION ONLY.
+
+DO NOT modify files.
+DO NOT create files.
+DO NOT stage.
+DO NOT commit.
+DO NOT push.
+DO NOT deploy or publish.
+DO NOT run migrations.
+DO NOT execute DDL.
+DO NOT modify any database data or schema.
+DO NOT restart production services.
+
+CONTEXT
+
+We are performing systematic production-release hardening of the LUMERA platform.
+
+The production demo-seeding/request-path vulnerability has already been addressed separately.
+
+The next known release blocker is:
+
+PRODUCTION STARTUP DDL / DATABASE SCHEMA OWNERSHIP
+
+Previous independent review found that normal API startup appears capable of running schema/DDL ensure routines.
+
+We need to determine the complete current architecture before changing anything.
+
+PRIMARY QUESTION
+
+Can starting a normal production API process modify database schema or otherwise act as a migration mechanism?
+
+If yes, enumerate EVERY path and determine the safest architecture for separating:
+
+1. application boot;
+2. schema migrations;
+3. release/deployment schema preparation;
+4. explicit maintenance;
+5. development/test initialization.
+
+AUDIT THE ACTUAL CURRENT CODE.
+
+Do not rely on documentation or previous reports.
+
+--------------------------------------------------
+A. ENUMERATE THE COMPLETE PRODUCTION BOOT PATH
+--------------------------------------------------
+
+Trace from the actual production start command through:
+
+package.json scripts
+deployment configuration
+server entry points
+index.ts
+app initialization
+database initialization
+route registration
+worker/scheduler initialization
+startup helpers
+
+Produce the exact call graph.
+
+Identify every function that executes automatically when a new production API process starts.
+
+--------------------------------------------------
+B. FIND ALL STARTUP DATABASE WRITES
+--------------------------------------------------
+
+Search the complete reachable production startup graph for:
+
+CREATE
+ALTER
+DROP
+TRUNCATE
+INSERT
+UPDATE
+DELETE
+
+and equivalent ORM/schema operations.
+
+Include dynamically imported helpers and indirect calls.
+
+For every reachable database mutation report:
+
+FILE
+FUNCTION
+CALLER
+BOOT PHASE
+DDL OR DML
+TRANSACTIONAL OR NOT
+IDEMPOTENT OR NOT
+FAILURE BEHAVIOR
+PRODUCTION PURPOSE
+
+Do not limit the investigation to functions named "ensure".
+
+--------------------------------------------------
+C. ENUMERATE ALL STARTUP SCHEMA / DDL ROUTINES
+--------------------------------------------------
+
+Find every production-boot reachable routine capable of:
+
+creating tables
+adding/removing columns
+creating/dropping indexes
+creating constraints
+changing constraints
+creating enums/types
+altering enums/types
+creating triggers
+changing defaults
+schema backfills coupled to schema changes
+
+For each one determine:
+
+WHY it exists
+WHEN it was introduced if Git history makes that safely inspectable
+whether a real migration exists for the same change
+whether it duplicates a migration
+whether startup currently acts as migration authority
+
+--------------------------------------------------
+D. DETERMINE CURRENT MIGRATION AUTHORITY
+--------------------------------------------------
+
+Identify all migration mechanisms in the repository:
+
+Drizzle migrations
+SQL migration files
+migration scripts
+Replit deployment schema tooling
+release-chain scripts
+manual schema scripts
+startup ensure routines
+other mechanisms
+
+Determine whether there is currently ONE authoritative schema migration mechanism or multiple competing mechanisms.
+
+Report contradictions.
+
+--------------------------------------------------
+E. REPLIT DEPLOYMENT CONTRACT
+--------------------------------------------------
+
+Inspect repository configuration and code only.
+
+Determine what this project expects Replit Publish/Deploy to execute regarding:
+
+build
+database migration/schema push
+application start
+health checks
+
+Clearly separate:
+
+CONFIRMED BY REPOSITORY
+INFERRED
+UNKNOWN / REQUIRES REPLIT PLATFORM CONFIGURATION
+
+Do not deploy to discover this.
+
+--------------------------------------------------
+F. FAILURE SCENARIOS
+--------------------------------------------------
+
+Analyze what happens if:
+
+1. two production instances start simultaneously;
+2. Autoscale starts a new instance during traffic;
+3. startup DDL partially succeeds;
+4. DDL succeeds but application boot fails;
+5. application version is rolled back after schema changed;
+6. two different releases briefly coexist;
+7. database user lacks DDL permission;
+8. long-running ALTER locks a production table;
+9. startup is restarted repeatedly;
+10. schema is newer or older than application code.
+
+Identify concrete risks from the current implementation.
+
+--------------------------------------------------
+G. TARGET ARCHITECTURE
+--------------------------------------------------
+
+Design the safest minimal-change architecture for THIS repository.
+
+Preferred invariant:
+
+NORMAL PRODUCTION APPLICATION BOOT MUST NOT OWN SCHEMA MIGRATION.
+
+Determine whether that invariant is appropriate here.
+
+Propose how to separate:
+
+APPLICATION BOOT
+MIGRATION COMMAND
+DEPLOY/RELEASE PREPARATION
+MAINTENANCE COMMANDS
+DEV/TEST SCHEMA SETUP
+
+Do not implement it yet.
+
+--------------------------------------------------
+H. MIGRATION COMPATIBILITY
+--------------------------------------------------
+
+Before recommending removal of any startup ensure routine, determine whether existing migrations actually reproduce the resulting schema.
+
+We must NOT simply delete startup DDL and discover that a fresh database can no longer reach the expected schema.
+
+For every startup DDL routine classify:
+
+SAFE TO REMOVE FROM BOOT NOW
+REQUIRES MIGRATION FIRST
+REQUIRES DATA BACKFILL
+REQUIRES FURTHER INVESTIGATION
+DEV/TEST ONLY
+EXPLICIT MAINTENANCE ONLY
+
+--------------------------------------------------
+I. CI / TEST IMPACT
+--------------------------------------------------
+
+Identify tests and CI/release-chain commands that currently depend on startup DDL.
+
+Determine how separating DDL from boot would affect:
+
+fresh database CI
+existing database CI
+schema drift tests
+browser tests
+API tests
+release-chain tests
+local Replit development
+
+Do not weaken tests.
+
+--------------------------------------------------
+J. SECURITY AND TENANT SAFETY
+--------------------------------------------------
+
+Check whether any startup schema/data helper:
+
+uses tenant-unscoped UPDATE/DELETE
+creates demo/default records
+repairs production data
+performs backfills
+changes auth/security configuration
+changes integration metadata
+
+Flag anything that belongs in explicit maintenance rather than application startup.
+
+--------------------------------------------------
+K. PROPOSE IMPLEMENTATION PHASES
+--------------------------------------------------
+
+Do NOT implement.
+
+Give the smallest safe sequence of implementation phases.
+
+For example only if supported by the code:
+
+Phase 1 — establish explicit migration authority
+Phase 2 — move missing schema changes into migration
+Phase 3 — remove DDL from production boot
+Phase 4 — isolate maintenance/backfills
+Phase 5 — preserve dev/test initialization
+Phase 6 — add static regression guard
+Phase 7 — CI/release verification
+
+For every phase list exact likely files and tests.
+
+--------------------------------------------------
+L. FINAL REPORT
+--------------------------------------------------
+
+Return:
+
+1. DECISION:
+   SAFE / UNSAFE / CONDITIONAL
+
+2. PRODUCTION BOOT CALL GRAPH
+
+3. ALL STARTUP DDL
+
+4. ALL STARTUP DML / DATA MUTATIONS
+
+5. CURRENT MIGRATION AUTHORITIES
+
+6. DUPLICATED OR CONFLICTING SCHEMA MECHANISMS
+
+7. FRESH DATABASE RISKS
+
+8. EXISTING DATABASE RISKS
+
+9. AUTOSCALE / MULTI-INSTANCE RISKS
+
+10. ROLLBACK RISKS
+
+11. TEST / CI DEPENDENCIES
+
+12. SECURITY / TENANT-SAFETY FINDINGS
+
+13. TARGET ARCHITECTURE
+
+14. EXACT IMPLEMENTATION PHASES
+
+15. FILES THAT WOULD NEED CHANGES
+
+16. TESTS REQUIRED BEFORE APPROVAL
+
+17. BLOCKING QUESTIONS, if any
+
+18. CONFIDENCE:
+    HIGH / MEDIUM / LOW
+
+19. GIT INTEGRITY:
+    confirm no modifications, commits or pushes
+
+STOP AFTER THE AUDIT.
+
+DO NOT FIX ANYTHING YET.

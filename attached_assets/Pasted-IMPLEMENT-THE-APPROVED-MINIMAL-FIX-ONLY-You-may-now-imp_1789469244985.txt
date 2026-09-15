@@ -1,0 +1,95 @@
+IMPLEMENT THE APPROVED MINIMAL FIX ONLY
+
+You may now implement the fix identified in the previous READ-ONLY investigation.
+
+ROOT CAUSE ALREADY CONFIRMED:
+The development/test fixture still creates a seeded men's service, but the refactor removed the fixture-side step that establishes servesMen=true for the fixture-owned salon.
+
+CLASSIFICATION:
+TEST FIXTURE REGRESSION.
+
+GOAL:
+Restore the development/test fixture contract without weakening the new production demo-seeding security boundary.
+
+IMPLEMENTATION REQUIREMENTS:
+
+1. Add a fixture-scoped solution that ensures servesMen=true ONLY for the managed demo/test salon(s) that the development/test fixture owns and for which it creates men's services.
+
+2. Prefer the narrowest possible implementation:
+   - known fixture salon IDs,
+   - salons belonging to known @lumera.local fixture owners,
+   - or salon IDs directly created/managed by the fixture sequence.
+
+3. DO NOT restore global synchronizeInferredServesMen() into:
+   - HTTP request paths,
+   - production startup,
+   - ensureDemoData(),
+   - development-test-fixtures.ts through a global production-capable maintenance path.
+
+4. DO NOT modify arbitrary real salons.
+
+5. DO NOT weaken:
+   - production ensureDemoData() no-op behavior,
+   - production/deployment fixture rejection,
+   - production request dependency boundary,
+   - static guards,
+   - maintenance separation.
+
+6. DO NOT change the failing assertion merely to make CI green.
+
+7. Keep synchronizeInferredServesMen() classified as explicit maintenance unless there is an independently proven reason otherwise.
+
+TESTING:
+
+Run the exact previously failing chain:
+
+export NODE_ENV=test && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts
+
+Then run:
+
+- production demo-seed safety tests
+- production request dependency-boundary tests
+- relevant TypeScript/typecheck checks
+- git diff --check
+
+Also verify both fixture scenarios:
+- fresh database fixture path
+- existing-users fixture path
+
+Verify specifically:
+- seeded men's service exists
+- its fixture-owned salon has servesMen=true
+- gender=men discovery includes that salon
+
+GIT SAFETY:
+
+Current intended branch:
+fix-production-demo-seed-boundary
+
+The existing approved commit is already on GitHub:
+96ddb2d6 Prevent production demo seeding from request paths
+
+There are currently untracked attached_assets/Pasted-*.txt files.
+DO NOT add, stage, modify, delete, commit, or push those files.
+
+DO NOT commit.
+DO NOT push.
+DO NOT deploy.
+DO NOT publish.
+
+After implementation report:
+
+A. EXACT FILES CHANGED
+B. EXACT FIX
+C. WHY IT IS FIXTURE-SCOPED
+D. FRESH-DATABASE RESULT
+E. EXISTING-USERS RESULT
+F. PREVIOUSLY FAILING CI TEST RESULT
+G. PRODUCTION DEMO-SEED SAFETY RESULT
+H. PRODUCTION REQUEST BOUNDARY RESULT
+I. TYPECHECK RESULT
+J. git diff --check RESULT
+K. SECURITY INVARIANTS AFTER FIX
+L. git status --short
+
+STOP after implementation and verification.

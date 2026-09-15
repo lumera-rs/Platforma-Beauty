@@ -1,0 +1,238 @@
+TASK — PRODUCTION BOOT HARDENING PHASE 1
+Remove automatic production marketplace demo seeding from normal API startup.
+
+You MAY implement this task.
+
+IMPORTANT SCOPE:
+
+This is an isolated production boot safety fix.
+
+DO NOT:
+- redesign the migration architecture;
+- remove any ensure*Schema() startup routine;
+- modify database schema;
+- execute DDL;
+- run migrations;
+- modify production data;
+- query production database;
+- change scheduler behavior;
+- change outbox behavior;
+- change Replit deployment configuration;
+- change GitHub workflows unless strictly required for a narrow regression test;
+- commit;
+- push;
+- deploy;
+- publish.
+
+Do not touch attached_assets/.
+
+BACKGROUND
+
+Independent audits found that normal production boot currently has two overlapping marketplace/demo content paths:
+
+1. reconcileKnownTestListings()
+2. seedProductionMarketplaceDemoContent()
+
+The audits found that reconcileKnownTestListings() reaches ensureProductionDemoMarketplace() in production and can create managed marketplace demo content.
+
+Then seedProductionMarketplaceDemoContent() runs afterward.
+
+Both use the same managed marker:
+
+[LUMERA_DEMO_MARKETPLACE_2026_08_25]
+
+The first path can create approximately:
+- 2 users
+- 1 education center
+- 1 course category
+- 1 subscription plan
+- 1 subscription
+- 102 job listings
+- 6 courses
+
+The second seeder then sees a partial managed set and can log an error on every production boot.
+
+This task is NOT permission to delete production data.
+
+GOAL
+
+Normal production API startup must no longer automatically execute production marketplace demo seeding.
+
+For this phase, remove production demo/bootstrap behavior from the NORMAL APPLICATION BOOT PATH while preserving any operator-controlled functionality that may still be needed later.
+
+A. VERIFY BEFORE MODIFYING
+
+Independently trace current code and confirm:
+
+src/index.ts
+→ reconcileKnownTestListings()
+→ production behavior
+→ ensureProductionDemoMarketplace()
+
+and:
+
+src/index.ts
+→ seedProductionMarketplaceDemoContent()
+
+Confirm whether both still share the same managed marker.
+
+Report exact call paths before modifying anything.
+
+B. NORMAL BOOT INVARIANT
+
+After this change:
+
+NODE_ENV=production normal API boot MUST NOT:
+
+- create marketplace demo users;
+- create demo education centers;
+- create demo courses;
+- create demo beauty-job listings;
+- create demo subscriptions/plans/categories;
+- repair or reconcile production demo marketplace content;
+- call seedProductionMarketplaceDemoContent();
+- reach ensureProductionDemoMarketplace() through reconcileKnownTestListings().
+
+This must be true for:
+- first production process;
+- restart;
+- Autoscale instance;
+- repeated boot.
+
+C. reconcileKnownTestListings()
+
+Refactor this carefully.
+
+Its production branch must NOT seed or repair demo marketplace content during application startup.
+
+If legitimate DEV/TEST-only reconciliation exists, preserve it behind explicit non-production boundaries.
+
+Do not silently delete useful dev/test fixture behavior.
+
+Production behavior should be deterministic and side-effect free.
+
+D. seedProductionMarketplaceDemoContent()
+
+Remove it from normal production application startup.
+
+Do NOT delete production data.
+
+If the function may still be useful as an explicit operator/bootstrap mechanism, keep it isolated and unreachable from normal API startup.
+
+If it is truly dead code after the change, do not delete it automatically unless deletion is clearly safer than retention.
+
+Explain the decision.
+
+E. STATIC PRODUCTION-BOUNDARY TEST
+
+Add or strengthen a regression test proving that the production request/startup dependency graph cannot reach:
+
+- ensureProductionDemoMarketplace
+- seedProductionMarketplaceDemoContent
+- equivalent production marketplace demo/bootstrap writers
+
+The test should fail if someone later reintroduces one of these paths into normal production boot.
+
+Prefer existing production request/startup dependency-boundary infrastructure if suitable.
+
+F. RUNTIME SAFETY TEST
+
+Using isolated/disposable test infrastructure only, prove:
+
+production-mode normal startup:
+→ does not execute marketplace demo writes.
+
+Do NOT use the real production database.
+
+If a DB-backed runtime test would require unsafe or ambiguous credentials, do not run it. Use the strongest safe isolated harness available and clearly report what was and was not runtime-verified.
+
+G. EXISTING TEST INTEGRITY
+
+Preserve:
+- development fixtures;
+- test fixtures;
+- current production-demo-seed safety tests;
+- production request dependency boundary tests;
+- appointment/booking tests;
+- release-chain semantics.
+
+Do not weaken assertions simply to make tests pass.
+
+H. CHANGE RADIUS
+
+Expected production change should be very small.
+
+Before editing, identify exact files expected to change.
+
+After editing, report every changed tracked file and why.
+
+Unexpected broad changes are a blocker.
+
+I. SECURITY CHECK
+
+Explicitly verify after implementation:
+
+Production normal startup → marketplace demo write:
+IMPOSSIBLE / POSSIBLE
+
+Production request → marketplace demo write:
+IMPOSSIBLE / POSSIBLE
+
+Production Autoscale process start → marketplace demo write:
+IMPOSSIBLE / POSSIBLE
+
+Development/test explicit fixture → still available:
+YES / NO
+
+Production operator-controlled bootstrap, if retained → reachable only explicitly:
+YES / NO / REMOVED
+
+J. TESTS
+
+Run the narrowest relevant safe tests first.
+
+At minimum run, where safely possible:
+
+- production demo seed safety suite
+- production request/startup dependency boundary suite
+- relevant reconciliation tests
+- API typecheck
+- scripts typecheck
+- git diff --check
+
+Then run any additional non-destructive regression tests required by the files actually changed.
+
+Do not run anything that can mutate a real production database.
+
+K. GIT SAFETY
+
+Do NOT commit.
+Do NOT push.
+Do NOT checkout/switch/reset.
+Do NOT stage files.
+Do NOT modify attached_assets.
+
+Replit may create an automatic checkpoint outside your control.
+If that happens, REPORT IT clearly, but do not perform Git recovery yourself.
+
+FINAL REPORT
+
+Return:
+
+1. PRE-CHANGE CALL GRAPH
+2. ROOT CAUSE CONFIRMATION
+3. FILES CHANGED
+4. EXACT IMPLEMENTATION
+5. PRODUCTION BOOT INVARIANT RESULT
+6. STATIC BOUNDARY RESULT
+7. RUNTIME SAFETY RESULT
+8. DEV/TEST FIXTURE RESULT
+9. TEST RESULTS
+10. SECURITY MATRIX
+11. REGRESSION RISK
+12. REMAINING OUT-OF-SCOPE RISKS
+13. GIT STATUS / AUTO-CHECKPOINT STATUS
+14. DECISION: PASS / FAIL
+
+Do not start Phase 2.
+STOP after this task.

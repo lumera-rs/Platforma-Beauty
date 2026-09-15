@@ -1,0 +1,297 @@
+FOLLOW-UP — FIX ONLY CLAUDE REVIEW BLOCKER R-1
+
+Claude Code independently reviewed the staged ensureDemoData production-safety fix.
+
+Security review result:
+
+SECURITY FIX: PASS
+OVERALL: CHANGES REQUIRED
+
+There is exactly one blocking regression to fix.
+
+DO NOT broaden scope.
+
+==================================================
+BLOCKER R-1
+==================================================
+
+The new initializeDevelopmentTestFixtures() correctly requires:
+
+NODE_ENV=development
+or
+NODE_ENV=test
+
+However, six existing root package.json test scripts execute seven converted
+test files without NODE_ENV=test.
+
+They now fail immediately because NODE_ENV is undefined.
+
+Affected scripts:
+
+1. test:appointment-concurrency
+   - appointment-locks.test.ts
+   - appointment-routes.test.ts
+
+2. test:education-extras
+   - education-extras.test.ts
+
+3. test:education-finance
+   - education-financial.test.ts
+
+4. test:education-sessions
+   - education-sessions.test.ts
+
+5. test:media
+   - media-routes.test.ts
+
+6. test:review-photo-privacy
+   - review-photo-privacy.test.ts
+
+IMPORTANT:
+
+test:education-extras is part of:
+
+validate:release:4-isolated
+
+Therefore this regression blocks the release validation chain.
+
+==================================================
+SAFETY / SCOPE
+==================================================
+
+Fix ONLY R-1.
+
+Do NOT modify the security architecture that Claude approved.
+
+Do NOT change:
+
+- seed.ts security boundary
+- production request dependency boundary
+- production demo seed architecture
+- production startup
+- startup DDL
+- scheduler/outbox
+- deployment configuration
+- database schema
+- migrations
+- Secrets
+- GitHub workflows
+- production start command
+
+Do NOT address Claude's LOW/INFO findings in this task.
+
+Specifically DO NOT currently change:
+
+- createRequire guard handling
+- .gitignore temp directory handling
+- compatibility exports
+- deployment-marker convention
+- lazy-binding style
+
+Those are non-blocking follow-ups.
+
+==================================================
+GIT SAFETY
+==================================================
+
+Before editing report:
+
+branch
+HEAD
+github/main
+ahead/behind
+git status --short
+
+Expected:
+
+branch = main
+HEAD = github/main
+ahead/behind = 0/0
+
+The existing ensureDemoData fix is staged.
+
+Two attached_assets/Pasted-*.txt files are untracked.
+
+DO NOT:
+
+- reset
+- commit
+- push
+- merge
+- rebase
+- switch branch
+- stage the attached_assets files
+- modify the attached_assets files
+
+Preserve the existing staged security fix.
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+Inspect the six affected package.json scripts and compare them with sibling
+test scripts that already establish NODE_ENV=test correctly.
+
+Apply the smallest repository-consistent fix.
+
+If the existing convention is:
+
+NODE_ENV=test <test command>
+
+then use that same convention.
+
+Do not invent a new test runner unless actually required.
+
+Do not weaken initializeDevelopmentTestFixtures().
+
+Do not make NODE_ENV undefined acceptable.
+
+Do not remove or bypass runtime fixture protection.
+
+The security boundary must remain fail-closed.
+
+==================================================
+VERIFY ALL AFFECTED RUNNERS
+==================================================
+
+Statically verify all six scripts now establish the correct explicit test
+runtime before invoking converted tests.
+
+Also search package.json for EVERY test file changed from:
+
+ensureDemoData()
+
+to:
+
+initializeDevelopmentTestFixtures()
+
+Verify there are no additional npm scripts invoking those files without the
+required explicit test runtime.
+
+Do not assume Claude's list is exhaustive.
+
+If additional equivalent runner omissions are found, they are within scope
+and should be fixed consistently.
+
+==================================================
+TESTING SAFETY
+==================================================
+
+Do NOT run tests against the ambient workspace DATABASE_URL.
+
+Before executing any affected DB-backed test, prove it uses an isolated
+disposable test database.
+
+If isolation cannot be proven:
+
+SKIPPED — SAFETY
+
+Do not change environment variables manually merely to make a test pass.
+
+Safe DB-free checks may be run after inspection.
+
+At minimum verify:
+
+- package.json syntax
+- relevant script definitions
+- production-request boundary test
+- production-demo-seed test
+- TypeScript checks
+
+Only run additional tests when their isolation is independently established.
+
+Do NOT run deploy/publish/release commands merely to verify this fix if they
+can access persistent data.
+
+==================================================
+FINAL SECURITY RECHECK
+==================================================
+
+After R-1 is fixed, confirm again:
+
+Anonymous production request → demo write: IMPOSSIBLE
+Authenticated production request → demo write: IMPOSSIBLE
+Rejected private request → demo write: IMPOSSIBLE
+Production ensureDemoData → DB write: NO
+Old production opt-in bypass: IMPOSSIBLE
+
+==================================================
+DIFF DISCIPLINE
+==================================================
+
+Inspect:
+
+git diff
+git diff --cached
+git diff --check
+git status --short
+
+The resulting change beyond the already-reviewed fix should be minimal and
+directly attributable to R-1.
+
+Do NOT commit.
+
+Do NOT push.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+A. RESULT
+PASS / PARTIAL / FAIL
+
+B. ROOT CAUSE
+Brief explanation.
+
+C. SCRIPTS FIXED
+Exact list and exact change made.
+
+D. ADDITIONAL RUNNER AUDIT
+List every converted fixture test and whether its runner establishes the
+correct runtime.
+
+E. TEST RESULTS
+Command / result / count.
+
+Use SKIPPED — SAFETY where appropriate.
+
+F. SECURITY RECHECK
+Anonymous request → demo write:
+Authenticated request → demo write:
+Rejected private request → demo write:
+Production ensureDemoData → DB write:
+Old production opt-in bypass:
+
+G. FILES CHANGED IN THIS FOLLOW-UP
+Exact list.
+
+H. DIFF
+git diff --stat
+git diff --check
+
+I. FINAL GIT STATE
+branch
+HEAD
+github/main
+ahead/behind
+git status --short
+
+J. INTEGRITY
+DATABASE MODIFIED: NO
+SCHEMA APPLIED: NO
+MIGRATIONS RUN: NO
+SERVER RESTARTED: NO
+DEPLOYMENT/PUBLISH: NO
+SECRETS MODIFIED: NO
+COMMITS CREATED: NO
+PUSH PERFORMED: NO
+ATTACHED_ASSETS STAGED: NO
+
+STOP.
+
+Do not begin another task.
+Do not commit.
+Do not push.
+Do not deploy.

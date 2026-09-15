@@ -6,9 +6,8 @@
  * application, or opens a database connection.
  *
  * The request graph starts at app.ts, every non-test route module, and the
- * authentication helper module.  The server's src/index.ts is intentionally
- * not a root: that file owns independently managed startup work, including
- * the production marketplace demo-seed entry point.
+ * authentication helper module. A separate narrow check starts at src/index.ts
+ * and prevents normal API boot from regaining production demo-seed modules.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -45,6 +44,8 @@ export interface DependencyBoundaryOptions {
    * are always retained so callers cannot accidentally weaken the boundary.
    */
   readonly forbiddenModulePatterns?: readonly ModuleMatcher[];
+  /** Keep the broad request-time fixture and maintenance denylist. */
+  readonly includeDefaultForbiddenPatterns?: boolean;
 }
 
 export interface DependencyPathStep {
@@ -82,6 +83,10 @@ export interface DependencyBoundaryReport {
 export const DEFAULT_PRODUCTION_REQUEST_ROOTS = Object.freeze([
   "artifacts/api-server/src/app.ts",
   "artifacts/api-server/src/lib/auth.ts",
+]);
+
+export const DEFAULT_PRODUCTION_STARTUP_ROOTS = Object.freeze([
+  "artifacts/api-server/src/index.ts",
 ]);
 
 /**
@@ -502,7 +507,9 @@ export function checkProductionRequestDependencyBoundary(
     : discoverWorkspacePackages(repositoryRoot);
   const aliases = options.moduleAliases;
   const matchers = [
-    ...DEFAULT_FORBIDDEN_MODULE_PATTERNS,
+    ...(options.includeDefaultForbiddenPatterns === false
+      ? []
+      : DEFAULT_FORBIDDEN_MODULE_PATTERNS),
     ...(options.forbiddenModulePatterns ?? []),
   ].map(matcherFor);
   const roots = options.rootFiles.map((root) => {
@@ -723,6 +730,20 @@ export function checkRealRepositoryProductionRequestBoundary(
 ): DependencyBoundaryReport {
   const roots = discoverProductionRequestRoots(repositoryRoot);
   return checkProductionRequestDependencyBoundary({ repositoryRoot, rootFiles: roots });
+}
+
+export function checkRealRepositoryProductionStartupDemoBoundary(
+  repositoryRoot = DEFAULT_REPOSITORY_ROOT,
+): DependencyBoundaryReport {
+  return checkProductionRequestDependencyBoundary({
+    repositoryRoot,
+    rootFiles: DEFAULT_PRODUCTION_STARTUP_ROOTS,
+    includeDefaultForbiddenPatterns: false,
+    forbiddenModulePatterns: [
+      /(?:^|\/)production-marketplace-demo-seed(?:\.[a-z0-9]+)?$/iu,
+      /(?:^|\/)(?:production[-_]demo|demo[-_]bootstrap)(?:[-_/]|\.|$)/iu,
+    ],
+  });
 }
 
 function formatReport(report: DependencyBoundaryReport): string {

@@ -32,7 +32,6 @@ import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
 import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
-import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
 import { runReferralMaintenance } from "./lib/referral-service";
 import { ensureReferralSchema } from "./lib/referral-schema";
 import { ensureWebPushSchema } from "./lib/web-push-schema";
@@ -91,9 +90,6 @@ await ensureWebPushSchema();
 await ensureBookingCommandSchema();
 await ensureEducationBundlePurchaseSchema();
 await reconcileKnownTestListings();
-if (process.env.NODE_ENV === "production") {
-  await seedProductionMarketplaceDemoContent();
-}
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");

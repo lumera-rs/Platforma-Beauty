@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   checkProductionRequestDependencyBoundary,
   checkRealRepositoryProductionRequestBoundary,
+  checkRealRepositoryProductionStartupDemoBoundary,
   discoverProductionRequestRoots,
 } from "./production-request-dependency-boundary";
 
@@ -110,7 +111,7 @@ test("resolves configured aliases before applying the boundary", () => {
   assert.equal(report.violations[0]?.reason, "forbidden-module");
 });
 
-test("real repository roots include app, all production routes, and auth but exclude server startup index", () => {
+test("real repository request roots include app, all production routes, and auth but not server startup", () => {
   const roots = discoverProductionRequestRoots();
   assert.ok(roots.some((root) => root.endsWith("/artifacts/api-server/src/app.ts")));
   assert.ok(roots.some((root) => root.endsWith("/artifacts/api-server/src/lib/auth.ts")));
@@ -123,6 +124,15 @@ test("real repository request graph remains outside fixture and maintenance modu
   const report = checkRealRepositoryProductionRequestBoundary();
 
   assert.deepEqual(report.violations, []);
+  assert.ok(report.scannedModules > 0);
+  assert.ok(report.scannedReferences > 0);
+});
+
+test("real repository startup graph cannot reach production marketplace demo writers", () => {
+  const report = checkRealRepositoryProductionStartupDemoBoundary();
+
+  assert.deepEqual(report.violations, []);
+  assert.ok(report.roots.some((root) => root.endsWith("/artifacts/api-server/src/index.ts")));
   assert.ok(report.scannedModules > 0);
   assert.ok(report.scannedReferences > 0);
 });
