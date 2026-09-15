@@ -5166,9 +5166,9 @@ export async function runBusinessGrowthSchemaDdl(
  * `public` in autocommit, then releases the lock and client. Logs completion
  * only after all DDL succeeds; any failure propagates to fail startup.
  */
-export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise<void> {
+export async function ensureBusinessGrowthSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
   quoteSchema(schemaName); // validate early, before acquiring resources
-  const client = await pool.connect();
+  const client = await poolOverride.connect();
   let previousSearchPath: string | undefined; let previousTimeouts: StartupDdlSessionTimeouts | undefined; let startupError: unknown;
   try { previousSearchPath = await currentSearchPath(client); previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await runBusinessGrowthSchemaDdl(client, schemaName);

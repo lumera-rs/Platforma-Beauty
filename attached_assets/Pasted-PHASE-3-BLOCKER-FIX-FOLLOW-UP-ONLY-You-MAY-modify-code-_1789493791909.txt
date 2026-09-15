@@ -1,0 +1,641 @@
+PHASE 3 — BLOCKER FIX FOLLOW-UP ONLY
+
+You MAY modify code.
+
+Claude Code completed an independent READ-ONLY review of the partial
+Phase 3 implementation.
+
+FINAL DECISION: CHANGES REQUIRED.
+
+Do NOT restart Phase 3.
+Do NOT start Phase 4.
+Do NOT redesign the architecture.
+Do NOT revert the good Phase 3 changes.
+Do NOT publish/deploy.
+Do NOT contact production.
+Do NOT run production DDL or migrations.
+Do NOT perform Git history operations.
+Do NOT touch attached_assets/.
+
+Current known state:
+
+Branch:
+fix-production-demo-seed-boundary
+
+Current HEAD:
+80978455559aea16dd4fc470835db047cf80c3fc
+
+This is already a Replit automatic checkpoint.
+Working tree was clean at Claude review time.
+
+Fix ONLY the Phase 3 blockers and add the required focused tests.
+
+==================================================
+1. KEEP THE VERIFIED GOOD PHASE 3 CHANGES
+==================================================
+
+Claude independently verified these are sound and must NOT be reverted:
+
+BUSINESS GROWTH
+- autocommit correctly preserved;
+- existing DDL unchanged;
+- timeout capture/restore uses same leased client;
+- cleanup now continues to advisory unlock even if snapshot_backfill reset
+  fails;
+- primary rollout error preservation is correct.
+
+EDUCATION BUNDLE
+- transaction-compatible;
+- BEGIN/COMMIT/ROLLBACK is valid;
+- trigger/constraint replacement becomes externally atomic;
+- VALIDATE CONSTRAINT is valid in transaction;
+- shared Business Growth advisory lock is justified because both owners
+  modify education_bundle_purchases.
+
+MEDIA
+- one leased client is correct;
+- all 26 operations are transaction-compatible;
+- transaction makes partial schema externally invisible;
+- advisory lock is appropriate;
+- same SQL text/order remains.
+
+BOOKING COMMAND
+- CREATE TABLE + two non-concurrent indexes are safely transactional;
+- final schema semantics unchanged.
+
+MARKETPLACE
+- MUST remain autocommit because it uses CREATE INDEX CONCURRENTLY.
+
+Do not undo these improvements.
+
+==================================================
+2. BLOCKER P3-BL-1
+SHIPPING + WEB PUSH TRANSACTION LEAK
+==================================================
+
+Files:
+
+artifacts/api-server/src/lib/shipping-config.ts
+artifacts/api-server/src/lib/web-push-schema.ts
+
+Current Phase 3 ordering became:
+
+BEGIN
+→ SET LOCAL timeout
+→ pg_advisory_lock
+→ DDL
+→ COMMIT
+
+But rollback currently exists only in an inner try around DDL/commit.
+
+Therefore if:
+
+setLocalStartupDdlTimeouts()
+
+or:
+
+pg_advisory_lock(...)
+
+throws after BEGIN succeeded, no ROLLBACK executes.
+
+The client can then be released into the node-postgres pool with an open or
+aborted transaction.
+
+This is NEWLY INTRODUCED by Phase 3.
+
+Required minimal correction:
+
+Ensure the OUTER transaction scope catches every error after BEGIN and
+attempts:
+
+await client.query("rollback").catch(() => {});
+
+before rethrowing the ORIGINAL error.
+
+Use the same safe structural pattern already used by:
+
+- media
+- referral
+- booking-command
+- education-bundle
+
+Requirements:
+
+- rollback covers timeout setup failure;
+- rollback covers advisory-lock acquisition failure;
+- rollback covers DDL failure;
+- rollback covers COMMIT failure where rollback is still applicable;
+- original error remains primary;
+- unlock only attempted if locked === true;
+- client.release() always occurs;
+- no pooled client is returned in an open/aborted transaction.
+
+Do not change SQL DDL.
+
+==================================================
+3. BLOCKER P3-BL-2
+MARKETPLACE PRIMARY ERROR MASKING
+==================================================
+
+File:
+
+artifacts/api-server/src/lib/marketplace-performance-schema.ts
+
+Marketplace correctly remains autocommit.
+
+Current problem:
+
+restoreStartupDdlSessionTimeouts(...)
+can throw from finally.
+
+If CREATE INDEX CONCURRENTLY already failed, a restore failure from finally
+replaces the real startup/DDL error.
+
+That is unacceptable.
+
+Required minimal correction:
+
+Use the same primary-error / cleanup-error preservation pattern already used
+successfully in Business Growth.
+
+Conceptually:
+
+let startupError;
+let cleanupError;
+
+try {
+   ...
+} catch (error) {
+   startupError = error;
+   throw error;
+} finally {
+   attempt unlock without preventing later cleanup;
+
+   attempt timeout restore;
+   if restore fails:
+       capture as cleanupError;
+
+   ALWAYS release client;
+
+   only throw cleanupError if there was NO startupError.
+}
+
+Exact implementation should match repository style and TypeScript safety.
+
+Requirements:
+
+- failed CREATE INDEX CONCURRENTLY remains the surfaced primary error;
+- advisory unlock failure does not skip timeout restoration;
+- timeout restore failure does not skip client release;
+- cleanup error surfaces if startup itself succeeded;
+- no cleanup error masks an existing startup error.
+
+Do NOT make Marketplace transactional.
+
+Do NOT address INVALID-index recovery in this follow-up.
+
+==================================================
+4. MEDIA BASELINE — IMPORTANT
+==================================================
+
+Claude independently proved:
+
+The Phase 2 baseline mismatch is NOT one operation.
+
+ALL 26 Media operations differ in baseline path metadata.
+
+However:
+
+- owner unchanged;
+- module unchanged;
+- operation count unchanged;
+- kind unchanged;
+- summary unchanged;
+- SQL text unchanged;
+- fingerprint unchanged;
+- order unchanged;
+- callSite/phase unchanged.
+
+All 26 differences are PATH metadata only.
+
+The underlying sanctioned Phase 3 execution change is:
+
+OLD:
+db.execute(sql.raw(statement))
+
+NEW:
+client.query(statement)
+
+plus:
+- one leased client;
+- transaction;
+- advisory lock;
+- timeout protection.
+
+Claude verified that forcing the new sink back to the old exact:
+
+media-schema.ts:106:11
+
+would require brittle/misleading formatting and should NOT be done.
+
+Therefore:
+
+DO NOT reformat Media merely to fake the old source location.
+
+DO NOT weaken the analyzer.
+
+DO NOT suppress Media from inventory.
+
+DO NOT regenerate the entire baseline blindly.
+
+==================================================
+5. CONTROLLED MEDIA RE-BASELINE
+==================================================
+
+A controlled baseline update is permitted ONLY AFTER:
+
+P3-BL-1 is fixed;
+P3-BL-2 is fixed;
+focused tests for those corrections pass;
+raw inventory still proves:
+
+Owners = 8
+Operations = 1,459
+Raw violations = 0
+
+and mechanically proves for ALL 26 Media entries:
+
+- same owner;
+- same module;
+- same operation kind;
+- same SQL summary;
+- same fingerprint;
+- same operation ordering;
+- only path metadata differs.
+
+Before changing the baseline, produce a machine-readable comparison of the
+26 old/new Media records.
+
+If ANY field other than path differs:
+
+STOP.
+
+DO NOT update the baseline.
+
+If and only if PATH is the sole difference:
+
+update ONLY the 26 Media path entries in:
+
+scripts/src/production-startup-ddl-baseline.json
+
+Do NOT regenerate/rewrite the complete baseline.
+
+Do NOT alter any other owner entry.
+
+Afterwards verify mechanically:
+
+- exactly 26 baseline records changed;
+- every changed field is path only;
+- no fingerprint changed;
+- no summary changed;
+- no ordering changed;
+- no owner changed;
+- no count changed.
+
+Then Phase 2 must return:
+
+Owners: 8
+Operations: 1,459
+Unexpected: 0
+Missing: 0
+Unknown SQL: 0
+Unresolved dependencies: 0
+Violations: 0
+Baseline match: true
+
+==================================================
+6. DO NOT BROADLY REFORMAT THE EIGHT OWNER FILES
+==================================================
+
+Claude suggested normal formatting as a future cleanup.
+
+DO NOT do broad formatting in this blocker follow-up.
+
+We want a minimal, reviewable diff.
+
+Do not move unrelated SQL sinks or create additional baseline path churn.
+
+Only format lines directly necessary for the blocker fixes.
+
+==================================================
+7. REQUIRED TEST — SHIPPING TRANSACTION LEAK
+==================================================
+
+Add a focused regression test.
+
+Force failure AFTER BEGIN but BEFORE DDL, for example during:
+
+- timeout setup; and/or
+- advisory lock acquisition.
+
+Verify:
+
+- rollback is attempted;
+- original failure propagates;
+- unlock is not attempted if lock was never acquired;
+- released client is not left in an open/aborted transaction.
+
+Where a disposable PostgreSQL test is used, verify the reused connection can
+successfully execute:
+
+SELECT 1
+
+after the failed ensure routine.
+
+Never use ambient/production DB.
+
+==================================================
+8. REQUIRED TEST — WEB PUSH TRANSACTION LEAK
+==================================================
+
+Same regression contract as Shipping:
+
+Failure after BEGIN / before DDL must:
+
+- rollback;
+- preserve primary error;
+- release clean connection;
+- not unlock an unacquired lock.
+
+==================================================
+9. REQUIRED TEST — MARKETPLACE ERROR PRESERVATION
+==================================================
+
+Test:
+
+A. CREATE INDEX CONCURRENTLY fails
+AND
+timeout restore also fails.
+
+Expected surfaced error:
+
+CREATE INDEX CONCURRENTLY failure.
+
+NOT cleanup failure.
+
+Also test:
+
+B. startup succeeds
+BUT timeout restore fails.
+
+Expected:
+
+cleanup/restore failure surfaces.
+
+In both cases:
+
+client release must still occur.
+
+==================================================
+10. REQUIRED TEST — MEDIA TRANSACTION ATOMICITY
+==================================================
+
+Add focused coverage proving the intended Media execution contract.
+
+At minimum verify:
+
+- one leased client is used;
+- BEGIN occurs before the 26 statements;
+- all 26 use that client;
+- COMMIT occurs only after all succeed;
+- injected mid-rollout failure triggers ROLLBACK;
+- COMMIT is not reached after failure;
+- unlock/release still occur appropriately.
+
+If a disposable PostgreSQL integration test is practical and already
+supported by repository conventions, additionally prove partial schema is
+not externally visible.
+
+Do not use production.
+
+==================================================
+11. REQUIRED TEST — EDUCATION BUNDLE ATOMICITY
+==================================================
+
+Add focused coverage for:
+
+- transaction begins before schema replacement;
+- failure during trigger/constraint replacement rolls back;
+- no successful COMMIT after injected failure;
+- primary error propagates;
+- unlock/release cleanup occurs.
+
+Do not change its SQL.
+
+==================================================
+12. REQUIRED TEST — BOOKING COMMAND ATOMICITY
+==================================================
+
+Add focused coverage for:
+
+- table + indexes execute in same transaction;
+- injected failure after table creation causes rollback;
+- no successful commit;
+- primary error propagates;
+- lock/release cleanup works.
+
+==================================================
+13. REQUIRED TEST — TIMEOUT RESTORATION
+==================================================
+
+For Business Growth and Marketplace:
+
+verify previous:
+
+lock_timeout
+statement_timeout
+
+values are restored after:
+
+A. success;
+B. startup failure.
+
+For Marketplace also cover restore failure according to §9.
+
+Do not broaden Business Growth changes unless a test exposes a NEW Phase 3
+regression.
+
+==================================================
+14. DEFERRED — DO NOT FIX
+==================================================
+
+Do NOT fix in this follow-up:
+
+- Marketplace INVALID index recovery after failed CREATE INDEX CONCURRENTLY;
+- lumera.snapshot_backfill session-scoped design;
+- hashtext advisory key design;
+- query_timeout/server cancellation divergence;
+- setLocalStartupDdlTimeouts misuse guard;
+- stale Business Growth comment;
+- Business Growth autocommit replacement windows;
+- migration ledger;
+- adoption;
+- readiness;
+- DB roles;
+- startup DDL removal;
+- scheduler extraction;
+- Phase 4 architecture.
+
+Report them as deferred only.
+
+==================================================
+15. PHASE 1 REGRESSION
+==================================================
+
+After blocker fixes and controlled baseline update, run:
+
+production request/startup boundary
+Expected: 10/10 PASS
+
+production demo-seed safety
+Expected: 11/11 PASS
+
+Reconfirm:
+
+production startup → marketplace demo writer: IMPOSSIBLE
+production startup → development/test fixtures: IMPOSSIBLE
+production request → demo fixture: IMPOSSIBLE
+
+==================================================
+16. PHASE 2 REGRESSION
+==================================================
+
+Run full production startup DDL inventory/mutation suite.
+
+Expected after controlled 26-entry Media path update:
+
+PASS
+
+Real repository:
+
+8 owners
+1,459 operations
+0 violations
+baseline match true
+
+Also verify all BF-1 and BF-2 mutation coverage remains green.
+
+==================================================
+17. TYPECHECK / STATIC REGRESSION
+==================================================
+
+Run safely:
+
+- Phase 3 focused tests;
+- production startup DDL inventory/mutation suite;
+- production request/startup boundary;
+- production demo-seed safety;
+- scripts typecheck;
+- API-server typecheck;
+- backend static chain;
+- relevant owner-specific tests;
+- git diff --check.
+
+Use disposable/local isolated DB only if required.
+
+Do NOT start production server.
+Do NOT Publish.
+
+==================================================
+18. SCHEMA SEMANTICS
+==================================================
+
+After all changes mechanically confirm:
+
+- 8 owners;
+- 1,459 operations;
+- same 1,459 DDL fingerprints;
+- same operation ordering;
+- same SQL summaries.
+
+No table, column, index definition, constraint, trigger, enum, extension
+requirement or backfill meaning may change.
+
+If ANY fingerprint changes:
+
+STOP.
+
+Do not update baseline.
+
+==================================================
+19. GIT SAFETY
+==================================================
+
+Do NOT intentionally run:
+
+git add
+git commit
+git push
+git pull
+git reset
+git checkout
+git switch
+git merge
+git rebase
+
+Replit automatic checkpoints may occur.
+
+If one occurs, REPORT:
+
+- previous HEAD;
+- new HEAD;
+- commit contents;
+- whether attached_assets were included;
+- whether history remains linear.
+
+Do not rewrite it.
+
+==================================================
+20. FINAL REPORT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE STATE
+2. P3-BL-1 FIX
+3. P3-BL-2 FIX
+4. MEDIA 26-ENTRY COMPARISON
+5. CONTROLLED BASELINE UPDATE
+6. FILES CHANGED
+7. SHIPPING REGRESSION TEST
+8. WEB PUSH REGRESSION TEST
+9. MARKETPLACE ERROR-PRESERVATION TEST
+10. MEDIA ATOMICITY TEST
+11. EDUCATION BUNDLE ATOMICITY TEST
+12. BOOKING COMMAND ATOMICITY TEST
+13. TIMEOUT RESTORATION TEST
+14. PHASE 1 RESULT
+15. PHASE 2 RESULT
+16. SCHEMA-SEMANTICS RESULT
+17. TYPECHECK / STATIC RESULT
+18. DEFERRED RISKS
+19. GIT / AUTO-CHECKPOINT STATUS
+20. DECISION: PASS / STOPPED / FAIL
+
+PASS requires ALL:
+
+- P3-BL-1 closed;
+- P3-BL-2 closed;
+- controlled Media re-baseline changed exactly 26 path records and nothing
+  semantic;
+- Phase 2 returns baseline match true;
+- Phase 1 remains green;
+- required focused Phase 3 regression tests pass;
+- no DDL fingerprint changes;
+- no new Phase 3 blocker.
+
+PASS still does NOT mean production is ready to publish.
+
+Do not start Phase 4.
+
+STOP.

@@ -19312,7 +19312,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19325,7 +19325,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19338,7 +19338,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19351,7 +19351,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19364,7 +19364,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19377,7 +19377,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19390,7 +19390,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19403,7 +19403,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19416,7 +19416,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19429,7 +19429,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19442,7 +19442,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19455,7 +19455,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19468,7 +19468,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19481,7 +19481,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19494,7 +19494,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19507,7 +19507,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19520,7 +19520,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19533,7 +19533,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19546,7 +19546,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19559,7 +19559,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19572,7 +19572,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19585,7 +19585,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19598,7 +19598,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19611,7 +19611,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19624,7 +19624,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         },
         {
@@ -19637,7 +19637,7 @@
           "path": [
             "artifacts/api-server/src/index.ts",
             "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema",
-            "artifacts/api-server/src/lib/media-schema.ts:106:11"
+            "artifacts/api-server/src/lib/media-schema.ts:106:49"
           ]
         }
       ]

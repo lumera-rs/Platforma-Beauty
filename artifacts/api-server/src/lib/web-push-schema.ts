@@ -7,25 +7,25 @@ function quotedSchema(value: string) {
   return `"${value}"`;
 }
 
-export async function ensureWebPushSchema(schemaName = "public"): Promise<void> {
-  const client = await pool.connect();
+export async function ensureWebPushSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
+  const client = await poolOverride.connect();
   let locked = false;
   try {
     await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
     locked = true;
     // Transaction-local timeouts bound startup lock and schema work.
-    try {
-      await runWebPushSchemaDdl(client, schemaName);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback").catch(() => {});
-      throw error;
-    }
+    await runWebPushSchemaDdl(client, schemaName);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
   } finally {
     if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [LOCK_KEY]).catch(() => {});
     client.release();
   }
 }
+
+
 
 export async function runWebPushSchemaDdl(client: PoolClient, schemaName: string): Promise<void> {
   const schema = quotedSchema(schemaName);

@@ -12,9 +12,9 @@ import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, read
  */
 const MARKETPLACE_PERFORMANCE_INDEX_LOCK = 0x4d500001;
 
-export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
-  const client = await pool.connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
-  let locked = false;
+export async function ensureMarketplacePerformanceIndexes(poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
+  const client = await poolOverride.connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
+  let locked = false; let startupError: unknown;
   try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await client.query("select pg_advisory_lock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
     locked = true;
@@ -36,10 +36,13 @@ export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
       "create index concurrently if not exists products_category_active_idx on products (category_id, active)",
     );
     logger.info("Marketplace performance indexes are ready");
-  } finally {
+  } catch (error) { startupError = error; throw error; } finally {
+    let cleanupError: unknown;
     if (locked) {
-      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch(() => {});
+      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });
     }
-    try { if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts); } finally { client.release(); }
+    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });
+    client.release();
+    if (cleanupError && !startupError) throw cleanupError;
   }
 }

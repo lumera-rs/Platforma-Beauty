@@ -16,21 +16,19 @@ type ShippingRuleInsert = typeof shippingRulesTable.$inferInsert;
  * collapse any legacy duplicates to the stable lowest UUID and enforce the
  * singleton with a database-level unique expression index.
  */
-export async function ensureShippingConfigSchema(schemaName = "public"): Promise<void> {
+export async function ensureShippingConfigSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
   quoteSchema(schemaName);
-  const client = await pool.connect();
+  const client = await poolOverride.connect();
   let locked = false;
   try {
     await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY]);
     locked = true;
     // Transaction-local timeouts bound both advisory-lock and table-lock waits.
-    try {
-      await runShippingConfigSchemaDdl(client, schemaName);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback").catch(() => {});
-      throw error;
-    }
+    await runShippingConfigSchemaDdl(client, schemaName);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
   } finally {
     if (locked) {
       await client.query("select pg_advisory_unlock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY])
@@ -39,6 +37,8 @@ export async function ensureShippingConfigSchema(schemaName = "public"): Promise
     client.release();
   }
 }
+
+
 
 /**
  * Exported for isolated rollout tests. The caller owns the transaction and

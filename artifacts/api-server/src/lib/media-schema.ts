@@ -7,7 +7,7 @@ import { logger } from "./logger";
  * idempotent bootstrap ahead of every media query so an existing database can
  * accept the media pipeline on the first deploy.
  */
-export async function ensureMediaSchema(): Promise<void> { const client = await pool.connect(); let locked = false;
+export async function ensureMediaSchema(poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> { const client = await poolOverride.connect(); let locked = false;
   const statements = [
     `DO $$ BEGIN
       CREATE TYPE image_asset_status AS ENUM ('pending', 'processing', 'ready', 'failed');

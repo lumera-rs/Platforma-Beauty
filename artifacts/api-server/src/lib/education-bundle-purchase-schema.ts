@@ -1,9 +1,9 @@
 import { pool } from "@workspace/db"; import { BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY } from "./business-growth-schema"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 /** Additive, replay-safe production rollout for parent-only bundle finance. */
-export async function ensureEducationBundlePurchaseSchema(schemaName = "public"): Promise<void> {
+export async function ensureEducationBundlePurchaseSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
   if (!/^[a-z_][a-z0-9_]*$/i.test(schemaName)) throw new Error("Invalid schema name.");
-  const schema = `"${schemaName}"`, client = await pool.connect(); let locked = false;
+  const schema = `"${schemaName}"`, client = await poolOverride.connect(); let locked = false;
   try { await client.query("begin"); await setLocalStartupDdlTimeouts(client);
     await client.query("SELECT pg_advisory_lock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]); locked = true;
     await client.query(`DO $$ BEGIN CREATE TYPE ${schema}.education_bundle_purchase_status AS ENUM ('pending_payment','settled','cancelled','refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`);

@@ -25,6 +25,7 @@
     "test:internal-request-control-outputs": "tsx --test ./src/internal-request-control-output-check.test.ts && tsx ./src/internal-request-control-output-check.ts",
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
     "test:production-startup-ddl-inventory": "tsx --test ./src/production-startup-ddl-inventory.test.ts",
+    "test:startup-ddl-safety": "tsx --test ../artifacts/api-server/src/lib/startup-ddl-safety.test.ts",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",
     "test:frontend-standards": "tsx ./src/frontend-performance-standards.test.ts",
