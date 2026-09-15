@@ -38,6 +38,7 @@
     "migrations:status": "pnpm --filter @workspace/scripts run migrations:status",
     "migrations:apply": "pnpm --filter @workspace/scripts run migrations:apply",
     "migrations:adopt-baseline": "pnpm --filter @workspace/scripts run migrations:adopt-baseline",
+    "migrations:preflight-adoption": "pnpm --filter @workspace/scripts run migrations:preflight-adoption",
     "test:migrations": "LUMERA_PHASE4_UNIT_ONLY=1 pnpm --filter @workspace/scripts run test:migrations",
     "test:migrations:integration": "pnpm --filter @workspace/scripts run test:migrations:integration",
     "validate:ci:migration-contract": "pnpm --filter @workspace/scripts run validate:ci:migration-contract",

@@ -18,6 +18,7 @@ import { readOnlyQueryLayer } from "../schema-drift/read-only-query";
 import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
 import { loadMigration, loadMigrations } from "./files";
 import { ensureLedger, readLedger } from "./ledger";
+import { preflightBaselineAdoption } from "./preflight";
 import type { LoadedMigration } from "./types";
 
 const unitOnly = process.env.LUMERA_PHASE4_UNIT_ONLY === "1";
@@ -364,6 +365,117 @@ test("status is read-only", skip, async () => {
       );
       assert.equal(relation.rows[0]?.["ledger"], null);
     });
+  });
+});
+
+test("Phase 5A preflight is READY for exact baseline and creates no object or ledger", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const before = await pool.query(
+      "SELECT count(*)::int AS count FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace",
+    );
+    const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    const after = await pool.query(
+      "SELECT count(*)::int AS count FROM pg_catalog.pg_class WHERE relnamespace='public'::regnamespace",
+    );
+    assert.equal(report.readiness, "READY");
+    assert.equal(report.structuralFingerprint, "MATCH");
+    assert.equal(report.physicalFingerprint, "MATCH");
+    assert.equal(report.ledger.existence, "MISSING");
+    assert.equal(after.rows[0]?.["count"], before.rows[0]?.["count"]);
+    assert.equal(
+      (await pool.query("SELECT to_regclass('public.lumera_migration_ledger') AS ledger"))
+        .rows[0]?.["ledger"],
+      null,
+    );
+  });
+});
+
+test("Phase 5A preflight blocks routine and trigger drift", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    await pool.query(`CREATE OR REPLACE FUNCTION public.prevent_incomplete_commercial_snapshot_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`);
+    const routine = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(routine.readiness, "NOT_READY");
+    assert.ok(routine.blockers.includes("STRUCTURAL_MISMATCH"));
+    await pool.query("ALTER TRIGGER products_supplier_ownership ON public.products RENAME TO zz_products_supplier_ownership");
+    const trigger = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(trigger.readiness, "NOT_READY");
+    assert.ok(trigger.blockers.includes("TRIGGER_COUNT_MISMATCH") === false);
+    assert.ok(trigger.blockers.includes("STRUCTURAL_MISMATCH"));
+  });
+});
+
+test("Phase 5A preflight blocks every unsafe ledger state without repairing it", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const baseline = migrations[0]!;
+    await withClient(pool, (client) => ensureLedger(client));
+    const empty = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(empty.readiness, "NOT_READY");
+    assert.ok(empty.blockers.includes("LEDGER_INCONSISTENT"));
+    const cases = [
+      { id: "999999", checksum: "x".repeat(64), mode: "transactional", state: "ADOPTED", error: null, code: "UNKNOWN_MIGRATION:999999" },
+      { id: baseline.id, checksum: baseline.checksum, mode: baseline.mode, state: "FAILED", error: "test", code: `FAILED_MIGRATION:${baseline.id}` },
+      { id: baseline.id, checksum: baseline.checksum, mode: baseline.mode, state: "APPLYING", error: null, code: `APPLYING_MIGRATION:${baseline.id}` },
+      { id: baseline.id, checksum: "x".repeat(64), mode: baseline.mode, state: "ADOPTED", error: null, code: `CHECKSUM_MISMATCH:${baseline.id}` },
+    ] as const;
+    for (const value of cases) {
+      await pool.query("TRUNCATE public.lumera_migration_ledger");
+      await pool.query(
+        `INSERT INTO public.lumera_migration_ledger
+          (migration_id,checksum,mode,state,error) VALUES ($1,$2,$3,$4,$5)`,
+        [value.id, value.checksum, value.mode, value.state, value.error],
+      );
+      const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+      assert.equal(report.readiness, "NOT_READY");
+      assert.ok(report.blockers.includes(value.code));
+      assert.equal((await pool.query("SELECT count(*)::int AS count FROM public.lumera_migration_ledger"))
+        .rows[0]?.["count"], 1);
+    }
+  });
+});
+
+test("Phase 5A preflight blocks a malformed existing ledger", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    await pool.query(`CREATE TABLE public.lumera_migration_ledger (
+      migration_id text PRIMARY KEY,
+      checksum text NOT NULL,
+      mode text NOT NULL CHECK (mode IN ('transactional','nontransactional')),
+      state text NOT NULL CHECK (state IN ('APPLYING','APPLIED','FAILED','ADOPTED','OTHER')),
+      started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      finished_at timestamptz,
+      error text
+    )`);
+    await pool.query(`INSERT INTO public.lumera_migration_ledger
+      VALUES ('000001', $1, 'transactional', 'ADOPTED', now(), now(), NULL)`,
+    [migrations[0]!.checksum]);
+    const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(report.readiness, "NOT_READY");
+    assert.equal(report.ledger.state, "BLOCKED");
+    assert.ok(report.blockers.includes("LEDGER_UNREADABLE"));
+  });
+});
+
+test("Phase 5A preflight blocks unsupported version contract and missing extension", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const wrongVersion = [{ ...migrations[0]!, postgresMajor: 15, postgresVersionNum: 150000 }];
+    const version = await withClient(pool, (client) => preflightBaselineAdoption(client, wrongVersion));
+    assert.equal(version.readiness, "NOT_READY");
+    assert.ok(version.blockers.includes("POSTGRES_MAJOR_MISMATCH"));
+    await pool.query("DROP EXTENSION pg_trgm CASCADE");
+    const extension = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(extension.readiness, "NOT_READY");
+    assert.equal(extension.requiredExtensions.pg_trgm, "MISSING");
+    assert.ok(extension.blockers.includes("MISSING_EXTENSION:pg_trgm"));
   });
 });
 

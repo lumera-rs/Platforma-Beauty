@@ -1,0 +1,997 @@
+PRODUCTION BOOT HARDENING — PHASE 5A
+PRODUCTION BASELINE ADOPTION PREFLIGHT
+READ-ONLY DISCOVERY / RESTORE-POINT PLAN / OPERATOR RUNBOOK
+
+IMPORTANT:
+THIS IS NOT THE PRODUCTION ADOPTION.
+
+You may inspect repository/configuration and create READ-ONLY planning,
+validation, documentation and safety tooling where appropriate.
+
+DO NOT execute adopt-baseline against production.
+DO NOT execute apply against production.
+DO NOT write to production DB.
+DO NOT create the migration ledger in production.
+DO NOT run DDL against production.
+DO NOT Publish.
+DO NOT Deploy.
+DO NOT remove startup DDL.
+DO NOT start Phase 5B.
+DO NOT push/merge/rebase/reset Git history.
+
+==================================================
+0. APPROVED BASELINE
+==================================================
+
+Phases 1–4 are independently APPROVED.
+
+Current independently verified branch:
+
+fix-production-demo-seed-boundary
+
+Current independently verified HEAD:
+
+ff9ac3da9e9536c7b440eaa3b88fbec49c7d73c0
+
+Commit:
+
+Refactor migration runner logic and update test coverage
+
+Canonical migration:
+
+000001_canonical_schema
+
+Canonical migration SHA-256:
+
+643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60
+
+Approved fingerprint:
+
+version: 4
+formatVersion: 2
+
+structural:
+938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad
+
+physical:
+673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f
+
+normalizedObjectCount:
+5060
+
+enumCount:
+103
+
+triggerCount:
+24
+
+functionCount:
+21
+
+Existing production startup DDL remains:
+
+8 owners
+1,459 operations
+
+DO NOT REMOVE OR CHANGE IT.
+
+==================================================
+1. VERIFY ACTUAL GIT STATE FIRST
+==================================================
+
+Before doing anything:
+
+git rev-parse HEAD
+git status --short
+git diff --check
+
+Report:
+
+- branch;
+- actual HEAD;
+- commit message;
+- tracked changes;
+- staged;
+- untracked;
+- attached_assets state.
+
+Expected HEAD:
+
+ff9ac3da9e9536c7b440eaa3b88fbec49c7d73c0
+
+If HEAD differs:
+
+STOP before making changes and report why.
+
+Replit has repeatedly misreported auto-checkpoints.
+Trust actual Git state, not UI checkpoint status.
+
+==================================================
+2. PHASE 5A PURPOSE
+==================================================
+
+The purpose of Phase 5A is to answer:
+
+"Could we safely perform explicit baseline adoption on the real production
+database later?"
+
+NOT:
+
+"Perform adoption now."
+
+Phase 5A must produce a complete operator preflight/runbook for Phase 5B.
+
+No production mutation is authorized.
+
+==================================================
+3. IDENTIFY ACTUAL PRODUCTION DATABASE CONTRACT
+==================================================
+
+Inspect repository and Replit deployment configuration to determine:
+
+- database provider;
+- PostgreSQL version expectations;
+- how production DATABASE_URL is supplied;
+- whether Replit Publish/Deploy uses the same database;
+- production run command;
+- deployment type;
+- Autoscale/reserved VM if identifiable from config;
+- whether multiple API instances may exist;
+- whether application instances share one database;
+- health check behavior;
+- startup ordering;
+- whether Replit performs schema synchronization before app startup;
+- whether Replit deployment performs any implicit DB push/migration.
+
+Do NOT reveal:
+
+DATABASE_URL
+password
+host credentials
+tokens
+secrets.
+
+Report unknowns explicitly.
+
+Do not guess Replit platform behavior that cannot be proven from repository
+or available deployment metadata.
+
+==================================================
+4. PRODUCTION DB ACCESS — READ-ONLY RULE
+==================================================
+
+Do NOT connect to production merely because DATABASE_URL exists.
+
+First determine whether a technically enforceable READ-ONLY connection can
+be established.
+
+Preferred:
+
+dedicated PostgreSQL read-only role/user.
+
+Acceptable alternative for inspection only:
+
+a transaction explicitly started:
+
+BEGIN
+ISOLATION LEVEL REPEATABLE READ
+READ ONLY
+
+with appropriate bounded timeouts.
+
+However:
+
+if connection credentials themselves have write privileges, transaction
+READ ONLY is only session-level protection.
+
+Report that limitation.
+
+DO NOT execute any production query until you can prove that the command is
+read-only by construction.
+
+If safe read-only production inspection cannot be proven:
+
+STOP the live-inspection portion.
+
+Continue producing the operator plan from repository evidence.
+
+==================================================
+5. NEVER PRINT PRODUCTION CONNECTION DETAILS
+==================================================
+
+Any tooling/report must redact:
+
+- database URL;
+- password;
+- hostname if sensitive;
+- username if sensitive;
+- tokens;
+- SSL secrets.
+
+No command should echo DATABASE_URL.
+
+Do not run:
+
+echo $DATABASE_URL
+
+Do not put production credentials in command history or documentation.
+
+==================================================
+6. BACKUP / RESTORE CAPABILITY DISCOVERY
+==================================================
+
+Before any future adoption we require a REAL restore point.
+
+Investigate what backup/restore mechanisms are available for the production
+database.
+
+Determine whether we have:
+
+A. provider-managed backups/snapshots;
+B. point-in-time recovery;
+C. manual pg_dump capability;
+D. another verified restore mechanism.
+
+For each available mechanism determine:
+
+- whether it captures schema + data;
+- expected restore procedure;
+- whether restoration creates a new database or overwrites existing;
+- approximate operational downtime implications if knowable;
+- retention limitations if knowable;
+- permissions required.
+
+Do NOT create a production backup in Phase 5A unless it is provably
+read-only from the source AND explicitly safe.
+
+Prefer discovery/planning first.
+
+==================================================
+7. RESTORE MUST BE TESTABLE
+==================================================
+
+A backup that has never been restored is not sufficient proof.
+
+Design the Phase 5B prerequisite:
+
+production backup/snapshot
+→ restore into isolated disposable PostgreSQL
+→ verify restore opens successfully
+→ verify key schema/data sanity
+→ only then consider production adoption.
+
+Do NOT perform production restore in Phase 5A.
+
+If a safe existing backup can be restored to an isolated environment
+without mutating production, you may document how, but do not perform
+external destructive actions.
+
+==================================================
+8. EXACT RESTORE-POINT ACCEPTANCE CRITERIA
+==================================================
+
+Define objective acceptance criteria for the restore point.
+
+At minimum:
+
+- backup timestamp known;
+- backup corresponds to intended production database;
+- restore operation succeeds;
+- restored DB starts;
+- expected schemas/tables exist;
+- representative row counts can be read;
+- migration ledger state known;
+- structural fingerprint can be calculated;
+- no production mutation occurred during verification.
+
+Phase 5B must not proceed without this evidence.
+
+==================================================
+9. PRODUCTION MAINTENANCE WINDOW DESIGN
+==================================================
+
+Claude independently identified an adoption TOCTOU window:
+
+fingerprint inspection transaction COMMIT
+→ migration ledger write.
+
+The advisory migration lock prevents another migration runner but does NOT
+prevent arbitrary application/administrator DDL.
+
+Therefore design a maintenance-window procedure for Phase 5B.
+
+Required concept:
+
+- stop/freeze schema-changing actors;
+- prevent deployment/schema push;
+- prevent admin/operator DDL;
+- ensure only one adoption operator;
+- application data traffic may continue ONLY if proven not to perform DDL;
+- otherwise maintenance mode / application stop is required.
+
+Determine the safest option for this architecture.
+
+Do NOT implement the maintenance window now.
+
+==================================================
+10. AUTOSCALE / MULTI-INSTANCE RISK
+==================================================
+
+Determine whether multiple application instances can boot concurrently.
+
+Remember:
+
+current startup still contains 1,459 DDL operations.
+
+Phase 5 adoption itself does NOT remove them.
+
+Document what must happen during Phase 5B so another application instance
+cannot start and mutate schema between:
+
+fingerprint verification
+and
+ledger adoption.
+
+If instance topology cannot be proven:
+
+treat single-instance/exclusive maintenance as a Phase 5B prerequisite.
+
+==================================================
+11. READ-ONLY PRODUCTION PREFLIGHT COMMAND
+==================================================
+
+Design an explicit command such as:
+
+migrations preflight-adoption
+
+or repository-consistent equivalent.
+
+It must be READ ONLY.
+
+It must NEVER:
+
+- create ledger;
+- execute baseline SQL;
+- apply migration;
+- adopt;
+- repair;
+- alter schema;
+- seed;
+- run maintenance writers.
+
+It should report only safe/redacted information.
+
+==================================================
+12. PREFLIGHT MUST REQUIRE EXPLICIT TARGET
+==================================================
+
+Even though preflight is read-only, production inspection should require
+explicit operator intent.
+
+Do not silently inherit arbitrary ambient DATABASE_URL for a command whose
+purpose is production adoption preflight.
+
+Prefer an explicit target argument and explicit preflight confirmation.
+
+Never print the supplied URL.
+
+==================================================
+13. PREFLIGHT OUTPUT
+==================================================
+
+Safe output may include:
+
+- PostgreSQL major/version number;
+- fingerprint version;
+- structural fingerprint MATCH/MISMATCH;
+- physical fingerprint MATCH/MISMATCH;
+- normalized object count;
+- enum count;
+- trigger count;
+- function count;
+- migration ledger existence;
+- known migration state;
+- unknown migration presence;
+- baseline checksum status;
+- readiness result.
+
+Prefer:
+
+MATCH / MISMATCH
+
+over dumping excessive production catalog detail.
+
+No user/business data.
+
+==================================================
+14. PREFLIGHT TRANSACTION
+==================================================
+
+If implementing preflight DB inspection:
+
+use one bounded:
+
+REPEATABLE READ
+READ ONLY
+
+transaction where practical.
+
+Set explicit:
+
+statement timeout
+lock timeout
+
+appropriate for read-only catalog inspection.
+
+No unbounded waits.
+
+ROLLBACK/COMMIT cleanly.
+
+No connection leaks.
+
+==================================================
+15. READ-ONLY LEDGER INSPECTION
+==================================================
+
+Preflight must inspect ledger WITHOUT creating it.
+
+Cases:
+
+ledger missing:
+expected before initial adoption; report clearly.
+
+ledger exists with correct ADOPTED/APPLIED baseline:
+report already initialized.
+
+ledger contains APPLYING:
+BLOCK Phase 5B.
+
+ledger contains FAILED:
+BLOCK Phase 5B.
+
+ledger contains unknown/future migration:
+BLOCK Phase 5B.
+
+checksum mismatch:
+BLOCK Phase 5B.
+
+Never repair from preflight.
+
+==================================================
+16. EXACT PRODUCTION FINGERPRINT GATE
+==================================================
+
+Phase 5B eligibility requires exact match to approved Phase 4 baseline:
+
+fingerprint version 4
+format version 2
+structural fingerprint exact
+physical fingerprint exact
+normalized objects 5060
+enums 103
+triggers 24
+functions 21
+
+No "close enough".
+
+If production differs:
+
+Phase 5B MUST NOT run adoption.
+
+Instead report mismatch for separate investigation.
+
+Do not automatically run baseline migration against an existing production
+database.
+
+==================================================
+17. POSTGRESQL VERSION GATE
+==================================================
+
+Determine exact supported production PostgreSQL version contract.
+
+The approved baseline was validated on PostgreSQL 16.10.
+
+Do not automatically assume another major version produces equivalent
+catalog definitions/fingerprints.
+
+Phase 5B must fail closed on unsupported major-version mismatch.
+
+Document minor-version handling explicitly.
+
+==================================================
+18. EXTENSION GATE
+==================================================
+
+Verify required extensions from canonical baseline.
+
+At minimum inspect known required extensions such as:
+
+pg_trgm
+btree_gist
+
+and any others actually present in baseline.
+
+Preflight should verify:
+
+- required extension exists;
+- expected schema where relevant;
+- no unexpected adoption-critical extension mismatch.
+
+Do not install extensions in preflight.
+
+==================================================
+19. ROUTINE / TRIGGER GATE
+==================================================
+
+Use fingerprint v4.
+
+Preflight must detect:
+
+- missing standalone function;
+- changed standalone function;
+- changed trigger function;
+- missing trigger;
+- unexpected application routine.
+
+Do not create/repair any of them.
+
+==================================================
+20. BACKUP TIMESTAMP VS ADOPTION TIMESTAMP
+==================================================
+
+Design Phase 5B so restore point is created as close as practical to
+adoption.
+
+Document maximum acceptable operational gap based on the deployment model.
+
+Do not invent an arbitrary SLA if repository/platform evidence does not
+support one.
+
+Instead require operator confirmation that the restore point is current
+enough for the maintenance window.
+
+==================================================
+21. PHASE 5B ABORT CONDITIONS
+==================================================
+
+Create an explicit abort checklist.
+
+Phase 5B must abort if ANY of these occur:
+
+- restore point unavailable;
+- restore test failed;
+- production target uncertain;
+- PostgreSQL major unsupported;
+- fingerprint mismatch;
+- functionCount mismatch;
+- triggerCount mismatch;
+- enumCount mismatch;
+- unknown migration;
+- FAILED migration;
+- interrupted APPLYING migration;
+- checksum mismatch;
+- multiple schema-changing actors cannot be frozen;
+- maintenance exclusivity cannot be proven;
+- adoption command target not explicit;
+- backup becomes stale due to unexpected deployment/schema change;
+- any production schema change occurs after preflight.
+
+==================================================
+22. PHASE 5B OPERATOR RUNBOOK
+==================================================
+
+Produce a precise future runbook, but DO NOT execute it.
+
+Required stages:
+
+1. announce maintenance window;
+2. freeze deployments/schema-changing actors;
+3. establish exclusive operator control;
+4. create/verify restore point;
+5. restore-test backup in isolation;
+6. run read-only production preflight;
+7. require exact fingerprint match;
+8. record pre-adoption evidence;
+9. execute explicit adopt-baseline ONCE;
+10. immediately inspect ledger read-only;
+11. rerun fingerprint;
+12. verify schema unchanged;
+13. verify baseline ledger = ADOPTED;
+14. application smoke/readiness checks;
+15. exit maintenance window;
+16. monitor.
+
+Also define ABORT/RESTORE path.
+
+==================================================
+23. CRITICAL ADOPTION INVARIANT
+==================================================
+
+Successful Phase 5B adoption should change ONLY migration-management state.
+
+It must NOT change the application schema.
+
+Expected before/after:
+
+structural fingerprint:
+IDENTICAL
+
+physical fingerprint:
+IDENTICAL
+
+object counts:
+IDENTICAL
+
+Only expected DB mutation:
+
+migration ledger initialization / baseline ADOPTED state.
+
+If anything else changes:
+
+ABORT.
+
+==================================================
+24. LEDGER CREATION IMPACT
+==================================================
+
+Carefully account for the migration ledger itself.
+
+The approved adoption fingerprint is taken before ledger creation.
+
+Verify the current Phase 4 design intentionally excludes migration-management
+objects from the application fingerprint where appropriate.
+
+Prove ledger creation cannot make post-adoption application fingerprint
+appear different or accidentally hide drift.
+
+If this invariant is not already true:
+
+STOP and report a Phase 5 blocker.
+
+Do not modify production.
+
+==================================================
+25. RESTORE PROCEDURE
+==================================================
+
+The runbook must define when restoration is appropriate.
+
+Examples:
+
+- unexpected schema mutation;
+- incorrect target database;
+- corrupted ledger state;
+- post-adoption application failure plausibly caused by adoption procedure.
+
+But remember:
+
+if adoption changed only the migration ledger and application schema is
+identical, a full DB restore may be more destructive than reverting the
+migration-management state.
+
+Analyze this carefully.
+
+Do NOT automatically recommend restoring the whole DB for every adoption
+failure.
+
+==================================================
+26. PRODUCTION DATA LOSS RISK
+==================================================
+
+Because production data may continue changing during maintenance/preflight,
+document the risk of restoring an older snapshot.
+
+The rollback plan must distinguish:
+
+A. ledger-only correction;
+B. schema correction;
+C. full database restore.
+
+Do not treat them as interchangeable.
+
+Actual rollback actions belong to Phase 5B operator decision.
+
+==================================================
+27. AUDIT EVIDENCE
+==================================================
+
+Design a redacted adoption evidence record containing:
+
+- timestamp;
+- release/commit SHA;
+- baseline migration ID;
+- migration SHA-256;
+- fingerprint version;
+- pre structural fingerprint;
+- pre physical fingerprint;
+- object counts;
+- PostgreSQL version;
+- backup/restore verification status;
+- adoption result;
+- post structural fingerprint;
+- post physical fingerprint;
+- ledger state.
+
+No credentials.
+No customer data.
+
+==================================================
+28. NO AUTOMATIC PHASE 5B
+==================================================
+
+Nothing implemented in Phase 5A may automatically trigger adoption later.
+
+No scheduled job.
+No startup hook.
+No deploy hook.
+No CI production action.
+No webhook.
+
+Phase 5B must remain an explicit human-authorized operator action.
+
+==================================================
+29. REPLIT PUBLISH CONTRACT
+==================================================
+
+Resolve as much as possible of the previously open question:
+
+What exactly happens to the database during Replit Publish/Deploy?
+
+Use repository/config evidence and any available platform metadata.
+
+Specifically determine whether Publish:
+
+- runs schema push;
+- applies a database diff;
+- executes application startup first;
+- runs multiple instances;
+- may start new revision before old revision stops.
+
+If this cannot be proven:
+
+mark it UNKNOWN.
+
+Do not invent behavior.
+
+UNKNOWN means Phase 5B must not be coupled to Publish.
+
+==================================================
+30. PHASE 5B MUST BE DECOUPLED FROM PUBLISH
+==================================================
+
+Regardless of Replit behavior:
+
+baseline adoption must be a separate explicit operator action.
+
+Do not put adoption into:
+
+Publish
+Deploy
+startup
+health checks
+CI
+release-chain automatic execution.
+
+==================================================
+31. OPTIONAL SAFE TOOLING
+==================================================
+
+You may implement:
+
+- read-only preflight command;
+- redacted evidence formatter;
+- read-only ledger status inspection;
+- tests;
+- documentation/runbook.
+
+You may NOT implement:
+
+- automatic production adoption;
+- automatic production backup deletion;
+- automatic restore;
+- deployment hook;
+- startup adoption;
+- startup migration apply.
+
+==================================================
+32. TEST PREFLIGHT AGAINST DISPOSABLE POSTGRESQL
+==================================================
+
+If new preflight tooling is implemented, test it only against independently
+proven disposable PostgreSQL.
+
+Required cases:
+
+A. exact baseline → READY
+B. missing standalone function → NOT READY
+C. changed trigger/function → NOT READY
+D. unknown migration → NOT READY
+E. FAILED ledger → NOT READY
+F. APPLYING ledger → NOT READY
+G. checksum mismatch → NOT READY
+H. unsupported PostgreSQL major → NOT READY
+I. missing extension → NOT READY
+
+Preflight must execute ZERO DDL.
+
+==================================================
+33. PROVE PREFLIGHT IS READ ONLY
+==================================================
+
+Add executable tests proving preflight:
+
+- creates no tables;
+- creates no ledger;
+- executes no CREATE/ALTER/DROP/INSERT/UPDATE/DELETE;
+- does not call migration apply;
+- does not call adoption.
+
+Prefer PostgreSQL read-only transaction enforcement in real integration
+tests.
+
+==================================================
+34. PRODUCTION BOOT ISOLATION
+==================================================
+
+Re-run dependency boundary.
+
+Required:
+
+normal production startup still has NO path to:
+
+migration apply
+baseline adoption
+production preflight operator CLI.
+
+==================================================
+35. PHASE 1 REGRESSION
+==================================================
+
+Required:
+
+10/10
+11/11
+
+==================================================
+36. PHASE 2 REGRESSION
+==================================================
+
+Required:
+
+6/6
+8 owners
+1,459 startup DDL operations
+baseline match true.
+
+==================================================
+37. PHASE 3 REGRESSION
+==================================================
+
+Required:
+
+12/12 DB-free PASS.
+
+==================================================
+38. PHASE 4 REGRESSION
+==================================================
+
+Required:
+
+migration unit tests PASS
+real PostgreSQL migration suite PASS
+fingerprint tests PASS
+migration contract PASS
+release-chain/workflow tests PASS
+baseline SHA unchanged.
+
+==================================================
+39. NO GITHUB FINALIZATION
+==================================================
+
+Do not push or merge.
+
+Do not create the final GitHub PR.
+
+We are still following:
+
+Replit Agent implementation/audit
+→ Claude independent READ-ONLY verification
+→ later phases
+→ final GitHub integration at the end.
+
+==================================================
+40. CHANGE RADIUS
+==================================================
+
+Before modifying anything, report intended Phase 5A files.
+
+Keep changes focused on:
+
+scripts/src/migrations/
+tests
+documentation
+package scripts if necessary
+
+Do not modify production application startup.
+
+If .github/workflows/ci.yml needs modification:
+
+STOP and explain why first.
+
+Phase 5A preflight should preferably remain testable using existing Phase 4
+CI infrastructure.
+
+==================================================
+41. AUTO-CHECKPOINT
+==================================================
+
+At end verify actual:
+
+git rev-parse HEAD
+
+Do not trust Replit UI checkpoint reporting.
+
+Report:
+
+starting HEAD
+ending HEAD
+whether HEAD moved
+actual commit message
+tracked/staged/untracked
+attached_assets state
+git diff --check.
+
+==================================================
+42. FINAL REPORT
+==================================================
+
+Return:
+
+1. PRE-CHANGE GIT STATE
+2. PRODUCTION DATABASE CONTRACT
+3. REPLIT DEPLOY/PUBLISH CONTRACT
+4. READ-ONLY ACCESS MODEL
+5. BACKUP CAPABILITIES
+6. RESTORE CAPABILITIES
+7. RESTORE-TEST REQUIREMENT
+8. MAINTENANCE WINDOW MODEL
+9. MULTI-INSTANCE / AUTOSCALE RISK
+10. PREFLIGHT IMPLEMENTATION
+11. PREFLIGHT READ-ONLY PROOF
+12. LEDGER INSPECTION
+13. FINGERPRINT GATE
+14. POSTGRES VERSION GATE
+15. EXTENSION GATE
+16. ROUTINE/TRIGGER GATE
+17. PHASE 5B ABORT CONDITIONS
+18. PHASE 5B OPERATOR RUNBOOK
+19. ROLLBACK / RESTORE DECISION TREE
+20. AUDIT EVIDENCE FORMAT
+21. DISPOSABLE TEST RESULTS
+22. PRODUCTION BOOT ISOLATION
+23. PHASE 1–4 REGRESSIONS
+24. CHANGE RADIUS
+25. GIT / AUTO-CHECKPOINT STATE
+26. UNRESOLVED PRODUCTION UNKNOWNS
+27. PHASE 5B BLOCKERS
+28. DECISION
+
+Final DECISION must be exactly one:
+
+PHASE 5A PREFLIGHT READY
+
+or
+
+PHASE 5A BLOCKED
+
+PHASE 5A PREFLIGHT READY means:
+the preflight tooling/runbook is safe and independently reviewable.
+
+It does NOT authorize production adoption.
+
+Do not output:
+PHASE 5 APPROVED
+
+because Phase 5B has not occurred.
+
+STOP.
