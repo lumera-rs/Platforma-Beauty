@@ -1203,6 +1203,31 @@ function scanTopLevelModule(
       addValueOperations(evaluateExpression(node.arguments[0]!, context), context, node);
       return;
     }
+    if (ts.isCallExpression(node)) {
+      const resolved = resolveCallable(target, node.expression, context);
+      if (resolved) {
+        scanFunction(resolved, context, node.arguments);
+      } else {
+        const expression = unwrap(node.expression);
+        const immediatelyInvokesCallback = (
+          ts.isPropertyAccessExpression(expression)
+          && ["then", "catch", "finally"].includes(expression.name.text)
+        ) || (ts.isIdentifier(expression) && expression.text === "queueMicrotask");
+        if (immediatelyInvokesCallback) scanFunctionValuedArguments(node, context);
+      }
+      return;
+    }
+    if (ts.isNewExpression(node)) {
+      const constructor = resolveConstructor(
+        target,
+        node.expression,
+        context.repositoryRoot,
+        context.virtualSources,
+        context.moduleCache,
+      );
+      if (constructor) scanFunction(constructor, context, node.arguments ?? []);
+      return;
+    }
     ts.forEachChild(node, visit);
   };
   for (const statement of target.sourceFile.statements) visit(statement);
@@ -1444,7 +1469,9 @@ export function checkProductionStartupDdlInventory(options: StartupDdlInventoryO
       violations.push({
         reason: "unexpected-startup-ddl-root",
         module: relativeModule(moduleName, repositoryRoot),
-        detail: "DDL executed during module evaluation",
+        detail: `DDL executed during module evaluation: ${evaluationContext.operations
+          .map((operation) => `${operation.kind} ${operation.summary} [${operation.module}]`)
+          .join("; ")}`,
         path: evaluationContext.callPath,
       });
     }
@@ -1486,7 +1513,9 @@ export function checkProductionStartupDdlInventory(options: StartupDdlInventoryO
             violations.push({
               reason: "unexpected-startup-ddl-root",
               module: root,
-              detail: "DDL-capable dynamic module evaluation",
+              detail: `DDL-capable dynamic module evaluation: ${dynamicContext.operations
+                .map((operation) => `${operation.kind} ${operation.summary} [${operation.module}]`)
+                .join("; ")}`,
               path: dynamicContext.callPath,
             });
           }

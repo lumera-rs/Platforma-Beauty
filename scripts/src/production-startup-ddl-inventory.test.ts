@@ -262,3 +262,81 @@ test("mutation tests reject callback, constructor, and object-method DDL wrapper
     && violation.detail.includes("object_method_wrapper")
     && violation.detail.includes("object-boot.ts")));
 });
+
+test("module evaluation follows indirect executable DDL without classifying dead functions", () => {
+  const original = fixture();
+  const baseline = baselineFor(original);
+  const expectModuleEvaluationDdl = (
+    modules: Record<string, string>,
+    operationName: string,
+    moduleName: string,
+  ): void => {
+    const report = checkFixture(modules, baseline);
+    assert.ok(report.violations.some((violation) =>
+      violation.reason === "unexpected-startup-ddl-root"
+      && violation.detail.includes("create-table")
+      && violation.detail.includes(operationName)
+      && violation.detail.includes(moduleName)));
+  };
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-boot.ts": "function boot() { client.query(`CREATE TABLE module_boot_call (id uuid)`); } boot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-boot";`,
+  }, "module_boot_call", "module-boot.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-iife.ts": "(() => client.query(`CREATE TABLE module_iife_call (id uuid)`))();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-iife";`,
+  }, "module_iife_call", "module-iife.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-constructor.ts": "class Bootstrapper { constructor() { client.query(`CREATE TABLE module_constructor_call (id uuid)`); } } new Bootstrapper();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-constructor";`,
+  }, "module_constructor_call", "module-constructor.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-imported-boot.ts": "export function importedBoot() { client.query(`CREATE TABLE module_imported_call (id uuid)`); }",
+    "module-imported-entry.ts": "import { importedBoot } from './module-imported-boot'; importedBoot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-imported-entry";`,
+  }, "module_imported_call", "module-imported-boot.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-promise.ts": "function callback() { client.query(`CREATE TABLE module_promise_call (id uuid)`); } Promise.resolve().then(callback);",
+    "index.ts": `${original["index.ts"]}\nimport "./module-promise";`,
+  }, "module_promise_call", "module-promise.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-hop-leaf.ts": "export function leafBoot() { client.query(`CREATE TABLE module_two_hop_call (id uuid)`); }",
+    "module-hop-middle.ts": "export { leafBoot as middleBoot } from './module-hop-leaf';",
+    "module-hop-entry.ts": "import { middleBoot } from './module-hop-middle'; middleBoot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-hop-entry";`,
+  }, "module_two_hop_call", "module-hop-leaf.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-alias-leaf.ts": "export function leafBoot() { client.query(`CREATE TABLE module_alias_call (id uuid)`); }",
+    "module-alias-barrel.ts": "export { leafBoot as barrelBoot } from './module-alias-leaf';",
+    "module-alias-entry.ts": "import { barrelBoot as aliasedBoot } from './module-alias-barrel'; aliasedBoot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-alias-entry";`,
+  }, "module_alias_call", "module-alias-leaf.ts");
+
+  const safeCall = checkFixture({
+    ...original,
+    "module-safe.ts": "function boot() { return 42; } boot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-safe";`,
+  }, baseline);
+  assert.deepEqual(safeCall.violations, []);
+
+  const deadDdl = checkFixture({
+    ...original,
+    "module-dead.ts": "function neverCalled() { client.query(`CREATE TABLE module_dead_ddl (id uuid)`); }",
+    "index.ts": `${original["index.ts"]}\nimport "./module-dead";`,
+  }, baseline);
+  assert.deepEqual(deadDdl.violations, []);
+});

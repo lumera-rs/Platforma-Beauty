@@ -1,0 +1,308 @@
+FOLLOW-UP FIX ONLY — PHASE 2 CLAUDE BLOCKER BF-1
+
+You MAY modify code.
+
+Claude Code independently reviewed Production Boot Hardening Phase 2.
+
+FINAL DECISION:
+CHANGES REQUIRED
+
+There is exactly ONE blocking finding for Phase 2.
+
+Fix ONLY BF-1.
+
+DO NOT start Phase 3.
+DO NOT address Claude's non-blocking findings.
+DO NOT redesign the analyzer.
+DO NOT regenerate the baseline unless the corrected analyzer discovers
+a genuine previously-missed current startup DDL operation.
+DO NOT change production runtime code.
+DO NOT change any ensure*Schema implementation.
+DO NOT run DDL or migrations.
+DO NOT query or modify any real/ambient database.
+DO NOT modify scheduler/outbox/media migration/deployment/DB roles/readiness.
+DO NOT commit/push/stage/reset/checkout/switch.
+DO NOT touch attached_assets/.
+
+==================================================
+BLOCKER BF-1
+==================================================
+
+File:
+
+scripts/src/production-startup-ddl-inventory.ts
+
+Claude found that scanTopLevelModule() detects direct top-level SQL sink
+calls but does NOT follow indirect executable calls during module evaluation.
+
+This creates false negatives for DDL executed at module-import time.
+
+Examples currently MISSED by the guard:
+
+1. top-level:
+   boot();
+
+   where boot() executes DDL
+
+2. top-level IIFE:
+   (() => {
+     // DDL
+   })();
+
+3. top-level:
+   new Bootstrapper();
+
+   where constructor executes DDL
+
+4. top-level call into another imported module
+
+5. top-level:
+   Promise.resolve().then(callbackContainingDdl)
+
+6. two or more static module hops followed by a top-level executable call
+
+7. similar executable module-evaluation indirection
+
+Module evaluation is production startup behavior and occurs pre-listen.
+
+Therefore startup DDL reached through these paths MUST be inventoried and
+baseline-checked.
+
+==================================================
+REQUIRED MINIMAL IMPLEMENTATION
+==================================================
+
+Do NOT create a new analysis engine.
+
+Reuse the analyzer's EXISTING resolution machinery that already works for
+the root module.
+
+Inside scanTopLevelModule(), extend executable-call handling using the
+existing helpers where appropriate:
+
+- resolveCallable(...)
+- scanFunction(...)
+- scanFunctionValuedArguments(...)
+- resolveConstructor(...)
+
+For CallExpression during module evaluation:
+
+1. preserve existing import()/require() handling;
+2. preserve direct SQL sink handling;
+3. resolve ordinary callable targets with resolveCallable(...);
+4. scan resolved functions with scanFunction(...);
+5. where appropriate scan function-valued arguments/callbacks with
+   scanFunctionValuedArguments(...).
+
+For NewExpression:
+
+- resolve the constructor using the existing resolveConstructor(...);
+- scan the constructor with scanFunction(...).
+
+Preserve the existing cycle protection / activeFunctions behavior.
+
+Do not duplicate root-module analysis logic unnecessarily.
+
+Do not broaden runtime scope beyond code that can actually execute during
+module evaluation/startup.
+
+==================================================
+IMPORTANT CALLBACK SEMANTICS
+==================================================
+
+Be careful not to create false positives by treating every callback passed
+during module evaluation as immediately executed.
+
+Distinguish callbacks that can execute as part of startup/module evaluation
+from callbacks that are merely registered for later execution.
+
+For example:
+
+- Promise.then(...) attached during module evaluation can execute as part
+  of startup/module evaluation and must be conservatively analyzed.
+
+But do NOT incorrectly classify unrelated request handlers or permanently
+registered callbacks as immediate pre-listen DDL merely because a function
+value appears as an argument.
+
+If the existing analyzer intentionally handles these conservatively,
+preserve its existing semantic model and document it.
+
+==================================================
+REQUIRED MUTATION TESTS
+==================================================
+
+Add DB-free regression tests proving the corrected module-evaluation scan
+rejects at least:
+
+1. imported module:
+   function boot() { DDL }
+   boot();
+
+2. top-level IIFE containing/reaching DDL;
+
+3. top-level new Constructor() whose constructor reaches DDL;
+
+4. top-level call into another imported module that reaches DDL;
+
+5. top-level Promise.then callback reaching DDL;
+
+6. two-static-hop module chain ending in a top-level call reaching DDL;
+
+7. alias/re-export version of an indirect module-evaluation call if supported
+   by the existing resolver.
+
+Also add NEGATIVE CONTROLS proving:
+
+- a top-level function call that performs no DDL remains allowed;
+- a function containing DDL but never called during module evaluation is
+  not incorrectly classified as module-evaluation DDL.
+
+Assertions must verify the actual detected operation/module/reason, not just
+that "some violation" occurred.
+
+==================================================
+BASELINE RULE
+==================================================
+
+Claude independently verified that CURRENT production exposure to this gap
+is ZERO.
+
+An independent 143-module sweep found current DDL only in the existing
+eight known owners.
+
+Therefore the corrected analyzer SHOULD still produce:
+
+Owners: 8
+Operations: 1,459
+Unexpected: 0
+Missing: 0
+Baseline match: true
+
+DO NOT regenerate production-startup-ddl-baseline.json merely to make tests
+green.
+
+If the corrected analyzer changes the real repository inventory:
+
+STOP.
+
+Report the newly discovered startup DDL and its exact call path.
+
+Do NOT update/bless the baseline.
+
+That difference must be independently reviewed first.
+
+==================================================
+DO NOT FIX THESE NON-BLOCKING ITEMS
+==================================================
+
+Claude also reported several NON-BLOCKING findings.
+
+They are explicitly OUT OF SCOPE for this follow-up:
+
+- SQL sink allowlist only recognizes query/execute/raw;
+- manual CLI verification can fail open if baseline is missing/corrupt;
+- baseline not bound to analyzer version;
+- dead legacy analyzer code;
+- localeCompare without explicit locale;
+- duplicate script keys;
+- existing production DDL/locking risks;
+- Media advisory-lock issue;
+- Business Growth set_config/finally issue.
+
+DO NOT fix any of these now.
+
+==================================================
+VERIFY AFTER CHANGE
+==================================================
+
+Run safely and DB-free:
+
+1. production startup DDL inventory tests;
+2. new module-evaluation mutation tests;
+3. real repository inventory verification;
+4. production request/startup boundary;
+5. production demo-seed safety;
+6. scripts typecheck;
+7. API-server typecheck;
+8. root/backend static chain if DB-free;
+9. git diff --check.
+
+Explicitly report:
+
+Real repository owners:
+Real repository operations:
+Baseline match:
+Unexpected:
+Missing:
+Unknown SQL:
+Unresolved dependencies:
+
+Expected if BF-1 is fixed without discovering current hidden DDL:
+
+8 owners
+1,459 operations
+baseline match true
+0 unexpected
+0 missing
+0 unknown SQL
+0 unresolved dependencies
+
+==================================================
+GIT SAFETY
+==================================================
+
+Current known Phase 2 checkpoint before this follow-up:
+
+4752c5dc87e4bdb9c01fee3f8951bbc2ad156113
+
+Do NOT repair or alter Git history.
+
+Do NOT:
+- commit
+- push
+- stage
+- reset
+- checkout
+- switch
+
+Replit may automatically create a checkpoint.
+
+If that happens, only REPORT:
+
+- previous HEAD;
+- new HEAD;
+- files included;
+- whether attached_assets were included;
+- whether history remained linear.
+
+==================================================
+FINAL RESPONSE
+==================================================
+
+Return exactly:
+
+1. ROOT CAUSE CONFIRMATION
+2. FILES CHANGED
+3. EXACT IMPLEMENTATION
+4. MODULE-EVALUATION COVERAGE
+5. NEGATIVE CONTROL RESULTS
+6. REAL REPOSITORY INVENTORY
+7. BASELINE STATUS
+8. PHASE 1 REGRESSION RESULT
+9. TEST RESULTS
+10. OUT-OF-SCOPE INTEGRITY
+11. GIT / AUTO-CHECKPOINT STATUS
+12. DECISION: PASS / FAIL
+
+PASS means ONLY:
+
+BF-1 is closed and the Phase 2 startup-DDL guard no longer misses
+indirect DDL executed during module evaluation.
+
+Do not claim Phase 2 is finally approved.
+Claude Code must independently verify the correction.
+
+Do not start Phase 3.
+
+STOP.
