@@ -1,0 +1,471 @@
+TASK — PRODUCTION BOOT HARDENING PHASE 2
+Startup DDL Inventory + Executable Safety Guard
+
+You MAY implement this task.
+
+IMPORTANT:
+This phase MUST NOT remove startup DDL yet.
+
+Phase 1 is complete and independently APPROVED.
+
+Normal production startup can no longer automatically seed/reconcile
+production marketplace demo content.
+
+Now we are addressing the next production risk:
+
+NORMAL API STARTUP CURRENTLY OWNS DATABASE DDL / SCHEMA RECONCILIATION.
+
+The purpose of Phase 2 is to establish a precise executable inventory and
+regression guard BEFORE migration ownership is changed.
+
+==================================================
+ABSOLUTE SAFETY RULES
+==================================================
+
+DO NOT:
+
+- remove any startup ensure*Schema routine;
+- move DDL into migrations yet;
+- create the migration baseline yet;
+- adopt any production database;
+- execute migrations;
+- execute DDL against any real/ambient database;
+- query or modify production data;
+- change production database roles;
+- change scheduler behavior;
+- change outbox behavior;
+- change legacy media migration behavior;
+- change deployment configuration;
+- change Replit Publish configuration;
+- change readiness/health behavior;
+- modify production demo data;
+- start Phase 3;
+- commit;
+- push;
+- stage;
+- reset;
+- checkout;
+- switch branches;
+- touch attached_assets/.
+
+This task is primarily static/instrumentation/test infrastructure.
+
+Normal application runtime behavior must remain unchanged.
+
+==================================================
+BACKGROUND
+==================================================
+
+Independent audits previously found that normal API startup executes
+multiple schema/DDL routines before the server begins listening.
+
+The previous audit identified approximately eight startup schema routines,
+plus other post-listen maintenance behavior.
+
+It also found:
+
+- there is currently no complete executable versioned migration history;
+- startup ensure routines are effectively acting as a schema authority;
+- Replit Publish may independently apply a schema diff;
+- therefore there are competing schema authorities;
+- startup DDL cannot safely be removed until baseline/adoption/migration
+  ownership exists;
+- some schema objects such as triggers, pg_trgm-dependent structures,
+  constraint validation state and cleanup structures may currently only
+  be owned by startup routines;
+- media schema DDL has additional locking/concurrency concerns;
+- DB query/statement timeout is approximately 30 seconds.
+
+DO NOT TRUST THESE statements blindly.
+
+Reconstruct the CURRENT repository state before implementing anything.
+
+==================================================
+A. PRE-CHANGE STARTUP INVENTORY
+==================================================
+
+Trace the real production entry point from the current repository.
+
+Identify EVERY operation executed:
+
+1. before the HTTP server starts listening;
+2. immediately after listen/readiness;
+3. as a startup sweep or bootstrap operation.
+
+For every operation classify it as:
+
+- PURE / no database;
+- DB READ;
+- DB WRITE;
+- DDL;
+- MAINTENANCE/BACKFILL;
+- SCHEDULER/OUTBOX;
+- LISTENER/INFRASTRUCTURE;
+- UNKNOWN.
+
+For every DDL-capable startup routine report:
+
+- function name;
+- source file;
+- exact startup call site;
+- direct or indirect;
+- raw SQL / ORM DDL / helper;
+- CREATE;
+- ALTER;
+- DROP;
+- CREATE INDEX;
+- CREATE INDEX CONCURRENTLY;
+- CREATE/DROP TRIGGER;
+- VALIDATE CONSTRAINT;
+- extension operation;
+- advisory lock usage;
+- transaction usage;
+- timeout exposure.
+
+Do not modify anything until this inventory is complete.
+
+==================================================
+B. DETERMINE CURRENT STARTUP DDL ROOTS
+==================================================
+
+Build a canonical list of the functions/modules that currently represent
+normal API-startup schema ownership.
+
+Do NOT assume the old audit's count of eight is still exact.
+
+Discover the current count.
+
+Distinguish:
+
+1. direct index.ts startup DDL roots;
+2. indirect DDL reached through those roots;
+3. post-listen DDL/maintenance;
+4. code that merely contains DDL but is NOT startup-reachable.
+
+The guard must be based on actual reachability, not simple repository grep.
+
+==================================================
+C. CREATE AN EXECUTABLE STARTUP DDL INVENTORY
+==================================================
+
+Create a static, database-free executable audit that analyzes the real
+production startup dependency/call graph.
+
+Prefer extending the existing static dependency-boundary infrastructure
+where technically appropriate, but do NOT weaken existing Phase 1 guards.
+
+The audit must identify startup-reachable schema mutation capability.
+
+At minimum detect startup-reachable use of SQL containing or constructing:
+
+- CREATE TABLE
+- ALTER TABLE
+- DROP TABLE
+- CREATE INDEX
+- DROP INDEX
+- CREATE INDEX CONCURRENTLY
+- CREATE TRIGGER
+- DROP TRIGGER
+- CREATE EXTENSION
+- ALTER TYPE
+- CREATE TYPE
+- DROP TYPE
+- ADD CONSTRAINT
+- DROP CONSTRAINT
+- VALIDATE CONSTRAINT
+
+Also identify equivalent schema mutation helpers where the SQL is assembled
+through local constants/templates/helpers.
+
+Do not execute the modules being analyzed.
+
+Do not import application modules if doing so could initialize DB access.
+
+Use source/static analysis.
+
+==================================================
+D. BASELINE CURRENT KNOWN STARTUP DDL
+==================================================
+
+This phase is NOT supposed to make the current startup graph DDL-free.
+
+Therefore establish an explicit reviewed baseline/manifest of the CURRENT
+known startup DDL ownership.
+
+The baseline must be:
+
+- deterministic;
+- human-readable;
+- committed as source/test data;
+- specific enough that adding a new startup DDL owner fails;
+- specific enough that moving DDL to an unexpected startup module fails;
+- resistant to someone simply adding another ensure*Schema call;
+- database-free.
+
+Do NOT create a baseline from production database state.
+
+This is a CODE STARTUP-DDL baseline only.
+
+The guard should distinguish:
+
+CURRENT/KNOWN startup DDL
+from
+NEW/UNEXPECTED startup DDL.
+
+Current known DDL is temporarily tolerated.
+
+New startup DDL must fail the test.
+
+==================================================
+E. ANTI-WEAKENING RULES
+==================================================
+
+Design the guard so a developer cannot trivially bypass it by:
+
+- renaming ensureSomethingSchema();
+- moving SQL into another local module;
+- barrel re-export;
+- literal dynamic import;
+- require();
+- wrapping SQL in a helper;
+- adding a new startup call;
+- adding a new DDL-capable module to index.ts.
+
+Non-literal dynamic imports in the production startup graph must be treated
+conservatively and reported.
+
+Do not add a generic option equivalent to:
+
+disableStartupDdlGuard: true
+
+Do not create an allow-all escape hatch.
+
+If an explicit baseline entry is required, it must be narrow and visible.
+
+==================================================
+F. REPORT-ONLY VS ENFORCED BEHAVIOR
+==================================================
+
+Phase 2 guard must enforce:
+
+NEW / UNEXPECTED startup DDL → TEST FAILURE.
+
+But it must temporarily allow:
+
+EXACT CURRENT REVIEWED STARTUP DDL BASELINE → PASS.
+
+This lets CI/publish stay green today while preventing the problem from
+growing.
+
+Later phases will shrink this baseline to zero as DDL ownership moves to
+the migration system.
+
+The guard should therefore report something like:
+
+Known startup DDL owners: N
+Unexpected startup DDL owners: 0
+Missing expected owners: 0
+Result: PASS
+
+If a known owner disappears in a future phase, that should be detectable so
+we can deliberately update/shrink the baseline rather than silently drift.
+
+==================================================
+G. ADD A REGRESSION / MUTATION TEST
+==================================================
+
+Add database-free tests proving the guard fails if:
+
+1. a new direct startup DDL module is introduced;
+2. a transitive startup module gains DDL;
+3. DDL is reached through a barrel re-export;
+4. literal dynamic import reaches DDL;
+5. non-literal dynamic import creates unresolved startup reachability;
+6. a new ensure*Schema-style startup call is added;
+7. a known baseline owner disappears or changes unexpectedly.
+
+Also prove the current real repository passes against its reviewed baseline.
+
+Tests must prove behavior, not merely grep a hard-coded expected string.
+
+==================================================
+H. INVENTORY SPECIAL HIGH-RISK DDL
+==================================================
+
+As part of the report, explicitly identify whether current startup DDL
+contains:
+
+- DROP TRIGGER followed later by CREATE TRIGGER;
+- DROP CONSTRAINT followed later by ADD CONSTRAINT;
+- VALIDATE CONSTRAINT;
+- CREATE INDEX CONCURRENTLY;
+- CREATE EXTENSION;
+- schema writes without advisory lock;
+- DDL outside transactions;
+- session-scoped bypass variables affecting financial/audit invariants.
+
+DO NOT FIX THEM IN PHASE 2.
+
+Just identify and map them to their owning startup routine/file.
+
+These become inputs for later phases.
+
+==================================================
+I. VERIFY EXISTING PHASE 1 SECURITY
+==================================================
+
+Phase 2 must not weaken Phase 1.
+
+Re-run safely:
+
+- production request/startup dependency boundary;
+- production demo-seed safety suite.
+
+Verify:
+
+Production startup → marketplace demo writer:
+IMPOSSIBLE
+
+Production startup → development/test fixtures:
+IMPOSSIBLE
+
+Production request → demo fixture:
+IMPOSSIBLE
+
+==================================================
+J. CI / PUBLISH WIRING
+==================================================
+
+The startup DDL guard must actually run in an existing safe static
+validation path.
+
+Prefer:
+
+test:backend-standards:static
+
+or an equivalent database-free validation chain already executed by
+validate:publish.
+
+Do NOT add DB access to a static validation chain.
+
+Do NOT modify GitHub Actions unless absolutely unavoidable.
+
+Verify transitively that the new guard is reachable from:
+
+validate:publish
+
+without executing the full unsafe publish/deployment process.
+
+Report the exact script chain.
+
+==================================================
+K. TESTS
+==================================================
+
+Run the narrowest safe tests.
+
+At minimum:
+
+- new startup DDL inventory/guard tests;
+- mutation/regression tests;
+- production request/startup boundary;
+- production demo-seed safety;
+- scripts typecheck;
+- API-server typecheck;
+- git diff --check.
+
+If possible, run the relevant static backend standards chain.
+
+Do NOT run DB-backed tests against an ambient database merely to increase
+test count.
+
+Do NOT start the real production server.
+
+Do NOT execute validate:publish if doing so would transitively execute
+DB-backed or browser tests.
+
+Instead prove wiring statically from package scripts if necessary.
+
+==================================================
+L. CHANGE RADIUS
+==================================================
+
+Before editing, state the exact files you expect to change.
+
+Keep the implementation isolated to static audit/test infrastructure.
+
+Any production runtime code change requires explicit justification and
+should normally be considered OUT OF SCOPE.
+
+After implementation report every tracked changed file.
+
+==================================================
+M. GIT SAFETY
+==================================================
+
+Current workflow intentionally remains inside Replit + Claude Code until
+all production-hardening tasks are complete.
+
+Do NOT synchronize with GitHub during this phase.
+
+Do NOT:
+
+- commit;
+- push;
+- pull;
+- fetch unless strictly required for read-only comparison;
+- stage;
+- reset;
+- checkout;
+- switch.
+
+Replit may create automatic checkpoints outside your control.
+
+If Replit creates one:
+REPORT:
+- previous HEAD;
+- new HEAD;
+- files included;
+- whether attached_assets were included.
+
+Do NOT repair Git history.
+
+==================================================
+N. FINAL REPORT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE PRODUCTION STARTUP GRAPH
+2. STARTUP DDL ROOTS
+3. DDL OPERATION INVENTORY
+4. HIGH-RISK DDL FINDINGS
+5. FILES CHANGED
+6. BASELINE / MANIFEST DESIGN
+7. STATIC GUARD DESIGN
+8. MUTATION TEST RESULTS
+9. REAL REPOSITORY RESULT
+10. PHASE 1 SECURITY REGRESSION RESULT
+11. CI / PUBLISH WIRING
+12. TEST RESULTS
+13. REGRESSION RISK
+14. REMAINING OUT-OF-SCOPE RISKS
+15. GIT / AUTO-CHECKPOINT STATUS
+16. DECISION: PASS / FAIL
+
+IMPORTANT:
+
+A PASS in Phase 2 means ONLY:
+
+"We now have a reliable executable inventory and regression guard around
+the existing startup DDL."
+
+It does NOT mean:
+
+"Production startup is now DDL-free."
+
+Do not claim deployment is safe.
+
+Do not start Phase 3.
+
+STOP after Phase 2.
