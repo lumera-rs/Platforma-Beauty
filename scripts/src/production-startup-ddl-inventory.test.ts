@@ -312,6 +312,37 @@ test("module evaluation follows indirect executable DDL without classifying dead
 
   expectModuleEvaluationDdl({
     ...original,
+    "module-catch.ts": "Promise.reject().catch(() => client.query(`CREATE TABLE module_catch_call (id uuid)`));",
+    "index.ts": `${original["index.ts"]}\nimport "./module-catch";`,
+  }, "module_catch_call", "module-catch.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-finally.ts": "Promise.resolve().finally(() => client.query(`CREATE TABLE module_finally_call (id uuid)`));",
+    "index.ts": `${original["index.ts"]}\nimport "./module-finally";`,
+  }, "module_finally_call", "module-finally.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-microtask.ts": "queueMicrotask(() => client.query(`CREATE TABLE module_microtask_call (id uuid)`));",
+    "index.ts": `${original["index.ts"]}\nimport "./module-microtask";`,
+  }, "module_microtask_call", "module-microtask.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-namespace-leaf.ts": "export function boot() { client.query(`CREATE TABLE module_namespace_call (id uuid)`); }",
+    "module-namespace-entry.ts": "import * as startup from './module-namespace-leaf'; startup.boot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-namespace-entry";`,
+  }, "module_namespace_call", "module-namespace-leaf.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
+    "module-object-entry.ts": "const startup = { boot() { client.query(`CREATE TABLE module_object_call (id uuid)`); } }; startup.boot();",
+    "index.ts": `${original["index.ts"]}\nimport "./module-object-entry";`,
+  }, "module_object_call", "module-object-entry.ts");
+
+  expectModuleEvaluationDdl({
+    ...original,
     "module-hop-leaf.ts": "export function leafBoot() { client.query(`CREATE TABLE module_two_hop_call (id uuid)`); }",
     "module-hop-middle.ts": "export { leafBoot as middleBoot } from './module-hop-leaf';",
     "module-hop-entry.ts": "import { middleBoot } from './module-hop-middle'; middleBoot();",
@@ -339,4 +370,61 @@ test("module evaluation follows indirect executable DDL without classifying dead
     "index.ts": `${original["index.ts"]}\nimport "./module-dead";`,
   }, baseline);
   assert.deepEqual(deadDdl.violations, []);
+
+  const deferredCallbacks = checkFixture({
+    ...original,
+    "module-deferred.ts": `
+      export function exportedNeverCalled() { client.query(\`CREATE TABLE exported_dead_ddl (id uuid)\`); }
+      registerRoute("/later", () => client.query(\`CREATE TABLE route_deferred_ddl (id uuid)\`));
+      setInterval(() => client.query(\`CREATE TABLE interval_deferred_ddl (id uuid)\`), 1000);
+      process.on("later", () => client.query(\`CREATE TABLE process_deferred_ddl (id uuid)\`));
+      class NeverInstantiated { run() { client.query(\`CREATE TABLE class_dead_ddl (id uuid)\`); } }
+    `,
+    "index.ts": `${original["index.ts"]}\nimport "./module-deferred";`,
+  }, baseline);
+  assert.deepEqual(deferredCallbacks.violations, []);
+});
+
+test("module evaluation keeps nested SQL sink traversal without double counting", () => {
+  const original = fixture();
+  const baseline = baselineFor(original);
+  const expectSingleNestedOperation = (
+    moduleName: string,
+    moduleSource: string,
+    operationName: string,
+  ): void => {
+    const report = checkFixture({
+      ...original,
+      [moduleName]: moduleSource,
+      "index.ts": `${original["index.ts"]}\nimport "./${moduleName.replace(/\.ts$/u, "")}";`,
+    }, baseline);
+    const matching = report.violations.filter((violation) =>
+      violation.reason === "unexpected-startup-ddl-root"
+      && violation.detail.includes("create-table")
+      && violation.detail.includes(operationName)
+      && violation.detail.includes(moduleName));
+    assert.equal(matching.length, 1);
+    assert.equal(matching[0]!.detail.split(operationName).length - 1, 1);
+  };
+
+  expectSingleNestedOperation(
+    "module-nested-promise.ts",
+    "Promise.all([client.query(`CREATE TABLE module_nested_promise (id uuid)`)]);",
+    "module_nested_promise",
+  );
+  expectSingleNestedOperation(
+    "module-nested-wrapper.ts",
+    "unresolvedWrapper(client.query(`CREATE TABLE module_nested_wrapper (id uuid)`));",
+    "module_nested_wrapper",
+  );
+  expectSingleNestedOperation(
+    "module-nested-constructor.ts",
+    "new UnknownThing(client.query(`CREATE TABLE module_nested_constructor (id uuid)`));",
+    "module_nested_constructor",
+  );
+  expectSingleNestedOperation(
+    "module-nested-object.ts",
+    "register({ init: client.query(`CREATE TABLE module_nested_object (id uuid)`) });",
+    "module_nested_object",
+  );
 });

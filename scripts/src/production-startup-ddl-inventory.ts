@@ -1169,6 +1169,8 @@ function scanTopLevelModule(
     ...caller,
     module: target,
     callPath: [...caller.callPath, relativeModule(target.canonical, caller.repositoryRoot)],
+    operations: [],
+    violations: [],
   };
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionLike(node)) return;
@@ -1215,6 +1217,7 @@ function scanTopLevelModule(
         ) || (ts.isIdentifier(expression) && expression.text === "queueMicrotask");
         if (immediatelyInvokesCallback) scanFunctionValuedArguments(node, context);
       }
+      ts.forEachChild(node, visit);
       return;
     }
     if (ts.isNewExpression(node)) {
@@ -1226,6 +1229,7 @@ function scanTopLevelModule(
         context.moduleCache,
       );
       if (constructor) scanFunction(constructor, context, node.arguments ?? []);
+      ts.forEachChild(node, visit);
       return;
     }
     ts.forEachChild(node, visit);

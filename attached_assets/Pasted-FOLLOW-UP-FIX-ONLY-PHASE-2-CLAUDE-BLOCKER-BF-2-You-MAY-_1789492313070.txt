@@ -1,0 +1,379 @@
+FOLLOW-UP FIX ONLY — PHASE 2 CLAUDE BLOCKER BF-2
+
+You MAY modify code.
+
+Claude Code performed the final READ-ONLY verification of the Phase 2 BF-1
+correction.
+
+BF-1 is CLOSED.
+
+However, the BF-1 correction introduced exactly ONE new blocking regression:
+
+BF-2.
+
+Fix ONLY BF-2.
+
+DO NOT start Phase 3.
+DO NOT address previous non-blocking findings.
+DO NOT redesign the analyzer.
+DO NOT regenerate or modify the production startup DDL baseline.
+DO NOT change production runtime code.
+DO NOT change any ensure*Schema implementation.
+DO NOT run DDL or migrations.
+DO NOT use a real/ambient database.
+DO NOT modify scheduler/outbox/media migration/deployment/DB roles/readiness.
+DO NOT commit/push/stage/reset/checkout/switch.
+DO NOT touch attached_assets/.
+
+==================================================
+ROOT CAUSE — BF-2
+==================================================
+
+File:
+
+scripts/src/production-startup-ddl-inventory.ts
+
+The BF-1 correction added CallExpression and NewExpression handling inside
+scanTopLevelModule().
+
+Those branches correctly resolve/scan indirect executable calls.
+
+BUT:
+
+they now end with unconditional:
+
+return;
+
+That prevents the existing AST walker from descending into the
+CallExpression/NewExpression children.
+
+Before the BF-1 correction, unresolved/wrapper calls fell through to:
+
+ts.forEachChild(node, visit)
+
+and therefore nested SQL sinks inside their arguments were detected.
+
+The BF-1 fix accidentally removed that coverage.
+
+Claude verified differential regressions such as:
+
+wrapUnknown(
+  client.query(`CREATE TABLE ...`)
+)
+
+Promise.all([
+  client.query(`CREATE TABLE ...`)
+])
+
+Promise.all([
+  db.execute(`CREATE INDEX ...`),
+  db.execute(...)
+])
+
+new UnknownThing(
+  client.query(`CREATE TABLE ...`)
+)
+
+await unknownWrap(
+  client.query(`CREATE TABLE ...`)
+)
+
+register({
+  init: client.query(`CREATE TABLE ...`)
+})
+
+These were:
+
+OLD analyzer: DETECT
+CURRENT analyzer: MISS
+
+This is a regression introduced by the BF-1 correction.
+
+==================================================
+REQUIRED MINIMAL FIX
+==================================================
+
+Inside scanTopLevelModule():
+
+For the newly-added ordinary CallExpression handling:
+
+after resolveCallable / scanFunction or immediate callback handling,
+DO NOT terminate traversal with:
+
+return;
+
+Instead allow traversal of the call expression's child nodes.
+
+Use the existing AST walker, e.g.:
+
+ts.forEachChild(node, visit);
+return;
+
+or the smallest equivalent implementation consistent with the function.
+
+Do the same for the newly-added NewExpression handling:
+
+after resolveConstructor / scanFunction,
+continue scanning the NewExpression's children using:
+
+ts.forEachChild(node, visit);
+return;
+
+Do NOT change the existing DIRECT SQL SINK branch.
+
+A direct SQL sink must still return before generic child traversal so that
+the same SQL sink is not processed twice.
+
+==================================================
+DOUBLE-COUNT SAFETY
+==================================================
+
+Explicitly verify that this does NOT duplicate operations.
+
+Expected model:
+
+scanFunction(...)
+→ scans the resolved callee/constructor BODY.
+
+ts.forEachChild(node, visit)
+→ scans the CALLER expression/arguments.
+
+Those are separate AST node sets.
+
+The direct SQL sink branch remains terminal, preventing the sink itself
+from being processed twice.
+
+Test this rather than assuming it.
+
+==================================================
+REQUIRED REGRESSION TESTS
+==================================================
+
+Add DB-free mutation coverage for at least:
+
+1.
+
+Promise.all([
+  client.query(`CREATE TABLE module_nested_promise (...)`)
+]);
+
+Expected:
+DETECTED
+
+2.
+
+unresolvedWrapper(
+  client.query(`CREATE TABLE module_nested_wrapper (...)`)
+);
+
+Expected:
+DETECTED
+
+Also cover, preferably in the same focused mutation test:
+
+3.
+
+new UnknownThing(
+  client.query(`CREATE TABLE module_nested_constructor (...)`)
+);
+
+Expected:
+DETECTED
+
+4.
+
+register({
+  init: client.query(`CREATE TABLE module_nested_object (...)`)
+});
+
+Expected:
+DETECTED
+
+Assertions must verify:
+
+- reason;
+- DDL kind;
+- unique table name;
+- originating module.
+
+Do not merely assert that some violation exists.
+
+==================================================
+PRESERVE BF-1
+==================================================
+
+Re-run all BF-1 module-evaluation coverage.
+
+These MUST remain detected:
+
+- top-level boot() → DDL
+- top-level IIFE
+- top-level new Constructor()
+- imported top-level function
+- Promise.then callback
+- catch/finally
+- queueMicrotask
+- two static hops
+- alias/re-export
+- namespace import
+- object method
+- imported function
+
+Do not trade BF-2 for reopening BF-1.
+
+==================================================
+NEGATIVE CONTROLS
+==================================================
+
+Reconfirm no false positives for:
+
+- executed top-level function with no DDL;
+- uncalled function containing DDL;
+- exported uncalled DDL function;
+- route-style registered callback;
+- setInterval registered callback;
+- process.on callback;
+- class DDL method never instantiated.
+
+==================================================
+REAL REPOSITORY INVARIANT
+==================================================
+
+The real repository MUST remain:
+
+Owners: 8
+Operations: 1,459
+Unexpected: 0
+Missing: 0
+Unknown SQL: 0
+Unresolved dependencies: 0
+Baseline match: true
+
+production-startup-ddl-baseline.json MUST remain unchanged.
+
+DO NOT regenerate it.
+
+If the inventory changes after the fix:
+
+STOP.
+
+Report the newly discovered difference.
+
+Do NOT update the baseline.
+
+==================================================
+PHASE 1 REGRESSION
+==================================================
+
+Safely re-run:
+
+- production request/startup boundary
+- production demo-seed safety
+
+Expected:
+
+10/10 PASS
+11/11 PASS
+
+Reconfirm:
+
+Production startup → marketplace demo writer: IMPOSSIBLE
+Production startup → development/test fixtures: IMPOSSIBLE
+Production request → demo fixture: IMPOSSIBLE
+
+==================================================
+SAFE TESTS
+==================================================
+
+Run DB-free:
+
+- production startup DDL inventory tests;
+- new BF-2 mutation tests;
+- all BF-1 mutation tests;
+- negative controls;
+- real repository inventory verification;
+- production request/startup boundary;
+- production demo-seed safety;
+- scripts typecheck;
+- API-server typecheck;
+- backend static chain;
+- git diff --check.
+
+Do NOT start the production server.
+Do NOT execute DDL.
+Do NOT contact an ambient/production database.
+
+==================================================
+DO NOT FIX NON-BLOCKING ITEMS
+==================================================
+
+Still OUT OF SCOPE:
+
+- SQL sink allowlist issue;
+- manual CLI missing/corrupt baseline behavior;
+- analyzer-version binding;
+- dead legacy analyzer;
+- localeCompare;
+- duplicate package script keys;
+- existing production DDL/locking/session-state risks.
+
+Do not touch them.
+
+==================================================
+GIT SAFETY
+==================================================
+
+Current known HEAD:
+
+c754585d6506f245475a08df497885b4d923b925
+
+Do NOT alter Git history.
+
+No:
+- git add
+- commit
+- push
+- reset
+- checkout
+- switch
+- pull
+
+If Replit creates an automatic checkpoint, REPORT only:
+
+- previous HEAD;
+- new HEAD;
+- files included;
+- attached_assets included yes/no;
+- whether history remained linear.
+
+==================================================
+FINAL RESPONSE
+==================================================
+
+Return exactly:
+
+1. ROOT CAUSE CONFIRMATION
+2. FILES CHANGED
+3. EXACT FIX
+4. BF-2 REGRESSION COVERAGE
+5. BF-1 PRESERVATION
+6. NEGATIVE CONTROLS
+7. DOUBLE-COUNT CHECK
+8. REAL REPOSITORY INVENTORY
+9. BASELINE STATUS
+10. PHASE 1 REGRESSION
+11. TEST RESULTS
+12. OUT-OF-SCOPE INTEGRITY
+13. GIT / AUTO-CHECKPOINT STATUS
+14. DECISION: PASS / FAIL
+
+PASS means ONLY:
+
+BF-2 is closed without reopening BF-1 or changing the reviewed real
+repository startup DDL inventory.
+
+Claude Code must independently verify it before Phase 2 is approved.
+
+Do not start Phase 3.
+
+STOP.
