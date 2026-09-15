@@ -1,5 +1,5 @@
 import { pool } from "@workspace/db";
-import { logger } from "./logger";
+import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, readStartupDdlSessionTimeouts, restoreStartupDdlSessionTimeouts, type StartupDdlSessionTimeouts } from "./startup-ddl-safety";
 
 /**
  * Production deployments do not run drizzle-kit push. Keep indexes required by
@@ -13,9 +13,9 @@ import { logger } from "./logger";
 const MARKETPLACE_PERFORMANCE_INDEX_LOCK = 0x4d500001;
 
 export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
-  const client = await pool.connect();
+  const client = await pool.connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
   let locked = false;
-  try {
+  try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await client.query("select pg_advisory_lock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
     locked = true;
     await client.query(
@@ -38,8 +38,8 @@ export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
     logger.info("Marketplace performance indexes are ready");
   } finally {
     if (locked) {
-      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
+      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch(() => {});
     }
-    client.release();
+    try { if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts); } finally { client.release(); }
   }
 }

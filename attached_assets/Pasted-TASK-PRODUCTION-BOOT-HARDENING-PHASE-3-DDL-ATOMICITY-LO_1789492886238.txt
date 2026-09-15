@@ -1,0 +1,592 @@
+TASK — PRODUCTION BOOT HARDENING PHASE 3
+DDL ATOMICITY, LOCKING & SESSION-STATE SAFETY
+
+You MAY modify code.
+
+Phase 1: APPROVED.
+Phase 2: APPROVED.
+
+Current reviewed production startup DDL invariant:
+
+- 8 startup DDL owners
+- 1,459 reviewed source-level DDL operations
+- 0 unexpected startup DDL roots
+- 0 missing roots
+- baseline match = true
+
+Current known HEAD after Phase 2:
+
+569bfb85a417abca525d23b1a881026ff5713e35
+
+IMPORTANT:
+
+Phase 3 is NOT the migration cutover.
+
+Do NOT remove all startup ensure*Schema routines.
+Do NOT introduce the final migration runner/ledger/adoption architecture.
+Do NOT perform production adoption.
+Do NOT publish/deploy.
+Do NOT use a real production database.
+Do NOT modify the Phase 2 baseline merely to make validation pass.
+Do NOT start Phase 4.
+Do NOT perform Git history operations.
+
+The purpose of Phase 3 is to harden the EXISTING startup DDL execution
+against concurrency, partial replacement windows, unbounded waits and
+session-state leakage before later migration ownership work.
+
+==================================================
+0. SAFETY / CHANGE CONTROL
+==================================================
+
+Before editing:
+
+1. inspect current Git state READ-ONLY;
+2. report current branch and HEAD;
+3. report tracked modified/staged/untracked files;
+4. identify exact files you intend to change;
+5. reconstruct the current relevant implementation from source.
+
+Do NOT run:
+
+git add
+git commit
+git push
+git pull
+git reset
+git checkout
+git switch
+git merge
+git rebase
+
+Replit may create automatic checkpoints.
+If it does, REPORT them; do not repair/rewrite history.
+
+Do not touch attached_assets/.
+
+Use only disposable/local isolated test databases if a DB-backed test is
+strictly necessary.
+
+Never connect to production or an ambient unknown database.
+
+==================================================
+1. RE-AUDIT THE HIGH-RISK DDL BEFORE EDITING
+==================================================
+
+Independently inspect the current source and identify every startup-reachable
+high-risk pattern in the eight reviewed owners.
+
+At minimum inspect:
+
+A. Business Growth
+B. Media
+C. Shipping Config
+D. Marketplace Performance
+E. Referral
+F. Web Push
+G. Booking Command
+H. Education Bundle Purchase
+
+For each owner report:
+
+- advisory lock behavior;
+- transaction boundary;
+- statement_timeout;
+- lock_timeout;
+- DROP/CREATE replacement sequences;
+- DROP/ADD constraint sequences;
+- NOT VALID / VALIDATE sequences;
+- CREATE INDEX behavior;
+- CREATE EXTENSION behavior;
+- session-level state / set_config behavior;
+- backfill DML mixed with DDL;
+- cleanup behavior on exception;
+- whether concurrent application instances can enter simultaneously.
+
+Do not rely only on the Phase 2 manifest.
+Read the implementation.
+
+==================================================
+2. PHASE 3 PRIORITY RISKS
+==================================================
+
+Focus on the already-known risks:
+
+A. BUSINESS GROWTH
+
+Inspect all:
+
+DROP TRIGGER → CREATE TRIGGER
+DROP CONSTRAINT → ADD CONSTRAINT
+DROP INDEX → CREATE INDEX
+NOT VALID → VALIDATE CONSTRAINT
+CREATE EXTENSION
+DDL mixed with backfill DML
+advisory locking
+session state including lumera.snapshot_backfill
+
+Determine exactly which replacement sequences can expose an intermediate
+invalid state to another session.
+
+Determine which operations can safely be made atomic NOW without changing
+schema semantics.
+
+B. EDUCATION BUNDLE PURCHASE
+
+Inspect:
+
+trigger replacement
+constraint replacement
+constraint validation
+autocommit DDL
+advisory locking
+
+Determine whether replacement windows can be removed or safely serialized
+without changing final schema semantics.
+
+C. MEDIA
+
+Media was previously identified as the only reviewed startup DDL owner
+without an advisory lock.
+
+Add an appropriate production-safe advisory lock if still confirmed.
+
+It must:
+
+- use a stable dedicated lock identity;
+- serialize concurrent execution across app instances;
+- release reliably on success and failure;
+- not depend on process-local state;
+- not silently skip required schema work.
+
+D. BOOKING COMMAND
+
+Inspect its advisory lock + no explicit transaction behavior.
+
+Only change it if a narrowly-scoped safety correction is clearly justified.
+
+Do not redesign it.
+
+E. ALL OWNERS — WAIT BOUNDS
+
+The previous audit found no clear bounded statement_timeout / lock_timeout
+for the eight startup DDL owners.
+
+Do NOT blindly add arbitrary timeouts everywhere.
+
+First determine the actual PostgreSQL/client timeout behavior and existing
+pool/query timeout configuration.
+
+Then design the smallest consistent bounded-wait policy that prevents API
+startup from hanging indefinitely while not making legitimate startup DDL
+unreliable.
+
+Prefer LOCAL/transaction-scoped settings when inside a transaction.
+
+For session-scoped/autocommit paths, guarantee cleanup/reset in finally.
+
+If one common helper is appropriate, keep it small and explicit.
+
+==================================================
+3. ADVISORY LOCK SAFETY
+==================================================
+
+Audit every startup DDL advisory lock.
+
+Verify:
+
+- lock acquisition and release use the SAME database session/client;
+- pooled connections cannot cause unlock to execute on another session;
+- exception paths release the lock;
+- no connection is returned to the pool while still holding a session lock;
+- nested callers cannot accidentally release another owner's lock;
+- lock keys do not collide between unrelated owners.
+
+Where unsafe, correct narrowly.
+
+Do not replace this with a new distributed-lock architecture.
+
+==================================================
+4. SESSION-STATE SAFETY
+==================================================
+
+Business Growth previously uses session state related to:
+
+lumera.snapshot_backfill
+
+Audit every SET / set_config / RESET path.
+
+Determine:
+
+- whether state is transaction-local or session-level;
+- whether an exception can leave it enabled;
+- whether a pooled connection can return to the pool with bypass state set;
+- whether triggers/financial/audit invariants can then be bypassed by an
+  unrelated later request.
+
+If leakage is possible, fix it.
+
+Preferred order:
+
+1. transaction-local state where technically valid;
+2. otherwise explicit try/finally cleanup on the SAME client/session;
+3. verify cleanup itself is safe on rollback/error paths.
+
+Add regression tests that prove state cannot leak.
+
+==================================================
+5. REPLACEMENT-WINDOW SAFETY
+==================================================
+
+For every:
+
+DROP TRIGGER → CREATE TRIGGER
+DROP CONSTRAINT → ADD CONSTRAINT
+DROP INDEX → CREATE INDEX
+
+classify the sequence:
+
+- transactional and externally invisible;
+- serialized but externally visible;
+- unsafe replacement window;
+- cannot safely fix until migration cutover.
+
+Where PostgreSQL semantics allow a low-risk Phase 3 correction, eliminate
+the externally-visible gap.
+
+Do NOT invent complex online migration choreography in Phase 3.
+
+If an item fundamentally requires Phase 4 migration ownership, leave it
+unchanged and report it explicitly.
+
+Do not claim it fixed.
+
+==================================================
+6. CONSTRAINT VALIDATION
+==================================================
+
+Audit NOT VALID → VALIDATE sequences.
+
+Preserve intended production semantics.
+
+Do not remove validation merely to avoid locking.
+
+Determine whether validation occurs:
+
+- inside/outside transaction;
+- while advisory lock is held;
+- with bounded waits;
+- after required backfill;
+- with safe failure behavior.
+
+Make only corrections required for deterministic/safe startup behavior.
+
+==================================================
+7. CREATE EXTENSION
+==================================================
+
+Phase 2 confirmed production-startup-reachable:
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm
+CREATE EXTENSION IF NOT EXISTS btree_gist
+
+Do not remove them yet unless an existing authoritative provisioning path
+already guarantees them.
+
+For Phase 3:
+
+- verify their current lock/transaction/error behavior;
+- verify failure is explicit;
+- ensure they cannot be silently skipped;
+- report that extension ownership still belongs to the later migration/
+  provisioning cutover.
+
+Do NOT introduce superuser assumptions.
+
+==================================================
+8. TIMEOUT / FAILURE CONTRACT
+==================================================
+
+Define and implement a consistent failure contract for startup DDL that you
+actually modify.
+
+Required properties:
+
+- no indefinite advisory-lock wait;
+- no indefinite table/DDL lock wait;
+- timeout produces explicit startup failure;
+- no "log and continue" after required schema work failed;
+- advisory lock/session state cleaned up;
+- connection returned cleanly;
+- no partially-successful state falsely reported as success.
+
+Do not choose timeout values arbitrarily.
+
+Use existing repository/database conventions if they exist.
+
+If no authoritative value exists, choose a conservative documented value
+based on the existing 30-second DB query/statement behavior discovered in
+the earlier audit, and explain the reasoning.
+
+==================================================
+9. DO NOT CHANGE SCHEMA SEMANTICS
+==================================================
+
+This phase must NOT intentionally change:
+
+- tables;
+- columns;
+- indexes;
+- constraints;
+- trigger logic;
+- enum values;
+- extension requirements;
+- backfill meaning;
+- application-visible schema contract.
+
+Phase 3 is execution-safety hardening.
+
+After the changes, the intended final database schema must be the same.
+
+If changing execution safety necessarily changes the Phase 2 operation
+fingerprints/counts, STOP before updating the baseline.
+
+Report exactly why.
+
+Do NOT regenerate/bless the baseline automatically.
+
+==================================================
+10. PHASE 2 GUARD IS AN ENFORCEMENT BOUNDARY
+==================================================
+
+Run the Phase 2 production startup DDL inventory after implementation.
+
+Expected unless a reviewed execution-safety change legitimately changes
+source fingerprints:
+
+Owners: 8
+Operations: 1,459
+Unexpected: 0
+Missing: 0
+Unknown SQL: 0
+Unresolved dependencies: 0
+Violations: 0
+Baseline match: true
+
+If baseline mismatch occurs:
+
+STOP.
+
+Do NOT update production-startup-ddl-baseline.json.
+
+Report:
+
+- owner;
+- old operation;
+- new operation;
+- reason for change;
+- whether schema semantics changed;
+- whether a baseline update would actually be required.
+
+That requires independent Claude review before baseline modification.
+
+==================================================
+11. REQUIRED TESTING
+==================================================
+
+Add focused tests for every safety correction.
+
+At minimum test, where applicable:
+
+A. concurrent startup attempts:
+- only one owner performs protected DDL section at a time;
+- second contender waits only within the defined bound;
+- timeout/failure is explicit.
+
+B. exception cleanup:
+- advisory lock released;
+- client/session cleaned;
+- session bypass state reset;
+- connection not poisoned for reuse.
+
+C. replacement safety:
+- no observable drop/create gap where Phase 3 claims to fix one.
+
+D. failure propagation:
+- required DDL failure prevents successful startup completion.
+
+E. Phase 2 invariant:
+- real startup inventory unchanged unless explicitly stopped for review.
+
+Use isolated/disposable PostgreSQL tests only where SQL semantics genuinely
+need PostgreSQL.
+
+Static/unit tests are preferred where they prove the property.
+
+Do not use production.
+
+==================================================
+12. REGRESSION GATES
+==================================================
+
+Re-run safely:
+
+- production startup DDL inventory/mutation suite;
+- real repository DDL inventory;
+- production request/startup boundary;
+- production demo-seed safety;
+- scripts typecheck;
+- API server typecheck;
+- relevant backend static standards;
+- targeted owner tests;
+- targeted concurrency/cleanup tests;
+- git diff --check.
+
+Run additional existing tests for every runtime module you modify.
+
+Do not run Publish.
+
+==================================================
+13. PHASE 1 MUST REMAIN TRUE
+==================================================
+
+Reconfirm:
+
+Production startup → marketplace demo writer: IMPOSSIBLE
+Production startup → development/test fixtures: IMPOSSIBLE
+Production request → demo fixture: IMPOSSIBLE
+
+Expected existing tests:
+
+production request/startup boundary: 10/10 PASS
+production demo-seed safety: 11/11 PASS
+
+==================================================
+14. PHASE 2 MUST REMAIN TRUE
+==================================================
+
+Reconfirm the analyzer protections remain intact.
+
+Expected:
+
+startup DDL inventory/mutation suite: PASS
+8 owners
+1,459 operations
+0 violations
+baseline match true
+
+Do not modify the analyzer unless absolutely necessary for a genuine Phase 3
+finding.
+
+If analyzer modification appears necessary:
+STOP and report before changing it.
+
+==================================================
+15. OUT OF SCOPE
+==================================================
+
+Do NOT implement in Phase 3:
+
+- baseline migration;
+- migration ledger;
+- production schema adoption;
+- migration runner;
+- migration DB role;
+- compatibility/readiness gate;
+- removal of all ensure*Schema startup routines;
+- scheduler worker extraction;
+- scheduler architecture redesign;
+- production deploy/publish;
+- rollback implementation;
+- production database changes;
+- Phase 4+ work.
+
+Also do not spend Phase 3 fixing the previously-carried analyzer
+non-blockers unless directly required:
+
+- SQL sink allowlist expansion;
+- missing/corrupt baseline manual CLI behavior;
+- analyzer-version binding;
+- dead analyzer code;
+- localeCompare;
+- duplicate package script keys.
+
+==================================================
+16. CHANGE-RADIUS DISCIPLINE
+==================================================
+
+Before editing, list exact files.
+
+After editing, compare actual files changed with the intended list.
+
+Any unexpected runtime file:
+STOP and explain.
+
+Do not perform broad formatting, refactors, renames or cleanup.
+
+Keep the diff reviewable and minimal.
+
+==================================================
+17. GIT / CHECKPOINT REPORT
+==================================================
+
+Do not intentionally create a commit.
+
+At completion report:
+
+- branch;
+- starting HEAD;
+- ending HEAD;
+- whether Replit created an automatic checkpoint;
+- tracked modified;
+- staged;
+- untracked;
+- files included in any automatic checkpoint;
+- whether attached_assets were included;
+- whether history remained linear.
+
+Do not alter Git history.
+
+==================================================
+18. FINAL REPORT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE GIT STATE
+2. PRE-CHANGE HIGH-RISK DDL AUDIT
+3. FILES CHANGED
+4. BUSINESS GROWTH HARDENING
+5. EDUCATION BUNDLE HARDENING
+6. MEDIA LOCK HARDENING
+7. BOOKING COMMAND REVIEW
+8. ADVISORY LOCK SAFETY
+9. TIMEOUT POLICY
+10. SESSION-STATE SAFETY
+11. REPLACEMENT-WINDOW RESULTS
+12. CONSTRAINT VALIDATION RESULTS
+13. CREATE EXTENSION RESULTS
+14. SCHEMA-SEMANTICS INTEGRITY
+15. PHASE 2 BASELINE RESULT
+16. PHASE 1 REGRESSION RESULT
+17. TEST RESULTS
+18. REMAINING RISKS DEFERRED TO PHASE 4+
+19. GIT / AUTO-CHECKPOINT STATUS
+20. DECISION: PASS / STOPPED / FAIL
+
+PASS means ONLY:
+
+- Phase 3 execution-safety hardening is complete;
+- no schema semantics were intentionally changed;
+- Phase 1 remains intact;
+- Phase 2 guard remains intact;
+- no unresolved Phase 3 blocker remains.
+
+PASS does NOT mean:
+- startup is DDL-free;
+- migration architecture is complete;
+- production is safe to publish.
+
+Do not start Phase 4.
+
+STOP.

@@ -3,7 +3,7 @@ import {
   serbianPhoneNormalizedSqlExpression,
   type DatabasePoolClient as PoolClient,
 } from "@workspace/db";
-import { logger } from "./logger";
+import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, readStartupDdlSessionTimeouts, restoreStartupDdlSessionTimeouts, type StartupDdlSessionTimeouts } from "./startup-ddl-safety";
 
 /**
  * Production deployments do NOT run drizzle-kit push. This module performs a
@@ -5004,7 +5004,7 @@ export async function runBusinessGrowthSchemaDdl(
     [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
   );
   locked = true;
-  try {
+  let rolloutError: unknown; try {
     // Constrain unqualified name resolution inside DO blocks to the target schema.
     await client.query(`SET search_path TO ${quoted}`);
     // education_salon_cleanup_reports is written by the one-time v99 historical
@@ -5147,15 +5147,16 @@ export async function runBusinessGrowthSchemaDdl(
        ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version, completed_at = EXCLUDED.completed_at`,
       [BUSINESS_GROWTH_SCHEMA_VERSION],
     );
-  } finally {
+  } catch (error) { rolloutError = error; throw error; } finally {
     // Custom GUCs are session scoped. Always close the narrowly-scoped
     // migration bypass before this client can return to the pool.
     await client.query("ROLLBACK").catch(() => {});
-    await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`);
+    let cleanupError: unknown; try { await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`); } catch (error) { cleanupError = error; }
     if (locked) await client.query(
       "SELECT pg_advisory_unlock($1)",
       [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
-    ).catch(() => {});
+    ).catch((error) => { cleanupError ??= error; });
+    if (cleanupError && !rolloutError) throw cleanupError;
   }
 }
 
@@ -5168,8 +5169,8 @@ export async function runBusinessGrowthSchemaDdl(
 export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise<void> {
   quoteSchema(schemaName); // validate early, before acquiring resources
   const client = await pool.connect();
-  const previousSearchPath = await currentSearchPath(client);
-  try {
+  let previousSearchPath: string | undefined; let previousTimeouts: StartupDdlSessionTimeouts | undefined; let startupError: unknown;
+  try { previousSearchPath = await currentSearchPath(client); previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await runBusinessGrowthSchemaDdl(client, schemaName);
     const cleanup = await client.query<{
       candidates: number; detached_users: number; deleted_salons: number; retired_salons: number;
@@ -5185,14 +5186,15 @@ export async function ensureBusinessGrowthSchema(schemaName = "public"): Promise
       { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },
       "Business Growth database schema is ready",
     );
-  } finally {
+  } catch (error) { startupError = error; throw error; } finally { let cleanupError: unknown; if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError = error; });
     // Restore search_path on the pooled client so it does not leak to reuse.
     try {
-      await client.query(`SET search_path TO ${previousSearchPath}`);
-    } catch {
-      /* best-effort; the client is released regardless */
+      if (previousSearchPath) await client.query(`SET search_path TO ${previousSearchPath}`);
+    } catch (error) {
+      cleanupError ??= error;
     }
     client.release();
+    if (cleanupError && !startupError) throw cleanupError;
   }
 }
 

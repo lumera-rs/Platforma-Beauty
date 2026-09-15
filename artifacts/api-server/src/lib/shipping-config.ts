@@ -4,7 +4,7 @@ import {
   pool,
   type DatabasePoolClient as PoolClient,
   shippingRulesTable,
-} from "@workspace/db";
+} from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 const SHIPPING_RULES_LOCK_KEY = "lumera:shipping-rules-singleton";
 const SHIPPING_RULES_INDEX_NAME = "shipping_rules_singleton_unique";
@@ -21,9 +21,9 @@ export async function ensureShippingConfigSchema(schemaName = "public"): Promise
   const client = await pool.connect();
   let locked = false;
   try {
-    await client.query("select pg_advisory_lock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY]);
+    await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY]);
     locked = true;
-    await client.query("begin");
+    // Transaction-local timeouts bound both advisory-lock and table-lock waits.
     try {
       await runShippingConfigSchemaDdl(client, schemaName);
       await client.query("commit");

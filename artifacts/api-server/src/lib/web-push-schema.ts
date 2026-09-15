@@ -1,4 +1,4 @@
-import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db";
+import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 const LOCK_KEY = "lumera:web-push-schema:v1";
 
@@ -11,9 +11,9 @@ export async function ensureWebPushSchema(schemaName = "public"): Promise<void> 
   const client = await pool.connect();
   let locked = false;
   try {
-    await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
+    await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
     locked = true;
-    await client.query("begin");
+    // Transaction-local timeouts bound startup lock and schema work.
     try {
       await runWebPushSchemaDdl(client, schemaName);
       await client.query("commit");

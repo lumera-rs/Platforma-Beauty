@@ -1,11 +1,11 @@
-import { pool } from "@workspace/db";
+import { pool } from "@workspace/db"; import { BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY } from "./business-growth-schema"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 /** Additive, replay-safe production rollout for parent-only bundle finance. */
 export async function ensureEducationBundlePurchaseSchema(schemaName = "public"): Promise<void> {
   if (!/^[a-z_][a-z0-9_]*$/i.test(schemaName)) throw new Error("Invalid schema name.");
-  const schema = `"${schemaName}"`, client = await pool.connect();
-  try {
-    await client.query("SELECT pg_advisory_lock($1)", [0x4542554e]);
+  const schema = `"${schemaName}"`, client = await pool.connect(); let locked = false;
+  try { await client.query("begin"); await setLocalStartupDdlTimeouts(client);
+    await client.query("SELECT pg_advisory_lock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]); locked = true;
     await client.query(`DO $$ BEGIN CREATE TYPE ${schema}.education_bundle_purchase_status AS ENUM ('pending_payment','settled','cancelled','refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
     await client.query(`DO $$ BEGIN CREATE TYPE ${schema}.education_bundle_purchase_target AS ENUM ('individual','salon_employee'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
     await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.education_bundle_purchases (
@@ -82,5 +82,5 @@ export async function ensureEducationBundlePurchaseSchema(schemaName = "public")
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_charge_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='charge'`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_fee_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='platform_fee'`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_reserve_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='reserve_hold'`);
-  } finally { try { await client.query("SELECT pg_advisory_unlock($1)", [0x4542554e]); } finally { client.release(); } }
+    await client.query("commit"); } catch (error) { await client.query("rollback").catch(() => {}); throw error; } finally { try { if (locked) await client.query("SELECT pg_advisory_unlock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]).catch(() => {}); } finally { client.release(); } }
 }
