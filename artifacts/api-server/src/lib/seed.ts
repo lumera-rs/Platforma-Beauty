@@ -494,6 +494,37 @@ export async function initializeDevelopmentTestFixtures(): Promise<void> {
   return fixturePromise;
 }
 
+async function synchronizeDevelopmentFixtureServesMen(): Promise<void> {
+  const [fixtureOwner] = await db.select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, "salon@lumera.local"))
+    .limit(1);
+  if (!fixtureOwner) return;
+
+  const fixtureSalons = await db.select({ id: salonsTable.id })
+    .from(salonsTable)
+    .where(eq(salonsTable.ownerId, fixtureOwner.id));
+  if (!fixtureSalons.length) return;
+
+  const fixtureSalonIds = fixtureSalons.map((salon) => salon.id);
+  const mensServiceSalons = await db.select({ salonId: servicesTable.salonId })
+    .from(servicesTable)
+    .where(and(
+      eq(servicesTable.active, true),
+      eq(servicesTable.categoryName, "Muški frizeri"),
+      inArray(servicesTable.salonId, fixtureSalonIds),
+    ));
+  const mensServiceSalonIds = [...new Set(mensServiceSalons.map((service) => service.salonId))];
+  if (!mensServiceSalonIds.length) return;
+
+  await db.update(salonsTable)
+    .set({ servesMen: true })
+    .where(and(
+      eq(salonsTable.ownerId, fixtureOwner.id),
+      inArray(salonsTable.id, mensServiceSalonIds),
+    ));
+}
+
 /**
  * Internal implementation called only by development-test-fixtures.ts after
  * the explicit runtime check has passed.
@@ -514,6 +545,7 @@ export async function runDemoFixtureSequence(): Promise<void> {
     await seedEducationContent();
     await seedEducationMonetization();
     await seedMarketplaceTaxonomy();
+    await synchronizeDevelopmentFixtureServesMen();
     await seedCourierServices();
     await seedFutureBookingAvailability();
     await seedDevelopmentFixtureSalonCustomers();
@@ -829,6 +861,7 @@ export async function runDemoFixtureSequence(): Promise<void> {
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, passwordSetAt, role: "ADMIN" });
   await seedMarketplaceTaxonomy();
+  await synchronizeDevelopmentFixtureServesMen();
   await seedCourierServices();
   void customer;
 }
