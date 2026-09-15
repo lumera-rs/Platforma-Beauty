@@ -2,6 +2,8 @@ name: Branch CI
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
   workflow_dispatch:
     inputs:
@@ -10,13 +12,55 @@ on:
         required: true
         default: false
         type: boolean
+      run_build_timing_history_probe:
+        description: "Verify main-branch build timing history and the current rerun artifact"
+        required: true
+        default: false
+        type: boolean
+      expected_build_timing_history_reports:
+        description: "Expected number of previous successful timing reports for the history probe"
+        required: false
+        default: 1
+        type: number
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
+  migration-contract:
+    name: Migration contract (database-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: "true"
+      DATABASE_URL: ""
+      LUMERA_MIGRATION_DATABASE_URL: ""
+      LUMERA_CI_EVENT_NAME: ${{ github.event_name }}
+      LUMERA_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      LUMERA_CI_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The validator reads the exact native-event base SHA and performs its
+          # own bounded fetch/deepening when this shallow history is insufficient.
+          fetch-depth: 2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test migration contract and capability guard
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migration-contract
+      - name: Validate migration contract
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:migration-contract
+
   release-chain:
     name: Release chain (database-free)
+    needs: migration-contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -49,8 +93,187 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Download recent successful build timing history
+        id: build-timing-history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-timings/history
+          history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          history_count=0
+          default_branch=""
+          run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file" "$runs_json_file"
+          }
+          trap cleanup EXIT
+
+          if ! default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"; then
+            echo "::notice title=Build timing history unavailable::Could not read the repository default branch; continuing without historical timings."
+            echo "history_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --slurp > "$runs_json_file"; then
+            echo "::notice title=Build timing history unavailable::Could not list successful main-branch workflow runs; continuing without historical timings."
+            echo "history_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_attempt != null and .run_started_at != null)
+              | {id, run_attempt, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_attempt, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+
+          while IFS=$'\t' read -r run_id run_attempt _started_at; do
+            [ -n "$run_id" ] || continue
+            [ "$history_count" -lt "$history_limit" ] || break
+            artifact_name="build-timings-${run_attempt}"
+            artifact_id=""
+            if artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts")"; then
+              artifact_id="$(
+                jq -r --arg artifact_name "$artifact_name" \
+                  '.artifacts | map(select(.expired == false and .name == $artifact_name)) | sort_by(.created_at) | last | .id // empty' \
+                  <<< "$artifacts_json"
+              )"
+            fi
+            [ -n "$artifact_id" ] || continue
+            destination="ci-timings/history/${run_id}"
+            mkdir -p "$destination"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip"; then
+              rm -rf "$destination"
+              continue
+            fi
+            if ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            report_path="$(find "$destination" -type f -name build-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "scripts:typecheck",
+            "build:release",
+            "validate:ci:build:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "build" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
+
+          {
+            echo "### Build timing history download"
+            echo
+            echo "- Source branch: \`$default_branch\`"
+            echo "- Historical reports downloaded: **$history_count** (expected up to **$history_limit**)"
+            echo "- Missing, expired, or unreadable artifacts are skipped and never block the build."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "history_count=$history_count" >> "$GITHUB_OUTPUT"
+      - name: Confirm expected build timing history
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_build_timing_history_probe }}
+        run: |
+          expected="${{ inputs.expected_build_timing_history_reports }}"
+          actual="${{ steps.build-timing-history.outputs.history_count }}"
+          if [ -z "$actual" ] || [ "$actual" -ne "$expected" ]; then
+            echo "Expected $expected previous successful timing reports, but downloaded ${actual:-0}." >&2
+            exit 1
+          fi
+          {
+            echo
+            echo "### Build timing history probe"
+            echo
+            echo "Verified the expected historical report count: **$actual**."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Controlled build timing history probe found exactly $actual expected report(s)."
       - name: Run build and database-free publish checks
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: env -u DATABASE_URL pnpm run validate:ci:build
+      - name: Upload build timing history
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-timings-${{ github.run_attempt }}
+          path: ci-timings/build-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback build timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Verify current build timing artifact and redirect download
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_build_timing_history_probe && success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected_name="build-timings-${GITHUB_RUN_ATTEMPT}"
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
+          artifact_id="$(
+            jq -r --arg expected_name "$expected_name" \
+              '.artifacts | map(select(.expired == false and .name == $expected_name)) | sort_by(.created_at) | last | .id // empty' \
+              <<< "$artifacts_json"
+          )"
+          test -n "$artifact_id"
+          mkdir -p ci-timings/probe
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > ci-timings/probe/artifact.zip
+          unzip -tq ci-timings/probe/artifact.zip
+          unzip -oq ci-timings/probe/artifact.zip -d ci-timings/probe
+          test -f ci-timings/probe/build-timings.json
+          node - <<'NODE'
+          const report = require("./ci-timings/probe/build-timings.json");
+          if (String(report.runAttempt) !== process.env.GITHUB_RUN_ATTEMPT) {
+            throw new Error(`Expected the latest attempt ${process.env.GITHUB_RUN_ATTEMPT}, got ${report.runAttempt ?? "none"}.`);
+          }
+          NODE
+          {
+            echo
+            echo "### Build timing artifact probe"
+            echo
+            echo "Verified the current run's latest attempt artifact (\`$expected_name\`) through the GitHub API ZIP download, including its redirect."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   database:
     name: Database checks (isolated PostgreSQL)
@@ -105,8 +328,116 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Prepare isolated test schema
         run: pnpm --filter @workspace/db run push-force
+      - name: Reconcile retail cart index for isolated CI
+        run: pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci
+      - name: Verify retail cart index CI preparation
+        run: pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation
+      - name: Download recent successful database timing history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-timings/history
+          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
+          history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          history_count=0
+          run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file" "$runs_json_file"
+          }
+          trap cleanup EXIT
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --slurp > "$runs_json_file"
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_started_at != null)
+              | {id, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+          while IFS=$'\t' read -r run_id _started_at; do
+            [ -n "$run_id" ] || continue
+            [ "$history_count" -lt "$history_limit" ] || break
+            artifact_id="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                --jq '.artifacts | map(select(.expired == false and (.name | startswith("database-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
+            )"
+            [ -n "$artifact_id" ] || continue
+            destination="ci-timings/history/${run_id}"
+            mkdir -p "$destination"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" ||
+              ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            report_path="$(find "$destination" -type f -name database-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "database:test:monitoring",
+            "database:test:backend-standards:static",
+            "database:release:2-backend",
+            "database:release:3-api",
+            "validate:ci:database:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "database" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
       - name: Run database checks
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:database
+      - name: Upload database timing history
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-timings-${{ github.run_attempt }}
+          path: ci-timings/database-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback database timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/database-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
+          if-no-files-found: warn
+          retention-days: 90
 
   browser:
     name: Browser user journeys
@@ -149,8 +480,110 @@ jobs:
         run: pnpm --filter @workspace/scripts exec playwright install --with-deps chromium
       - name: Prepare isolated browser test schema
         run: pnpm --filter @workspace/db run push-force
+      - name: Download recent successful browser timing history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ci-timings/history
+          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
+          history_limit="$(node -p "require('./scripts/ci-build-timings.json').historyLimit")"
+          history_count=0
+          run_ids_file="$(mktemp)"
+          runs_json_file="$(mktemp)"
+          cleanup() {
+            rm -f "$run_ids_file" "$runs_json_file"
+          }
+          trap cleanup EXIT
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f branch="$default_branch" -f status=success -f per_page=100 \
+            --paginate --slurp > "$runs_json_file"
+          jq -r '
+            [.[].workflow_runs[]
+              | select(.id != null and .run_started_at != null)
+              | {id, run_started_at}]
+            | sort_by(.run_started_at)
+            | reverse
+            | .[]
+            | [.id, .run_started_at]
+            | @tsv
+          ' "$runs_json_file" > "$run_ids_file"
+          while IFS=$'\t' read -r run_id _started_at; do
+            [ -n "$run_id" ] || continue
+            [ "$history_count" -lt "$history_limit" ] || break
+            artifact_id="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                --jq '.artifacts | map(select(.expired == false and (.name | startswith("browser-timings-")))) | sort_by(.created_at) | reverse | first | .id // empty'
+            )"
+            [ -n "$artifact_id" ] || continue
+            destination="ci-timings/history/${run_id}"
+            mkdir -p "$destination"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > "$destination/artifact.zip" ||
+              ! unzip -q "$destination/artifact.zip" -d "$destination"; then
+              rm -rf "$destination"
+              continue
+            fi
+            rm "$destination/artifact.zip"
+            report_path="$(find "$destination" -type f -name browser-timings.json -print -quit)"
+            if [ -n "$report_path" ] && node - "$report_path" <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          } catch {
+            process.exit(1);
+          }
+          const requiredPhases = [
+            "browser:release:4-isolated",
+            "browser:release:5-final",
+            "validate:ci:browser:total",
+          ];
+          if (
+            report?.schemaVersion !== 2 ||
+            report.status !== "passed" ||
+            report.job !== "browser" ||
+            typeof report.startedAt !== "string" ||
+            !Number.isFinite(Date.parse(report.startedAt)) ||
+            !Array.isArray(report.phases) ||
+            requiredPhases.some((name) => {
+              const phase = report.phases.find((item) => item?.name === name);
+              return !phase || !Number.isFinite(phase.durationSeconds);
+            })
+          ) {
+            process.exit(1);
+          }
+          NODE
+            then
+              history_count=$((history_count + 1))
+            else
+              rm -rf "$destination"
+            fi
+          done < "$run_ids_file"
       - name: Run browser user journeys
+        env:
+          CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:browser
+      - name: Upload browser timing history
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-timings-${{ github.run_attempt }}
+          path: ci-timings/browser-timings.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload fallback browser timing reports
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-timings-fallback-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lumera-ci-timing-fallback/browser-timings.json
+            ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
+          if-no-files-found: warn
+          retention-days: 90
       - name: Upload browser failure diagnostics
         if: ${{ failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         continue-on-error: true

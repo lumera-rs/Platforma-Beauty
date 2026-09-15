@@ -545,6 +545,8 @@ import type {
   MarkEducationNotificationReadResponse,
   MarketplaceHomeDiscovery,
   MediaAsset,
+  MediaDescriptionsRequest,
+  MediaDescriptionsResponse,
   MediaUploadInput,
   MediaUploadTicket,
   MetaCatalogStatus,
@@ -5947,6 +5949,77 @@ export function useGetMediaAsset<TData = Awaited<ReturnType<typeof getMediaAsset
 
 
 
+
+export const getGetMediaDescriptionsUrl = () => {
+
+
+
+
+  return `/api/media/descriptions`
+}
+
+/**
+ * @summary Return descriptions for readable managed images
+ */
+export const getMediaDescriptions = async (mediaDescriptionsRequest: MediaDescriptionsRequest, options?: Parameters<typeof customFetch>[1]): Promise<MediaDescriptionsResponse> => {
+
+  return customFetch<MediaDescriptionsResponse>(getGetMediaDescriptionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mediaDescriptionsRequest)
+  }
+);}
+
+
+
+
+
+export const getGetMediaDescriptionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getMediaDescriptions>>, TError,{data: BodyType<MediaDescriptionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getMediaDescriptions>>, TError,{data: BodyType<MediaDescriptionsRequest>}, TContext> => {
+
+const mutationKey = ['getMediaDescriptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getMediaDescriptions>>, {data: BodyType<MediaDescriptionsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  getMediaDescriptions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetMediaDescriptionsMutationResult = NonNullable<Awaited<ReturnType<typeof getMediaDescriptions>>>
+    export type GetMediaDescriptionsMutationBody = BodyType<MediaDescriptionsRequest>
+    export type GetMediaDescriptionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Return descriptions for readable managed images
+ */
+export const useGetMediaDescriptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getMediaDescriptions>>, TError,{data: BodyType<MediaDescriptionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getMediaDescriptions>>,
+        TError,
+        {data: BodyType<MediaDescriptionsRequest>},
+        TContext
+      > => {
+      return useMutation(getGetMediaDescriptionsMutationOptions(options));
+    }
 
 export const getListSalonAppointmentsUrl = (params?: ListSalonAppointmentsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -30364,7 +30437,7 @@ export const getListPublicSuppliersUrl = () => {
 }
 
 /**
- * @summary List active public suppliers
+ * @summary List active public suppliers with verified social-image metadata when managed media is selected
  */
 export const listPublicSuppliers = async ( options?: Parameters<typeof customFetch>[1]): Promise<Supplier[]> => {
 
@@ -30411,7 +30484,7 @@ export type ListPublicSuppliersQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List active public suppliers
+ * @summary List active public suppliers with verified social-image metadata when managed media is selected
  */
 
 export function useListPublicSuppliers<TData = Awaited<ReturnType<typeof listPublicSuppliers>>, TError = ErrorType<unknown>>(
@@ -30692,7 +30765,7 @@ export const getListSupplierPublicProductsUrl = (supplierSlug: string,
 }
 
 /**
- * @summary List active retail products from one active supplier
+ * @summary List active retail products with selected social-image metadata from one active supplier
  */
 export const listSupplierPublicProducts = async (supplierSlug: string,
     params?: ListSupplierPublicProductsParams, options?: Parameters<typeof customFetch>[1]): Promise<B2cProductSearchResponse> => {
@@ -30742,7 +30815,7 @@ export type ListSupplierPublicProductsQueryError = ErrorType<void>
 
 
 /**
- * @summary List active retail products from one active supplier
+ * @summary List active retail products with selected social-image metadata from one active supplier
  */
 
 export function useListSupplierPublicProducts<TData = Awaited<ReturnType<typeof listSupplierPublicProducts>>, TError = ErrorType<void>>(

@@ -1,0 +1,217 @@
+LUMERA — A-5 MIGRATION TRANSITION
+P.2a-HARDENING — CLOSE TWO INDEPENDENT REVIEW FINDINGS
+
+P.2a has passed independent Claude review and is CLOSED.
+
+Claude found no P0/P1 and confirmed the implementation itself is correct,
+fail-closed, deterministic and safe.
+
+This is a VERY SMALL hardening task before P.2b.
+
+STRICT SCOPE:
+TESTS + DOCUMENTATION ONLY.
+
+DO NOT:
+- change parser semantics
+- change migration header grammar
+- change checksum behavior
+- connect to any DB
+- modify DB
+- create migrations
+- create ledger
+- implement adoption
+- modify fingerprint
+- modify runtime
+- modify bootstrap
+- start P.2b
+
+==================================================
+FIX 1 — CAPABILITY GUARD COVERAGE
+==================================================
+
+Independent review found:
+
+scripts/src/migration-contract/migration-contract.test.ts
+
+The existing test:
+
+"implementation has no database, network, drizzle-kit, bootstrap, or shell capability"
+
+currently scans contract.ts and verify-migration-contract.ts,
+but does NOT scan the newly-added header.ts.
+
+Fix this.
+
+Add header.ts to the capability-guard coverage.
+
+IMPORTANT:
+
+Do NOT use a naive forbidden substring such as:
+
+postgres
+
+because header.ts legitimately contains:
+
+min-postgres
+max-postgres
+postgresMajor
+SUPPORTED_POSTGRES_MAJOR_VERSIONS
+
+Refine the capability detection so it detects actual dangerous imports /
+capabilities, not harmless terminology.
+
+At minimum protect against actual imports/requires of DB/network/runtime
+capabilities such as pg and other capability modules already covered by
+the guard.
+
+Prefer import-specifier-aware detection.
+
+Do not create a complex pseudo-parser unless necessary.
+
+Add a regression test proving:
+
+- current real header.ts passes
+- a fixture/source containing an actual pg import fails the capability guard
+
+==================================================
+FIX 2 — TAB POLICY DOCUMENTATION + TEST
+==================================================
+
+Current P.2a behavior intentionally rejects U+0009 TAB anywhere in
+migration.sql, including the SQL body.
+
+KEEP THIS CURRENT BEHAVIOR.
+
+Do NOT relax parser semantics in this task.
+
+Update README.md so it states explicitly:
+
+Tabs are not permitted anywhere in migration.sql, including the SQL body.
+Use spaces for indentation.
+
+Add a focused regression test such as conceptually:
+
+valid header
++
+SELECT<TAB>1;
+
+must fail specifically because U+0009 is prohibited.
+
+Assert the specific U+0009/control-character behavior rather than a very
+broad generic error matcher.
+
+==================================================
+OPTIONAL TEST-ONLY HARDENING
+==================================================
+
+If it can be added cleanly without changing production/parser logic,
+also add table-driven tests for currently-correct behavior:
+
+MODE:
+- TRANSACTIONAL
+- Transactional
+- non-transactional
+- non_transactional
+
+ID:
+- trailing tokens
+- seven digits
+- Unicode/Arabic-Indic digits
+
+POSTGRES:
+- -1
+- +16
+- 0
+- 0x10
+- 1e1
+- fullwidth digits
+- very large integer
+
+DIRECTIVES:
+- Unicode lookalike colon
+- Unicode lookalike hyphen
+
+These are recommended coverage additions only.
+
+Do NOT change parser behavior to accommodate them.
+
+==================================================
+DEFERRED — DO NOT FIX HERE
+==================================================
+
+Claude also noted that SQL bodies containing only:
+
+;
+-- comment
+/* comment */
+
+can currently pass the P.2a non-empty-body check.
+
+DO NOT change this now.
+
+This requires statement-level understanding and belongs to P.2g.
+
+Add/retain a clear TODO or documentation note only if useful:
+
+P.2g must reject migration bodies containing no executable SQL statement.
+
+Do not consume P.2g scope here.
+
+==================================================
+VALIDATION
+==================================================
+
+Run:
+
+pnpm run test:migration-contract
+pnpm run test:schema-drift
+pnpm run typecheck
+git diff --check
+
+No DB tests.
+No DB connection.
+
+Inspect git diff and confirm only expected test/documentation files changed.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. exact files changed
+2. capability-guard change
+3. tab documentation change
+4. tests added
+5. exact test results
+6. typecheck result
+7. git diff --check result
+
+Explicitly confirm:
+
+PARSER LOGIC CHANGED: NO
+HEADER GRAMMAR CHANGED: NO
+CHECKSUM LOGIC CHANGED: NO
+DATABASE CONNECTED: NO
+DATABASE MODIFIED: NO
+MIGRATION CREATED: NO
+LEDGER CREATED: NO
+ADOPTION ADDED: NO
+FINGERPRINT CHANGED: NO
+RUNTIME CHANGED: NO
+BOOTSTRAP CHANGED: NO
+P.2b STARTED: NO
+
+Then:
+
+P.2a-HARDENING VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+READY FOR P.2b:
+YES / NO
+
+STOP.
+
+Do not start P.2b.

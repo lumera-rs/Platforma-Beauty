@@ -7,6 +7,7 @@
  */
 import type { Course } from './course';
 import type { EducationMedia } from './educationMedia';
+import type { PublicSocialImage } from './publicSocialImage';
 
 export interface EducationCenterPublic {
   id: string;
@@ -14,6 +15,7 @@ export interface EducationCenterPublic {
   city: string;
   description: string;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   websiteUrl?: string | null;
   /** @nullable */

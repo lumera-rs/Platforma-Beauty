@@ -1,0 +1,480 @@
+LUMERA — A-5 MIGRATION TRANSITION
+P.2a — MIGRATION DIRECTIVE HEADER PARSER + CONTRACT EXTENSION
+
+IMPLEMENTATION TASK
+
+This is the FIRST implementation task from the independently-reviewed
+P.2 migration architecture.
+
+Scope is intentionally very small.
+
+STRICT SCOPE:
+TOOLING ONLY
+NO DATABASE WRITE
+NO DATABASE CONNECTION REQUIRED
+NO APPLICATION RUNTIME CHANGE
+NO MIGRATION EXECUTION
+NO PRODUCTION ACCESS
+
+Current architecture status:
+
+- P.1a migration directory contract is already implemented and closed.
+- Current migration contract requires exactly one regular file:
+  migration.sql
+- Sidecar files such as metadata.json, verify.sql, rollback.md are NOT allowed.
+- Migration metadata must therefore live inside migration.sql as a strict
+  directive header.
+- P.2 architecture review approved this approach.
+
+DO NOT:
+
+- create any migration
+- create 000000 baseline
+- create migration ledger
+- create lumera_migration schema
+- implement migration runner
+- implement adoption
+- implement fingerprint v4
+- touch production/dev DB
+- execute SQL
+- modify canonical DB schema
+- modify application runtime
+- modify bootstrap
+- modify booking code
+- modify deployment logic
+- modify CI except if absolutely necessary for the local tests of THIS task
+- start P.2b or later tasks
+- refactor unrelated migration tooling
+
+==================================================
+OBJECTIVE
+==================================================
+
+Extend the existing P.1a migration contract so migration.sql can contain
+a machine-readable Lumera directive header.
+
+The header must be strictly parsed and validated BEFORE any future DB
+connection or execution can occur.
+
+The migration file remains the single authoritative artifact.
+
+Checksum remains SHA-256 of the ENTIRE migration.sql byte stream,
+INCLUDING the header.
+
+==================================================
+TARGET HEADER FORMAT
+==================================================
+
+Design and implement support for this logical format:
+
+-- lumera:migration-format 1
+-- lumera:id 000001
+-- lumera:mode transactional
+-- lumera:description Reward-gift lines may never carry a bundle.
+-- lumera:min-postgres 16
+-- lumera:max-postgres 16
+-- lumera:precondition-sql SELECT ...
+-- lumera:postcondition-sql SELECT ...
+-- lumera:recovery Drop the NOT VALID constraint and re-run.
+-- lumera:end-header
+
+<SQL body>
+
+Do NOT blindly implement exactly this text without checking the existing
+contract style and parser conventions.
+
+Preserve the architecture, but choose the smallest compatible
+implementation.
+
+==================================================
+REQUIRED DIRECTIVES
+==================================================
+
+Required:
+
+lumera:migration-format
+lumera:id
+lumera:mode
+lumera:description
+lumera:min-postgres
+lumera:max-postgres
+lumera:recovery
+lumera:end-header
+
+Optional, repeatable:
+
+lumera:precondition-sql
+lumera:postcondition-sql
+
+==================================================
+VALIDATION RULES
+==================================================
+
+1. Header must appear at the very beginning of migration.sql.
+
+Allow only harmless file-start trivia if absolutely necessary because of
+existing UTF-8/BOM handling. Prefer exact start.
+
+2. Header terminates only at:
+
+-- lumera:end-header
+
+3. No directive may appear after end-header.
+
+4. Unknown lumera:* directive:
+FAIL CLOSED.
+
+5. Duplicate singleton directive:
+FAIL CLOSED.
+
+6. Repeatable precondition/postcondition directives:
+allowed.
+
+7. Missing required directive:
+FAIL CLOSED.
+
+8. lumera:migration-format:
+currently exactly 1.
+
+Unknown future format:
+FAIL CLOSED.
+
+9. lumera:id:
+must exactly equal the six-digit directory migration ID.
+
+Example:
+
+directory:
+000017_add_booking_guard/
+
+header:
+-- lumera:id 000017
+
+Any mismatch:
+FAIL CLOSED.
+
+10. lumera:mode:
+
+allowed exactly:
+
+transactional
+nontransactional
+
+Do not accept aliases.
+
+11. lumera:description:
+
+- required
+- non-empty after trimming
+- one logical line only
+- reasonable bounded length
+- no control characters
+
+Do not over-engineer prose validation.
+
+12. min-postgres / max-postgres:
+
+- integers
+- currently must support PostgreSQL 16
+- min <= max
+- reject invalid/unsupported ranges
+
+Integrate with the repository's existing supported PostgreSQL-major
+constant if one already exists.
+
+Do not create duplicate PostgreSQL-version authorities.
+
+13. recovery:
+
+- required
+- non-empty
+- descriptive free text
+- bounded length
+- not executable
+
+14. SQL body:
+
+must not be empty after the header.
+
+P.2a does NOT validate whether body SQL is transactional-safe or
+nontransactional-safe.
+
+That belongs to a later runner task.
+
+15. precondition-sql and postcondition-sql:
+
+P.2a should parse and retain them.
+
+If the existing read-only SQL validator can be reused safely without
+dragging DB/runtime dependencies into this module, validate that they are
+read-only SELECT/WITH statements.
+
+If that would create coupling or scope expansion, only perform
+syntax/shape storage now and explicitly defer execution/read-only
+enforcement to P.2e/P.2g.
+
+Do NOT implement a half-safe SQL executor.
+
+==================================================
+PARSER OUTPUT
+==================================================
+
+Return a typed deterministic structure similar conceptually to:
+
+{
+  formatVersion,
+  migrationId,
+  mode,
+  description,
+  minPostgres,
+  maxPostgres,
+  preconditions,
+  postconditions,
+  recovery,
+  sqlBody
+}
+
+Use repository naming/style.
+
+Do not expose an ambiguous loose dictionary if a typed structure is
+practical.
+
+==================================================
+EXISTING P.1a CONTRACT
+==================================================
+
+Preserve all existing protections:
+
+- exactly one migration.sql file
+- directory naming rules
+- six-digit migration IDs
+- ordering
+- sequence-gap detection
+- duplicate detection
+- checksum
+- immutable history comparison
+- no sidecars
+
+Do not weaken any existing P.1a test.
+
+==================================================
+CHECKSUM
+==================================================
+
+Critical:
+
+The existing checksum must remain based on the exact full byte content of
+migration.sql.
+
+Header is INCLUDED.
+
+Changing:
+
+description
+mode
+Postgres version
+precondition
+postcondition
+recovery
+
+must change the migration checksum.
+
+Do not checksum only the SQL body.
+
+==================================================
+SECURITY / FAIL-CLOSED REQUIREMENTS
+==================================================
+
+Test explicitly:
+
+- malformed header
+- missing end-header
+- second end-header
+- duplicate id
+- duplicate mode
+- duplicate description
+- unknown lumera directive
+- header after SQL starts
+- id mismatch with directory
+- invalid migration-format
+- invalid mode
+- invalid min/max PostgreSQL numbers
+- min > max
+- unsupported PostgreSQL version
+- empty description
+- empty recovery
+- empty SQL body
+- CR/LF variants if repository supports both
+- strange whitespace around directives
+- directive-looking text inside SQL body
+- directive-looking text inside SQL string/comment after end-header
+- UTF-8 content
+- checksum changes when header changes
+
+Do not accept malformed content by silently normalizing it.
+
+==================================================
+NONTRANSACTIONAL MODE
+==================================================
+
+For P.2a only:
+
+parse and validate the declaration.
+
+Do NOT yet inspect the SQL body to enforce:
+
+CREATE INDEX CONCURRENTLY only
+DROP INDEX CONCURRENTLY only
+etc.
+
+That enforcement belongs to P.2g.
+
+Add an explicit TODO/design note if useful, but do not implement future
+scope.
+
+==================================================
+NO DB / RUNTIME
+==================================================
+
+P.2a must be testable with pure files/strings.
+
+No:
+
+- pg client
+- DATABASE_URL
+- environment DB access
+- migration role
+- application server import
+- bootstrap
+- DB integration test
+
+==================================================
+FILES / SCOPE
+==================================================
+
+Prefer modifications only under the existing migration-contract tooling,
+for example:
+
+scripts/src/migration-contract/
+
+Use actual repository layout after inspection.
+
+Do not create a new parallel migration-contract module if an existing one
+already owns this responsibility.
+
+README may be updated only if needed to document the new header contract.
+
+No unrelated files.
+
+==================================================
+TESTS
+==================================================
+
+Add focused unit tests.
+
+Minimum categories:
+
+A. valid transactional header
+B. valid nontransactional header
+C. multiple preconditions
+D. multiple postconditions
+E. missing required directives
+F. duplicate singleton directives
+G. unknown directives
+H. directory/header ID mismatch
+I. invalid format version
+J. invalid mode
+K. PostgreSQL range validation
+L. empty body
+M. existing P.1a protections unchanged
+N. checksum includes metadata header
+O. deterministic parse output
+
+Run:
+
+- new focused migration-contract tests
+- all existing P.1a tests
+- scripts typecheck
+- relevant workspace typecheck if needed
+- git diff --check
+
+Do not run DB tests because this task must not need a DB.
+
+==================================================
+NO BEHAVIORAL CHANGE
+==================================================
+
+This task MUST NOT alter application behavior.
+
+After implementation:
+
+- no migration exists yet
+- no DB schema changes
+- no migration can be executed
+- no migration ledger exists
+- no adoption capability exists
+- fingerprint remains unchanged
+- existing app boot behavior remains unchanged
+
+==================================================
+FINAL SELF-REVIEW
+==================================================
+
+Before reporting completion, inspect:
+
+git status
+git diff
+git diff --check
+
+Confirm:
+
+- only expected migration-contract files changed
+- no DB/runtime/application files changed
+- no migration directories created
+- no adoption write path introduced
+- no ledger code created
+- no fingerprint files changed
+- no bootstrap changes
+- no CI production behavior changes
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. exact files changed
+2. exact header grammar implemented
+3. typed parser output
+4. fail-closed rules
+5. checksum behavior
+6. existing P.1a compatibility
+7. tests added
+8. exact test results
+9. typecheck results
+10. git diff --check result
+11. explicit confirmation:
+
+DATABASE MODIFIED: NO
+DATABASE CONNECTED: NO
+MIGRATION CREATED: NO
+MIGRATION EXECUTION CAPABILITY ADDED: NO
+LEDGER CREATED: NO
+ADOPTION CAPABILITY ADDED: NO
+FINGERPRINT CHANGED: NO
+APPLICATION RUNTIME CHANGED: NO
+BOOTSTRAP CHANGED: NO
+
+Then:
+
+P.2a IMPLEMENTATION VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+READY FOR INDEPENDENT CLAUDE REVIEW:
+YES / NO
+
+STOP.
+
+Do not start P.2b.

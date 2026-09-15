@@ -230,6 +230,85 @@ async function auditNamedIndexes(
   return { missing, found: REQUIRED_INDEXES.length - missing.length };
 }
 
+// ─── 2b. NULL-safe retail-cart uniqueness ─────────────────────────────────
+
+/**
+ * Drizzle can declare this standalone unique index, but cannot express
+ * NULLS NOT DISTINCT. Keep the catalog-level contract explicit so a regular
+ * unique constraint/index cannot silently weaken cart-line deduplication.
+ */
+async function auditRetailCartNullSafeUniqueness(
+  client: DbClient,
+): Promise<string[]> {
+  const rows = await query(
+    client,
+    `
+    SELECT
+      table_relation.relname = 'retail_cart_items'
+        AND table_namespace.nspname = 'public' AS is_retail_cart_items_index,
+      access_method.amname = 'btree' AS is_btree,
+      index_data.indisunique AS is_unique,
+      index_data.indisvalid AS is_valid,
+      index_data.indisready AS is_ready,
+      index_data.indnullsnotdistinct AS is_nulls_not_distinct,
+      NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint constraint_data
+        WHERE constraint_data.conindid = index_relation.oid
+      ) AS is_standalone,
+      index_data.indpred IS NULL AS has_no_predicate,
+      index_data.indexprs IS NULL AS has_no_expressions,
+      index_data.indnkeyatts = 3
+        AND index_data.indnatts = 3 AS has_no_include_columns,
+      ARRAY(
+        SELECT attribute_data.attname
+        FROM unnest(index_data.indkey::int[]) WITH ORDINALITY AS key_data(attnum, ord)
+        JOIN pg_attribute attribute_data
+          ON attribute_data.attrelid = table_relation.oid
+         AND attribute_data.attnum = key_data.attnum
+        WHERE key_data.ord <= index_data.indnkeyatts
+        ORDER BY key_data.ord
+      ) = ARRAY['cart_id', 'product_id', 'variant_value']::name[]
+        AS has_expected_key_columns
+    FROM pg_class index_relation
+    JOIN pg_namespace index_namespace
+      ON index_namespace.oid = index_relation.relnamespace
+    JOIN pg_index index_data ON index_data.indexrelid = index_relation.oid
+    JOIN pg_class table_relation ON table_relation.oid = index_data.indrelid
+    JOIN pg_namespace table_namespace
+      ON table_namespace.oid = table_relation.relnamespace
+    JOIN pg_am access_method ON access_method.oid = index_relation.relam
+    WHERE index_namespace.nspname = 'public'
+      AND index_relation.relname = 'retail_cart_items_cart_product_variant_unique'
+    `,
+  );
+
+  if (rows.length === 0) {
+    return [
+      "Expected public.retail_cart_items_cart_product_variant_unique was not found.",
+    ];
+  }
+
+  const index = rows[0];
+  const requirements: Array<[string, string]> = [
+    ["is_retail_cart_items_index", "must index public.retail_cart_items"],
+    ["is_btree", "must be a btree index"],
+    ["is_unique", "must be unique"],
+    ["is_valid", "must be valid"],
+    ["is_ready", "must be ready"],
+    ["is_nulls_not_distinct", "must use NULLS NOT DISTINCT"],
+    ["is_standalone", "must not be referenced by a pg_constraint"],
+    ["has_expected_key_columns", "must have ordered keys (cart_id, product_id, variant_value)"],
+    ["has_no_predicate", "must not have a predicate"],
+    ["has_no_expressions", "must not have expressions"],
+    ["has_no_include_columns", "must not have INCLUDE columns"],
+  ];
+
+  return requirements
+    .filter(([field]) => index[field] !== true)
+    .map(([, message]) => message);
+}
+
 // ─── 3. EXPLAIN probes ─────────────────────────────────────────────────────
 
 /**
@@ -402,7 +481,22 @@ async function runDatabaseChecks(): Promise<void> {
       fail("Named-index check", String(err));
     }
 
-    // ── 5. EXPLAIN probes ─────────────────────────────────────────────────
+    // ── 5. NULL-safe retail-cart uniqueness ───────────────────────────────
+    try {
+      const violations = await auditRetailCartNullSafeUniqueness(client);
+      if (violations.length === 0) {
+        pass("retail cart NULL-safe standalone uniqueness");
+      } else {
+        fail(
+          "retail cart NULL-safe standalone uniqueness",
+          violations.join("\n"),
+        );
+      }
+    } catch (err) {
+      fail("retail cart NULL-safe standalone uniqueness", String(err));
+    }
+
+    // ── 6. EXPLAIN probes ─────────────────────────────────────────────────
     for (const check of EXPLAIN_CHECKS) {
       try {
         const plan = await explainWithNoSeqScan(client, check.sql);

@@ -8,9 +8,14 @@ import { eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   b2cDisplaySettingsTable,
+  b2cNeedTagsTable,
+  b2cProductNeedTagsTable,
+  b2cProductTypesTable,
   b2cRecentlyViewedProductsTable,
   type DatabasePoolClient,
   loyaltyPointLedgerTable,
+  mediaAssetsTable,
+  mediaVariantsTable,
   orderBundleComponentsTable,
   orderItemsTable,
   orderStatusHistoryTable,
@@ -34,18 +39,29 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { ensureShippingConfigSchema } from "./shipping-config";
-import { claimRecentlyViewedForUser } from "../routes/b2c-discovery";
+import {
+  claimRecentlyViewedForUser,
+  serializePublicSupplier,
+  serializeSupplierPublicProduct,
+} from "../routes/b2c-discovery";
 import {
   CreateShopApprovalRequestResponse,
+  GetPublicProductResponse,
+  GetPublicSupplierResponse,
   GetShopApprovalRequestResponse,
+  GetSupplierPublicProductResponse,
+  ListPublicSuppliersResponse,
   ListMyShopApprovalRequestsResponseItem,
   ListShopApprovalRequestsResponseItem,
+  ListSupplierProductsResponse,
+  ListSupplierPublicProductsResponse,
   RejectShopApprovalRequestResponse,
 } from "@workspace/api-zod";
 
 type CategoryResponse = {
   id: string;
   supplierId: string;
+  name: string;
   parentId: string | null;
   path?: string;
   depth?: number;
@@ -61,6 +77,11 @@ const productIds: string[] = [];
 const orderIds: string[] = [];
 const bundleIds: string[] = [];
 const supplierIds: string[] = [];
+const productTypeIds: string[] = [];
+const needTagIds: string[] = [];
+const supplierLogoAssetId = randomUUID();
+const productImageAssetId = randomUUID();
+const mediaAssetIds = [supplierLogoAssetId, productImageAssetId];
 let adminId = "";
 let ownerId = "";
 let salonId = "";
@@ -231,7 +252,9 @@ test.before(async () => {
       name: `${marker} ordered`,
       description: "Wholesale secret description",
       publicDescription: "Public description",
-      imageUrl: "/supplier-catalog-test.jpg",
+      imageUrl: "/supplier-catalog-cover.jpg",
+      images: ["/supplier-catalog-gallery.jpg"],
+      coverImageDescription: "Naslovna fotografija proizvoda",
       price: 4_000,
       discountPrice: 3_500,
       publicPrice: 5_000,
@@ -284,6 +307,56 @@ test.before(async () => {
   ];
   productIds.push(...products.map((product) => product.id));
 
+  await db.insert(mediaAssetsTable).values([
+    {
+      id: supplierLogoAssetId,
+      ownerUserId: adminId,
+      scope: "supplier-logo",
+      resourceId: supplierA.id,
+      visibility: "public",
+      originalFileName: "supplier-logo.png",
+      originalContentType: "image/png",
+      width: 1800,
+      height: 1200,
+      contentHash: "1".repeat(64),
+    },
+    {
+      id: productImageAssetId,
+      ownerUserId: adminId,
+      scope: "product-image",
+      resourceId: orderedProduct.id,
+      visibility: "public",
+      originalFileName: "ordered-product.jpg",
+      originalContentType: "image/jpeg",
+      width: 2400,
+      height: 1600,
+      contentHash: "2".repeat(64),
+    },
+  ]);
+  await db.insert(mediaVariantsTable).values([
+    {
+      assetId: supplierLogoAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${supplierLogoAssetId}/large.png`,
+      contentType: "image/png",
+      width: 1200,
+      height: 800,
+      byteSize: 12_345,
+      etag: `"${supplierLogoAssetId}"`,
+    },
+    {
+      assetId: productImageAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${productImageAssetId}/large.jpg`,
+      contentType: "image/jpeg",
+      width: 1920,
+      height: 1280,
+      byteSize: 23_456,
+      etag: `"${productImageAssetId}"`,
+    },
+  ]);
   adminCookie = `${sessionCookieName}=${await createSession(adminId)}`;
   ownerCookie = `${sessionCookieName}=${await createSession(ownerId)}`;
   server = app.listen(0, "127.0.0.1");
@@ -329,9 +402,15 @@ test.after(async () => {
       await db.delete(productBundleComponentsTable).where(inArray(productBundleComponentsTable.bundleId, bundleIds));
       await db.delete(productBundlesTable).where(inArray(productBundlesTable.id, bundleIds));
     }
+    if (productIds.length) {
+      await db.delete(b2cProductNeedTagsTable).where(inArray(b2cProductNeedTagsTable.productId, productIds));
+    }
     if (productIds.length) await db.delete(productsTable).where(inArray(productsTable.id, productIds));
+    if (needTagIds.length) await db.delete(b2cNeedTagsTable).where(inArray(b2cNeedTagsTable.id, needTagIds));
+    if (productTypeIds.length) await db.delete(b2cProductTypesTable).where(inArray(b2cProductTypesTable.id, productTypeIds));
     if (categoryIds.length) await db.delete(productCategoriesTable).where(inArray(productCategoriesTable.id, categoryIds));
     if (supplierIds.length) await db.delete(suppliersTable).where(inArray(suppliersTable.id, supplierIds));
+    if (mediaAssetIds.length) await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, mediaAssetIds));
     if (adminId || ownerId) await db.delete(usersTable).where(inArray(usersTable.id, [adminId, ownerId].filter(Boolean)));
     if (settingsBefore) {
       await db.update(shopSettingsTable).set(settingsBefore).where(eq(shopSettingsTable.id, settingsBefore.id));
@@ -396,6 +475,17 @@ test("supplier B2B products require authentication and public products expose on
   const product = await publicResponse.json() as Record<string, unknown>;
   assert.equal(product.price, orderedProduct.publicPrice);
   assert.equal(product.description, orderedProduct.publicDescription);
+  assert.deepEqual(
+    product.socialImage,
+    { url: orderedProduct.imageUrl },
+    "the public product social image must be derived from the cover rather than the first gallery image",
+  );
+  assert.equal(product.coverImageDescription, orderedProduct.coverImageDescription);
+  const legacyPublicResponse = await api(`/shop/public/products/${orderedProduct.id}`);
+  assert.equal(legacyPublicResponse.status, 200);
+  const legacyProduct = await legacyPublicResponse.json() as Record<string, unknown>;
+  assert.deepEqual(legacyProduct.socialImage, { url: orderedProduct.imageUrl });
+  assert.equal(legacyProduct.coverImageDescription, orderedProduct.coverImageDescription);
   for (const forbidden of [
     "sku", "stock", "weightGrams", "professionalEnabled",
     "publicPrice", "publicDiscountPrice",
@@ -406,6 +496,531 @@ test("supplier B2B products require authentication and public products expose on
   assert.deepEqual(publicVariants.map((variant) => variant.value), ["secret"]);
   assert.equal(Object.hasOwn(publicVariants[0]!, "stock"), false, "public variant leaked stock");
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
+});
+
+test("supplier public product filters, paging, ranges, sorting, and facets share one canonical result set", async () => {
+  const child = await createCategory(supplierA.id, `${marker} facet child`, orderedProduct.categoryId);
+  const outside = await createCategory(supplierA.id, `${marker} facet outside`);
+  const [typeA, typeB, typeC] = await db.insert(b2cProductTypesTable).values([
+    { slug: `${marker}-facet-type-a`, label: `${marker} facet type A` },
+    { slug: `${marker}-facet-type-b`, label: `${marker} facet type B` },
+    { slug: `${marker}-facet-type-c`, label: `${marker} facet type C` },
+  ]).returning();
+  const [tagA, tagB, tagC] = await db.insert(b2cNeedTagsTable).values([
+    { key: `${marker}-facet-tag-a`, label: `${marker} facet tag A` },
+    { key: `${marker}-facet-tag-b`, label: `${marker} facet tag B` },
+    { key: `${marker}-facet-tag-c`, label: `${marker} facet tag C` },
+  ]).returning();
+  assert.ok(typeA);
+  assert.ok(typeB);
+  assert.ok(typeC);
+  assert.ok(tagA);
+  assert.ok(tagB);
+  assert.ok(tagC);
+  productTypeIds.push(typeA.id, typeB.id, typeC.id);
+  needTagIds.push(tagA.id, tagB.id, tagC.id);
+
+  const search = `${marker}-facet-match`;
+  const brandA = `${marker} Facet Brand A`;
+  const brandB = `${marker} Facet Brand B`;
+  const brandC = `${marker} Facet Brand C`;
+  const fixtures = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} low`, brand: brandA, productTypeId: typeA.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_000, publicPrice: 1_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-low`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} middle`, brand: brandB, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_000, publicPrice: 2_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-middle`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: orderedProduct.categoryId, categoryName: orderedProduct.categoryName,
+      name: `${search} high`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 3_000, publicPrice: 3_000, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-high`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} brand decoy`, brand: brandC, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-brand-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} type decoy`, brand: brandA, productTypeId: typeC.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-type-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: child.id, categoryName: orderedProduct.categoryName,
+      subcategoryName: child.name, name: `${search} tag decoy`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-tag-decoy`, unit: "kom",
+    },
+    {
+      supplierId: supplierA.id, categoryId: outside.id, categoryName: outside.name,
+      name: `${search} category decoy`, brand: brandA, productTypeId: typeB.id,
+      description: marker, publicDescription: marker, imageUrl: "/supplier-catalog-test.jpg",
+      price: 2_500, publicPrice: 2_500, retailEnabled: true, stock: 5,
+      sku: `${marker}-facet-category-decoy`, unit: "kom",
+    },
+  ]).returning();
+  productIds.push(...fixtures.map((product) => product.id));
+  await db.insert(b2cProductNeedTagsTable).values([
+    { productId: fixtures[0]!.id, needTagId: tagA.id },
+    { productId: fixtures[1]!.id, needTagId: tagB.id },
+    { productId: fixtures[2]!.id, needTagId: tagA.id },
+    { productId: fixtures[2]!.id, needTagId: tagB.id },
+    { productId: fixtures[3]!.id, needTagId: tagB.id },
+    { productId: fixtures[4]!.id, needTagId: tagB.id },
+    { productId: fixtures[5]!.id, needTagId: tagC.id },
+    { productId: fixtures[6]!.id, needTagId: tagB.id },
+  ]);
+
+  const commonQuery = {
+    categoryId: orderedProduct.categoryId!,
+    search,
+    minPrice: "1500",
+    maxPrice: "3500",
+    page: "1",
+  };
+  const requestList = async (params: Record<string, string>) => {
+    const query = new URLSearchParams({ ...commonQuery, pageSize: "10", sort: "PRICE_ASC", ...params });
+    const response = await api(`/suppliers/${supplierA.slug}/public-products?${query}`);
+    assert.equal(response.status, 200, await response.clone().text());
+    return ListSupplierPublicProductsResponse.parse(await response.json());
+  };
+
+  const [brandOnly, typeOnly, tagOnly, ascending, descendingPage] = await Promise.all([
+    requestList({ brand: brandB }),
+    requestList({ productType: typeC.slug }),
+    requestList({ needTag: tagC.key }),
+    requestList({
+      brand: `${brandA},${brandB}`,
+      productType: `${typeA.slug},${typeB.slug}`,
+      needTag: `${tagA.key},${tagB.key}`,
+    }),
+    requestList({
+      brand: `${brandA},${brandB}`,
+      productType: `${typeA.slug},${typeB.slug}`,
+      needTag: `${tagA.key},${tagB.key}`,
+      sort: "PRICE_DESC",
+      pageSize: "1",
+    }),
+  ]);
+  assert.deepEqual(brandOnly.items.map((item) => item.id), [fixtures[1]!.id]);
+  assert.equal(brandOnly.total, 1);
+  assert.deepEqual(typeOnly.items.map((item) => item.id), [fixtures[4]!.id]);
+  assert.equal(typeOnly.total, 1);
+  assert.deepEqual(tagOnly.items.map((item) => item.id), [fixtures[5]!.id]);
+  assert.equal(tagOnly.total, 1);
+  assert.deepEqual(ascending.items.map((item) => item.id), [fixtures[1]!.id, fixtures[2]!.id]);
+  assert.deepEqual(descendingPage.items.map((item) => item.id), [fixtures[2]!.id]);
+  assert.equal(ascending.total, 2);
+  assert.equal(descendingPage.total, 2);
+  assert.equal(descendingPage.totalPages, 2);
+  assert.deepEqual(ascending.activeRange, { minPrice: 1_000, maxPrice: 3_000 });
+  assert.deepEqual(descendingPage.activeRange, ascending.activeRange);
+
+  const counts = (items: Array<{ value?: string | null; id?: string | null; count: number }>) =>
+    new Map(items.map((item) => [item.value ?? item.id, item.count]));
+  assert.deepEqual(counts(ascending.facets.brands), new Map([[brandA, 1], [brandB, 1], [brandC, 1]]));
+  assert.deepEqual(counts(ascending.facets.productTypes), new Map([[typeB.slug, 2], [typeC.slug, 1]]));
+  assert.deepEqual(counts(ascending.facets.needTags), new Map([[tagA.key, 1], [tagB.key, 2], [tagC.key, 1]]));
+  assert.equal(counts(ascending.facets.categories).get(orderedProduct.categoryId), 1);
+  assert.equal(counts(ascending.facets.categories).get(child.id), 1);
+  assert.equal(counts(ascending.facets.categories).get(outside.id), 1);
+  assert.deepEqual(descendingPage.facets, ascending.facets);
+});
+
+test("canonical public supplier detail, history, and reviews follow supplier scope and active visibility", async () => {
+  const [supplier] = await db.insert(suppliersTable).values({
+    name: `${marker} visibility`,
+    slug: `${marker}-visibility`,
+    scope: "BOTH",
+  }).returning();
+  assert.ok(supplier);
+  supplierIds.push(supplier.id);
+  const [category] = await db.insert(productCategoriesTable).values({
+    supplierId: supplier.id,
+    name: `${marker} visibility category`,
+    slug: `${marker}-visibility-category`,
+  }).returning();
+  assert.ok(category);
+  categoryIds.push(category.id);
+
+  const [product] = await db.insert(productsTable).values({
+    supplierId: supplier.id,
+    categoryId: category.id,
+    categoryName: category.name,
+    name: `${marker} visibility product`,
+    description: `${marker} wholesale description`,
+    publicDescription: `${marker} public description`,
+    imageUrl: "/supplier-catalog-test.jpg",
+    price: 1_000,
+    publicPrice: 1_500,
+    professionalEnabled: false,
+    retailEnabled: true,
+    stock: 5,
+    sku: `${marker}-visibility-product`,
+    unit: "kom",
+    weightGrams: 100,
+  }).returning();
+  assert.ok(product);
+  productIds.push(product.id);
+
+  const supplierPath = `/suppliers/${supplier.slug}`;
+  const productPath = `/suppliers/${supplier.slug}/public-products/${product.id}`;
+  const recentlyViewedPath = `/suppliers/${supplier.slug}/recently-viewed`;
+  const recentlyViewedProductPath = `${recentlyViewedPath}/${product.id}`;
+  const reviewsPath = `${productPath}/reviews`;
+  let viewerCookie = "";
+  const assertPublic = async () => {
+    const supplierResponse = await api(supplierPath);
+    const supplierBody = await supplierResponse.text();
+    assert.equal(supplierResponse.status, 200, supplierBody);
+    const publicSupplier = GetPublicSupplierResponse.parse(JSON.parse(supplierBody));
+    assert.equal(publicSupplier.id, supplier.id);
+
+    const productResponse = await api(productPath);
+    const productBody = await productResponse.text();
+    assert.equal(productResponse.status, 200, productBody);
+    const publicProduct = GetSupplierPublicProductResponse.parse(JSON.parse(productBody));
+    assert.equal(publicProduct.id, product.id);
+
+    const recentWrite = await api(recentlyViewedProductPath, viewerCookie, { method: "POST" });
+    assert.equal(recentWrite.status, 204, await recentWrite.text());
+    const viewerToken = recentWrite.headers.get("set-cookie")?.match(/lumera_b2c_viewer=([^;]+)/)?.[1];
+    if (viewerToken) viewerCookie = `lumera_b2c_viewer=${viewerToken}`;
+    assert.ok(viewerCookie, "public recently-viewed POST must establish or reuse viewer identity");
+
+    const recentRead = await api(recentlyViewedPath, viewerCookie);
+    assert.equal(recentRead.status, 200, await recentRead.clone().text());
+    const recentItems = await recentRead.json() as Array<{ id: string }>;
+    assert.ok(recentItems.some((item) => item.id === product.id));
+
+    const reviewsResponse = await api(reviewsPath);
+    assert.equal(reviewsResponse.status, 200, await reviewsResponse.clone().text());
+    assert.deepEqual(await reviewsResponse.json(), {
+      summary: { averageRating: 0, reviewCount: 0 },
+      items: [],
+    });
+  };
+  const assertHidden = async () => {
+    for (const [path, init] of [
+      [supplierPath, undefined],
+      [productPath, undefined],
+      [recentlyViewedPath, undefined],
+      [recentlyViewedProductPath, { method: "POST" }],
+      [reviewsPath, undefined],
+    ] as const) {
+      const response = await api(path, viewerCookie, init);
+      assert.equal(response.status, 404, `${path} must remain hidden, got ${response.status}`);
+      assert.deepEqual(await response.json(), { error: "Supplier not found." });
+    }
+  };
+
+  await assertPublic();
+
+  // The database enforces that a B2B-only supplier cannot retain retail
+  // products, so make the fixture compatible before changing its scope.
+  await db.update(productsTable).set({ retailEnabled: false }).where(eq(productsTable.id, product.id));
+  await db.update(suppliersTable).set({ scope: "B2B" }).where(eq(suppliersTable.id, supplier.id));
+  await assertHidden();
+
+  await db.update(suppliersTable).set({ scope: "BOTH" }).where(eq(suppliersTable.id, supplier.id));
+  await db.update(productsTable).set({ retailEnabled: true }).where(eq(productsTable.id, product.id));
+  await assertPublic();
+
+  await db.update(suppliersTable).set({ active: false }).where(eq(suppliersTable.id, supplier.id));
+  await assertHidden();
+
+  await db.update(suppliersTable).set({ active: true }).where(eq(suppliersTable.id, supplier.id));
+  await assertPublic();
+});
+
+test("public supplier catalog hides inactive products and categories without changing B2B eligibility", async () => {
+  const [inactiveProductCategory, categoryProductCategory, b2bOnlyCategory] = await db.insert(productCategoriesTable).values([
+    {
+      supplierId: supplierA.id,
+      name: `${marker} inactive product category`,
+      slug: `${marker}-inactive-product-category`,
+    },
+    {
+      supplierId: supplierA.id,
+      name: `${marker} category deactivation`,
+      slug: `${marker}-category-deactivation`,
+    },
+    {
+      supplierId: supplierA.id,
+      name: `${marker} B2B-only category`,
+      slug: `${marker}-b2b-only-category`,
+    },
+  ]).returning();
+  assert.ok(inactiveProductCategory);
+  assert.ok(categoryProductCategory);
+  assert.ok(b2bOnlyCategory);
+  categoryIds.push(inactiveProductCategory.id, categoryProductCategory.id, b2bOnlyCategory.id);
+
+  const [inactiveProduct, categoryProduct, b2bOnlyProduct] = await db.insert(productsTable).values([
+    {
+      supplierId: supplierA.id,
+      categoryId: inactiveProductCategory.id,
+      categoryName: inactiveProductCategory.name,
+      name: `${marker} inactive product`,
+      description: `${marker} inactive product wholesale`,
+      publicDescription: `${marker} inactive product public`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_100,
+      publicPrice: 1_600,
+      professionalEnabled: true,
+      retailEnabled: true,
+      stock: 5,
+      sku: `${marker}-inactive-product`,
+      unit: "kom",
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: categoryProductCategory.id,
+      categoryName: categoryProductCategory.name,
+      name: `${marker} category product`,
+      description: `${marker} category product wholesale`,
+      publicDescription: `${marker} category product public`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_200,
+      publicPrice: 1_700,
+      professionalEnabled: true,
+      retailEnabled: true,
+      stock: 5,
+      sku: `${marker}-category-product`,
+      unit: "kom",
+    },
+    {
+      supplierId: supplierA.id,
+      categoryId: b2bOnlyCategory.id,
+      categoryName: b2bOnlyCategory.name,
+      name: `${marker} B2B-only product`,
+      description: `${marker} B2B-only description`,
+      imageUrl: "/supplier-catalog-test.jpg",
+      price: 1_300,
+      professionalEnabled: true,
+      retailEnabled: false,
+      stock: 5,
+      sku: `${marker}-b2b-only-product`,
+      unit: "kom",
+    },
+  ]).returning();
+  assert.ok(inactiveProduct);
+  assert.ok(categoryProduct);
+  assert.ok(b2bOnlyProduct);
+  productIds.push(inactiveProduct.id, categoryProduct.id, b2bOnlyProduct.id);
+
+  const publicListPath = `/suppliers/${supplierA.slug}/public-products`;
+  const b2bListPath = `/suppliers/${supplierA.slug}/products`;
+  const publicDetail = (productId: string) => `${publicListPath}/${productId}`;
+  const b2bDetail = (productId: string) => `${b2bListPath}/${productId}`;
+
+  const initialPublicResponse = await api(publicListPath);
+  assert.equal(initialPublicResponse.status, 200, await initialPublicResponse.clone().text());
+  const initialPublic = ListSupplierPublicProductsResponse.parse(await initialPublicResponse.json());
+  assert.ok(initialPublic.items.some((item) => item.id === inactiveProduct.id));
+  assert.ok(initialPublic.items.some((item) => item.id === categoryProduct.id));
+  assert.ok(!initialPublic.items.some((item) => item.id === b2bOnlyProduct.id));
+
+  const initialB2bResponse = await api(b2bListPath, ownerCookie);
+  assert.equal(initialB2bResponse.status, 200, await initialB2bResponse.clone().text());
+  const initialB2b = ListSupplierProductsResponse.parse(await initialB2bResponse.json());
+  assert.ok(initialB2b.items.some((item) => item.id === b2bOnlyProduct.id));
+
+  const publicProduct = await api(publicDetail(inactiveProduct.id));
+  assert.equal(publicProduct.status, 200, await publicProduct.text());
+  const b2bProduct = await api(b2bDetail(b2bOnlyProduct.id), ownerCookie);
+  assert.equal(b2bProduct.status, 200, await b2bProduct.text());
+
+  await db.update(productsTable).set({ active: false }).where(eq(productsTable.id, inactiveProduct.id));
+  const afterProductResponse = await api(publicListPath);
+  assert.equal(afterProductResponse.status, 200, await afterProductResponse.clone().text());
+  const afterProductDeactivation = ListSupplierPublicProductsResponse.parse(await afterProductResponse.json());
+  assert.ok(!afterProductDeactivation.items.some((item) => item.id === inactiveProduct.id));
+  const hiddenProduct = await api(publicDetail(inactiveProduct.id));
+  assert.equal(hiddenProduct.status, 404);
+  assert.deepEqual(await hiddenProduct.json(), { error: "Product not found." });
+
+  await db.update(productCategoriesTable).set({ active: false })
+    .where(eq(productCategoriesTable.id, categoryProductCategory.id));
+  const afterCategoryResponse = await api(publicListPath);
+  assert.equal(afterCategoryResponse.status, 200, await afterCategoryResponse.clone().text());
+  const afterCategoryDeactivation = ListSupplierPublicProductsResponse.parse(await afterCategoryResponse.json());
+  assert.ok(!afterCategoryDeactivation.items.some((item) => item.id === categoryProduct.id));
+  const hiddenCategoryProduct = await api(publicDetail(categoryProduct.id));
+  assert.equal(hiddenCategoryProduct.status, 404);
+  assert.deepEqual(await hiddenCategoryProduct.json(), { error: "Product not found." });
+
+  const b2bAfterResponse = await api(b2bListPath, ownerCookie);
+  assert.equal(b2bAfterResponse.status, 200, await b2bAfterResponse.clone().text());
+  const b2bAfterB2cChanges = ListSupplierProductsResponse.parse(await b2bAfterResponse.json());
+  assert.ok(b2bAfterB2cChanges.items.some((item) => item.id === b2bOnlyProduct.id));
+  const b2bDetailAfterB2cChanges = await api(b2bDetail(b2bOnlyProduct.id), ownerCookie);
+  assert.equal(b2bDetailAfterB2cChanges.status, 200);
+});
+
+test("public supplier and retail product details expose managed social image metadata and keep legacy URLs unverified", async () => {
+  try {
+    await Promise.all([
+      db.update(suppliersTable).set({
+        logoUrl: `/api/media/${supplierLogoAssetId}?v=stale`,
+      }).where(eq(suppliersTable.id, supplierA.id)),
+      db.update(productsTable).set({
+        imageUrl: `/api/media/${productImageAssetId}?v=stale`,
+      }).where(eq(productsTable.id, orderedProduct.id)),
+      db.update(suppliersTable).set({
+        logoUrl: "https://legacy.example.test/supplier-logo.jpg",
+      }).where(eq(suppliersTable.id, supplierB.id)),
+      db.update(productsTable).set({
+        imageUrl: "https://legacy.example.test/product-image.jpg",
+      }).where(eq(productsTable.id, b2cProduct.id)),
+    ]);
+
+    const managedSupplierResponse = await api(`/suppliers/${supplierA.slug}`);
+    assert.equal(managedSupplierResponse.status, 200, await managedSupplierResponse.clone().text());
+    const managedSupplier = GetPublicSupplierResponse.parse(await managedSupplierResponse.json());
+    const [managedSupplierRow] = await db.select().from(suppliersTable)
+      .where(eq(suppliersTable.id, supplierA.id));
+    assert.deepEqual(
+      managedSupplier,
+      serializePublicSupplier(managedSupplierRow!, managedSupplier.socialImage),
+      "the active supplier detail must use the canonical supplier serializer",
+    );
+    assert.deepEqual(managedSupplier.socialImage, {
+      url: `/api/media/${supplierLogoAssetId}?v=${"1".repeat(16)}&size=large&format=fallback`,
+      width: 1200,
+      height: 800,
+      type: "image/png",
+    });
+    const managedSupplierListResponse = await api("/suppliers");
+    assert.equal(managedSupplierListResponse.status, 200, await managedSupplierListResponse.clone().text());
+    const managedSupplierList = ListPublicSuppliersResponse.parse(await managedSupplierListResponse.json());
+    assert.deepEqual(
+      managedSupplierList.find((supplier) => supplier.id === supplierA.id)?.socialImage,
+      managedSupplier.socialImage,
+    );
+
+    const managedSupplierProductResponse = await api(
+      `/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`,
+    );
+    assert.equal(managedSupplierProductResponse.status, 200, await managedSupplierProductResponse.clone().text());
+    const managedSupplierProduct = GetSupplierPublicProductResponse.parse(
+      await managedSupplierProductResponse.json(),
+    );
+    const [managedProductRow] = await db.select().from(productsTable)
+      .where(eq(productsTable.id, orderedProduct.id));
+    assert.deepEqual(
+      managedSupplierProduct,
+      serializeSupplierPublicProduct(managedProductRow!, {
+        socialImage: managedSupplierProduct.socialImage,
+        productType: managedSupplierProduct.productType,
+        needTags: managedSupplierProduct.needTags,
+        relatedProducts: managedSupplierProduct.relatedProducts,
+      }),
+      "the active supplier-product detail must use the canonical product serializer",
+    );
+    assert.deepEqual(managedSupplierProduct.socialImage, {
+      url: `/api/media/${productImageAssetId}?v=${"2".repeat(16)}&size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/jpeg",
+    });
+    assert.equal(managedSupplierProduct.coverImageDescription, orderedProduct.coverImageDescription);
+    const managedSupplierProductListResponse = await api(`/suppliers/${supplierA.slug}/public-products`);
+    assert.equal(
+      managedSupplierProductListResponse.status,
+      200,
+      await managedSupplierProductListResponse.clone().text(),
+    );
+    const managedSupplierProductList = ListSupplierPublicProductsResponse.parse(
+      await managedSupplierProductListResponse.json(),
+    );
+    assert.deepEqual(
+      managedSupplierProductList.items.find((product) => product.id === orderedProduct.id)?.socialImage,
+      managedSupplierProduct.socialImage,
+    );
+
+    const managedRetailProductResponse = await api(`/shop/public/products/${orderedProduct.id}`);
+    assert.equal(managedRetailProductResponse.status, 200, await managedRetailProductResponse.clone().text());
+    const managedRetailProduct = GetPublicProductResponse.parse(await managedRetailProductResponse.json());
+    assert.deepEqual(managedRetailProduct.socialImage, managedSupplierProduct.socialImage);
+    assert.equal(managedRetailProduct.coverImageDescription, orderedProduct.coverImageDescription);
+
+    const legacySupplierResponse = await api(`/suppliers/${supplierB.slug}`);
+    assert.equal(legacySupplierResponse.status, 200, await legacySupplierResponse.clone().text());
+    const legacySupplier = GetPublicSupplierResponse.parse(await legacySupplierResponse.json());
+    assert.deepEqual(legacySupplier.socialImage, {
+      url: "https://legacy.example.test/supplier-logo.jpg",
+    });
+    const legacySupplierListResponse = await api("/suppliers");
+    assert.equal(legacySupplierListResponse.status, 200, await legacySupplierListResponse.clone().text());
+    const legacySupplierList = ListPublicSuppliersResponse.parse(await legacySupplierListResponse.json());
+    assert.deepEqual(
+      legacySupplierList.find((supplier) => supplier.id === supplierB.id)?.socialImage,
+      legacySupplier.socialImage,
+    );
+
+    const legacySupplierProductResponse = await api(
+      `/suppliers/${supplierB.slug}/public-products/${b2cProduct.id}`,
+    );
+    assert.equal(legacySupplierProductResponse.status, 200, await legacySupplierProductResponse.clone().text());
+    const legacySupplierProduct = GetSupplierPublicProductResponse.parse(
+      await legacySupplierProductResponse.json(),
+    );
+    assert.deepEqual(legacySupplierProduct.socialImage, {
+      url: "https://legacy.example.test/product-image.jpg",
+    });
+    const legacySupplierProductListResponse = await api(`/suppliers/${supplierB.slug}/public-products`);
+    assert.equal(
+      legacySupplierProductListResponse.status,
+      200,
+      await legacySupplierProductListResponse.clone().text(),
+    );
+    const legacySupplierProductList = ListSupplierPublicProductsResponse.parse(
+      await legacySupplierProductListResponse.json(),
+    );
+    assert.deepEqual(
+      legacySupplierProductList.items.find((product) => product.id === b2cProduct.id)?.socialImage,
+      legacySupplierProduct.socialImage,
+    );
+
+    const legacyRetailProductResponse = await api(`/shop/public/products/${b2cProduct.id}`);
+    assert.equal(legacyRetailProductResponse.status, 200, await legacyRetailProductResponse.clone().text());
+    const legacyRetailProduct = GetPublicProductResponse.parse(await legacyRetailProductResponse.json());
+    assert.deepEqual(legacyRetailProduct.socialImage, legacySupplierProduct.socialImage);
+    for (const socialImage of [
+      legacySupplier.socialImage,
+      legacySupplierProduct.socialImage,
+      legacyRetailProduct.socialImage,
+    ]) {
+      assert.ok(socialImage);
+      assert.equal(Object.hasOwn(socialImage, "width"), false);
+      assert.equal(Object.hasOwn(socialImage, "height"), false);
+      assert.equal(Object.hasOwn(socialImage, "type"), false);
+    }
+  } finally {
+    await Promise.all([
+      db.update(suppliersTable).set({ logoUrl: supplierA.logoUrl }).where(eq(suppliersTable.id, supplierA.id)),
+      db.update(productsTable).set({ imageUrl: orderedProduct.imageUrl }).where(eq(productsTable.id, orderedProduct.id)),
+      db.update(suppliersTable).set({ logoUrl: supplierB.logoUrl }).where(eq(suppliersTable.id, supplierB.id)),
+      db.update(productsTable).set({ imageUrl: b2cProduct.imageUrl }).where(eq(productsTable.id, b2cProduct.id)),
+    ]);
+  }
 });
 
 test("public detail is passive and explicit recent recording is idempotent and merge-capped", async () => {
@@ -622,7 +1237,7 @@ test("order item supplier and commercial snapshots survive catalog edits and rej
   await assert.rejects(
     db.execute(sql`update order_items set unit_price = unit_price + 1 where id = ${before.id}`),
     (error: unknown) => {
-      const cause = error instanceof Error ? error.cause : undefined;
+    const cause = error instanceof Error ? error.cause : undefined;
       return cause instanceof Error && /Order item commercial snapshot is immutable/.test(cause.message);
     },
   );

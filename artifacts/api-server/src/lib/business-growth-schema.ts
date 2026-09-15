@@ -1,4 +1,8 @@
-import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db";
+import {
+  pool,
+  serbianPhoneNormalizedSqlExpression,
+  type DatabasePoolClient as PoolClient,
+} from "@workspace/db";
 import { logger } from "./logger";
 
 /**
@@ -17,14 +21,15 @@ import { logger } from "./logger";
  *    is always returned to the pool.
  *  - Every statement is independently idempotent (CREATE ... IF NOT EXISTS,
  *    ADD COLUMN IF NOT EXISTS, guarded enum-label/constraint creation) and never
- *    drops or recreates existing data.
+ *    drops business data. Obsolete derived schema objects may be retired
+ *    explicitly (v126 removes a lookup-only generated column).
  *  - Completion is logged only after ALL DDL succeeds; any error propagates so
  *    startup fails loudly.
  *
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 121;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 126;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -245,15 +250,25 @@ function paymentInstructionSnapshotBackfillStatements(s: string): string[] {
 }
 
 function tableStatements(s: string): string[] {
+  const legacyPhoneNormalized = serbianPhoneNormalizedSqlExpression("phone");
   return [
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+    `DROP INDEX IF EXISTS ${s}.salon_customers_phone_lookup_normalized_idx`,
+    `ALTER TABLE ${s}.salon_customers DROP COLUMN IF EXISTS phone_lookup_normalized`,
+    `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone text`,
+    `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS phone_normalized text`,
     // Retention's stratified preview seeks from a random UUID within each salon
     // and reads a bounded circular range. Keep the production bootstrap aligned
     // with core.ts so legacy customer tables never fall back to a full sort.
     `CREATE INDEX IF NOT EXISTS salon_customers_salon_id_idx
        ON ${s}.salon_customers (salon_id, id)`,
+    `CREATE INDEX IF NOT EXISTS salon_customers_phone_normalized_idx
+       ON ${s}.salon_customers (phone_normalized) WHERE phone_normalized IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS salon_customers_phone_legacy_normalized_expr_idx
+       ON ${s}.salon_customers ((${legacyPhoneNormalized}))
+       WHERE (${legacyPhoneNormalized}) IS NOT NULL`,
 
     // v12: Customer-safe retail storefront fields. These deliberately remain
     // separate from the owner-only B2B description and prices in `products`.
@@ -3610,6 +3625,7 @@ function tableStatements(s: string): string[] {
        salon_id uuid PRIMARY KEY REFERENCES ${s}.salons(id) ON DELETE CASCADE,
        slot_granularity_minutes integer NOT NULL DEFAULT 15,
        minimum_lead_time_minutes integer NOT NULL DEFAULT 0,
+       max_booking_horizon_days integer,
        cancellation_deadline_minutes integer NOT NULL DEFAULT 0,
        reminder_offsets_minutes jsonb NOT NULL DEFAULT '[]'::jsonb,
        reminder_channels jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -3621,9 +3637,18 @@ function tableStatements(s: string): string[] {
        CONSTRAINT salon_booking_settings_granularity_check
          CHECK (slot_granularity_minutes IN (5, 10, 15, 30)),
        CONSTRAINT salon_booking_settings_nonnegative_check CHECK (
-         minimum_lead_time_minutes >= 0 AND cancellation_deadline_minutes >= 0
+          minimum_lead_time_minutes >= 0 AND (max_booking_horizon_days IS NULL OR max_booking_horizon_days BETWEEN 0 AND 3650) AND cancellation_deadline_minutes >= 0
          AND max_visit_gap_minutes >= 0 AND minimum_useful_late_treatment_minutes >= 0)
      )`,
+     `ALTER TABLE ${s}.salon_booking_settings ADD COLUMN IF NOT EXISTS max_booking_horizon_days integer`,
+     `DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='salon_booking_settings_horizon_check'
+          AND conrelid='${s}.salon_booking_settings'::regclass) THEN
+          ALTER TABLE ${s}.salon_booking_settings ADD CONSTRAINT salon_booking_settings_horizon_check
+            CHECK (max_booking_horizon_days IS NULL OR max_booking_horizon_days BETWEEN 0 AND 3650) NOT VALID;
+        END IF;
+      END $$`,
+     `ALTER TABLE ${s}.salon_booking_settings VALIDATE CONSTRAINT salon_booking_settings_horizon_check`,
     `CREATE INDEX IF NOT EXISTS salon_booking_settings_updated_by_idx
        ON ${s}.salon_booking_settings (updated_by_user_id)`,
     `INSERT INTO ${s}.salon_booking_settings (salon_id)
@@ -4938,8 +4963,19 @@ function tableStatements(s: string): string[] {
            VALIDATE CONSTRAINT education_bundle_purchases_target_check;
        END IF;
      END $$`,
+    ...coverImageDescriptionColumnStatements(s),
     // v74 — every aftercare FK gets a leading index so deletes/updates on its
     // parent cannot force scans as recommendation and delivery history grows.
+  ];
+}
+
+function coverImageDescriptionColumnStatements(s: string, guardMissingTables = false): string[] {
+  const table = (name: string) => `${guardMissingTables ? "IF EXISTS " : ""}${s}.${name}`;
+  return [
+    `ALTER TABLE ${table("salons")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("products")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("courses")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
+    `ALTER TABLE ${table("beauty_job_listings")} ADD COLUMN IF NOT EXISTS cover_image_description text`,
   ];
 }
 
@@ -4990,6 +5026,12 @@ export async function runBusinessGrowthSchemaDdl(
        detached_users integer NOT NULL, deleted_salons integer NOT NULL,
        retired_salons integer NOT NULL, completed_at timestamptz NOT NULL DEFAULT now()
      )`);
+    // Static schema pushes and parallel rollouts can leave the tracker at the
+    // current version while an additive column is still absent. Repair these
+    // ORM dependencies before taking the fast path or starting background work.
+    for (const statement of coverImageDescriptionColumnStatements(quoted, true)) {
+      await client.query(statement);
+    }
     const rolloutTable = `${schemaName}.business_growth_schema_rollout`;
     const existingRollout = await client.query<{ relation: string | null }>(
       "SELECT to_regclass($1)::text AS relation", [rolloutTable],

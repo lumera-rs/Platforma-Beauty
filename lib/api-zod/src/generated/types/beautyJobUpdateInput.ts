@@ -9,6 +9,7 @@ import type { BeautyJobRentalSlotInput } from './beautyJobRentalSlotInput';
 import type { BeautyJobUpdateInputIntent } from './beautyJobUpdateInputIntent';
 import type { BeautyJobUpdateInputPricePeriod } from './beautyJobUpdateInputPricePeriod';
 import type { BeautyJobUpdateInputType } from './beautyJobUpdateInputType';
+import type { MediaDescription } from './mediaDescription';
 
 export interface BeautyJobUpdateInput {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
@@ -61,6 +62,13 @@ export interface BeautyJobUpdateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /** @maxItems 8 */
+  photoDescriptions?: MediaDescription[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /**
      * @minLength 1
      * @maxLength 1000

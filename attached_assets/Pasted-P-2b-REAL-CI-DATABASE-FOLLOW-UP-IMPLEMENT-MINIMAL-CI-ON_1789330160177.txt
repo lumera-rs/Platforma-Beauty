@@ -1,0 +1,110 @@
+P.2b REAL-CI DATABASE FOLLOW-UP — IMPLEMENT MINIMAL CI-ONLY FIX
+
+The read-only investigation established:
+
+ROOT CAUSE:
+Fresh isolated GitHub CI database is prepared with Drizzle push only.
+Drizzle cannot encode NULLS NOT DISTINCT for:
+
+public.retail_cart_items_cart_product_variant_unique
+keys: (cart_id, product_id, variant_value)
+
+The intended repository design already uses a narrowly-scoped native reconciliation:
+scripts/src/retail-cart-index-development-schema.ts
+
+The real GitHub Actions backend-standard check correctly requires:
+- standalone UNIQUE B-tree index
+- exact ordered keys (cart_id, product_id, variant_value)
+- NULLS NOT DISTINCT
+- not constraint-owned
+
+P.2b migration-contract changes did NOT cause this.
+Commit 8adabc6 changed no schema/database/bootstrap/index DDL capable of causing the failure.
+
+IMPLEMENTATION SCOPE:
+
+Implement ONLY the smallest CI/fresh-disposable-database fix.
+
+After the existing Drizzle `push-force` prepares the isolated PostgreSQL CI database, invoke the EXISTING narrowly-scoped retail-cart NULL-safe index reconciliation before database backend-standard auditing runs.
+
+Do NOT call the broad `ensure:development-schema` entrypoint.
+
+Reuse the existing targeted implementation rather than duplicating DDL.
+
+Required behavior:
+1. Fresh disposable PostgreSQL 16 database:
+   - Drizzle push creates schema.
+   - targeted reconciliation converts/verifies
+     retail_cart_items_cart_product_variant_unique
+     to the required standalone UNIQUE index with NULLS NOT DISTINCT.
+   - backend-standard database audit then passes.
+
+2. Preserve all existing reconciliation safeguards:
+   - exact object-shape verification
+   - transactional replacement where applicable
+   - no silent duplicate cleanup
+   - fail closed if conflicting/incorrect object exists
+   - rollback on uniqueness violation
+   - idempotent replay
+
+3. Add regression coverage for the ACTUAL CI preparation sequence:
+   - prepare disposable DB using the same CI path
+   - run targeted reconciliation
+   - assert pg_index.indnullsnotdistinct = true
+   - assert index is standalone
+   - assert unique + valid + ready
+   - assert ordered keys exactly:
+     cart_id, product_id, variant_value
+   - prove two otherwise-identical cart rows with NULL variant cannot coexist
+   - prove replay is unchanged
+   - prove wrong-shaped object is rejected
+
+4. CI wiring:
+   - keep the reconciliation immediately after fresh-schema preparation and before backend-standard database checks.
+   - make ordering explicit and test it structurally if appropriate.
+   - do not weaken or skip the backend-standard assertion.
+
+STRICT SCOPE BOUNDARIES:
+
+DO NOT:
+- change canonical business schema merely to silence CI
+- replace the standalone index with a unique constraint
+- weaken `NULLS NOT DISTINCT` requirement
+- change production bootstrap DDL
+- introduce a migration
+- create migration ledger/adoption logic
+- touch fingerprint v4
+- start P.2c
+- perform unrelated refactors
+- call broad development schema reconciliation
+- modify production data/database
+
+P.2b migration contract must remain database-free in intent.
+This follow-up only fixes disposable CI database preparation.
+
+Before editing:
+- inspect exact current git status/diff
+- confirm working tree state
+- identify exact files required
+- prove no broader path is necessary
+
+After implementation run the narrowest relevant safe tests plus:
+- targeted retail-cart reconciliation tests
+- backend-standards database test on disposable PostgreSQL if available
+- migration-contract test suite
+- release-chain/workflow structural tests
+- typecheck for touched workspace
+- diff/check scope verification
+
+Report:
+1. ROOT CAUSE CONFIRMED
+2. FILES CHANGED
+3. EXACT CI ORDER BEFORE/AFTER
+4. TESTS ADDED
+5. TEST RESULTS
+6. DATABASE/PRODUCTION IMPACT
+7. SCOPE CHECK
+8. VERDICT
+
+Do not push or merge automatically.
+STOP after implementation and report.

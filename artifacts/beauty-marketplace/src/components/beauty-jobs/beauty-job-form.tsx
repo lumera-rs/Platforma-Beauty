@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { X, Image as ImageIcon, Loader2, Plus, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { OptimizedImage } from "@/components/optimized-image";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 
 const formSchema = z.object({
   type: z.enum(["job", "equipment_rental", "space_rental", "freelance"]),
@@ -45,6 +46,7 @@ const formSchema = z.object({
     available: z.boolean().optional(),
   })).max(100).default([]),
   photos: z.array(z.string()).max(8, "Maksimalno 8 slika").default([]),
+  coverImageDescription: z.string().max(160, "Opis može imati najviše 160 karaktera").optional(),
 }).refine(data => {
   if ((data.type === "equipment_rental" || data.type === "space_rental") && !data.availabilityPattern) {
     return false;
@@ -98,6 +100,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
   const createMutation = useCreateBeautyJob();
   const updateMutation = useUpdateBeautyJob();
   const [isUploading, setIsUploading] = useState(false);
+  const [photoDescriptions, setPhotoDescriptions] = useState<Record<string, string>>({});
+  const dirtyPhotoDescriptions = useRef(new Set<string>());
 
   const { data: categories } = useListBeautyJobCategories({
     query: { queryKey: getListBeautyJobCategoriesQueryKey() }
@@ -119,7 +123,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       availabilityPattern: "",
       dayLabels: [],
       availableSlots: [],
-      photos: []
+      photos: [],
+      coverImageDescription: ""
     }
   });
 
@@ -148,7 +153,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
             available: slot.available,
           }];
         }),
-        photos: initialData.photos || []
+        photos: initialData.photos || [],
+        coverImageDescription: initialData.coverImageDescription || ""
       });
     } else if (open) {
       form.reset({
@@ -166,12 +172,24 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         availabilityPattern: "",
         dayLabels: [],
         availableSlots: [],
-        photos: []
+        photos: [],
+        coverImageDescription: ""
       });
     }
   }, [initialData, open, form]);
 
   const watchPhotos = form.watch("photos") || [];
+  const storedPhotoDescriptions = useMediaDescriptions(watchPhotos);
+  useEffect(() => {
+    if (!storedPhotoDescriptions.data) return;
+    setPhotoDescriptions((current) => Object.fromEntries(watchPhotos.map((url) => [
+      url,
+      dirtyPhotoDescriptions.current.has(url) ? current[url] ?? "" : storedPhotoDescriptions.data?.[url] ?? "",
+    ])));
+  }, [storedPhotoDescriptions.data, watchPhotos]);
+  useEffect(() => {
+    dirtyPhotoDescriptions.current.clear();
+  }, [initialData?.id, open]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -191,6 +209,10 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         uploadedUrls.push(result.imageUrl);
       }
       form.setValue("photos", [...currentPhotos, ...uploadedUrls], { shouldDirty: true, shouldValidate: true });
+      setPhotoDescriptions((current) => Object.fromEntries([
+        ...Object.entries(current),
+        ...uploadedUrls.map((url) => [url, ""]),
+      ]));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Neuspešno otpremanje slike.");
     } finally {
@@ -208,6 +230,10 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
   };
 
   const onSubmit = (data: FormValues) => {
+    if (data.photos.length && !storedPhotoDescriptions.data) {
+      toast.error("Sačekajte da se opisi fotografija učitaju.");
+      return;
+    }
     const availableSlots = data.availableSlots.map((slot) => ({
       id: slot.id,
       startsAt: new Date(slot.startsAt).toISOString(),
@@ -225,6 +251,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       isUrgent: data.type === "freelance" ? data.isUrgent : false,
       dayLabels: data.dayLabels,
       photos: data.photos,
+      photoDescriptions: data.photos.map((url) => ({ url, altText: photoDescriptions[url] ?? "" })),
+      coverImageDescription: data.coverImageDescription?.trim() || null,
       priceAmount: data.priceAmount ?? undefined,
       pricePeriod: data.pricePeriod || undefined,
       availabilityPattern: data.availabilityPattern || undefined,
@@ -581,14 +609,34 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
 
             <div className="space-y-3">
               <FormLabel>Slike (do 8 slika, max 8MB po slici)</FormLabel>
+              <FormField
+                control={form.control}
+                name="coverImageDescription"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Opis naslovne slike (opciono)</FormLabel>
+                    <FormControl>
+                      <Input maxLength={160} placeholder="Kratko opišite šta se vidi na prvoj slici" {...field} />
+                    </FormControl>
+                    <FormDescription>Koristi se za pristupačnost i prikaz na društvenim mrežama.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               
-              <div className="flex flex-wrap gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {watchPhotos.map((url: string, idx: number) => (
-                  <div key={idx} className="relative w-24 h-24 rounded-lg overflow-hidden border group">
-                    <OptimizedImage src={url} alt={`Slika ${idx+1}`} width={100} height={100} className="w-full h-full object-cover" />
+                  <div key={url} className="overflow-hidden rounded-lg border">
+                    <div className="relative">
+                    <OptimizedImage src={url} alt={photoDescriptions[url]?.trim() || `Slika ${idx+1}`} width={400} height={300} className="aspect-[4/3] w-full object-cover" />
                     <button type="button" onClick={() => removePhoto(idx)} className="absolute top-1 right-1 bg-black/50 hover:bg-black text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <X className="w-3 h-3" />
                     </button>
+                    </div>
+                    <div className="space-y-1 p-2">
+                      <Label htmlFor={`job-photo-description-${idx}`} className="text-xs">Opis fotografije (opciono)</Label>
+                      <Input id={`job-photo-description-${idx}`} maxLength={240} value={photoDescriptions[url] ?? ""} onChange={(event) => { dirtyPhotoDescriptions.current.add(url); setPhotoDescriptions((current) => ({ ...current, [url]: event.target.value })); }} placeholder="Šta se vidi na fotografiji" />
+                    </div>
                   </div>
                 ))}
                 

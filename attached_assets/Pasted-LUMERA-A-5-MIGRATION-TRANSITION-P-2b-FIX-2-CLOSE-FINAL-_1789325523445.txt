@@ -1,0 +1,346 @@
+LUMERA — A-5 MIGRATION TRANSITION
+P.2b-FIX-2 — CLOSE FINAL TWO CODE FINDINGS
+
+Independent Claude re-review result:
+
+P.2b-FIX FINAL CODE REVIEW VERDICT:
+PASS WITH REQUIRED FIXES
+
+P.2b CODE CLOSED:
+NO
+
+Required before close:
+
+P2-A — migration-contract job event allowlist can fail open
+P2-B — narrow CI capability guard does not fully enforce its policy
+
+All previous P1 findings are VERIFIED FIXED.
+
+This is a MICRO-FIX task.
+
+DO NOT START P.2c.
+
+STRICT SCOPE:
+- .github/workflows/ci.yml
+- migration-contract tests
+- release-chain/workflow tests if required
+- README/docs only if needed
+
+NO DATABASE ACCESS.
+NO DATABASE WRITE.
+NO MIGRATION.
+NO LEDGER.
+NO ADOPTION.
+NO RUNNER.
+NO FINGERPRINT V4.
+NO SCHEMA CHANGE.
+NO RUNTIME CHANGE.
+NO BOOTSTRAP CHANGE.
+
+==================================================
+1. FIX P2-A — REMOVE FAIL-OPEN EVENT IF:
+==================================================
+
+Current issue:
+
+The migration-contract job has an if: expression explicitly listing:
+
+pull_request
+merge_group
+push
+workflow_dispatch
+
+The workflow's on: block already defines the supported events.
+
+This creates a future fail-open risk:
+
+If a new event is added under on: but not added to the job if:, the
+migration-contract job can be skipped.
+
+A skipped required job must not be relied upon as a security gate.
+
+Preferred fix:
+
+REMOVE the event allowlist if: from the migration-contract job entirely.
+
+Let:
+
+on:
+
+be the sole event allowlist.
+
+Do NOT replace it with another duplicated event list.
+
+The job should run for every event that triggers this workflow.
+
+The validator itself must still reject unsupported native GitHub event
+types if somebody invokes it outside the intended workflow contract.
+
+==================================================
+2. P2-A REGRESSION TESTS
+==================================================
+
+Update structural workflow tests.
+
+Assert:
+
+- migration-contract job has NO event-filtering if: expression
+- workflow on: remains the source of truth
+- merge_group remains enabled
+- pull_request remains enabled
+- push remains enabled
+- workflow_dispatch remains enabled
+- release-chain still needs migration-contract
+
+The test should fail if somebody reintroduces an event-specific if:
+allowlist on migration-contract.
+
+Prefer:
+
+assert.equal(migrationContractJob.if, undefined)
+
+or the equivalent structural YAML assertion.
+
+Do not use fragile text matching if structural parsed YAML is already
+available.
+
+==================================================
+3. FIX P2-B — CAPABILITY GUARD
+==================================================
+
+Current guard:
+
+assertNarrowCiGitCapabilities(...)
+
+already enforces narrow git subprocess behavior but misses:
+
+- process.env.DATABASE_URL
+- process.env["DATABASE_URL"]
+- element-access callees such as:
+  globalThis["fetch"](...)
+  globalThis["eval"](...)
+
+Fix ONLY the static guard/tests.
+
+Do NOT change production validator behavior unless absolutely required.
+
+Add equivalent protections already present in the sibling
+assertNoCapabilities guard where appropriate.
+
+==================================================
+4. DATABASE ENV ACCESS GUARD
+==================================================
+
+The capability guard for:
+
+validate-ci-migration-contract.ts
+
+must reject direct access to prohibited database credential identifiers.
+
+At minimum cover:
+
+DATABASE_URL
+
+and preferably the same database credential names/pattern that the
+validator itself blocks, where practical.
+
+Important distinction:
+
+The validator is allowed to inspect environment KEYS generically in its
+Gate N logic.
+
+Do not accidentally forbid legitimate code that iterates:
+
+Object.entries(environment)
+
+or compares an environment key against DATABASE_ENV_PATTERN.
+
+The guard must forbid direct credential-value access such as:
+
+process.env.DATABASE_URL
+
+process.env["DATABASE_URL"]
+
+const value = environment.DATABASE_URL
+
+const value = environment["DATABASE_URL"]
+
+while allowing generic defensive filtering logic.
+
+Implement this carefully using AST context, not raw substring matching.
+
+==================================================
+5. ELEMENT-ACCESS CALLEE GUARD
+==================================================
+
+Extend callee detection to include:
+
+ElementAccessExpression
+
+when its property is a literal string.
+
+These must fail:
+
+globalThis["fetch"](...)
+globalThis["eval"](...)
+process["exit"](...)
+
+or other calls already forbidden by the guard's existing policy.
+
+Reuse the sibling guard's logic where possible.
+
+Do not broaden into a full data-flow analyzer.
+
+Aliasing such as:
+
+const run = spawn;
+run(...)
+
+remains documented out of scope for this micro-fix unless a very small
+safe check is obvious.
+
+Do not expand task scope to solve alias analysis.
+
+==================================================
+6. REQUIRED ADVERSARIAL TESTS
+==================================================
+
+Add regression fixtures that MUST fail:
+
+const u = process.env.DATABASE_URL;
+
+const u = process.env["DATABASE_URL"];
+
+globalThis["fetch"]("https://example.invalid");
+
+globalThis["eval"]("code");
+
+Also retain all existing failures for:
+
+spawn("sh", ["-c", ...])
+spawn("bash", ["-c", ...])
+spawn("git", ..., { shell: true })
+exec(...)
+dynamic import("pg")
+network imports
+DB imports
+spawn outside gitCommand
+computed executable
+
+And confirm the REAL validator source still passes the capability guard.
+
+==================================================
+7. DO NOT OVERFIX P3 ITEMS
+==================================================
+
+Do not widen this task into:
+
+- full DB environment-name enumeration
+- alias/data-flow analysis
+- live ruleset querying
+- GitHub Actions execution
+- merge queue operational validation
+- task-asset cleanup
+- new audit architecture
+
+Those can be handled separately if needed.
+
+P2-C in the Claude report is operational rollout sequencing, not a code
+bug.
+
+Do not weaken the ruleset audit to avoid its expected live failure.
+
+==================================================
+8. VALIDATION
+==================================================
+
+Run:
+
+pnpm run test:migration-contract
+pnpm run test:schema-drift
+pnpm run test:release-chain
+pnpm run typecheck
+pnpm run test:github-workflows
+git diff --check
+
+No DB tests.
+
+No DB connection.
+
+If the CI validator is run locally, first remove the DB environment
+variables already known to be present in the Replit environment.
+
+Do not print their values.
+
+==================================================
+9. SELF-REVIEW
+==================================================
+
+Confirm:
+
+P2-A fixed
+P2-B fixed
+
+And:
+
+merge_group still enabled
+required status check expectation unchanged
+ruleset audit unchanged except tests if needed
+trusted SHA logic unchanged
+deepening logic unchanged
+native event payload logic unchanged
+Gate N runtime logic unchanged unless strictly necessary
+no P.2c work
+no fingerprint changes
+no DB/schema/runtime/bootstrap changes
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. exact files changed
+
+2. P2-A implementation
+
+3. exact structural test proving no job event if: exists
+
+4. P2-B implementation
+
+5. exact adversarial fixtures added
+
+6. confirmation real validator passes guard
+
+7. exact validation results
+
+8. git status / diff-check
+
+Explicitly state:
+
+DATABASE CONNECTED: NO
+DATABASE MODIFIED: NO
+MIGRATION CREATED: NO
+LEDGER/ADOPTION/RUNNER ADDED: NO
+FINGERPRINT V4 STARTED: NO
+CANONICAL SCHEMA CHANGED: NO
+APPLICATION RUNTIME CHANGED: NO
+BOOTSTRAP CHANGED: NO
+P.2c STARTED: NO
+
+Then:
+
+P.2b-FIX-2 IMPLEMENTATION VERDICT:
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+READY FOR SHORT FINAL CLAUDE VERIFICATION:
+YES / NO
+
+READY FOR REAL GITHUB ACTIONS VERIFICATION:
+YES / NO
+
+STOP.
+
+Do not start P.2c.

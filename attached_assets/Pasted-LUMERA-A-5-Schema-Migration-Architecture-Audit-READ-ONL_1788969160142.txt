@@ -1,0 +1,629 @@
+LUMERA — A-5 Schema / Migration Architecture Audit
+READ-ONLY INVESTIGATION ONLY
+
+Context:
+
+Batch 1 has passed independent Claude Code review.
+
+However, validate:release:3-api still has an independent blocker:
+
+education-b2b-checkout-idempotency.test.ts
+→ 8/9 tests fail
+
+Confirmed current symptom:
+education_b2b_orders is missing:
+- idempotency_key
+- idempotency_fingerprint
+
+These columns exist in the Drizzle schema, but not in the current development database.
+
+Claude Code concluded that this is evidence of schema/bootstrap drift caused by having multiple schema-delivery mechanisms with different coverage.
+
+This task is NOT an implementation task.
+
+DO NOT:
+- modify production code
+- modify schema
+- run drizzle-kit push against the database
+- create or delete migrations
+- alter database structure
+- edit tests
+- commit/push
+- refactor bootstrap code
+- fix the Education B2B blocker yet
+
+This task is investigation and architecture planning only.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Determine exactly how LUMERA currently creates, upgrades, validates
+and deploys database schema, why schema drift occurred, and what the
+safest long-term migration architecture should be before production.
+
+We need a production-safe design that supports:
+
+- fresh databases
+- existing development databases
+- staging
+- production
+- rolling deployments
+- multi-instance application startup
+- zero/low-downtime schema evolution
+- rollback / roll-forward
+- CI verification
+- deterministic schema version history
+
+==================================================
+1. INVENTORY EVERY SCHEMA DELIVERY MECHANISM
+==================================================
+
+Find and document every way the repository can create or modify
+PostgreSQL schema.
+
+Search the complete repository.
+
+Include at minimum:
+
+- Drizzle schema definitions
+- drizzle-kit push
+- drizzle-kit push --force if present
+- drizzle-kit generate
+- drizzle-kit migrate
+- custom startup/bootstrap DDL
+- ensureBusinessGrowthSchema()
+- CREATE TABLE / ALTER TABLE / CREATE INDEX statements
+- schema version constants
+- seed logic that creates or expects schema
+- test database setup
+- CI database setup
+- release scripts
+- deploy scripts
+- Replit-specific database initialization
+- any direct SQL scripts
+- any migrations directory, even if currently unused
+- package.json scripts
+- GitHub Actions workflows
+- production startup command
+- dev startup command
+
+For each mechanism report:
+
+1. exact file/path
+2. when it executes
+3. which environment uses it
+4. whether it mutates schema
+5. whether it is transactional
+6. whether it is idempotent
+7. whether it is versioned
+8. whether it can perform destructive DDL
+9. whether it can block application startup
+10. whether it is safe for an already-populated production database
+
+Do not assume names reflect real behavior. Read the actual code.
+
+==================================================
+2. RECONSTRUCT THE EDUCATION B2B DRIFT
+==================================================
+
+Trace the two missing fields:
+
+education_b2b_orders.idempotency_key
+education_b2b_orders.idempotency_fingerprint
+
+Determine:
+
+- commit where each field was introduced
+- schema file where defined
+- whether any migration/bootstrap DDL was introduced with them
+- whether CI would create them on a fresh database
+- whether a fresh Replit database would get them
+- whether an existing database would get them
+- whether production deployment would get them
+- why the current development database does not have them
+
+Identify the exact failure point in the schema delivery process.
+
+Answer explicitly:
+
+Was this caused by:
+
+A. migration never generated
+B. migration generated but never executed
+C. drizzle schema changed but only drizzle push would apply it
+D. bootstrap missed the new fields
+E. bootstrap version skipped the change
+F. environment-specific deployment difference
+G. another root cause
+
+If more than one contributed, explain the chain.
+
+==================================================
+3. COMPARE CODE SCHEMA VS LIVE DATABASE
+==================================================
+
+READ-ONLY only.
+
+Create a schema-drift inventory between:
+
+- current Drizzle definitions
+- current development PostgreSQL schema
+
+Do not change anything.
+
+At minimum compare:
+
+- tables
+- columns
+- data types
+- nullability
+- defaults
+- primary keys
+- unique constraints
+- foreign keys
+- check constraints
+- indexes
+- generated columns / expressions where applicable
+
+We do NOT need a giant dump of every matching object.
+
+Report:
+
+- objects present in code but missing in DB
+- objects present in DB but not represented in code
+- mismatched definitions
+- suspicious duplicates
+- stale bootstrap artifacts
+- indexes expected by code but missing
+- constraints expected by code but missing
+
+Prioritize discrepancies by severity:
+
+P0 — immediate integrity/security/data-loss risk
+P1 — release blocker / serious production risk
+P2 — important inconsistency/performance/reliability risk
+P3 — cleanup/minor drift
+
+This is important:
+Do not assume Education B2B is the only drift.
+
+Search for others.
+
+==================================================
+4. FRESH DATABASE VS EXISTING DATABASE
+==================================================
+
+Determine what happens in each scenario.
+
+SCENARIO A:
+Completely empty PostgreSQL database.
+
+Trace from application/deployment start until schema is usable.
+
+Which mechanism creates what?
+
+SCENARIO B:
+Existing database one schema version behind.
+
+Which mechanism upgrades it?
+
+SCENARIO C:
+Existing database many versions behind.
+
+Can it safely reach current state?
+
+SCENARIO D:
+Database has some Drizzle schema changes but missed custom bootstrap
+changes.
+
+What happens?
+
+SCENARIO E:
+Database has bootstrap changes but missed Drizzle-only fields.
+
+What happens?
+
+SCENARIO F:
+Two application instances start simultaneously against an outdated
+database.
+
+What coordinates schema changes?
+
+Can:
+- both run DDL?
+- one wait?
+- startup hang?
+- one serve traffic before migration finishes?
+- partial schema become visible?
+
+SCENARIO G:
+Application process dies halfway through bootstrap.
+
+Can startup safely resume?
+
+Could schema be left partially upgraded?
+
+Document actual behavior, not desired behavior.
+
+==================================================
+5. ANALYZE CURRENT BUSINESS_GROWTH_SCHEMA BOOTSTRAP
+==================================================
+
+Deeply inspect the custom bootstrap architecture.
+
+Determine:
+
+- why it exists
+- what schema it owns
+- whether it overlaps Drizzle ownership
+- how BUSINESS_GROWTH_SCHEMA_VERSION is used
+- whether every historical version has explicit migration steps
+- whether version numbers have been skipped
+- whether version checks can incorrectly report a database as current
+- whether CREATE ... IF NOT EXISTS can hide incompatible schema
+- whether it validates definitions after creation
+- advisory-lock behavior
+- transaction boundaries
+- partial upgrade behavior
+- lock_timeout
+- statement_timeout
+- index creation strategy
+- destructive DROP/ALTER behavior
+- table rewrite risk
+- startup readiness behavior
+
+Also answer:
+
+Is this actually a migration system,
+or an idempotent bootstrap patch system?
+
+Explain the distinction and production consequences.
+
+==================================================
+6. INVESTIGATE DRIZZLE WORKFLOW
+==================================================
+
+Determine which Drizzle workflow the repository currently intends.
+
+Inspect:
+
+- drizzle config
+- package scripts
+- CI
+- docs/replit.md
+- deployment scripts
+- git history if useful
+
+Determine whether the project is currently based on:
+
+- schema push
+- generated migrations
+- custom SQL bootstrap
+- a hybrid
+
+If hybrid:
+identify who owns each table/schema domain.
+
+Check whether that ownership is formally defined anywhere.
+
+If it is not defined, flag that.
+
+==================================================
+7. DESTRUCTIVE CHANGE RISK
+==================================================
+
+Inspect whether the current deployment approach could perform:
+
+- DROP COLUMN
+- DROP TABLE
+- type replacement
+- constraint replacement
+- generated-column rewrite
+- non-concurrent index creation
+- long table rewrite
+- data truncation
+- implicit default backfill
+- column recreation
+
+Especially inspect any use of:
+
+drizzle-kit push --force
+
+Determine whether production could ever reach that path.
+
+Classify risk.
+
+==================================================
+8. DATA MIGRATION SUPPORT
+==================================================
+
+Determine how the project currently handles schema changes that need
+data transformation, for example:
+
+- splitting one column into two
+- backfilling new NOT NULL fields
+- phone normalization changes
+- introducing new identity semantics
+- currency changes later
+- large-table derived columns
+- changing enum/state values
+
+Does the current system provide a reliable place for version-specific
+data migrations?
+
+If not, explain why this matters.
+
+==================================================
+9. ROLLBACK / ROLL-FORWARD
+==================================================
+
+Determine current behavior if a schema deployment fails.
+
+Can we:
+
+- rollback automatically?
+- rollback manually?
+- redeploy old application version against new schema?
+- continue forward safely?
+
+Determine whether application releases are backward-compatible with
+one schema version before/after.
+
+If no policy exists, report it explicitly.
+
+Do not invent a rollback design yet.
+
+==================================================
+10. CI SCHEMA PROTECTION
+==================================================
+
+Inspect all current CI/release database tests.
+
+Determine whether CI currently detects:
+
+- missing migrations
+- drift between Drizzle schema and actual migrated DB
+- fresh DB boot failure
+- upgrade from previous version
+- missing indexes
+- missing constraints
+- unsafe destructive changes
+- boot-time DDL regression
+- production code referencing columns that migration does not create
+
+Explain why Education B2B escaped existing CI.
+
+This answer is especially important.
+
+==================================================
+11. PRODUCTION DATABASE SCALE / LOCK SAFETY
+==================================================
+
+Audit current schema operations for production locking risks.
+
+Identify any current DDL that could:
+
+- acquire ACCESS EXCLUSIVE
+- block writes for long periods
+- rewrite large tables
+- build large indexes synchronously
+- make API startup wait indefinitely
+
+Do not only examine the phone/index issue fixed in Batch 1.
+
+Search all bootstrap/schema operations.
+
+Return exact locations and severity.
+
+==================================================
+12. REPLIT DEPENDENCIES
+==================================================
+
+Determine whether schema deployment currently depends on any
+Replit-specific behavior.
+
+We want LUMERA to be deployable outside Replit later.
+
+Identify:
+
+- environment assumptions
+- Replit database tooling
+- deployment hooks
+- commands only available in Replit
+- secrets/environment coupling
+
+Classify:
+
+PORTABLE
+REPLIT-COUPLED
+PARTIALLY COUPLED
+
+Do not modify anything.
+
+==================================================
+13. RECOMMEND TARGET MIGRATION ARCHITECTURE
+==================================================
+
+After completing the audit, recommend a target architecture.
+
+Do not implement it.
+
+Compare at least these options:
+
+OPTION A:
+Keep custom startup bootstrap as primary migration mechanism.
+
+OPTION B:
+Use Drizzle generated/versioned migrations as the authoritative
+production migration system.
+
+OPTION C:
+Hybrid approach with explicitly defined ownership boundaries.
+
+OPTION D:
+Another architecture if better.
+
+For each option evaluate:
+
+- production safety
+- existing database migration
+- fresh DB creation
+- zero/low downtime
+- data migrations
+- rollback/roll-forward
+- CI integration
+- multi-instance deployments
+- ability to deploy outside Replit
+- complexity
+- risk of converting current codebase
+
+Then give ONE recommended architecture for LUMERA.
+
+==================================================
+14. MIGRATION TRANSITION PLAN
+==================================================
+
+Design a SAFE TRANSITION PLAN from the current system to the
+recommended architecture.
+
+Do NOT execute it.
+
+The plan must preserve the current development database and future
+production data.
+
+Include stages such as:
+
+- establish authoritative schema baseline
+- inventory current live DB
+- reconcile schema drift
+- create baseline migration if needed
+- handle existing custom bootstrap
+- decide what bootstrap remains
+- move future changes to versioned migrations
+- CI validation
+- staging rehearsal
+- production rollout
+- rollback/roll-forward plan
+- remove deprecated schema mechanisms only when proven safe
+
+Critical requirement:
+
+Do not propose replaying all historical migrations against an already
+existing database if doing so would recreate objects or destroy data.
+
+We need a safe baseline/adoption strategy.
+
+==================================================
+15. EDUCATION B2B IMMEDIATE REMEDIATION PLAN
+==================================================
+
+Without implementing it, propose the smallest safe fix for the
+current release blocker:
+
+missing:
+- idempotency_key
+- idempotency_fingerprint
+- related index/constraint if required
+
+Determine:
+
+- exact DDL needed
+- whether existing rows require backfill
+- correct nullability
+- uniqueness semantics
+- index semantics
+- whether deployment can be online
+- whether old application code remains compatible
+- tests required
+
+This immediate fix must be compatible with the future migration
+architecture rather than creating another one-off bootstrap patch.
+
+==================================================
+16. FINAL REPORT FORMAT
+==================================================
+
+Return the report in this exact structure:
+
+A. EXECUTIVE DECISION
+
+- Current schema architecture:
+  SAFE / CONDITIONALLY SAFE / UNSAFE FOR PRODUCTION
+
+- A-5 status:
+  CONFIRMED / PARTIALLY CONFIRMED / NOT CONFIRMED
+
+- Education B2B root cause:
+  one concise statement
+
+B. CURRENT SCHEMA ARCHITECTURE MAP
+
+Table of every schema-delivery mechanism.
+
+C. EDUCATION B2B ROOT CAUSE
+
+Full trace.
+
+D. SCHEMA DRIFT FINDINGS
+
+P0 / P1 / P2 / P3.
+
+E. FRESH VS EXISTING DATABASE BEHAVIOR
+
+Scenarios A–G.
+
+F. BOOTSTRAP SAFETY REVIEW
+
+Including locks, transactions, partial rollout, multi-instance.
+
+G. CI / RELEASE GAP
+
+Exactly why existing CI did not catch this earlier.
+
+H. PRODUCTION LOCK / DATA-LOSS RISKS
+
+Exact paths and realistic scenarios.
+
+I. REPLIT PORTABILITY
+
+PORTABLE / REPLIT-COUPLED / PARTIALLY COUPLED.
+
+J. TARGET MIGRATION ARCHITECTURE
+
+Compare options and choose one.
+
+K. SAFE TRANSITION PLAN
+
+Numbered phases.
+
+L. EDUCATION B2B IMMEDIATE FIX PLAN
+
+Exact recommended fix — planning only.
+
+M. IMPLEMENTATION TASK BREAKDOWN
+
+Break future work into SMALL sequential tasks.
+
+For every task state:
+- purpose
+- files likely affected
+- schema impact
+- risk
+- required tests
+- whether Claude Code should review before next task
+
+N. FINAL VERDICT
+
+End with:
+
+A-5 / SCHEMA READINESS VERDICT:
+READY TO IMPLEMENT PLAN
+NEEDS DESIGN DECISION
+BLOCKED
+
+Then STOP.
+
+Do not implement any recommendation.
+Do not change code or database.
+Do not begin the Education fix.

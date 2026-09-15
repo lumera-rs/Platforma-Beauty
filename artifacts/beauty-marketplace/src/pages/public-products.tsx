@@ -38,6 +38,7 @@ import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from "@/components/ui/sheet";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -143,7 +144,7 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
       )}
       <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`} className="block flex-1" data-testid={`public-product-link-${product.id}`}>
         <div className="aspect-square overflow-hidden bg-muted relative">
-          <OptimizedImage src={product.imageUrl} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+          <OptimizedImage src={product.imageUrl} alt={product.coverImageDescription?.trim() || product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
           {product.isBestseller && (
             <div className="absolute top-2 left-2 bg-amber-500 text-white rounded px-2 py-0.5 text-[10px] font-bold z-10 flex items-center gap-1 shadow-sm">
               <Star className="w-3 h-3 fill-current" /> BESTSELLER
@@ -1093,6 +1094,7 @@ export function PublicProductDetailPage() {
   const adding = addRetailCartItem.isPending;
 
   const gallery = product ? [product.imageUrl, ...(product.images || []).filter((image) => image !== product.imageUrl)] : [];
+  const galleryDescriptions = useMediaDescriptions(gallery).data ?? {};
   const [activeThumbnail, setActiveThumbnail] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
@@ -1109,6 +1111,9 @@ export function PublicProductDetailPage() {
   }
 
   const currentHeroImage = activeThumbnail || gallery[0];
+  const currentHeroImageAlt = currentHeroImage === product.imageUrl
+    ? galleryDescriptions[currentHeroImage]?.trim() || product.coverImageDescription?.trim() || product.name
+    : galleryDescriptions[currentHeroImage]?.trim() || product.name;
   const productDetail = product as any;
   const publicVariants = product.variants ?? [];
   const selectedVariant = publicVariants.find((variant) => variant.value === variantValue);
@@ -1132,7 +1137,7 @@ export function PublicProductDetailPage() {
               onKeyDown={(e) => e.key === "Enter" && setLightboxImage(currentHeroImage)}
               aria-label="Prikaži sliku u punoj veličini"
             >
-              <OptimizedImage src={currentHeroImage} alt={product.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <OptimizedImage src={currentHeroImage} alt={currentHeroImageAlt} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                 <div className="bg-background/90 backdrop-blur rounded-full p-3 text-foreground shadow-lg">
                   <Eye className="w-5 h-5" />
@@ -1149,7 +1154,7 @@ export function PublicProductDetailPage() {
                     className={`aspect-square rounded-xl overflow-hidden bg-muted border-2 transition-colors [&>picture]:contents ${activeThumbnail === img ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-primary/50"}`}
                     aria-label={`Slika ${i+1}`}
                   >
-                    <OptimizedImage src={img} alt={`Slika ${i+1}`} className="w-full h-full object-cover" />
+                    <OptimizedImage src={img} alt={galleryDescriptions[img]?.trim() || `${product.name} — fotografija ${i + 1}`} className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -1356,7 +1361,7 @@ export function PublicProductDetailPage() {
           <DialogContent className="max-w-[90vw] max-h-[90vh] p-1 bg-transparent border-none shadow-none flex items-center justify-center">
             <DialogTitle className="sr-only">Pregled slike</DialogTitle>
             <div className="relative w-full h-full flex items-center justify-center">
-              <img src={lightboxImage} alt={product.name} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+              <img src={lightboxImage} alt={galleryDescriptions[lightboxImage]?.trim() || (lightboxImage === product.imageUrl ? product.coverImageDescription?.trim() : null) || product.name} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
               <Button
                 variant="secondary"
                 size="icon"

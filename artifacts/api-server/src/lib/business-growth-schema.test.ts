@@ -375,7 +375,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 121, "v121 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 126, "v126 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -1179,6 +1179,8 @@ async function run() {
       );
     }
     assert.ok(await columnExists("salon_customers", "birth_date"), "salon_customers.birth_date added");
+    assert.equal(await columnExists("salon_customers", "phone_lookup_normalized"), false,
+      "lookup-only generated phone column is removed to avoid a startup table rewrite");
     assert.ok(await columnExists("employee_time_off", "start_time"), "employee_time_off.start_time added");
     assert.ok(await columnExists("employee_time_off", "end_time"), "employee_time_off.end_time added");
     await q(
@@ -1287,6 +1289,8 @@ async function run() {
       "beauty_job_notifications_expiry_warning_unique",
       "appointments_salon_customer_completed_date_idx",
       "salon_customers_salon_id_idx",
+      "salon_customers_phone_normalized_idx",
+      "salon_customers_phone_legacy_normalized_expr_idx",
       "education_bank_transactions_source_item_unique",
       "education_bank_transactions_settled_obligation_unique",
       "education_bank_transactions_obligation_idx",

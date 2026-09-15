@@ -1,0 +1,161 @@
+P.2b LIFECYCLE — FAIL-FAST DIAGNOSTIC FIX
+
+Independent review verdict: REVISE.
+
+Do NOT push.
+Do NOT start P.2c.
+Do NOT increase any timeout.
+Do NOT weaken assertions.
+Do NOT add retries.
+Do NOT change production runtime behavior.
+Do NOT modify run-isolated-browser-suite.ts in this first increment.
+
+Implement ONLY the smallest diagnostic/synchronization increment in:
+
+scripts/src/run-api-regressions-lifecycle.test.ts
+
+PRIMARY REQUIRED CHANGE
+
+Make the browser lifecycle phase waiter fail immediately if the spawned
+browser-suite runner exits before the expected lifecycle marker can be created.
+
+Currently waitForFile() can continue polling for up to 60 seconds even after
+the producer child has already exited, which converts the real child failure
+into a misleading:
+
+"Timed out waiting for lifecycle phase marker"
+
+Implement a fail-fast race between:
+
+1. the awaited lifecycle marker becoming available; and
+2. the spawned child process exiting.
+
+Thread into the lifecycle phase waiter:
+
+- the spawned child;
+- accumulated/redacted stdout/stderr;
+- progress-log location/content where available;
+- exact marker/phase currently awaited.
+
+If the child exits BEFORE the awaited marker appears, fail immediately and
+report:
+
+- child exit code;
+- child signal;
+- exact lifecycle marker/phase being awaited;
+- accumulated redacted child stdout/stderr;
+- lifecycle progress log;
+- last observed lifecycle progress phase if available.
+
+IMPORTANT RACE REQUIREMENT
+
+Handle marker-vs-exit ordering correctly.
+
+If the marker was successfully created before or concurrently with child exit,
+do not incorrectly report a producer-death failure merely because the exit
+event was observed first by JavaScript scheduling.
+
+After observing child exit, perform a final marker existence/read check before
+classifying the marker as unreachable.
+
+Preserve the existing 60-second per-phase limit unchanged.
+
+NO TIMEOUT INCREASE.
+
+NO RETRY.
+
+NO ASSERTION WEAKENING.
+
+NO DATABASE SAFETY BYPASS.
+
+SECONDARY REQUIRED CLEANUP FROM INDEPENDENT REVIEW
+
+Within run-api-regressions-lifecycle.test.ts:
+
+1. Apply the same phase-aware waiting model to
+   runForcedBrowserStopScenario.
+
+   It currently retains the old single wait over:
+   preflight + complete browser setup.
+
+   Do not leave sibling browser lifecycle scenarios asymmetric.
+
+2. Remove or replace the recently-added tautological regression test:
+
+   "browser lifecycle phase waits isolate delayed preflight from the marker budget"
+
+   Do not keep a test that only proves arithmetic over constants or a closure
+   throwing a literal.
+
+   Replace it only with meaningful behavioral coverage of the actual waiter,
+   including at minimum:
+
+   A. marker appears while child remains alive -> PASS;
+   B. child exits before marker -> immediate FAIL with child diagnostics;
+   C. marker exists at/concurrent with exit -> marker wins / no false
+      producer-death classification;
+   D. child remains alive and marker never appears -> existing timeout behavior
+      remains fail-closed;
+   E. unregistered/incorrect marker must not satisfy another phase.
+
+3. Do NOT yet implement LUMERA_BROWSER_SPEC_TYPES_CHECKED optimization.
+
+4. Do NOT yet rename or modify the producer-side setup-ready implementation
+   in run-isolated-browser-suite.ts in this increment.
+
+The purpose of this increment is to obtain trustworthy evidence for the
+remaining lifecycle failure BEFORE changing producer behavior.
+
+VALIDATION
+
+Run the exact two previously failing tests:
+
+- "SIGTERM during a disposable browser check cleans every owned resource"
+- "SIGTERM during disposable browser frontend readiness cleans every owned resource"
+
+Also run:
+- forced browser-suite shutdown recovery scenario;
+- new behavioral waiter tests;
+- original destructive-harness production/deployment guard test.
+
+If any browser lifecycle test fails, preserve and report the complete new
+fail-fast diagnostics. Do NOT rerun until green and hide the first failure.
+
+Then run the complete lifecycle suite once.
+
+Also verify:
+
+- migration-contract 53/53
+- release-chain 23/23
+- schema-drift/fingerprint 102/102
+- eligibility 17/17
+- global typecheck
+- workflow validation
+- git diff --check
+
+Do not use production database.
+
+RETURN
+
+IMPLEMENTATION SUMMARY
+FILES CHANGED
+WAITER RACE DESIGN
+MARKER-VS-EXIT SAFETY
+BEHAVIORAL REGRESSION TESTS
+FIRST POST-FIX FAILURE, IF ANY
+EXACT CHILD ERROR, IF DISCOVERED
+TWO TARGET TEST RESULTS
+FORCED-SHUTDOWN TEST RESULT
+FULL LIFECYCLE RESULT
+OTHER TEST RESULTS
+TIMEOUTS CHANGED: YES/NO
+RETRIES ADDED: YES/NO
+ASSERTIONS WEAKENED: YES/NO
+PRODUCTION RUNTIME CHANGED: YES/NO
+P.2c STARTED: YES/NO
+ROOT CAUSE NOW ESTABLISHED: YES/NO
+SAFE FOR INDEPENDENT REVIEW: YES/NO
+
+STOP.
+
+Do not push or merge.

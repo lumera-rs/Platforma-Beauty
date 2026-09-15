@@ -88,6 +88,7 @@ export function BookingSettingsForm({ onSaved }: { onSaved?: () => void }) {
   const [formData, setFormData] = useState<SalonBookingSettingsInput>({
     slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes.NUMBER_15,
     minimumLeadTimeMinutes: 60,
+    maxBookingHorizonDays: null,
     cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes.NUMBER_1440,
     reminderOffsetsMinutes: [SalonBookingSettingsInputReminderOffsetsMinutesItem.NUMBER_1440],
     reminderChannels: [],
@@ -102,6 +103,7 @@ export function BookingSettingsForm({ onSaved }: { onSaved?: () => void }) {
       setFormData({
         slotGranularityMinutes: settings.slotGranularityMinutes,
         minimumLeadTimeMinutes: settings.minimumLeadTimeMinutes,
+        maxBookingHorizonDays: settings.maxBookingHorizonDays,
         cancellationDeadlineMinutes: settings.cancellationDeadlineMinutes,
         reminderOffsetsMinutes: settings.reminderOffsetsMinutes,
         reminderChannels: settings.reminderChannels,
@@ -241,6 +243,22 @@ export function BookingSettingsForm({ onSaved }: { onSaved?: () => void }) {
             onChange={e => setFormData({ ...formData, minimumLeadTimeMinutes: Number(e.target.value) })}
           />
           <p className="text-xs text-muted-foreground">Koliko ranije klijent mora da rezerviše termin (npr. 60 min znači da ne može rezervisati za 15 min).</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="booking-maximum-horizon">Najdalje unapred za rezervaciju (dani)</Label>
+          <Input
+            id="booking-maximum-horizon"
+            type="number"
+            min="0"
+            max="3650"
+            value={formData.maxBookingHorizonDays ?? ""}
+            onChange={e => setFormData({
+              ...formData,
+              maxBookingHorizonDays: e.target.value === "" ? null : Number(e.target.value)
+            })}
+          />
+          <p className="text-xs text-muted-foreground">Ostavite prazno za neograničeno. 0 znači samo danas; veće vrednosti uključuju toliko dana unapred.</p>
         </div>
 
         <div className="space-y-2">

@@ -5,6 +5,28 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type PublicSocialImageType = typeof PublicSocialImageType[keyof typeof PublicSocialImageType];
+
+
+export const PublicSocialImageType = {
+  'image/avif': 'image/avif',
+  'image/webp': 'image/webp',
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+} as const;
+
+/**
+ * Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.
+ */
+export interface PublicSocialImage {
+  url: string;
+  /** @minimum 1 */
+  width?: number;
+  /** @minimum 1 */
+  height?: number;
+  type?: PublicSocialImageType;
+}
+
 export type AdminPriceInquiryStatus = typeof AdminPriceInquiryStatus[keyof typeof AdminPriceInquiryStatus];
 
 
@@ -1382,6 +1404,12 @@ export interface SalonCard {
   city: string;
   municipality: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
+  socialImage?: PublicSocialImage;
   rating: number;
   reviewCount: number;
   shortDescription: string;
@@ -1594,7 +1622,19 @@ export interface SalonProfileMedia {
   servesMen: boolean;
   openSunday: boolean;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
   gallery: string[];
+}
+
+export interface MediaDescription {
+  /** @minLength 1 */
+  url: string;
+  /** @maxLength 240 */
+  altText: string;
 }
 
 export interface SalonProfileMediaUpdate {
@@ -1611,10 +1651,17 @@ export interface SalonProfileMediaUpdate {
   /** @minLength 1 */
   imageUrl?: string;
   /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
+  /**
      * @maxItems 20
      * @items.minLength 1
      */
   gallery?: string[];
+  /** @maxItems 20 */
+  galleryDescriptions?: MediaDescription[];
 }
 
 export type MediaUploadInputScope = typeof MediaUploadInputScope[keyof typeof MediaUploadInputScope];
@@ -1685,6 +1732,18 @@ export interface MediaAsset {
   /** @minimum 1 */
   height: number;
   contentHash: string;
+}
+
+export interface MediaDescriptionsRequest {
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     */
+  urls: string[];
+}
+
+export interface MediaDescriptionsResponse {
+  items: MediaDescription[];
 }
 
 export interface EmployeeDeactivationPreview {
@@ -2071,6 +2130,12 @@ export interface SalonBookingSettingsInput {
   slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
   /** @minimum 0 */
   minimumLeadTimeMinutes: number;
+  /**
+     * @minimum 0
+     * @maximum 3650
+     * @nullable
+     */
+  maxBookingHorizonDays: number | null;
   cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes;
   reminderOffsetsMinutes: SalonBookingSettingsInputReminderOffsetsMinutesItem[];
   reminderChannels: BookingReminderChannel[];
@@ -4734,7 +4799,13 @@ export interface PublicProduct {
   brand?: string | null;
   description: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
+  socialImage?: PublicSocialImage;
   /**
      * @minimum 1
      * @nullable
@@ -6242,6 +6313,12 @@ export interface Course {
   /** @minimum 0 */
   viewCount30d: number;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   startDate?: string | null;
   published: boolean;
@@ -6454,6 +6531,11 @@ export interface EducationCourseInput {
   depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /** @nullable */
   startDate?: string | null;
   /**
@@ -6665,6 +6747,11 @@ export interface EducationCourseUpdate {
   depositAmount?: number | null;
   /** @minLength 1 */
   imageUrl?: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /** @nullable */
   startDate?: string | null;
   published?: boolean;
@@ -6835,6 +6922,7 @@ export interface EducationCenterPublic {
   city: string;
   description: string;
   imageUrl: string;
+  socialImage?: PublicSocialImage;
   /** @nullable */
   websiteUrl?: string | null;
   /** @nullable */
@@ -8694,6 +8782,7 @@ export interface EducationInstructorPublicProfile {
   name: string;
   /** @nullable */
   photoUrl?: string | null;
+  socialImage?: PublicSocialImage;
   biography: string;
   industryYears: number;
   experienceYears: number;
@@ -10037,6 +10126,11 @@ export interface AdminProduct {
   /** @nullable */
   shortDescription?: string | null;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
   price: number;
   /**
@@ -10166,7 +10260,14 @@ export interface AdminProductInput {
   shortDescription?: string | null;
   /** @minLength 1 */
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images?: string[];
+  /** @maxItems 20 */
+  imageDescriptions?: MediaDescription[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -10314,7 +10415,14 @@ export interface AdminProductUpdate {
   shortDescription?: string | null;
   /** @minLength 1 */
   imageUrl?: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images?: string[];
+  /** @maxItems 20 */
+  imageDescriptions?: MediaDescription[];
   /**
      * @minimum 0
      * @maximum 100000000
@@ -10493,6 +10601,7 @@ export interface Supplier {
   scope: SupplierScope;
   /** @nullable */
   logoUrl: string | null;
+  socialImage?: PublicSocialImage;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -12545,6 +12654,12 @@ export interface BeautyJobListing {
   negotiable: boolean;
   isUrgent: boolean;
   photos: string[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription: string | null;
+  socialImage?: PublicSocialImage;
   status: string;
   moderationStatus: string;
   /** @nullable */
@@ -12677,6 +12792,13 @@ export interface BeautyJobCreateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /** @maxItems 8 */
+  photoDescriptions?: MediaDescription[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /**
      * @minLength 1
      * @maxLength 1000
@@ -12775,6 +12897,13 @@ export interface BeautyJobUpdateInput {
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
      */
   photos?: string[];
+  /** @maxItems 8 */
+  photoDescriptions?: MediaDescription[];
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   /**
      * @minLength 1
      * @maxLength 1000

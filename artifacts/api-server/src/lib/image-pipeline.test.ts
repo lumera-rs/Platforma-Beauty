@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import {
   db,
+  employeeClockEntriesTable,
+  employeeLocationAssignmentsTable,
   employeesTable,
   imageAssetsTable,
+  mediaAssetsTable,
+  mediaUploadTicketsTable,
+  mediaVariantsTable,
   salonsTable,
   usersTable,
 } from "@workspace/db";
@@ -15,7 +20,12 @@ import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { deletePrivateObject } from "./image-storage";
 import { ensureMediaSchema } from "./media-schema";
-import { attachReadyImageAssets } from "../routes/image-media";
+import { attachReadyImageAssets, publicSocialImage } from "../routes/image-media";
+import {
+  cleanupMediaRouteRegressionUploads,
+  enableMediaRouteRegressionUploadMarking,
+} from "../routes/media";
+import { setEmployeeProfileAfterAccessReadForTest } from "../routes/marketplace";
 
 const password = "image-pipeline-test-password";
 const email = `image-pipeline-${randomUUID()}@example.test`;
@@ -114,14 +124,28 @@ async function run(): Promise<void> {
     avatarUrl: originalEmployeeAvatarUrl,
     email: employeeEmail,
   }).returning();
+  // Employee portal authorization requires an active salon assignment. The
+  // profile update below is then expected to reach its image-ownership check
+  // and reject the foreign asset with 400, rather than stopping at 403.
+  await db.insert(employeeLocationAssignmentsTable).values({
+    employeeId: employee!.id,
+    salonId: salon!.id,
+    active: true,
+    isDefault: true,
+  });
 
   let assetId: string | undefined;
+  let legacyManagedAssetId: string | undefined;
   const additionalAssetIds: string[] = [];
+  const employeeMediaAssetIds: string[] = [];
   let server: Server | undefined;
+  let disableMediaRegressionUploadMarking: (() => void) | undefined;
 
   try {
     const first = await startServer();
     server = first.server;
+    const mediaRegressionMarking = enableMediaRouteRegressionUploadMarking();
+    disableMediaRegressionUploadMarking = mediaRegressionMarking.disable;
 
     const unauthenticated = await fetch(`${first.baseUrl}/api/media/uploads/request-url`, {
       method: "POST",
@@ -187,6 +211,45 @@ async function run(): Promise<void> {
     assert.equal(finalized.imageUrl, `/api/media/images/${assetId}`);
     assert.equal(finalized.width, 2400);
     assert.equal(finalized.height, 1600);
+    assert.deepEqual(await publicSocialImage(finalized.imageUrl), {
+      url: `/api/media/images/${assetId}?size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/png",
+    });
+    assert.deepEqual(await publicSocialImage("https://legacy.example/image.jpg"), {
+      url: "https://legacy.example/image.jpg",
+    });
+    legacyManagedAssetId = randomUUID();
+    const legacyHash = "a".repeat(64);
+    await db.insert(mediaAssetsTable).values({
+      id: legacyManagedAssetId,
+      ownerUserId: user!.id,
+      scope: "salon-profile",
+      visibility: "public",
+      originalFileName: "legacy-managed.jpg",
+      originalContentType: "image/jpeg",
+      width: 2400,
+      height: 1600,
+      contentHash: legacyHash,
+    });
+    await db.insert(mediaVariantsTable).values({
+      assetId: legacyManagedAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${legacyManagedAssetId}/large.jpg`,
+      contentType: "image/jpeg",
+      width: 1920,
+      height: 1280,
+      byteSize: 123,
+      etag: `"${legacyManagedAssetId}"`,
+    });
+    assert.deepEqual(await publicSocialImage(`/api/media/${legacyManagedAssetId}?v=old-version`), {
+      url: `/api/media/${legacyManagedAssetId}?v=${legacyHash.slice(0, 16)}&size=large&format=fallback`,
+      width: 1920,
+      height: 1280,
+      type: "image/jpeg",
+    });
 
     const ownerCookie = await login(first.baseUrl, ownerEmail);
     const foreignAssetSave = await fetch(`${first.baseUrl}/api/salon/profile`, {
@@ -248,17 +311,407 @@ async function run(): Promise<void> {
     assert.equal(publicEmployeeImage.status, 200);
     assert.equal(publicEmployeeImage.headers.get("cache-control"), "public, max-age=31536000, immutable");
 
-    const rejectedEmployeeUpdate = await fetch(`${first.baseUrl}/api/employee/profile`, {
-      method: "PUT",
-      headers: { "content-type": "application/json", cookie: employeeCookie },
-      body: JSON.stringify({ avatarUrl: finalized.imageUrl }),
-    });
-    assert.equal(rejectedEmployeeUpdate.status, 400);
+    type EmployeePortalProbe = {
+      label: string;
+      method: "GET" | "POST" | "PATCH" | "PUT";
+      path: string;
+      body?: unknown;
+      idempotencyKey?: boolean;
+      expectedWithAssignment?: number;
+    };
+    const employeePortalProbes: EmployeePortalProbe[] = [
+      { label: "locations", method: "GET", path: "/api/employee/locations", expectedWithAssignment: 200 },
+      { label: "portal", method: "GET", path: "/api/employee/portal", expectedWithAssignment: 200 },
+      {
+        label: "availability validation",
+        method: "GET",
+        path: "/api/employee/availability/search?startDate=not-a-date",
+        expectedWithAssignment: 400,
+      },
+      { label: "clock read", method: "GET", path: "/api/employee/clock", expectedWithAssignment: 200 },
+      { label: "shift swaps read", method: "GET", path: "/api/employee/shift-swaps", expectedWithAssignment: 200 },
+      {
+        label: "treatment photos read",
+        method: "GET",
+        path: "/api/employee/appointments/not-a-uuid/treatment-photos",
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "active location mutation",
+        method: "PATCH",
+        path: "/api/employee/active-location",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment notes mutation",
+        method: "PATCH",
+        path: "/api/employee/appointments/not-a-uuid",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "profile mutation",
+        method: "PUT",
+        path: "/api/employee/profile",
+        body: {
+          bio: "Must not be saved without an active assignment",
+          avatarUrl: finalized.imageUrl,
+          phone: "+381611111111",
+        },
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "leave request mutation",
+        method: "POST",
+        path: "/api/employee/leave-requests",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment series preview",
+        method: "POST",
+        path: "/api/employee/appointment-series/preview",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment series mutation",
+        method: "POST",
+        path: "/api/employee/appointment-series",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "appointment mutation",
+        method: "POST",
+        path: "/api/employee/appointments",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "booking group mutation",
+        method: "POST",
+        path: "/api/employee/booking-groups",
+        body: {},
+        idempotencyKey: true,
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "treatment photo mutation",
+        method: "POST",
+        path: "/api/employee/appointments/not-a-uuid/treatment-photos",
+        body: {},
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "clock-out mutation",
+        method: "POST",
+        path: "/api/employee/clock-out",
+        expectedWithAssignment: 409,
+      },
+      {
+        label: "shift swap mutation",
+        method: "POST",
+        path: "/api/employee/shift-swaps",
+        body: {},
+        expectedWithAssignment: 400,
+      },
+      {
+        label: "shift swap response",
+        method: "POST",
+        path: "/api/employee/shift-swaps/not-a-uuid/respond",
+        body: {},
+        expectedWithAssignment: 404,
+      },
+      {
+        label: "shift swap cancellation",
+        method: "POST",
+        path: "/api/employee/shift-swaps/not-a-uuid/cancel",
+        expectedWithAssignment: 404,
+      },
+    ];
+    const probeEmployeePortal = async (hasActiveAssignment: boolean) => {
+      for (const probe of employeePortalProbes) {
+        const headers: Record<string, string> = { cookie: employeeCookie };
+        if (probe.body !== undefined) headers["content-type"] = "application/json";
+        if (probe.idempotencyKey) headers["Idempotency-Key"] = `image-pipeline-${randomUUID()}`;
+        const response = await fetch(`${first.baseUrl}${probe.path}`, {
+          method: probe.method,
+          headers,
+          body: probe.body === undefined ? undefined : JSON.stringify(probe.body),
+        });
+        const expected = hasActiveAssignment ? probe.expectedWithAssignment : 403;
+        assert.equal(
+          response.status,
+          expected,
+          `${probe.method} ${probe.path} (${probe.label}) must return ${expected} when assignment is ${hasActiveAssignment ? "active" : "inactive"}`,
+        );
+        await response.arrayBuffer();
+      }
+    };
+
+    const [employeeBeforeAssignmentExpiry] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+    }).from(employeesTable).where(eq(employeesTable.id, employee!.id)).limit(1);
+    const [userBeforeAssignmentExpiry] = await db.select({
+      phone: usersTable.phone,
+    }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)).limit(1);
+    await db.update(employeeLocationAssignmentsTable).set({ active: false }).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
+      eq(employeeLocationAssignmentsTable.salonId, salon!.id),
+    ));
+    await probeEmployeePortal(false);
+    const [employeeAfterAssignmentExpiry] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+    }).from(employeesTable).where(eq(employeesTable.id, employee!.id)).limit(1);
+    const [userAfterAssignmentExpiry] = await db.select({
+      phone: usersTable.phone,
+    }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)).limit(1);
+    assert.deepEqual(employeeAfterAssignmentExpiry, employeeBeforeAssignmentExpiry);
+    assert.deepEqual(userAfterAssignmentExpiry, userBeforeAssignmentExpiry);
+
+    await db.update(employeeLocationAssignmentsTable).set({ active: true }).where(and(
+      eq(employeeLocationAssignmentsTable.employeeId, employee!.id),
+      eq(employeeLocationAssignmentsTable.salonId, salon!.id),
+    ));
+    await probeEmployeePortal(true);
     const [employeeAfterRejectedUpdate] = await db.select({ avatarUrl: employeesTable.avatarUrl })
       .from(employeesTable)
       .where(eq(employeesTable.id, employee!.id))
       .limit(1);
     assert.equal(employeeAfterRejectedUpdate?.avatarUrl, originalEmployeeAvatarUrl);
+
+    const clockIn = await fetch(`${first.baseUrl}/api/employee/clock-in`, {
+      method: "POST",
+      headers: { cookie: employeeCookie },
+    });
+    assert.equal(clockIn.status, 201, "an employee with an active assignment must be able to clock in");
+    await clockIn.arrayBuffer();
+    const clockOut = await fetch(`${first.baseUrl}/api/employee/clock-out`, {
+      method: "POST",
+      headers: { cookie: employeeCookie },
+    });
+    assert.equal(clockOut.status, 200, "an employee with an active assignment must be able to clock out");
+    await clockOut.arrayBuffer();
+
+    const uploadEmployeeMediaImage = async (name: string) => {
+      const uploadRequest = await fetch(`${first.baseUrl}/api/media/uploads`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: employeeCookie,
+          ...mediaRegressionMarking.requestHeaders,
+        },
+        body: JSON.stringify({
+          scope: "employee-avatar",
+          resourceId: employee!.id,
+          name,
+          size: original.length,
+          contentType: "image/png",
+        }),
+      });
+      assert.equal(uploadRequest.status, 200);
+      const uploadIntent = await uploadRequest.json() as { uploadId: string; uploadUrl: string };
+      employeeMediaAssetIds.push(uploadIntent.uploadId);
+      const directUpload = await fetch(uploadIntent.uploadUrl, {
+        method: "PUT",
+        headers: { "content-type": "image/png" },
+        body: original,
+      });
+      assert.ok(directUpload.ok, `Direct App Storage upload failed with ${directUpload.status}.`);
+      const finalizedResponse = await fetch(`${first.baseUrl}/api/media/uploads/${uploadIntent.uploadId}/finalize`, {
+        method: "POST",
+        headers: { cookie: employeeCookie },
+      });
+      assert.equal(finalizedResponse.status, 201);
+      return await finalizedResponse.json() as {
+        id: string;
+        imageUrl: string;
+        width: number;
+        height: number;
+        contentHash: string;
+      };
+    };
+
+    const firstEmployeeMediaImage = await uploadEmployeeMediaImage("employee-avatar-first.png");
+    const firstEmployeeProfileSave = await fetch(`${first.baseUrl}/api/employee/profile`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: employeeCookie },
+      body: JSON.stringify({ avatarUrl: firstEmployeeMediaImage.imageUrl }),
+    });
+    assert.equal(firstEmployeeProfileSave.status, 200, "an employee must be able to save their own finalized avatar");
+    const [savedFirstEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(savedFirstEmployeeProfile?.avatarUrl, firstEmployeeMediaImage.imageUrl);
+    const firstEmployeeMediaPublic = await fetch(`${first.baseUrl}${firstEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(firstEmployeeMediaPublic.status, 200);
+
+    const replacementEmployeeMediaImage = await uploadEmployeeMediaImage("employee-avatar-replacement.png");
+    const replacementEmployeeProfileSave = await fetch(`${first.baseUrl}/api/employee/profile`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: employeeCookie },
+      body: JSON.stringify({ avatarUrl: replacementEmployeeMediaImage.imageUrl }),
+    });
+    assert.equal(replacementEmployeeProfileSave.status, 200, "an employee must be able to replace their own finalized avatar");
+    const [savedReplacementEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(savedReplacementEmployeeProfile?.avatarUrl, replacementEmployeeMediaImage.imageUrl);
+
+    const [revokedEmployeeMediaImage] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, firstEmployeeMediaImage.id)).limit(1);
+    assert.deepEqual(revokedEmployeeMediaImage, {
+      resourceId: null,
+      visibility: "private",
+    });
+    const revokedEmployeeMediaResponse = await fetch(`${first.baseUrl}${firstEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(revokedEmployeeMediaResponse.status, 403);
+    assert.equal(revokedEmployeeMediaResponse.headers.get("cache-control"), "private, no-store");
+    const replacementEmployeeMediaPublic = await fetch(`${first.baseUrl}${replacementEmployeeMediaImage.imageUrl}&size=thumbnail`);
+    assert.equal(replacementEmployeeMediaPublic.status, 200);
+
+    const parallelEmployeeMediaImages = await Promise.all([
+      uploadEmployeeMediaImage("employee-avatar-parallel-a.png"),
+      uploadEmployeeMediaImage("employee-avatar-parallel-b.png"),
+    ]);
+    const parallelEmployeeProfileSaves = await Promise.all(parallelEmployeeMediaImages.map((image) =>
+      fetch(`${first.baseUrl}/api/employee/profile`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: employeeCookie },
+        body: JSON.stringify({ avatarUrl: image.imageUrl }),
+      }),
+    ));
+    assert.equal(
+      parallelEmployeeProfileSaves.filter((response) => response.status === 200).length,
+      1,
+      "exactly one parallel employee avatar save must win",
+    );
+    assert.equal(
+      parallelEmployeeProfileSaves.filter((response) => response.status === 409).length,
+      1,
+      "the stale parallel employee avatar save must be rejected",
+    );
+    const winningParallelIndex = parallelEmployeeProfileSaves.findIndex((response) => response.status === 200);
+    assert.notEqual(winningParallelIndex, -1);
+    const winningParallelEmployeeImage = parallelEmployeeMediaImages[winningParallelIndex]!;
+    const losingParallelEmployeeImage = parallelEmployeeMediaImages[winningParallelIndex === 0 ? 1 : 0]!;
+    const [parallelEmployeeProfile] = await db.select({ avatarUrl: employeesTable.avatarUrl })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.equal(
+      parallelEmployeeProfile?.avatarUrl,
+      winningParallelEmployeeImage.imageUrl,
+      "the employee profile must point at the transaction that won the row lock",
+    );
+    const parallelAssetRows = await db.select({
+      id: mediaAssetsTable.id,
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.scope, "employee-avatar"),
+      eq(mediaAssetsTable.ownerUserId, employeeUser!.id),
+    ));
+    const parallelAssetsById = new Map(parallelAssetRows.map((asset) => [asset.id, asset]));
+    assert.deepEqual(parallelAssetsById.get(winningParallelEmployeeImage.id), {
+      id: winningParallelEmployeeImage.id,
+      resourceId: employee!.id,
+      visibility: "public",
+    });
+    assert.deepEqual(parallelAssetsById.get(losingParallelEmployeeImage.id), {
+      id: losingParallelEmployeeImage.id,
+      resourceId: null,
+      visibility: "private",
+    });
+    assert.equal(
+      parallelAssetRows.filter((asset) => asset.visibility === "public" && asset.resourceId === employee!.id)
+        .filter((asset) => asset.id !== winningParallelEmployeeImage.id).length,
+      0,
+      "no stale public employee-avatar claim may remain after the parallel save",
+    );
+
+    const parallelBio = `Parallel bio ${randomUUID()}`;
+    const parallelPhone = `+38164${Date.now().toString().slice(-7)}`;
+    let barrierArrivals = 0;
+    let releaseProfileSaves!: () => void;
+    const profileSaveBarrier = new Promise<void>((resolve) => { releaseProfileSaves = resolve; });
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
+    const disableProfileSaveBarrier = setEmployeeProfileAfterAccessReadForTest(async () => {
+      barrierArrivals += 1;
+      if (barrierArrivals === 2) releaseProfileSaves();
+      await profileSaveBarrier;
+    });
+    process.env.NODE_ENV = previousNodeEnv;
+    let parallelFieldSaves: Response[];
+    try {
+      parallelFieldSaves = await Promise.all([
+        fetch(`${first.baseUrl}/api/employee/profile`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", cookie: employeeCookie },
+          body: JSON.stringify({ bio: parallelBio }),
+        }),
+        fetch(`${first.baseUrl}/api/employee/profile`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", cookie: employeeCookie },
+          body: JSON.stringify({ phone: parallelPhone }),
+        }),
+      ]);
+    } finally {
+      disableProfileSaveBarrier();
+    }
+    assert.equal(barrierArrivals, 2, "both profile saves must read the same stale access snapshot");
+    assert.deepEqual(
+      parallelFieldSaves.map((response) => response.status),
+      [200, 200],
+      "parallel saves of distinct employee profile fields must both succeed",
+    );
+    const [mergedEmployeeProfile] = await db.select({
+      bio: employeesTable.bio,
+      avatarUrl: employeesTable.avatarUrl,
+      phone: usersTable.phone,
+    }).from(employeesTable)
+      .innerJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+      .where(eq(employeesTable.id, employee!.id))
+      .limit(1);
+    assert.deepEqual(
+      mergedEmployeeProfile,
+      { bio: parallelBio, avatarUrl: winningParallelEmployeeImage.imageUrl, phone: parallelPhone },
+      "parallel saves must merge without restoring stale employee profile fields or avatar",
+    );
+    const finalParallelAssetRows = await db.select({
+      id: mediaAssetsTable.id,
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(and(
+      eq(mediaAssetsTable.scope, "employee-avatar"),
+      eq(mediaAssetsTable.ownerUserId, employeeUser!.id),
+    ));
+    assert.deepEqual(
+      finalParallelAssetRows.filter((asset) => asset.visibility === "public" && asset.resourceId === employee!.id),
+      [{
+        id: winningParallelEmployeeImage.id,
+        resourceId: employee!.id,
+        visibility: "public",
+      }],
+      "distinct-field saves must preserve the winning avatar as the sole public employee claim",
+    );
+    assert.equal(
+      parallelAssetRows.filter((asset) => asset.resourceId === employee!.id)
+        .filter((asset) => asset.id !== winningParallelEmployeeImage.id).length,
+      0,
+      "no dangling employee-avatar claim may remain after the parallel save",
+    );
 
     const mediumWebp = await fetch(`${first.baseUrl}${finalized.imageUrl}?size=medium&format=webp`);
     assert.equal(mediumWebp.status, 200);
@@ -302,6 +755,29 @@ async function run(): Promise<void> {
         : [];
       await Promise.allSettled(objectPaths.map((path) => deletePrivateObject(path)));
       await db.delete(imageAssetsTable).where(eq(imageAssetsTable.id, cleanupAssetId));
+    }
+    disableMediaRegressionUploadMarking?.();
+    await cleanupMediaRouteRegressionUploads();
+    for (const employeeMediaAssetId of employeeMediaAssetIds) {
+      assert.equal(
+        (await db.select({ id: mediaUploadTicketsTable.id }).from(mediaUploadTicketsTable)
+          .where(eq(mediaUploadTicketsTable.id, employeeMediaAssetId))).length,
+        0,
+        "Employee avatar upload tickets must be removed by test cleanup.",
+      );
+      assert.equal(
+        (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+          .where(eq(mediaAssetsTable.id, employeeMediaAssetId))).length,
+        0,
+        "Employee avatar media claims must be removed by test cleanup.",
+      );
+    }
+    if (legacyManagedAssetId) {
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, legacyManagedAssetId));
+    }
+    if (employee) {
+      await db.delete(employeeClockEntriesTable).where(eq(employeeClockEntriesTable.employeeId, employee.id));
+      await db.delete(employeeLocationAssignmentsTable).where(eq(employeeLocationAssignmentsTable.employeeId, employee.id));
     }
     if (employee) await db.delete(employeesTable).where(eq(employeesTable.id, employee.id));
     if (salon) await db.delete(salonsTable).where(eq(salonsTable.id, salon.id));

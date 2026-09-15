@@ -10,6 +10,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 const { Pool } = pg;
+type PoolClient = import("pg").PoolClient;
+type PoolRelease = (error?: Error | boolean) => void;
+type PoolConnectCallback = (
+  error: Error | undefined,
+  client: PoolClient | undefined,
+  release: PoolRelease,
+) => void;
 
 function assertDirectDatabaseTestRuntimeAllowed(): void {
   const entryPoint = process.argv[1] ?? "";
@@ -46,6 +53,21 @@ if (!process.env.DATABASE_URL) {
 const poolMax = parseEnvInt("DB_POOL_MAX", 10, 4, 50);
 const configuredPoolMin = parseEnvInt("DB_POOL_MIN", 0, 0, 10);
 const poolMin = Math.min(configuredPoolMin, poolMax);
+const schedulerDatabaseWorkload = new AsyncLocalStorage<boolean>();
+const schedulerConnectionLimit = Math.max(1, poolMax - 2);
+type SchedulerConnectionWaiter = {
+  resolve: (release: () => void) => void;
+  reject: (error: Error) => void;
+};
+const schedulerConnectionWaiters: SchedulerConnectionWaiter[] = [];
+let schedulerConnectionsActive = 0;
+let schedulerConnectionsClosing = false;
+
+function poolClosingError(): Error {
+  return Object.assign(new Error("Database pool is closing."), {
+    code: "POOL_CLOSING",
+  });
+}
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -62,6 +84,115 @@ export const pool = new Pool({
   keepAliveInitialDelayMillis: 10_000,
 });
 
+const originalPoolConnect = pool.connect.bind(pool) as {
+  (): Promise<PoolClient>;
+  (callback: PoolConnectCallback): void;
+};
+
+function grantSchedulerConnectionPermit(): () => void {
+  schedulerConnectionsActive += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    schedulerConnectionsActive -= 1;
+    const next = schedulerConnectionWaiters.shift();
+    if (next && !schedulerConnectionsClosing) {
+      next.resolve(grantSchedulerConnectionPermit());
+    } else if (next) {
+      next.reject(poolClosingError());
+    }
+  };
+}
+
+function acquireSchedulerConnectionPermit(): Promise<() => void> {
+  if (schedulerConnectionsClosing) {
+    return Promise.reject(poolClosingError());
+  }
+  if (
+    schedulerConnectionsActive < schedulerConnectionLimit
+    && schedulerConnectionWaiters.length === 0
+  ) {
+    return Promise.resolve(grantSchedulerConnectionPermit());
+  }
+  return new Promise((resolve, reject) => {
+    schedulerConnectionWaiters.push({ resolve, reject });
+  });
+}
+
+function closeSchedulerConnectionQueue(): void {
+  if (schedulerConnectionsClosing) return;
+  schedulerConnectionsClosing = true;
+  const error = poolClosingError();
+  for (const waiter of schedulerConnectionWaiters.splice(0)) {
+    waiter.reject(error);
+  }
+}
+
+function attachSchedulerConnectionPermit(
+  client: PoolClient,
+  releaseClient: PoolRelease,
+  releasePermit: () => void,
+): PoolRelease {
+  let released = false;
+  const release: PoolRelease = (error) => {
+    if (released) return releaseClient(error);
+    released = true;
+    try {
+      return releaseClient(error);
+    } finally {
+      releasePermit();
+    }
+  };
+  client.release = release;
+  return release;
+}
+
+function workloadAwareConnect(): Promise<PoolClient>;
+function workloadAwareConnect(callback: PoolConnectCallback): void;
+function workloadAwareConnect(
+  callback?: PoolConnectCallback,
+): Promise<PoolClient> | void {
+  if (!schedulerDatabaseWorkload.getStore()) {
+    return callback ? originalPoolConnect(callback) : originalPoolConnect();
+  }
+
+  if (callback) {
+    void acquireSchedulerConnectionPermit().then(
+      (releasePermit) => {
+        originalPoolConnect((error, client, releaseClient) => {
+          if (error || !client) {
+            releasePermit();
+            callback(error ?? new Error("Database pool did not return a client."), client, releaseClient);
+            return;
+          }
+          const release = attachSchedulerConnectionPermit(client, releaseClient, releasePermit);
+          callback(undefined, client, release);
+        });
+      },
+      (error: Error) => callback(error, undefined, () => undefined),
+    );
+    return;
+  }
+
+  return acquireSchedulerConnectionPermit().then(async (releasePermit) => {
+    try {
+      const client = await originalPoolConnect();
+      attachSchedulerConnectionPermit(client, client.release.bind(client), releasePermit);
+      return client;
+    } catch (error) {
+      releasePermit();
+      throw error;
+    }
+  });
+}
+
+// pg-pool routes pool.query() through this.connect(), so this one boundary
+// covers direct queries, Drizzle queries, and transactions. Scheduler work can
+// therefore never check out the two clients reserved for interactive requests,
+// even when one job performs several database branches concurrently.
+pool.connect = workloadAwareConnect as typeof pool.connect;
+
 pool.on("error", (err: Error) => {
   const safeMessage = err.message.replace(
     /postgres(?:ql)?:\/\/[^@]*@[^\s"']*/gi,
@@ -77,10 +208,29 @@ export function databasePoolStats() {
     waiting: pool.waitingCount,
     max: poolMax,
     statements: databaseStatementCount,
+    schedulerConnections: schedulerDatabaseConnectionCapacitySnapshot(),
   };
 }
 
 export type DatabasePoolClient = import("pg").PoolClient;
+
+export function runWithSchedulerDatabaseWorkload<T>(operation: () => T): T {
+  return schedulerDatabaseWorkload.run(true, operation);
+}
+
+export function schedulerDatabaseConnectionCapacitySnapshot(): {
+  active: number;
+  queued: number;
+  limit: number;
+  reservedForInteractive: number;
+} {
+  return {
+    active: schedulerConnectionsActive,
+    queued: schedulerConnectionWaiters.length,
+    limit: schedulerConnectionLimit,
+    reservedForInteractive: poolMax - schedulerConnectionLimit,
+  };
+}
 
 export type DatabaseQueryObservation = {
   sql: string;
@@ -144,6 +294,7 @@ export const db = drizzle(pool, {
 export * from "./schema";
 
 export async function closePool(): Promise<void> {
+  closeSchedulerConnectionQueue();
   await pool.end();
 }
 

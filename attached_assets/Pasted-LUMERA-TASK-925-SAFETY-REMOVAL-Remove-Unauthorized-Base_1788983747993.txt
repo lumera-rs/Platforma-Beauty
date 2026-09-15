@@ -1,0 +1,508 @@
+LUMERA — TASK #925-SAFETY-REMOVAL
+Remove Unauthorized Baseline Adoption Write Path
+Preserve Read-Only Eligibility Classifier
+
+Claude Code completed an independent security and architecture review
+of existing Task #925.
+
+FINAL VERDICT:
+
+TASK #925 REVIEW VERDICT: FAIL
+
+Architecture decision:
+
+KEEP READ-ONLY ELIGIBILITY,
+REMOVE ADOPTION WRITE PATH.
+
+This task is NOT a redesign of adoption.
+
+Do NOT attempt to repair or harden the existing write path.
+
+The write/adoption capability must be removed completely for now.
+
+The useful read-only eligibility classifier must be preserved.
+
+==================================================
+WHY THIS IS REQUIRED
+==================================================
+
+Independent review confirmed:
+
+P0:
+1. Adoption can be authorized by a self-authored operator manifest.
+2. Adoption does not verify database/environment identity.
+
+P1:
+3. Creating lumera_migrations changes fingerprint v3 and makes
+   adoption self-invalidating/non-idempotent.
+4. Adoption locks pg_class plus all 255 public tables.
+5. Adoption integration test can COMMIT against DATABASE_URL without
+   disposable-DB protection.
+6. Read-only and write mode are exposed through one CLI.
+7. FRESH_DATABASE detection is incomplete.
+
+Therefore:
+
+DO NOT PATCH adoption.ts.
+
+REMOVE the write path.
+
+==================================================
+1. DELETE ADOPTION WRITE IMPLEMENTATION
+==================================================
+
+Delete:
+
+scripts/src/schema-drift/adoption.ts
+
+Delete:
+
+scripts/src/schema-drift/adoption.integration.test.ts
+
+Remove:
+
+test:schema-drift:adoption:integration
+
+from scripts/package.json and anywhere else it is exposed.
+
+There must be no remaining executable adoption integration test.
+
+==================================================
+2. REMOVE WRITE TRANSACTION HELPERS
+==================================================
+
+From:
+
+scripts/src/schema-drift/fingerprint-transaction.ts
+
+remove adoption-only/write-capable helpers, including as applicable:
+
+- acquireBaselineAdoptionLock
+- beginBaselineAdoptionTransaction
+- releaseBaselineAdoptionLock
+
+and any code used only by the removed adoption path.
+
+After this task, fingerprint/eligibility transaction helpers must not
+contain:
+
+BEGIN READ WRITE
+CREATE SCHEMA
+CREATE TABLE
+INSERT
+UPDATE
+DELETE
+LOCK TABLE
+ACCESS EXCLUSIVE
+pg_class locking
+
+Do not disturb the existing READ ONLY fingerprint transaction path.
+
+==================================================
+3. SPLIT THE CLI PERMANENTLY
+==================================================
+
+The existing combined:
+
+eligibility-adoption-cli.ts
+
+must no longer expose adoption.
+
+Preferred:
+
+rename/refactor it to:
+
+eligibility-cli.ts
+
+It must perform READ-ONLY eligibility classification only.
+
+Expose it as:
+
+schema-drift:eligibility
+
+Remove root exposure:
+
+schema-drift:eligibility-adoption
+
+There must be no:
+
+--adopt-known-legacy
+--adoption-actor
+
+or any other write/adoption flag.
+
+Unknown arguments must fail closed.
+
+The eligibility command must have no transitive import of:
+
+- adoption code
+- write transaction helpers
+- migration runner
+- bootstrap
+- schema repair
+
+==================================================
+4. PRESERVE ELIGIBILITY CLASSIFIER
+==================================================
+
+Keep:
+
+scripts/src/schema-drift/eligibility.ts
+scripts/src/schema-drift/eligibility.test.ts
+
+Do not rewrite the classifier unnecessarily.
+
+Preserve its existing fail-closed behavior for:
+
+- known exact legacy
+- unknown fingerprint
+- partial schema
+- wrong database shape
+- version mismatch
+- conflicting manifest entries
+- stale manifest
+- physical-only mismatch
+
+==================================================
+5. FIX FRESH_DATABASE CLASSIFICATION
+==================================================
+
+Fix the confirmed classifier defect.
+
+FRESH_DATABASE must NOT mean merely:
+
+physicalPayload.tables.length === 0
+
+A database is fresh only when all relevant application-owned schema
+identity collections are empty.
+
+At minimum account for:
+
+- application tables
+- enums
+- triggers
+- views
+- materialized views
+- foreign tables
+- sequences
+- application schemas
+- RLS/policies where applicable
+
+Do not silently classify a database containing only ownership-excluded
+objects as truly fresh.
+
+Introduce a distinct fail-closed result such as:
+
+ONLY_EXCLUDED_OBJECTS
+
+if appropriate to the current classifier design.
+
+IMPORTANT:
+
+This remains classification only.
+
+Do not attach any write behavior to FRESH_DATABASE.
+
+==================================================
+6. MANIFEST PROVENANCE — READ-ONLY ONLY
+==================================================
+
+The independent review proved an arbitrary operator-supplied manifest
+can manufacture KNOWN_LEGACY.
+
+We are preserving eligibility as a meaningful diagnostic, so fix this
+trust problem even though the classifier is read-only.
+
+Do NOT accept arbitrary manifest paths as the authoritative baseline.
+
+Create/use a fixed repository-owned baseline manifest location.
+
+Preferred conceptual location:
+
+lib/db/migrations/baseline-manifest.json
+
+BUT:
+
+Do not create a fake approved baseline just to satisfy the code.
+
+If no baseline has yet been formally reviewed and approved, the
+repository-owned manifest may intentionally contain no approved LEGACY
+entry, or classification must clearly refuse KNOWN_LEGACY until an
+approved manifest exists.
+
+Do NOT capture the current development database and label it LEGACY
+automatically.
+
+Do NOT invent baseline truth.
+
+Manifest approval must be an explicit future reviewed action.
+
+The CLI must not allow:
+
+--eligibility-manifest=/arbitrary/path
+
+to replace the repository authority.
+
+If a development/test fixture needs a custom manifest, keep that ability
+inside unit-test APIs only, not the production CLI.
+
+==================================================
+7. MANIFEST INTEGRITY
+==================================================
+
+For the repository-owned manifest:
+
+- deterministic serialization
+- validate all fingerprint/version metadata
+- reject malformed entries
+- reject conflicting/duplicate entries
+- retain digest recomputation from physicalSnapshot
+
+If you implement a pinned manifest SHA-256:
+
+do not create a self-updating mechanism.
+
+A changed manifest must require an intentional reviewed code change.
+
+Do not build signatures/PKI in this task.
+
+==================================================
+8. TOOL-OWNED NAMESPACE POLICY
+==================================================
+
+Claude identified that future:
+
+lumera_migrations
+
+would currently change fingerprint v3 because applicationSchemas is
+hashed.
+
+Do NOT create lumera_migrations now.
+
+Instead define/document the correct fingerprint policy for future
+tool-owned migration metadata namespaces.
+
+If a code-level ownership registry already exists and a small,
+architecture-safe change can express:
+
+tool-owned migration metadata namespace != application schema identity
+
+then implement it with tests.
+
+Otherwise document this as a mandatory P.2 design constraint.
+
+Do not create the namespace or any table.
+
+==================================================
+9. NO DATABASE WRITES
+==================================================
+
+This task must perform ZERO DB writes.
+
+Do NOT:
+
+- run adoption
+- create lumera_migrations
+- create baseline_adoptions
+- INSERT metadata
+- run migration
+- run bootstrap
+- run drizzle push
+- run schema repair
+- execute DDL fixture against dev DB
+
+Development database must remain unchanged.
+
+==================================================
+10. TESTS
+==================================================
+
+Preserve existing eligibility tests and add focused tests for:
+
+A. truly empty catalog:
+FRESH_DATABASE
+
+B. zero tables + one enum:
+NOT FRESH_DATABASE
+
+C. zero tables + one application schema:
+NOT FRESH_DATABASE
+
+D. only ownership-excluded table(s):
+NOT silently FRESH_DATABASE
+
+E. arbitrary external manifest cannot become CLI authority
+
+F. stale repository manifest:
+fail closed
+
+G. conflicting repository manifest:
+fail closed
+
+H. eligibility CLI rejects:
+--adopt-known-legacy
+--adoption-actor
+--eligibility-manifest
+and arbitrary unknown arguments
+
+I. eligibility CLI has no write-capable transitive path.
+
+==================================================
+11. STATIC WRITE-CAPABILITY AUDIT
+==================================================
+
+After implementation, search the #925-related code for:
+
+adoptKnownLegacy
+baseline_adoptions
+CREATE SCHEMA
+CREATE TABLE
+INSERT
+UPDATE
+DELETE
+LOCK TABLE
+ACCESS EXCLUSIVE
+BEGIN READ WRITE
+pg_advisory_lock
+--adopt-known-legacy
+--adoption-actor
+
+Explain every remaining occurrence.
+
+Expected result:
+
+No executable #925 write/adoption path remains.
+
+Historical docs/comments are acceptable only if clearly non-executable.
+
+==================================================
+12. SAFE VALIDATION
+==================================================
+
+Run only safe tests:
+
+pnpm run typecheck
+
+scripts typecheck
+
+schema-drift eligibility unit tests
+
+schema-drift fingerprint unit tests if affected
+
+READ ONLY integration tests if needed
+
+git diff --check
+
+Do NOT run:
+
+adoption integration
+golden DDL fixture
+migration tests that write
+bootstrap
+drizzle push
+
+==================================================
+13. SCOPE
+==================================================
+
+Expected scope primarily:
+
+scripts/src/schema-drift/*
+scripts/package.json
+package.json
+minimal documentation
+
+Potential fixed repository manifest location only if necessary:
+
+lib/db/migrations/baseline-manifest.json
+
+Do NOT modify:
+
+lib/db/src/schema/*
+application runtime
+booking
+Education B2B
+bootstrap
+deployment
+CI/release chains
+migration runner
+migration ledger
+production DB
+
+==================================================
+14. IMPORTANT P.2 DEFERRED ITEMS
+==================================================
+
+Do NOT implement these now.
+
+Record them as design requirements for P.2:
+
+- verified database identity:
+  current_database
+  system_identifier
+  expected environment
+
+- dedicated adoption command
+
+- REPEATABLE READ write transaction
+
+- no ACCESS EXCLUSIVE all-table locking
+
+- migration-role privilege separation
+
+- immutable migration ledger
+
+- baseline as migration-ledger position / row zero
+
+- backup/restore-point evidence
+
+- migration frontier
+
+- fresh/adopted convergence
+
+These belong to the migration architecture design, not this cleanup.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact files changed/deleted
+2. Confirmation adoption.ts removed
+3. Confirmation adoption integration removed
+4. Confirmation write transaction helpers removed
+5. New read-only eligibility CLI
+6. Root/package script changes
+7. FRESH_DATABASE correction
+8. Repository-manifest authority design
+9. Whether any approved LEGACY baseline currently exists
+10. Tool-owned namespace policy
+11. Static write-capability search results
+12. Tests/results
+13. Git diff scope
+14. HEAD/status
+15. Confirmation DB was not modified
+16. Deferred P.2 requirements
+
+Then:
+
+TASK #925-SAFETY-REMOVAL VERDICT:
+
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+And:
+
+NO EXECUTABLE BASELINE ADOPTION WRITE PATH REMAINS:
+YES / NO
+
+READY FOR INDEPENDENT CLAUDE REVIEW:
+YES / NO
+
+STOP.
+
+Do not begin #924-FIX-2.
+Do not begin #926.
+Do not begin P.2.

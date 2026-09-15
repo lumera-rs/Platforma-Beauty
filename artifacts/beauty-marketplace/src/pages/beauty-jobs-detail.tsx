@@ -31,6 +31,7 @@ import {
   shouldRetryBeautyJobDetail,
   shouldRetryBeautyJobDetailOnMount,
 } from "@/lib/beauty-job-detail-query";
+import { useMediaDescriptions } from "@/lib/media-descriptions";
 
 export default function BeautyJobDetailPage() {
   const [, canonicalParams] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
@@ -76,6 +77,7 @@ export default function BeautyJobDetailPage() {
     }
   });
   const job = isAdminPreview ? adminPreviewQuery.data?.listing : publicQuery.data;
+  const photoDescriptions = useMediaDescriptions(job?.photos ?? []).data ?? {};
   const moderationHistory = adminPreviewQuery.data?.moderationHistory ?? [];
   const isLoading = isAdminPreview ? adminPreviewQuery.isLoading : publicQuery.isLoading;
   const error = isAdminPreview ? adminPreviewQuery.error : publicQuery.error;
@@ -316,7 +318,7 @@ export default function BeautyJobDetailPage() {
               <div className="md:col-span-3 aspect-[4/3] md:aspect-[16/9] rounded-xl overflow-hidden bg-muted relative">
                 <OptimizedImage
                   src={job.photos[0]}
-                  alt="Glavna slika"
+                  alt={photoDescriptions[job.photos[0]]?.trim() || job.coverImageDescription?.trim() || job.title}
                   width={800}
                   height={600}
                   className="w-full h-full object-cover"
@@ -327,7 +329,7 @@ export default function BeautyJobDetailPage() {
                   <div key={idx} className="flex-1 rounded-xl overflow-hidden bg-muted relative min-h-0">
                     <OptimizedImage
                       src={photo}
-                      alt={`Slika ${idx + 2}`}
+                      alt={photoDescriptions[photo]?.trim() || `${job.title} — fotografija ${idx + 2}`}
                       width={300}
                       height={200}
                       className="w-full h-full object-cover"

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicSocialImage } from './publicSocialImage';
 import type { SupplierScope } from './supplierScope';
 
 export interface Supplier {
@@ -14,6 +15,7 @@ export interface Supplier {
   scope: SupplierScope;
   /** @nullable */
   logoUrl: string | null;
+  socialImage?: PublicSocialImage;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;

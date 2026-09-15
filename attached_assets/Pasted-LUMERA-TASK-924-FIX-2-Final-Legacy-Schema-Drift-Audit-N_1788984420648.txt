@@ -1,0 +1,444 @@
+LUMERA — TASK #924-FIX-2
+Final Legacy Schema-Drift Audit Normalization Cleanup
+
+Task #925-SAFETY-REMOVAL has passed independent review.
+
+DO NOT touch #925 again.
+
+This task is a small, isolated remediation of the remaining legacy
+schema-drift audit false positives discovered during the independent
+#924 review.
+
+STRICT SCOPE:
+AUDIT COMPARISON/NORMALIZATION ONLY.
+
+==================================================
+GOAL
+==================================================
+
+Remove remaining false-positive DEFINITION_MISMATCH findings caused by:
+
+1. redundant SQL parentheses;
+2. PostgreSQL cast rendering;
+3. multi-word cast types such as:
+
+   character varying
+
+while preserving detection of genuine schema differences.
+
+CRITICAL:
+
+Fingerprint v3 semantics MUST NOT change.
+
+The following must remain byte-identical before/after this task:
+
+- structural fingerprint
+- physical fingerprint
+- fingerprintVersion
+- normalized fingerprint payload
+- enum representation
+- trigger representation
+- function-body representation
+- unmodelled-object census
+
+==================================================
+1. CURRENT KNOWN ISSUE
+==================================================
+
+Previous independent Claude review found that after the cast fix,
+legacy audit still contained approximately 28 false-positive CHECK
+definition mismatches caused by redundant parentheses.
+
+It also found that stripCasts did not fully cover multi-word PostgreSQL
+type names such as:
+
+character varying
+
+Investigate the CURRENT working tree yourself.
+
+Do not assume old counts are still exact.
+
+==================================================
+2. REDUNDANT PARENTHESES NORMALIZATION
+==================================================
+
+Improve ONLY the legacy audit comparison normalization.
+
+Equivalent expressions differing solely by semantically redundant
+outer/grouping parentheses should compare equal.
+
+Examples conceptually:
+
+(a = 1)
+
+vs
+
+a = 1
+
+and equivalent PostgreSQL-rendered CHECK expressions with additional
+non-semantic grouping.
+
+Do NOT implement naive global parenthesis deletion.
+
+The normalization must preserve semantic differences involving:
+
+- boolean precedence
+- arithmetic precedence
+- function calls
+- CASE expressions
+- arrays
+- row expressions
+- IN expressions
+- BETWEEN
+- NOT
+- AND / OR
+- nested expressions
+
+Only provably redundant wrapping/grouping parentheses may be removed.
+
+==================================================
+3. MULTI-WORD CAST NORMALIZATION
+==================================================
+
+Extend audit-only stripCasts handling safely for PostgreSQL cast forms
+including multi-word type names.
+
+At minimum investigate:
+
+character varying
+double precision
+timestamp without time zone
+timestamp with time zone
+time without time zone
+time with time zone
+bit varying
+
+and any other multi-word PostgreSQL type currently present in the
+canonical/live audit.
+
+Again:
+
+AUDIT PATH ONLY.
+
+Fingerprint normalization must continue preserving casts strictly.
+
+==================================================
+4. CAST SAFETY
+==================================================
+
+Do NOT blindly strip every ::type occurrence.
+
+Preserve differences where the cast itself changes semantics.
+
+The existing goal is to tolerate PostgreSQL deparser noise when the
+canonical and database expressions are otherwise semantically
+equivalent.
+
+Add focused regression tests proving:
+
+cast-rendering-only difference
+→ no audit finding
+
+actual value/expression difference
+→ still a finding
+
+==================================================
+5. TEST CASES
+==================================================
+
+Add focused tests for at least:
+
+A.
+'QUEUED'
+vs
+'QUEUED'::aftercare_delivery_status
+→ equivalent in legacy audit mode
+
+B.
+'{}'
+vs
+'{}'::jsonb
+→ equivalent in legacy audit mode
+
+C.
+redundant outer parentheses
+→ equivalent
+
+D.
+multiple redundant wrapper parentheses
+→ equivalent where safe
+
+E.
+different AND/OR grouping
+→ NOT equivalent
+
+F.
+different arithmetic grouping
+→ NOT equivalent
+
+G.
+function-call parentheses
+→ preserved
+
+H.
+character varying cast rendering
+→ normalized where semantically appropriate
+
+I.
+timestamp/time multi-word cast parsing
+→ handled safely
+
+J.
+actual different CHECK condition
+→ finding remains
+
+==================================================
+6. FINGERPRINT NON-REGRESSION
+==================================================
+
+This is mandatory.
+
+Capture the live fingerprint BEFORE the implementation.
+
+After the implementation, run the same READ ONLY fingerprint again.
+
+The complete JSON must be byte-identical.
+
+Expected current live hashes from the previous verified state:
+
+Structural:
+6cbd34f10dc0f3546db8645568fc816af850869c3be2efa1e60d95d194d0027b
+
+Physical:
+9b00d1b7c11dcda267866d0542aa9f4006a3f813b323723227b272d1c4b06203
+
+Normalized objects:
+5027
+
+Do not blindly force these values.
+
+Verify them from the current database before changing code.
+
+If the database legitimately changed since the previous review,
+report that fact and compare BEFORE vs AFTER this task instead.
+
+The requirement is:
+
+BEFORE #924-FIX-2 == AFTER #924-FIX-2
+
+byte-for-byte.
+
+==================================================
+7. LEGACY AUDIT RE-RUN
+==================================================
+
+Run the current legacy schema-drift audit after the fix.
+
+Report:
+
+- total findings
+- actionable findings
+- MISSING_IN_DB
+- EXTRA_IN_DB
+- DEFINITION_MISMATCH
+- SEMANTIC_MATCH_DIFFERENT_NAME
+- DESIGN_DIFFERENCE
+- OWNERSHIP_EXCEPTION
+
+Compare with the pre-fix current working-tree result.
+
+Do NOT optimize for a target count.
+
+Every removed finding must be explainable as normalization noise.
+
+Every genuine difference must remain.
+
+==================================================
+8. REVIEW REMAINING DEFINITION_MISMATCH
+==================================================
+
+After normalization, inspect every remaining DEFINITION_MISMATCH
+category/sample.
+
+Classify remaining mismatches into:
+
+- genuine DB weaker
+- genuine DB stricter
+- representation-only
+- product/design decision
+- unknown/requires review
+
+If any obvious representation-only noise remains, do not declare the
+task complete without explaining why it could not safely be normalized.
+
+==================================================
+9. #925 MUST REMAIN UNCHANGED
+==================================================
+
+Do not reintroduce:
+
+adoption.ts
+adoption.integration.test.ts
+eligibility-adoption-cli.ts
+
+Do not add:
+
+CREATE SCHEMA
+CREATE TABLE
+INSERT
+UPDATE
+DELETE
+BEGIN READ WRITE
+LOCK TABLE
+ACCESS EXCLUSIVE
+baseline_adoptions
+adoptKnownLegacyBaseline
+
+The new read-only eligibility system must remain intact.
+
+==================================================
+10. PROHIBITED CHANGES
+==================================================
+
+Do NOT modify:
+
+- fingerprint payload semantics
+- FINGERPRINT_VERSION
+- FINGERPRINT_FORMAT_VERSION
+- catalog fingerprint fields
+- enum fingerprinting
+- trigger fingerprinting
+- function-body fingerprinting
+- census semantics
+- ownership policy
+- baseline manifest authority
+- eligibility architecture
+- migration architecture
+- migration runner
+- migration ledger
+- lib/db/src/schema/*
+- application runtime
+- booking
+- Education B2B
+- bootstrap
+- deployment
+- CI/release chain
+
+Do not begin #926 or P.2.
+
+==================================================
+11. EXPECTED FILE SCOPE
+==================================================
+
+Prefer changes only in the smallest necessary schema-drift audit files,
+likely:
+
+scripts/src/schema-drift/model.ts
+scripts/src/schema-drift/compare.ts
+scripts/src/schema-drift/schema-drift.test.ts
+
+and only additional audit-specific helper/test files if genuinely
+necessary.
+
+If fingerprint.ts, catalog.ts, eligibility.ts or unrelated files need
+modification, STOP and explain why before changing them.
+
+==================================================
+12. SAFE VALIDATION
+==================================================
+
+Run:
+
+pnpm run typecheck
+
+scripts typecheck
+
+schema-drift unit tests
+
+fingerprint unit tests
+
+eligibility tests
+
+READ ONLY integration tests
+
+legacy audit
+
+READ ONLY fingerprint before/after comparison
+
+git diff --check
+
+Do NOT run:
+
+- adoption tests
+- golden DDL fixture
+- bootstrap
+- drizzle push
+- migration writes
+- schema repair
+- any DB write
+
+==================================================
+13. DATABASE SAFETY
+==================================================
+
+All DB access during this task must be READ ONLY.
+
+Do not modify development database.
+
+At completion explicitly confirm:
+
+DATABASE MODIFIED:
+NO
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+1. Exact files changed
+2. Exact normalization changes
+3. Parentheses algorithm and safety rules
+4. Multi-word cast handling
+5. Regression tests added
+6. Pre-fix audit counts
+7. Post-fix audit counts
+8. Explanation of removed findings
+9. Remaining DEFINITION_MISMATCH classification
+10. Fingerprint BEFORE
+11. Fingerprint AFTER
+12. Byte-identical fingerprint confirmation
+13. Fingerprint version confirmation
+14. #925 safety-removal non-regression confirmation
+15. Test results
+16. Git diff scope
+17. HEAD/status
+18. Database-modification confirmation
+
+Then:
+
+TASK #924-FIX-2 VERDICT:
+
+COMPLETE
+COMPLETE WITH ISSUES
+BLOCKED
+
+FINGERPRINT V3 UNCHANGED:
+YES / NO
+
+LEGACY AUDIT REPRESENTATION NOISE RESOLVED:
+YES / NO
+
+#925 WRITE PATH STILL ABSENT:
+YES / NO
+
+DATABASE MODIFIED:
+NO / YES
+
+READY FOR INDEPENDENT CLAUDE FINAL REVIEW:
+YES / NO
+
+STOP.
+
+Do not begin #926.
+Do not begin P.2.

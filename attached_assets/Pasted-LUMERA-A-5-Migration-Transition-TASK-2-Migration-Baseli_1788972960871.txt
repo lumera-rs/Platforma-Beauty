@@ -1,0 +1,520 @@
+LUMERA — A-5 Migration Transition
+TASK 2 — Migration Baseline & Ledger Design
+DESIGN / PLAN ONLY — NO DATABASE CHANGES
+
+Task 1 schema-drift audit is complete.
+
+Independent Claude Code final review:
+PASS WITH MINOR ISSUES
+
+The audit is approved as a trustworthy planning input.
+
+IMPORTANT FACTS:
+
+- Current development DB:
+  256 public tables
+- Canonical Drizzle:
+  255 tables + 1 intentional bootstrap ownership exception
+- Current audit:
+  513 total findings
+  69 actionable
+  443 informational semantic-name differences
+  1 design difference
+  1 ownership exception
+- 38/69 actionable findings are DB_STRICTER.
+- Therefore "make DB match Drizzle" is explicitly FORBIDDEN.
+- Education B2B six known schema findings remain unfixed.
+- There is one confirmed P0 semantic divergence:
+  retail_product_reviews order_item FK:
+  DB ON DELETE CASCADE
+  canonical non-CASCADE.
+
+==================================================
+THIS TASK IS DESIGN / PLANNING ONLY
+==================================================
+
+DO NOT:
+
+- modify database
+- CREATE / ALTER / DROP anything
+- run drizzle-kit push
+- run migrations
+- generate migration SQL intended for execution
+- modify Drizzle schema
+- modify bootstrap schema logic
+- fix Education B2B
+- fix any of the 69 drift findings
+- remove DB_STRICTER protections
+- change production application behavior
+- begin Task 3
+
+You may inspect code, Git history, schema definitions and database
+catalog READ-ONLY.
+
+==================================================
+1. DEFINE THE AUTHORITATIVE FUTURE MODEL
+==================================================
+
+Design the exact future schema-management contract.
+
+Approved architectural direction:
+
+Versioned Drizzle migrations become the authoritative production
+schema evolution mechanism.
+
+Define precisely:
+
+- where migrations live
+- migration naming/version convention
+- migration ledger mechanism
+- how migration state is determined
+- how migration ordering is guaranteed
+- how checksum/integrity is handled
+- whether applied migrations may ever be edited
+- what happens if migration files and ledger disagree
+- how migration failure is represented
+- how concurrent migration runners are prevented
+- how migration compatibility with multiple app instances works
+
+Do not implement it yet.
+
+==================================================
+2. BASELINE ADOPTION DESIGN
+==================================================
+
+The existing database already contains years of schema evolution.
+
+We must NOT replay historical CREATE/ALTER operations.
+
+Design how the existing database becomes:
+
+BASELINE ADOPTED
+
+without changing existing application data or blindly changing
+existing schema.
+
+Answer exactly:
+
+- what constitutes the baseline
+- whether baseline is represented by one migration or metadata entry
+- what is written to the migration ledger
+- how an existing DB is distinguished from a fresh DB
+- how we prove the DB is eligible for baseline adoption
+- what happens if unexpected drift exists
+- whether baseline adoption should require an explicit operator flag
+- how accidental baseline adoption of the wrong database is prevented
+
+==================================================
+3. FRESH DATABASE STRATEGY
+==================================================
+
+Design the future path for a completely empty database.
+
+We need both:
+
+A. existing production/dev DB adoption
+B. completely fresh DB installation
+
+Determine whether fresh DB should:
+
+- replay an initial baseline schema migration
+- use a generated canonical snapshot
+- use a reviewed SQL baseline
+- or another deterministic approach
+
+Fresh DB and adopted existing DB must converge to the same logical
+schema after subsequent migrations.
+
+Explain how this will be tested.
+
+==================================================
+4. CLASSIFY CURRENT DRIFT BEFORE BASELINE
+==================================================
+
+Use the Task 1 audit as planning input.
+
+Do NOT treat all 69 actionable findings as defects.
+
+Create a decision matrix for every actionable finding or logical
+group.
+
+Classify each as:
+
+A. DATABASE IS CORRECT — update canonical Drizzle later
+B. DRIZZLE IS CORRECT — database requires future forward migration
+C. REPRESENTATION DIFFERENCE — preserve enforcement, normalize model
+D. INTENTIONAL LEGACY / BOOTSTRAP OWNERSHIP
+E. NEEDS PRODUCT/BUSINESS DECISION
+F. SECURITY/DATA-INTEGRITY ISSUE — must be resolved before baseline
+G. PERFORMANCE-ONLY DIFFERENCE
+H. UNKNOWN — requires further investigation
+
+For every group include:
+
+- affected object(s)
+- current DB behavior
+- canonical behavior
+- enforcement direction
+- realistic risk
+- recommended canonical end state
+- whether it blocks baseline adoption
+- whether it requires migration
+- whether it requires Drizzle model correction
+- dependencies/order constraints
+
+==================================================
+5. SPECIAL P0 REVIEW
+==================================================
+
+Deeply inspect:
+
+retail_product_reviews.order_item_id FK
+
+Current DB:
+ON DELETE CASCADE
+
+Canonical:
+non-CASCADE / RESTRICT behavior
+
+Determine using:
+
+- application code
+- deletion workflows
+- business semantics
+- existing tests
+- Git history if useful
+
+Answer:
+
+Which behavior is actually intended?
+
+Specifically:
+
+Should deleting a retail order item delete its review?
+
+Consider:
+- audit/history requirements
+- customer reviews
+- reporting
+- accidental deletion
+- GDPR/data retention implications
+- soft/hard delete behavior
+
+Do NOT change anything.
+
+Classify:
+
+DB_CORRECT
+DRIZZLE_CORRECT
+NEEDS_PRODUCT_DECISION
+
+and explain.
+
+==================================================
+6. EDUCATION B2B BASELINE POSITION
+==================================================
+
+Education B2B currently lacks:
+
+- idempotency_key
+- idempotency_fingerprint
+- tenant-scoped idempotency unique index
+- payment status check
+- fulfillment status check
+- refund check
+
+These are known genuine missing protections.
+
+Determine whether baseline should:
+
+OPTION A:
+represent the database exactly as it exists now, then Task 3 adds
+them through the first forward migration
+
+or
+
+OPTION B:
+require these to exist before baseline adoption.
+
+Prefer a design that preserves migration history truth.
+
+Explain recommendation.
+
+Do NOT implement them.
+
+==================================================
+7. DB_STRICTER FINDINGS
+==================================================
+
+There are many cases where the database has stronger protection than
+Drizzle.
+
+Examples include:
+
+- extra FKs
+- extra NOT NULL constraints
+- extra PK/unique enforcement
+- extra checks/indexes
+
+For every such logical group determine whether:
+
+- Drizzle should be updated to represent DB behavior
+- protection is obsolete and should eventually be removed
+- representation is intentionally bootstrap-owned
+- further decision is required
+
+Default safety rule:
+
+DO NOT recommend removing a database protection merely to make the
+audit green.
+
+Removal requires a concrete business/technical justification.
+
+==================================================
+8. NAME DRIFT STRATEGY
+==================================================
+
+There are 443 informational:
+
+SEMANTIC_MATCH_DIFFERENT_NAME
+
+findings.
+
+Design how baseline adoption handles them.
+
+Do NOT propose renaming hundreds of constraints merely for cosmetic
+parity unless operationally necessary.
+
+Determine:
+
+- whether existing names can be adopted as authoritative physical
+  names
+- how future migrations reference existing names safely
+- whether canonical naming should change
+- whether name aliases/mapping metadata is needed
+- how fresh DB naming remains deterministic
+
+Goal:
+avoid hundreds of unnecessary ALTER/DROP/CREATE operations.
+
+==================================================
+9. BOOTSTRAP OWNERSHIP TRANSITION
+==================================================
+
+Current production startup contains multiple schema bootstrap systems.
+
+Design a transition map.
+
+For each bootstrap schema module identify:
+
+- objects it currently owns
+- overlap with Drizzle
+- whether ownership eventually transfers to migrations
+- whether it becomes read-only validation
+- whether it remains permanently external
+- safe removal/deprecation order
+
+Do NOT remove any bootstrap code yet.
+
+==================================================
+10. MIGRATION RUNNER DESIGN
+==================================================
+
+Design the future predeploy migration runner.
+
+Requirements:
+
+- platform-independent
+- standard PostgreSQL DATABASE_URL
+- single migration runner
+- PostgreSQL advisory lock
+- lock_timeout
+- statement_timeout policy
+- migration ledger
+- deterministic ordering
+- clear exit codes
+- structured logs
+- no secrets
+- fail closed
+- app must not start on incompatible schema
+
+Explain how this works with:
+
+- Replit deployments
+- GitHub Actions
+- future non-Replit hosting
+- multiple API instances
+- rolling deployments
+
+Do not implement.
+
+==================================================
+11. TRANSACTION POLICY
+==================================================
+
+Define which migrations run:
+
+A. inside transaction
+B. outside transaction
+
+Specifically address:
+
+CREATE INDEX CONCURRENTLY
+
+and operations such as:
+
+- ADD nullable column
+- backfill
+- NOT VALID constraint
+- VALIDATE CONSTRAINT
+- SET NOT NULL
+- DROP
+- rename
+- type conversion
+
+Define expand/backfill/contract policy.
+
+==================================================
+12. LOCK SAFETY POLICY
+==================================================
+
+Define production-safe defaults for:
+
+- lock_timeout
+- statement_timeout
+- advisory lock timeout
+- retry behavior
+
+Explain what happens when migration cannot acquire a safe lock.
+
+It must fail deployment rather than wait indefinitely.
+
+==================================================
+13. OLD APP / NEW SCHEMA COMPATIBILITY
+==================================================
+
+Design migration ordering for rolling deployment.
+
+We need to support:
+
+OLD APP + EXPANDED SCHEMA
+
+before:
+
+NEW APP + EXPANDED SCHEMA
+
+and only later:
+
+CONTRACT migration
+
+where needed.
+
+Identify which types of schema changes cannot safely happen in one
+deployment.
+
+==================================================
+14. CI DESIGN
+==================================================
+
+Design future gates for:
+
+- empty DB → all migrations
+- baseline DB → current
+- previous version → current
+- several-version-old DB → current
+- migration ledger integrity
+- migration checksum mismatch
+- schema drift after migrations
+- destructive SQL detection
+- old app/new schema compatibility
+- concurrent migration runners
+- migration interruption/retry
+- lock contention
+- large-table migration rehearsal
+
+Do not wire them yet.
+
+==================================================
+15. BACKUP / RECOVERY PRECONDITIONS
+==================================================
+
+Define what must be verified before the first production migration:
+
+- backup availability
+- PITR
+- restore test
+- migration rollback/roll-forward procedure
+- operator checklist
+
+Do not assume Replit provides sufficient recovery without evidence.
+
+==================================================
+16. TASK 2 IMPLEMENTATION PLAN
+==================================================
+
+After the design, break actual migration transition into SMALL,
+SEQUENTIAL implementation tasks.
+
+For each future task provide:
+
+- exact purpose
+- files likely affected
+- DB impact
+- production risk
+- prerequisites
+- tests
+- rollback/roll-forward strategy
+- whether Claude review is required BEFORE execution
+
+The implementation plan must separate:
+
+1. tooling
+2. baseline metadata/adoption
+3. Education B2B forward migration
+4. canonical corrections for DB_STRICTER findings
+5. P0 FK decision/remediation
+6. check constraint reconciliation
+7. predeploy runner
+8. CI gates
+9. bootstrap deprecation
+
+Do not combine all of these into one implementation task.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Return:
+
+A. Executive architecture decision
+B. Baseline adoption model
+C. Fresh DB model
+D. Current drift decision matrix
+E. P0 FK decision
+F. Education B2B baseline decision
+G. DB_STRICTER strategy
+H. Name-drift strategy
+I. Bootstrap transition map
+J. Migration runner design
+K. Transaction policy
+L. Lock safety policy
+M. Rolling-deploy compatibility model
+N. CI migration test design
+O. Backup/recovery prerequisites
+P. Small sequential implementation plan
+Q. Risks requiring human/product decision
+R. Exact recommendation for what should be implemented FIRST
+
+Then:
+
+TASK 2 DESIGN VERDICT:
+
+READY FOR IMPLEMENTATION
+NEEDS HUMAN DECISIONS
+BLOCKED
+
+STOP.
+
+Do not implement anything.
+Do not change the database.
+Do not begin Task 3.

@@ -107,6 +107,7 @@ const courseSchema = z.object({
   tagsText: z.string().optional(),
 
   imageUrl: z.string().min(1, "Slika je obavezna"),
+  coverImageDescription: z.string().max(160, "Opis može imati najviše 160 karaktera").optional(),
   startDate: z.string().optional(),
   refundPolicy: z.string().min(1, "Politika povraćaja je obavezna").max(2000),
 
@@ -1077,7 +1078,7 @@ function CatalogView() {
                   <Card className="overflow-hidden hover:shadow-md transition-all h-full flex flex-col cursor-pointer border-border/60 group">
                     <div className="aspect-video relative overflow-hidden bg-muted/30">
                       {course.imageUrl ? (
-                        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
+                        <OptimizedImage src={course.imageUrl} alt={course.coverImageDescription?.trim() || course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <GraduationCap className="w-12 h-12 text-muted-foreground/30" />
@@ -1393,7 +1394,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
             </div>
             {course.imageUrl && (
               <div className="w-full md:w-1/3 aspect-video md:aspect-auto md:h-48 rounded-xl overflow-hidden shadow-sm border">
-                <OptimizedImage src={course.imageUrl} alt={course.title} width={1200} height={675} priority responsiveSizes="(max-width: 768px) 100vw, 720px" className="w-full h-full object-cover" />
+                <OptimizedImage src={course.imageUrl} alt={course.coverImageDescription?.trim() || course.title} width={1200} height={675} priority responsiveSizes="(max-width: 768px) 100vw, 720px" className="w-full h-full object-cover" />
               </div>
             )}
           </div>
@@ -1429,7 +1430,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       <p className="text-sm text-muted-foreground">Pogledajte prostor, materijal i atmosferu sa prethodnih obuka.</p>
                     </div>
                     <SalonGallery
-                      media={course.gallery.map((item) => ({ type: "image" as const, url: item.url }))}
+                      media={course.gallery.map((item) => ({ type: "image" as const, url: item.url, altText: item.altText }))}
                       salonName={course.title}
                     />
                   </section>
@@ -2405,6 +2406,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
     defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, paymentMode: 'online_full', subcategoryId: '', courseTypeId: '', groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "", durationMinutes: "", giftVoucherEligible: false, schedulingMode: "fixed_group", cancellationCutoffHours: 0, depositDisposition: "refund", installmentCount: 1, earlyBirdPrice: "", earlyBirdCutoff: "", minimumEnrollmentRiskDeadline: "" }
   });
   const coverImageUrl = watch("imageUrl");
+  const coverImageDescription = watch("coverImageDescription");
   const watchFormat = watch("format");
   const watchPaymentMode = watch("paymentMode");
   const watchSectionId = watch("sectionId");
@@ -2480,6 +2482,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
           trailerUrl: course.trailerUrl || "",
           tagsText: course.tags?.join(", ") || "",
           imageUrl: course.imageUrl || DEFAULT_COURSE_IMAGE,
+          coverImageDescription: course.coverImageDescription || "",
           startDate: course.startDate ? new Date(course.startDate).toISOString().split('T')[0] : "",
           refundPolicy: course.refundPolicy || DEFAULT_REFUND_POLICY,
           paymentMode: course.paymentMode || "online_full",
@@ -2536,6 +2539,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
       trailerUrl: values.trailerUrl || null,
       tags: values.tagsText ? values.tagsText.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
       imageUrl: values.imageUrl,
+      coverImageDescription: values.coverImageDescription?.trim() || null,
       startDate: values.startDate || null,
       refundPolicy: values.refundPolicy,
       paymentMode: values.paymentMode,
@@ -2709,7 +2713,7 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               <div className="space-y-2">
                 <Label className="flex items-center gap-2" aria-describedby="help-Naslovna-fotografija">Naslovna fotografija <Tooltip><TooltipTrigger type="button" aria-label="Pomoć" className="shrink-0"><Info className="w-3.5 h-3.5 text-muted-foreground" /></TooltipTrigger><TooltipContent id="help-Naslovna-fotografija">Pomoć za polje: Naslovna fotografija</TooltipContent></Tooltip></Label>
                 <div className="border rounded-md overflow-hidden relative aspect-video bg-muted group">
-                  <img src={coverImageUrl} alt="Naslovna fotografija" className="w-full h-full object-cover" />
+                  <img src={coverImageUrl} alt={coverImageDescription?.trim() || "Naslovna fotografija edukacije"} className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button type="button" variant="secondary" onClick={() => document.getElementById("cover-upload")?.click()} disabled={uploadingCover}>
                       {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : "Promeni sliku"}
@@ -2718,6 +2722,9 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                   <input id="cover-upload" aria-describedby="education-course-cover-help" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadCover} />
                 </div>
                 <EducationFieldHelp id="education-course-cover-help" label="Naslovna fotografija" text="Otpremite jasnu JPG, PNG ili WebP fotografiju koja predstavlja edukaciju u katalogu." />
+                <Label htmlFor="education-cover-description">Opis fotografije (opciono)</Label>
+                <Input id="education-cover-description" maxLength={160} {...register("coverImageDescription")} placeholder="Kratko opišite šta se vidi na fotografiji" />
+                {errors.coverImageDescription && <p className="text-xs text-destructive">{errors.coverImageDescription.message as string}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -3390,7 +3397,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
                   <Card className="overflow-hidden hover:shadow-md transition-all cursor-pointer border-border/60 group">
                     {course.imageUrl && (
                       <div className="aspect-video overflow-hidden bg-muted/30">
-                        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                        <OptimizedImage src={course.imageUrl} alt={course.coverImageDescription?.trim() || course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                       </div>
                     )}
                     <CardContent className="p-4">

@@ -223,6 +223,7 @@ import
   appointmentWaitlistTable,
   salonResourcesTable,
   salonsTable,
+  serbianPhoneNormalizedSqlExpression,
   salonCustomersTable,
   serviceCategoriesTable,
   serviceResourceRequirementsTable,
@@ -538,8 +539,6 @@ import
   ListOrdersResponse,
   ListProductReviewsParams,
    ListPublicSuppliersResponse,
-   GetPublicSupplierParams,
-   GetPublicSupplierResponse,
    ListSupplierCategoriesParams,
    ListSupplierCategoriesResponse,
    ListSupplierProductsParams,
@@ -550,8 +549,6 @@ import
    ListSupplierPublicProductsParams,
    ListSupplierPublicProductsQueryParams,
    ListSupplierPublicProductsResponse,
-   GetSupplierPublicProductParams,
-   GetSupplierPublicProductResponse,
   ListProductReviewsResponse,
   ListProductCategoriesResponse,
   ListProductsQueryParams,
@@ -862,13 +859,15 @@ import
   requireMediaCachePurgeForVisibilityRevocation,
   releaseMediaReferenceClaims,
   stableMediaUrl,
+  updateManagedMediaDescriptions,
 }
  from "./media"
 ;
 
 import 
 {
- attachReadyImageAssets 
+ attachReadyImageAssets,
+ publicSocialImage,
 }
  from "./image-media"
 ;
@@ -880,10 +879,16 @@ const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 const CUSTOMER_SETUP_TTL_MS = 15 * 60 * 1000;
 const CUSTOMER_SETUP_MAX_ATTEMPTS = 5;
 const CUSTOMER_SETUP_INVALID_MESSAGE = "Link za postavljanje lozinke nije važeći ili više nije dostupan.";
+function normalizedCoverImageDescription(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value?.trim() ?? "";
+  return normalized || null;
+}
 // This is deliberately server-owned.  A client can attest only to the boolean
 // request field; it cannot choose the legal wording, version, account or time.
 
 let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
+let employeeProfileAfterAccessReadForTest: (() => Promise<void>) | undefined;
 
 
 /**
@@ -904,6 +909,23 @@ export function setAdminSummaryAfterFirstReadForTest(
   return () => {
     if (adminSummaryAfterFirstReadForTest === barrier) {
       adminSummaryAfterFirstReadForTest = undefined;
+    }
+  };
+}
+
+export function setEmployeeProfileAfterAccessReadForTest(
+  barrier: () => Promise<void>,
+): () => void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Employee profile write barriers are available only in tests.");
+  }
+  if (employeeProfileAfterAccessReadForTest) {
+    throw new Error("An employee profile write barrier is already active.");
+  }
+  employeeProfileAfterAccessReadForTest = barrier;
+  return () => {
+    if (employeeProfileAfterAccessReadForTest === barrier) {
+      employeeProfileAfterAccessReadForTest = undefined;
     }
   };
 }
@@ -2857,11 +2879,35 @@ export function normalizedPhone(phone: string) {
   return digits.startsWith("0") ? `381${digits.slice(1)}` : digits;
 }
 
-async function linkPhoneContactsToUser(store: any, userId: string, phone: string) {
+function salonCustomerPhoneMatches(phoneNormalized: string) {
+  const legacyPhoneNormalized = sql.raw(
+    serbianPhoneNormalizedSqlExpression("\"salon_customers\".\"phone\""),
+  );
+  return or(
+    eq(salonCustomersTable.phoneNormalized, phoneNormalized),
+    eq(legacyPhoneNormalized, phoneNormalized),
+  )!;
+}
+
+export async function findSalonCustomerByPhone(store: any, salonId: string, phoneNormalized: string) {
+  if (!phoneNormalized) return undefined;
+  const [contact] = await store.select().from(salonCustomersTable).where(and(
+    eq(salonCustomersTable.salonId, salonId),
+    salonCustomerPhoneMatches(phoneNormalized),
+  )).orderBy(sql`(${salonCustomersTable.phoneNormalized} = ${phoneNormalized}) DESC NULLS LAST`).limit(1);
+  return contact as typeof salonCustomersTable.$inferSelect | undefined;
+}
+
+export async function linkPhoneContactsToUser(store: any, userId: string, phone: string) {
   const phoneNormalized = normalizedPhone(phone);
   if (!phoneNormalized) return;
-  const contacts = (await store.select().from(salonCustomersTable)).filter((contact: typeof salonCustomersTable.$inferSelect) =>
-    contact.phoneNormalized === phoneNormalized || (!!contact.phone && normalizedPhone(contact.phone) === phoneNormalized));
+  const contacts = await store.select().from(salonCustomersTable)
+    .where(salonCustomerPhoneMatches(phoneNormalized))
+    .orderBy(
+      asc(salonCustomersTable.salonId),
+      sql`(${salonCustomersTable.phoneNormalized} = ${phoneNormalized}) DESC NULLS LAST`,
+      asc(salonCustomersTable.id),
+    ) as typeof salonCustomersTable.$inferSelect[];
   for (const salonId of [...new Set(contacts.map((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId))]) {
     const group = contacts.filter((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId === salonId);
     const canonical = group[0]!;
@@ -3799,6 +3845,7 @@ async function educationCourseView(
     giftVoucherEligible: course.giftVoucherEligible,
     centerId: course.centerId,
     imageUrl: course.imageUrl,
+    coverImageDescription: course.coverImageDescription,
     startDate: course.startDate,
     published: course.published,
     archived: course.archived,
@@ -4192,6 +4239,7 @@ function card(
     city: salon.city,
     municipality: salon.municipality,
     imageUrl: salon.imageUrl,
+    coverImageDescription: salon.coverImageDescription,
     rating: salon.rating / 10,
     reviewCount: salon.reviewCount,
     shortDescription: salon.shortDescription,
@@ -7125,6 +7173,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     ),
     featured: Boolean(activeFeaturedPlacement),
     gallery: salon.gallery,
+    socialImage: await publicSocialImage(salon.imageUrl),
     videoUrl: salon.videoUrl,
     description: salon.description,
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
@@ -7822,10 +7871,7 @@ async function createStaffBookingGroup(
         const phone = parsed.data.guest!.phone.trim();
         const phoneNormalized = normalizedPhone(phone);
         if (!phoneNormalized) throw new AppointmentSeriesError("Telefon gosta nije ispravan.", 400);
-        const [existing] = await tx.select().from(salonCustomersTable).where(and(
-          eq(salonCustomersTable.salonId, access.salon.id),
-          eq(salonCustomersTable.phoneNormalized, phoneNormalized),
-        )).limit(1);
+        const existing = await findSalonCustomerByPhone(tx, access.salon.id, phoneNormalized);
         if (existing) {
           contact = existing;
         } else {
@@ -8897,6 +8943,24 @@ async function cancelAppointmentInTx(
     appointmentId: cancelled.id, status: "cancelled", action: "cancel",
     changedByUserId: input.actorId, occurredAt: input.occurredAt,
   });
+  // Every business cancellation path intentionally shares this canonical
+  // transition. The customer/salon email pair has no actor-specific opt-out:
+  // it is a required transactional obligation for every cancelled appointment.
+  // Delivery remains asynchronous; a rollback therefore cannot leave a
+  // cancelled appointment without its required email.
+  if (cancelled.customerId) {
+    const [customer] = await tx.select().from(usersTable)
+      .where(eq(usersTable.id, cancelled.customerId)).limit(1);
+    const [salon] = await tx.select().from(salonsTable)
+      .where(eq(salonsTable.id, cancelled.salonId)).limit(1);
+    const [service] = await tx.select().from(servicesTable)
+      .where(eq(servicesTable.id, cancelled.serviceId)).limit(1);
+    if (customer && salon && service) {
+      await sendAppointmentEmails({
+        event: "cancelled", appointment: cancelled, customer, salon, service, store: tx,
+      });
+    }
+  }
   await handleAppointmentCancellationReversalsInTx(tx, cancelled.id, cancelled.salonId, input.occurredAt);
   if (cancelled.customerId) {
     await recordAppointmentReferralTransitionInTx(tx, {
@@ -9180,7 +9244,6 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([]),
     getAllocationsForAppointment(db, appointment.id),
   ]);
-  await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
   if (lateCancellation) await publishSalonNotificationUpdate(appointment.salonId);
   const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true, null, allocatedResources);
   CancelAppointmentResponse.parse(response);
@@ -9568,6 +9631,7 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     servesMen: salon.servesMen,
     openSunday: openSunday.length > 0,
     imageUrl: salon.imageUrl,
+    coverImageDescription: salon.coverImageDescription,
     gallery: salon.gallery,
   }));
 });
@@ -9582,6 +9646,9 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (parsed.data.videoUrl !== undefined && !isSafeExternalHttpUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
+  if (parsed.data.coverImageDescription !== undefined) {
+    updates.coverImageDescription = normalizedCoverImageDescription(parsed.data.coverImageDescription);
+  }
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
@@ -9615,7 +9682,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     }
     updates.gallery = parsed.data.gallery;
   }
-  if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
+  if (!Object.keys(updates).length && parsed.data.galleryDescriptions === undefined) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
   const homeService = await salonHasActiveHomeService(access.salon.id);
   updates.homeService = homeService;
   let updated: typeof salonsTable.$inferSelect | undefined;
@@ -9635,6 +9702,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
         scope: "salon-profile",
         resourceId: access.salon.id,
         visibility: lockedSalon.active ? "public" : "private",
+        allowBoundResource: true,
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -9646,10 +9714,20 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
             scope: "salon-gallery",
             resourceId: access.salon.id,
             visibility: lockedSalon.active ? "public" : "private",
+            allowBoundResource: true,
           }, tx)) {
             throw new MediaClaimConflictError();
           }
         }
+      }
+      if (parsed.data.galleryDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: access.user.id,
+        resourceId: access.salon.id,
+        scope: "salon-gallery",
+        items: parsed.data.galleryDescriptions,
+        allowedUrls: parsed.data.gallery ?? lockedSalon.gallery,
+      })) {
+        throw new MediaClaimConflictError();
       }
       const rows = await tx.update(salonsTable)
         .set(updates)
@@ -9689,6 +9767,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
       .where(and(eq(salonHoursTable.salonId, updated!.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
     imageUrl: updated!.imageUrl,
+    coverImageDescription: updated!.coverImageDescription,
     gallery: updated!.gallery,
   }));
 });
@@ -9742,6 +9821,7 @@ async function bookingSettingsView(salonId: string) {
     salonId, updatedAt: row?.updatedAt ?? new Date(),
     slotGranularityMinutes: row?.slotGranularityMinutes ?? 15,
     minimumLeadTimeMinutes: row?.minimumLeadTimeMinutes ?? 0,
+    maxBookingHorizonDays: row?.maxBookingHorizonDays ?? null,
     cancellationDeadlineMinutes: supportedCancellationDeadline(row?.cancellationDeadlineMinutes),
     reminderOffsetsMinutes: supportedReminderOffsets(row?.reminderOffsetsMinutes),
     reminderChannels: row?.reminderChannels ?? [],
@@ -10184,9 +10264,9 @@ admitBookingRequest, async (req, res): Promise<void> => {
     if (!contact) { res.status(404).json({ error: "CRM klijent ne pripada ovom salonu." }); return; }
   } else {
     const submittedPhone = normalizedPhone(parsed.data.guest!.phone);
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
+    if (!submittedPhone) { res.status(400).json({ error: "Unesite ispravan broj telefona klijenta." }); return; }
     const [registeredUser] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, submittedPhone)).limit(1);
-    contact = contacts.find((item) => item.phoneNormalized === submittedPhone || (item.phone && normalizedPhone(item.phone) === submittedPhone));
+    contact = await findSalonCustomerByPhone(db, salon.id, submittedPhone);
     if (!contact) {
       [contact] = await db.insert(salonCustomersTable).values({
         salonId: salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
@@ -10560,8 +10640,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
     const phone = normalizedPhone(parsed.data.guest!.phone);
     if (!phone) { res.status(400).json({ error: "Unesite ispravan broj telefona klijenta." }); return; }
     const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    contact = await findSalonCustomerByPhone(db, access.salon.id, phone);
     if (!contact) {
       [contact] = await db.insert(salonCustomersTable).values({
         salonId: access.salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
@@ -12027,6 +12106,14 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   }
   try {
     await db.transaction(async (tx) => {
+      const [lockedEmployee] = await tx.select({ avatarUrl: employeesTable.avatarUrl })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, employee.id))
+        .for("update")
+        .limit(1);
+      if (!lockedEmployee || lockedEmployee.avatarUrl !== employee.avatarUrl) {
+        throw new MediaClaimConflictError();
+      }
       if (nextAvatarUrl && mediaAssetIdFromUrl(nextAvatarUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: nextAvatarUrl,
@@ -12104,12 +12191,17 @@ router.post("/salon/employees/:employeeId/access/reset-password", async (req, re
     .where(and(eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"))).limit(1);
   if (!account) { res.status(403).json({ error: "Povezani nalog nije nalog zaposlenog." }); return; }
   const temporary = temporaryPassword();
-  await db.update(usersTable).set({
-    passwordHash: await hashPassword(temporary),
-    passwordSetAt: new Date(),
-    mustChangePassword: true,
-    updatedAt: new Date(),
-  }).where(eq(usersTable.id, account.id));
+  const passwordHash = await hashPassword(temporary);
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    await tx.update(usersTable).set({
+      passwordHash,
+      passwordSetAt: now,
+      mustChangePassword: true,
+      updatedAt: now,
+    }).where(eq(usersTable.id, account.id));
+    await tx.delete(sessionsTable).where(eq(sessionsTable.userId, account.id));
+  });
   res.json({ email: account.email, temporaryPassword: temporary, mustChangePassword: true });
 });
 
@@ -12373,25 +12465,37 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
 
 router.put("/employee/profile", async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
-  const bio = typeof req.body?.bio === "string" ? req.body.bio.trim() : access.employee.bio;
-  const avatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl.trim() : access.employee.avatarUrl;
-  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : access.user.phone;
-  const phoneNormalized = phone ? normalizedPhone(phone) : null;
-  if (avatarUrl && !await canClaimMediaReference({
+  await employeeProfileAfterAccessReadForTest?.();
+  const hasBio = Object.prototype.hasOwnProperty.call(req.body ?? {}, "bio");
+  const hasAvatarUrl = Object.prototype.hasOwnProperty.call(req.body ?? {}, "avatarUrl");
+  const hasPhone = Object.prototype.hasOwnProperty.call(req.body ?? {}, "phone");
+  if (!hasBio && !hasAvatarUrl && !hasPhone) {
+    res.status(400).json({ error: "Nema podataka za izmenu." }); return;
+  }
+  if ((hasBio && typeof req.body.bio !== "string")
+    || (hasAvatarUrl && typeof req.body.avatarUrl !== "string")
+    || (hasPhone && typeof req.body.phone !== "string")) {
+    res.status(400).json({ error: "Podaci profila nisu ispravni." }); return;
+  }
+  const requestedBio = hasBio ? req.body.bio.trim() : undefined;
+  const requestedAvatarUrl = hasAvatarUrl ? req.body.avatarUrl.trim() : undefined;
+  const requestedPhone = hasPhone ? req.body.phone.trim() : undefined;
+  const requestedPhoneNormalized = requestedPhone ? normalizedPhone(requestedPhone) : null;
+  if (requestedAvatarUrl && !await canClaimMediaReference({
     userId: access.user.id,
-    url: avatarUrl,
+    url: requestedAvatarUrl,
     scope: "employee-avatar",
     resourceId: access.employee.id,
     existingUrls: [access.employee.avatarUrl],
   })) {
     res.status(400).json({ error: "Fotografija profila nije otpremljena sa ovog naloga." }); return;
   }
-  if (phone && !phoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
-  if (phoneNormalized) {
-    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+  if (requestedPhone && !requestedPhoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
+  if (hasPhone && requestedPhoneNormalized) {
+    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, requestedPhoneNormalized)).limit(1);
     if (taken && taken.id !== access.user.id) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
   }
-  const revokedAvatarIds = avatarUrl !== access.employee.avatarUrl
+  const revokedAvatarIds = hasAvatarUrl && requestedAvatarUrl !== access.employee.avatarUrl
     ? [mediaAssetIdFromUrl(access.employee.avatarUrl)].filter((id): id is string => Boolean(id))
     : [];
   if (revokedAvatarIds.length) {
@@ -12404,8 +12508,24 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
     }
   }
   try {
-    await db.transaction(async (tx) => {
-      if (avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
+    const savedProfile = await db.transaction(async (tx) => {
+      const [lockedEmployee] = await tx.select({ bio: employeesTable.bio, avatarUrl: employeesTable.avatarUrl })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, access.employee.id))
+        .for("update")
+        .limit(1);
+      const [lockedUser] = await tx.select({ phone: usersTable.phone })
+        .from(usersTable)
+        .where(eq(usersTable.id, access.user.id))
+        .for("update")
+        .limit(1);
+      if (!lockedEmployee || !lockedUser || (hasAvatarUrl && lockedEmployee.avatarUrl !== access.employee.avatarUrl)) {
+        throw new MediaClaimConflictError();
+      }
+      const bio = requestedBio ?? lockedEmployee.bio;
+      const avatarUrl = requestedAvatarUrl ?? lockedEmployee.avatarUrl;
+      const phone = requestedPhone ?? lockedUser.phone;
+      if (hasAvatarUrl && avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: avatarUrl,
         scope: "employee-avatar",
@@ -12413,22 +12533,34 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
       }, tx)) {
         throw new MediaClaimConflictError();
       }
-      await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
-      if (avatarUrl !== access.employee.avatarUrl) {
+      if (hasBio || hasAvatarUrl) {
+        await tx.update(employeesTable).set({
+          ...(hasBio ? { bio } : {}),
+          ...(hasAvatarUrl ? { avatarUrl } : {}),
+        }).where(eq(employeesTable.id, access.employee.id));
+      }
+      if (hasAvatarUrl && avatarUrl !== access.employee.avatarUrl) {
         await releaseMediaReferenceClaims({
           urls: [access.employee.avatarUrl],
           resourceId: access.employee.id,
           visibility: "private",
         }, tx);
       }
-      await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
+      if (hasPhone) {
+        await tx.update(usersTable).set({
+          phone: phone || null,
+          phoneNormalized: requestedPhoneNormalized,
+          updatedAt: new Date(),
+        }).where(eq(usersTable.id, access.user.id));
+      }
+      return { bio, avatarUrl, phone: phone || null };
     });
+    res.json(savedProfile);
   } catch (error) {
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Fotografija profila je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  res.json({ bio, avatarUrl, phone: phone || null });
 });
 
 router.post("/employee/leave-requests", async (req, res): Promise<void> => {
@@ -12505,8 +12637,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
   } else {
     const phone = normalizedPhone(parsed.data.guest!.phone);
     if (!phone || !parsed.data.guest!.firstName.trim()) { res.status(400).json({ error: "Unesite ime i ispravan telefon klijenta." }); return; }
-    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    contact = await findSalonCustomerByPhone(db, access.salon.id, phone);
     if (!contact) {
       const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
       [contact] = await db.insert(salonCustomersTable).values({
@@ -12596,8 +12727,7 @@ admitBookingRequest, async (req, res): Promise<void> => {
       if (!client) throw new EmployeeBookingError("Klijent ne pripada ovom salonu.", 403);
       contact = client;
     } else {
-      const contacts = await tx.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
-      const existing = contacts.find((item) => item.phoneNormalized === guestPhoneNormalized || (item.phone && normalizedPhone(item.phone) === guestPhoneNormalized));
+      const existing = await findSalonCustomerByPhone(tx, access.salon.id, guestPhoneNormalized!);
       if (existing) {
         contact = existing;
       } else {
@@ -12898,18 +13028,15 @@ router.patch("/admin/suppliers/:supplierId", async (req, res): Promise<void> => 
   res.json(AdminUpdateSupplierResponse.parse(supplier));
 });
 router.get("/suppliers", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(suppliersTable).where(eq(suppliersTable.active, true))
+  const rows = await db.select().from(suppliersTable).where(and(
+    eq(suppliersTable.active, true),
+    inArray(suppliersTable.scope, ["B2C", "BOTH"]),
+  ))
     .orderBy(asc(suppliersTable.name), asc(suppliersTable.id));
-  res.json(ListPublicSuppliersResponse.parse(rows));
-});
-router.get("/suppliers/:supplierSlug", async (req, res): Promise<void> => {
-  const params = GetPublicSupplierParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const [supplier] = await db.select().from(suppliersTable).where(and(
-    eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true),
-  )).limit(1);
-  if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
-  res.json(GetPublicSupplierResponse.parse(supplier));
+  res.json(ListPublicSuppliersResponse.parse(await Promise.all(rows.map(async (supplier) => ({
+    ...supplier,
+    socialImage: await publicSocialImage(supplier.logoUrl),
+  })))));
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res): Promise<void> => {
   const params = ListSupplierCategoriesParams.safeParse(req.params);
@@ -12992,31 +13119,123 @@ router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise
   const [supplier] = await db.select().from(suppliersTable).where(and(eq(suppliersTable.slug, params.data.supplierSlug),
     eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]))).limit(1);
   if (!supplier) { res.status(404).json({ error: "Dobavljač nije pronađen." }); return; }
-  const filters = [eq(productsTable.supplierId, supplier.id), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
-    isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice)];
-  if (query.data.categoryId) filters.push(eq(productsTable.categoryId, query.data.categoryId));
-  if (query.data.brand) filters.push(eq(productsTable.brand, query.data.brand));
-  if (query.data.search) filters.push(ilike(productsTable.name, `%${query.data.search}%`));
-  const page = query.data.page ?? 1; const pageSize = query.data.pageSize ?? 24; const where = and(...filters);
-  const [[totalRow], products] = await Promise.all([db.select({ count: count() }).from(productsTable).where(where),
-    db.select().from(productsTable).where(where).orderBy(asc(productsTable.name), asc(productsTable.id)).limit(pageSize).offset((page - 1) * pageSize)]);
+  const page = query.data.page ?? 1;
+  const pageSize = query.data.pageSize ?? 24;
+  const where = publicSupplierProductWhere(supplier.id, query.data);
+  const facetBase = publicSupplierProductWhere(supplier.id, query.data, "category");
+  const priceExpr = sql<number>`coalesce(${activeProductSalePriceSql("B2C")}, ${productsTable.publicPrice})`;
+  const ordering = query.data.sort === "PRICE_ASC" ? [asc(priceExpr), asc(productsTable.id)]
+    : query.data.sort === "PRICE_DESC" ? [desc(priceExpr), asc(productsTable.id)]
+    : query.data.sort === "NEWEST" ? [desc(productsTable.createdAt), asc(productsTable.id)]
+    : query.data.sort === "BEST_RATED" ? [desc(productsTable.averageRating), desc(productsTable.createdAt), asc(productsTable.id)]
+    : [desc(productsTable.isBestseller), desc(productsTable.isNew), desc(productsTable.createdAt), asc(productsTable.id)];
+  const [[totalRow], products, priceRange, categoryCounts, categories, brandFacets, typeFacets, tagFacets] = await Promise.all([
+    db.select({ count: count() }).from(productsTable).where(where),
+    db.select().from(productsTable).where(where).orderBy(...ordering).limit(pageSize).offset((page - 1) * pageSize),
+    db.select({ min: sql<number>`min(${priceExpr})`, max: sql<number>`max(${priceExpr})` }).from(productsTable)
+      .where(publicSupplierProductWhere(supplier.id, query.data, "price")),
+    db.select({ id: productsTable.categoryId, count: count() }).from(productsTable).where(facetBase).groupBy(productsTable.categoryId),
+    db.select({ id: productCategoriesTable.id, name: productCategoriesTable.name, parentId: productCategoriesTable.parentId })
+      .from(productCategoriesTable).where(and(eq(productCategoriesTable.supplierId, supplier.id), eq(productCategoriesTable.active, true))),
+    db.select({ value: productsTable.brand, count: count() }).from(productsTable).where(publicSupplierProductWhere(supplier.id, query.data, "brand")).groupBy(productsTable.brand),
+    db.select({ id: b2cProductTypesTable.id, value: b2cProductTypesTable.slug, label: b2cProductTypesTable.label, count: count() })
+      .from(productsTable).innerJoin(b2cProductTypesTable, eq(productsTable.productTypeId, b2cProductTypesTable.id))
+      .where(and(publicSupplierProductWhere(supplier.id, query.data, "type"), eq(b2cProductTypesTable.active, true)))
+      .groupBy(b2cProductTypesTable.id),
+    db.select({ id: b2cNeedTagsTable.id, value: b2cNeedTagsTable.key, label: b2cNeedTagsTable.label, count: sql<number>`count(distinct ${productsTable.id})` })
+      .from(productsTable).innerJoin(b2cProductNeedTagsTable, eq(productsTable.id, b2cProductNeedTagsTable.productId))
+      .innerJoin(b2cNeedTagsTable, eq(b2cProductNeedTagsTable.needTagId, b2cNeedTagsTable.id))
+      .where(and(publicSupplierProductWhere(supplier.id, query.data, "tag"), eq(b2cNeedTagsTable.active, true)))
+      .groupBy(b2cNeedTagsTable.id),
+  ]);
   const total = Number(totalRow?.count ?? 0);
-  res.json(ListSupplierPublicProductsResponse.parse({ items: products.map(publicProductDto), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) }));
-});
-router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res): Promise<void> => {
-  const params = GetSupplierPublicProductParams.safeParse(req.params);
-  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
-  const rows = await db.select({ product: productsTable }).from(productsTable).innerJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
-    .where(and(eq(suppliersTable.slug, params.data.supplierSlug), eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]),
-      eq(productsTable.id, params.data.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
-      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice))).limit(1);
-  if (!rows[0]) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
-  res.json(GetSupplierPublicProductResponse.parse({
-    ...publicProductDto(rows[0].product),
-    relatedProducts: await similarProductCards(rows[0].product, "B2C"),
+  const directCounts = new Map(categoryCounts.map((row) => [row.id, Number(row.count)]));
+  res.json(ListSupplierPublicProductsResponse.parse({
+    items: await Promise.all(products.map(async (product) => ({
+      ...publicProductDto(product),
+      socialImage: await publicSocialImage(product.imageUrl),
+    }))),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    activeRange: {
+      minPrice: priceRange[0]?.min == null ? null : Number(priceRange[0].min),
+      maxPrice: priceRange[0]?.max == null ? null : Number(priceRange[0].max),
+    },
+    facets: {
+      categories: categories.map((category) => ({
+        id: category.id, label: category.name, count: directCounts.get(category.id) ?? 0,
+      })),
+      brands: brandFacets.filter((item) => item.value).map((item) => ({ value: item.value, count: Number(item.count) })),
+      productTypes: typeFacets.map((item) => ({ ...item, count: Number(item.count) })),
+      needTags: tagFacets.map((item) => ({ ...item, count: Number(item.count) })),
+    },
   }));
 });
 
+type PublicSupplierProductQuery = ReturnType<typeof ListSupplierPublicProductsQueryParams.parse>;
+type PublicSupplierProductFilter = "category" | "brand" | "type" | "tag" | "price";
+
+function publicSupplierProductValues(value: string | undefined): string[] {
+  return value ? [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))] : [];
+}
+
+function publicSupplierProductWhere(
+  supplierId: string,
+  query: PublicSupplierProductQuery,
+  omit?: PublicSupplierProductFilter,
+) {
+  const conditions: SQL[] = [
+    eq(productsTable.supplierId, supplierId),
+    eq(productsTable.active, true),
+    eq(productsTable.retailEnabled, true),
+    activeCategoryCondition(),
+    isNotNull(productsTable.publicDescription),
+    isNotNull(productsTable.publicPrice),
+  ];
+  if (omit !== "category" && query.categoryId) {
+    conditions.push(sql`${productsTable.categoryId} IN (
+      WITH RECURSIVE descendants AS (
+        SELECT id FROM product_categories WHERE id = ${query.categoryId} AND supplier_id = ${supplierId}
+        UNION ALL
+        SELECT child.id FROM product_categories child JOIN descendants parent ON child.parent_id = parent.id
+      )
+      SELECT id FROM descendants
+    )`);
+  }
+  const brands = publicSupplierProductValues(query.brand);
+  if (omit !== "brand" && brands.length) conditions.push(inArray(productsTable.brand, brands));
+  const types = publicSupplierProductValues(query.productType);
+  if (omit !== "type" && types.length) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM b2c_product_types pt
+      WHERE pt.id = ${productsTable.productTypeId} AND pt.active = true
+        AND pt.slug IN (${sql.join(types.map((value) => sql`${value}`), sql`, `)})
+    )`);
+  }
+  const tags = publicSupplierProductValues(query.needTag);
+  if (omit !== "tag" && tags.length) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM b2c_product_need_tags pnt
+      JOIN b2c_need_tags nt ON nt.id = pnt.need_tag_id
+      WHERE pnt.product_id = ${productsTable.id} AND nt.active = true
+        AND nt.key IN (${sql.join(tags.map((value) => sql`${value}`), sql`, `)})
+    )`);
+  }
+  const priceExpr = sql<number>`coalesce(${activeProductSalePriceSql("B2C")}, ${productsTable.publicPrice})`;
+  if (omit !== "price" && query.minPrice != null) conditions.push(gte(priceExpr, query.minPrice));
+  if (omit !== "price" && query.maxPrice != null) conditions.push(lte(priceExpr, query.maxPrice));
+  if (query.search) {
+    const pattern = `%${query.search}%`;
+    conditions.push(or(
+      ilike(productsTable.name, pattern),
+      ilike(productsTable.brand, pattern),
+      ilike(productsTable.categoryName, pattern),
+    )!);
+  }
+  return and(...conditions)!;
+}
 function productBelongsToActiveCategory(
   product: typeof productsTable.$inferSelect,
   categories: Array<typeof productCategoriesTable.$inferSelect>,
@@ -13164,6 +13383,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     brand: item.brand ?? null,
     description: item.publicDescription,
     imageUrl: item.imageUrl,
+    coverImageDescription: item.coverImageDescription ?? null,
     images: item.images ?? [],
     price,
     discountPrice: discountPrice ?? null,
@@ -14360,6 +14580,7 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   if (!product) { res.status(404).json({ error: "Javni proizvod nije pronađen." }); return; }
   res.json(GetPublicProductResponse.parse({
     ...publicProductDto(product),
+    socialImage: await publicSocialImage(product.imageUrl),
     relatedProducts: await similarProductCards(product, "B2C"),
   }));
 });
@@ -19206,7 +19427,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Centar mora biti verifikovan i imati aktivnu pretplatu pre objave ili prodaje edukacija." });
     return;
   }
-  const data = parsed.data;
+  const data = {
+    ...parsed.data,
+    coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) ?? null,
+  };
   if (!isSafeExternalHttpUrl(data.trailerUrl)) {
     res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
     return;
@@ -19277,6 +19501,7 @@ router.post("/education/courses", async (req, res): Promise<void> => {
         extensionPrice3Months: data.extensionPrice3Months ?? null,
         extensionPrice6Months: data.extensionPrice6Months ?? null,
         imageUrl: data.imageUrl,
+        coverImageDescription: data.coverImageDescription,
         startDate: data.startDate ? calendarDate(data.startDate) : null,
         ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
         giftVoucherEligible: data.giftVoucherEligible ?? false,
@@ -19334,7 +19559,12 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   const [params, body] = [UpdateEducationCourseParams.safeParse(req.params), UpdateEducationCourseBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
-  const data = body.data;
+  const data = {
+    ...body.data,
+    ...(body.data.coverImageDescription !== undefined
+      ? { coverImageDescription: normalizedCoverImageDescription(body.data.coverImageDescription) }
+      : {}),
+  };
   if (data.trailerUrl !== undefined && !isSafeExternalHttpUrl(data.trailerUrl)) {
     res.status(400).json({ error: "Video najava mora biti validan http:// ili https:// link." });
     return;
@@ -21450,6 +21680,7 @@ export async function batchEducationCourseViews(
       giftVoucherEligible: course.giftVoucherEligible,
       centerId: course.centerId,
       imageUrl: course.imageUrl,
+      coverImageDescription: course.coverImageDescription,
       startDate: course.startDate,
       published: course.published,
       archived: course.archived,
@@ -22149,7 +22380,10 @@ router.get("/education/public/courses/:courseId", async (req, res): Promise<void
   }
   // Single-course detail: use educationCourseView for full center/session/gallery depth.
   const { modules: _privateModules, ...publicView } = await educationCourseView(course);
-  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(publicView)));
+  res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse({
+    ...publicView,
+    socialImage: await publicSocialImage(course.imageUrl),
+  })));
 });
 
 router.get("/education/public/courses/:courseId/related", async (req, res): Promise<void> => {
@@ -22288,7 +22522,10 @@ router.get("/education/public/centers/:centerId", async (req, res): Promise<void
   );
   // Use batch assembler for card-level views (no deep center nesting needed here).
   const cards = await batchEducationCourseViews(publicCourses);
-  res.json(GetPublicEducationCenterResponse.parse(await centerPublicView(eligibility.center, cards)));
+  res.json(GetPublicEducationCenterResponse.parse({
+    ...await centerPublicView(eligibility.center, cards),
+    socialImage: await publicSocialImage(eligibility.center.imageUrl),
+  }));
 });
 
 function educationCenterReviewView(row: typeof educationCenterReviewsTable.$inferSelect) {
@@ -22961,6 +23198,7 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   const rating = Math.round(Number(publishedReviewAggregate?.rating ?? 0) * 10) / 10;
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
+    socialImage: await publicSocialImage(instructor.photoUrl),
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
     qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,
     rating, reviewCount, ratingSource: "published_course_reviews", participantCount: enrollments.length,
@@ -26788,6 +27026,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect, treatmentTaxon
     description: item.description,
     shortDescription: item.shortDescription ?? null,
     imageUrl: item.imageUrl,
+    coverImageDescription: item.coverImageDescription ?? null,
     images: item.images ?? [],
     price: item.price,
     costPriceRsd: item.costPriceRsd ?? null,
@@ -27368,7 +27607,10 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const parsed = AdminCreateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const body = parsed.data;
+  const body = {
+    ...parsed.data,
+    coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) ?? null,
+  };
   if (!body.supplierId) { res.status(400).json({ error: "Dobavljač je obavezan." }); return; }
   if (body.discountPrice != null && body.discountPrice >= body.price) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
@@ -27439,6 +27681,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         description: body.description,
         shortDescription: body.shortDescription ?? null,
         imageUrl: body.imageUrl,
+        coverImageDescription: body.coverImageDescription,
         images: body.images ?? [],
         price: body.price,
         costPriceRsd: body.costPriceRsd ?? null,
@@ -27494,6 +27737,13 @@ router.post("/admin/products", async (req, res): Promise<void> => {
           throw new MediaClaimConflictError();
         }
       }
+      if (body.imageDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: user.id,
+        resourceId: rows[0]!.id,
+        scope: "product",
+        items: body.imageDescriptions,
+        allowedUrls: imageReferences,
+      })) throw new MediaClaimConflictError();
       return rows;
     });
   } catch (error) {
@@ -27619,7 +27869,12 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
   const parsed = AdminUpdateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const body = parsed.data;
+  const body = {
+    ...parsed.data,
+    ...(parsed.data.coverImageDescription !== undefined
+      ? { coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) }
+      : {}),
+  };
   if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const nextPrice = body.price ?? existing.price;
   const nextDiscount = body.discountPrice !== undefined ? body.discountPrice : existing.discountPrice;
@@ -27763,10 +28018,18 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
           scope: "product",
           resourceId: existing.id,
           visibility: nextActive ? "public" : "private",
+          allowBoundResource: true,
         }, tx)) {
           throw new MediaClaimConflictError();
         }
       }
+      if (body.imageDescriptions !== undefined && !await updateManagedMediaDescriptions(tx, {
+        userId: user.id,
+        resourceId: existing.id,
+        scope: "product",
+        items: body.imageDescriptions,
+        allowedUrls: imageReferences,
+      })) throw new MediaClaimConflictError();
       const rows = await tx.update(productsTable).set({
         supplierId: nextSupplierId,
         name: body.name ?? existing.name,
@@ -27777,6 +28040,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         description: body.description ?? existing.description,
         shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
         imageUrl: nextImageUrl,
+        coverImageDescription: body.coverImageDescription !== undefined
+          ? body.coverImageDescription
+          : existing.coverImageDescription,
         images: nextImages,
         price: nextPrice,
         costPriceRsd: body.costPriceRsd !== undefined ? body.costPriceRsd : existing.costPriceRsd,

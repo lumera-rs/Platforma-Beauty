@@ -28,6 +28,7 @@
  *   9. appointment history preservation (no delete, no employeeId cascade)
  *   11. reactivation scoped to exactly the reactivated location
  *   12. deterministic repeat behavior
+ *   13. access denial without an assignment and relocation to another salon
  * plus adversarial authorization checks against actual DB state (not just
  * HTTP status) and concurrency checks on the shared derived-state sync.
  */
@@ -40,7 +41,10 @@ import {
   appointmentsTable,
   db,
   employeeLocationAssignmentsTable,
+  employeeLocationSchedulesTable,
+  employeeServicesTable,
   employeesTable,
+  salonHoursTable,
   salonsTable,
   servicesTable,
   sessionsTable,
@@ -61,7 +65,7 @@ async function run(): Promise<void> {
   const userIds: string[] = [];
   const salonIds: string[] = [];
   const employeeIds: string[] = [];
-  let serviceId: string | undefined;
+  const serviceIds: string[] = [];
   let appointmentId: string | undefined;
 
   try {
@@ -100,12 +104,18 @@ async function run(): Promise<void> {
     await db.update(usersTable).set({ activeSalonId: salonA1.id }).where(eq(usersTable.id, ownerA.id));
     await db.update(usersTable).set({ activeSalonId: salonB1.id }).where(eq(usersTable.id, ownerB.id));
 
-    const [service] = await db.insert(servicesTable).values({
-      salonId: salonA1.id, categoryName: "Test", name: `Usluga ${suffix}`, description: "Test usluga.",
-      durationMinutes: 30, price: 2000, imageUrl: "/test.jpg",
-    }).returning();
-    assert.ok(service);
-    serviceId = service.id;
+    const [oldService, newService] = await db.insert(servicesTable).values([
+      {
+        salonId: salonA1.id, categoryName: "Test", name: `Stara usluga ${suffix}`, description: "Usluga stare lokacije.",
+        durationMinutes: 30, price: 2000, imageUrl: "/test.jpg",
+      },
+      {
+        salonId: salonA2.id, categoryName: "Test", name: `Nova usluga ${suffix}`, description: "Usluga nove lokacije.",
+        durationMinutes: 30, price: 2200, imageUrl: "/test.jpg",
+      },
+    ]).returning();
+    assert.ok(oldService && newService);
+    serviceIds.push(oldService.id, newService.id);
 
     const [soloUser, multiUser] = await db.insert(usersTable).values([
       { firstName: "Solo", lastName: "Employee", email: `dea-solo-${suffix}@example.test`, passwordHash, passwordSetAt: new Date(), role: "SALON_EMPLOYEE" },
@@ -116,7 +126,7 @@ async function run(): Promise<void> {
 
     const [soloEmployee, multiEmployee] = await db.insert(employeesTable).values([
       { salonId: salonA1.id, userId: soloUser.id, name: `Solo ${suffix}`, role: "Stilista", bio: "", avatarUrl: "" },
-      { salonId: salonA1.id, userId: multiUser.id, name: `Multi ${suffix}`, role: "Stilista", bio: "", avatarUrl: "" },
+      { salonId: salonA1.id, userId: multiUser.id, name: `Multi ${suffix}`, role: "Stilista", bio: `Bio pre preseljenja ${suffix}`, avatarUrl: "" },
     ]).returning();
     assert.ok(soloEmployee && multiEmployee);
     employeeIds.push(soloEmployee.id, multiEmployee.id);
@@ -131,7 +141,7 @@ async function run(): Promise<void> {
     // A1 -- must survive deactivation untouched (no delete, employeeId kept).
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const [appointment] = await db.insert(appointmentsTable).values({
-      salonId: salonA1.id, employeeId: soloEmployee.id, serviceId: service.id,
+      salonId: salonA1.id, employeeId: soloEmployee.id, serviceId: oldService.id,
       date: yesterday, startTime: "10:00", endTime: "10:30", durationMinutes: 30, price: 2000, status: "completed",
     }).returning();
     assert.ok(appointment);
@@ -279,6 +289,22 @@ async function run(): Promise<void> {
       const staff = await get("/salon/employees", ownerACookie);
       const ids = (staff.body as unknown as Json[]).map((item) => (item as Json).id);
       assert.ok(!ids.includes(multiEmployee.id), "A1's staff listing (and thus scheduling/employee-selection) must exclude the employee here");
+
+      const managedStaff = await get("/salon/employees?includeInactive=true", ownerACookie);
+      assert.equal(managedStaff.response.status, 200);
+      const managedEmployee = (managedStaff.body as unknown as Json[])
+        .find((item) => item.id === multiEmployee.id);
+      assert.ok(managedEmployee, "the owner management listing must keep the employee visible at the deactivated old location");
+      assert.equal(managedEmployee.active, false, "the old location must be clearly reported as inactive");
+
+      const managedLocations = await get(`/salon/employees/${multiEmployee.id}/locations`, ownerACookie);
+      assert.equal(managedLocations.response.status, 200);
+      const locationsBySalon = new Map(
+        (managedLocations.body as unknown as Array<{ salonId: string; active: boolean }>)
+          .map((location) => [location.salonId, location]),
+      );
+      assert.equal(locationsBySalon.get(salonA1.id)?.active, false, "the management flow must expose the disabled old assignment");
+      assert.equal(locationsBySalon.get(salonA2.id)?.active, true, "the same flow must expose the still-active sibling assignment");
     }
 
     // --- Scenario #3: cross-tenant / adversarial ID manipulation ------------
@@ -360,6 +386,147 @@ async function run(): Promise<void> {
       assert.equal((await userRow(multiUser.id)).active, true);
     }
 
+    // --- Scenario #13: deny the profile with no assignment, then relocate ---
+    {
+      await db.insert(employeeServicesTable).values([
+        { employeeId: multiEmployee.id, serviceId: oldService.id },
+        { employeeId: multiEmployee.id, serviceId: newService.id },
+      ]);
+      await db.insert(salonHoursTable).values([
+        { salonId: salonA1.id, weekday: 1, openTime: "09:00", closeTime: "18:00", closed: false },
+        { salonId: salonA2.id, weekday: 1, openTime: "09:00", closeTime: "18:00", closed: false },
+      ]);
+      await db.insert(employeeLocationSchedulesTable).values([
+        { employeeId: multiEmployee.id, salonId: salonA1.id, weekday: 1, startTime: "09:00", endTime: "10:00" },
+        { employeeId: multiEmployee.id, salonId: salonA2.id, weekday: 1, startTime: "14:00", endTime: "15:00" },
+      ]);
+
+      await setActiveSalon(ownerA.id, salonA1.id);
+      const deactivated = await post(`/salon/employees/${multiEmployee.id}/deactivate`, ownerACookie);
+      assert.equal(deactivated.response.status, 200, "the old location must be deactivated before relocation");
+      assert.equal((await assignment(multiEmployee.id, salonA1.id))?.active, false);
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.active, false);
+      assert.equal((await employeeRow(multiEmployee.id)).active, false, "no active assignment must disable the employee profile");
+      assert.equal((await userRow(multiUser.id)).active, false, "no active assignment must disable the employee account");
+
+      const profileBeforeDeniedRequest = {
+        bio: (await employeeRow(multiEmployee.id)).bio,
+        phone: (await userRow(multiUser.id)).phone,
+      };
+      const deniedProfileUpdate = await put("/employee/profile", multiCookie, {
+        bio: "Ovaj profil ne sme biti izmenjen",
+        phone: "+381600000099",
+      });
+      assert.equal(deniedProfileUpdate.response.status, 401, "the employee profile must be rejected without an active assignment");
+      assert.deepEqual({
+        bio: (await employeeRow(multiEmployee.id)).bio,
+        phone: (await userRow(multiUser.id)).phone,
+      }, profileBeforeDeniedRequest, "a rejected profile request must not change profile data");
+
+      await setActiveSalon(ownerA.id, salonA2.id);
+      const profileBeforeRelocation = await employeeRow(multiEmployee.id);
+      const accountBeforeRelocation = await userRow(multiUser.id);
+      const inactiveAtDestination = await get("/salon/employees?includeInactive=true", ownerACookie);
+      assert.equal(inactiveAtDestination.response.status, 200);
+      const destinationEmployee = (inactiveAtDestination.body as unknown as Json[])
+        .find((item) => item.id === multiEmployee.id);
+      assert.ok(destinationEmployee, "the destination salon must find the inactive employee through the owner management listing");
+      assert.equal(destinationEmployee.active, false);
+
+      const relocated = await put(`/salon/employees/${multiEmployee.id}/locations/${salonA2.id}`, ownerACookie, {
+        active: true,
+        isDefault: true,
+      });
+      assert.equal(relocated.response.status, 200, "the employee must be assignable to the second salon");
+      assert.equal((await assignment(multiEmployee.id, salonA1.id))?.active, false, "the old assignment must stay inactive");
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.active, true, "the new assignment must be active");
+      assert.equal((await assignment(multiEmployee.id, salonA2.id))?.isDefault, true, "the relocated assignment must become the default");
+      assert.equal((await employeeRow(multiEmployee.id)).salonId, salonA1.id, "the legacy employee salon must not be rewritten as the authorization source");
+      assert.equal((await employeeRow(multiEmployee.id)).active, true);
+      assert.equal((await userRow(multiUser.id)).active, true);
+      const profileAfterRelocation = await employeeRow(multiEmployee.id);
+      const accountAfterRelocation = await userRow(multiUser.id);
+      assert.deepEqual(
+        {
+          name: profileAfterRelocation.name,
+          role: profileAfterRelocation.role,
+          bio: profileAfterRelocation.bio,
+          avatarUrl: profileAfterRelocation.avatarUrl,
+          email: profileAfterRelocation.email,
+          specialties: profileAfterRelocation.specialties,
+        },
+        {
+          name: profileBeforeRelocation.name,
+          role: profileBeforeRelocation.role,
+          bio: profileBeforeRelocation.bio,
+          avatarUrl: profileBeforeRelocation.avatarUrl,
+          email: profileBeforeRelocation.email,
+          specialties: profileBeforeRelocation.specialties,
+        },
+        "reactivating at the destination salon must not rewrite employee profile data",
+      );
+      assert.deepEqual(
+        {
+          firstName: accountAfterRelocation.firstName,
+          lastName: accountAfterRelocation.lastName,
+          email: accountAfterRelocation.email,
+          phone: accountAfterRelocation.phone,
+        },
+        {
+          firstName: accountBeforeRelocation.firstName,
+          lastName: accountBeforeRelocation.lastName,
+          email: accountBeforeRelocation.email,
+          phone: accountBeforeRelocation.phone,
+        },
+        "reactivating at the destination salon must not rewrite account profile data",
+      );
+
+      const relocatedSession = await createSession(multiUser.id);
+      const relocatedCookie = `${sessionCookieName}=${relocatedSession}`;
+      const locations = await get("/employee/locations", relocatedCookie);
+      assert.equal(locations.response.status, 200, "the employee must regain portal access after relocation");
+      assert.equal(locations.body.activeSalonId, salonA2.id, "the employee portal must use the new active location");
+      assert.deepEqual(
+        (locations.body.locations as Array<{ salonId: string }>).map((location) => location.salonId),
+        [salonA2.id],
+        "inactive old locations must not remain in the employee location picker",
+      );
+
+      const portal = await get("/employee/portal", relocatedCookie);
+      assert.equal(portal.response.status, 200);
+      assert.equal((portal.body.salon as { name: string }).name, salonA2.name, "the employee profile must be scoped to the new salon");
+      assert.equal((portal.body.employee as { bio: string }).bio, profileBeforeDeniedRequest.bio, "relocation must preserve profile data");
+      assert.deepEqual(
+        (portal.body.services as Array<{ id: string }>).map((item) => item.id),
+        [newService.id],
+        "the relocated portal must expose only services assigned in the new salon",
+      );
+      assert.deepEqual(
+        (portal.body.schedule as Array<{ salonId: string; startTime: string; endTime: string }>).map((item) => ({
+          salonId: item.salonId, startTime: item.startTime, endTime: item.endTime,
+        })),
+        [{ salonId: salonA2.id, startTime: "14:00", endTime: "15:00" }],
+        "the relocated portal schedule must come from the new location, not employees.salonId",
+      );
+
+      const oldServiceAvailability = await get(
+        `/employee/availability/search?serviceId=${oldService.id}&startDate=2099-12-14`,
+        relocatedCookie,
+      );
+      assert.equal(oldServiceAvailability.response.status, 404, "the old location service must not remain selectable after relocation");
+
+      const newServiceAvailability = await get(
+        `/employee/availability/search?serviceId=${newService.id}&startDate=2099-12-14&granularityMinutes=30`,
+        relocatedCookie,
+      );
+      assert.equal(newServiceAvailability.response.status, 200);
+      const mondaySlots = (newServiceAvailability.body as unknown as Array<{ date: string; startTime: string }>)
+        .filter((slot) => slot.date === "2099-12-14")
+        .map((slot) => slot.startTime);
+      assert.deepEqual(mondaySlots, ["14:00", "14:15", "14:30"], "availability must use the new location's afternoon schedule");
+      assert.equal(mondaySlots.includes("09:00"), false, "the old location's morning schedule must not affect availability");
+    }
+
     // --- Concurrency: two simultaneous deactivations of an employee's last
     // two locations must never both leave the account wrongly enabled. -------
     for (let iteration = 0; iteration < 4; iteration += 1) {
@@ -433,10 +600,13 @@ async function run(): Promise<void> {
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     if (appointmentId) await db.delete(appointmentsTable).where(eq(appointmentsTable.id, appointmentId));
+    if (employeeIds.length) await db.delete(employeeLocationSchedulesTable).where(inArray(employeeLocationSchedulesTable.employeeId, employeeIds));
+    if (employeeIds.length) await db.delete(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds));
     if (employeeIds.length) await db.delete(employeeLocationAssignmentsTable).where(inArray(employeeLocationAssignmentsTable.employeeId, employeeIds));
     if (userIds.length) await db.update(usersTable).set({ activeSalonId: null }).where(inArray(usersTable.id, userIds));
     if (employeeIds.length) await db.delete(employeesTable).where(inArray(employeesTable.id, employeeIds));
-    if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
+    if (salonIds.length) await db.delete(salonHoursTable).where(inArray(salonHoursTable.salonId, salonIds));
+    if (serviceIds.length) await db.delete(servicesTable).where(inArray(servicesTable.id, serviceIds));
     if (salonIds.length) await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     if (userIds.length) {
       await db.delete(sessionsTable).where(inArray(sessionsTable.userId, userIds));

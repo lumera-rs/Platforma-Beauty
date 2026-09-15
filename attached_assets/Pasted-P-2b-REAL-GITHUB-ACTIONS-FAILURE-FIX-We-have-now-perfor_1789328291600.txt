@@ -1,0 +1,158 @@
+P.2b — REAL GITHUB ACTIONS FAILURE FIX
+
+We have now performed the required real GitHub Actions verification for P.2b.
+
+The real GitHub Actions run FAILED with exactly one failing test.
+
+Observed command:
+
+env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migration-contract
+
+Result:
+
+53 tests
+52 PASS
+1 FAIL
+
+Failing test:
+
+bounded exact-SHA deepening proves older B0 and rejects unrelated/nonexistent SHAs
+
+Exact failure:
+
+Trusted base commit is not an ancestor of HEAD after bounded deepening:
+d9784559ddf65f7127bb6317c11a11b935f9e668
+
+Stack points to:
+
+scripts/src/migration-contract/validate-ci-migration-contract.ts
+proveAncestryWithBoundedDeepening()
+
+and:
+
+scripts/src/migration-contract/ci-migration-contract.test.ts
+
+IMPORTANT:
+
+This failure occurred in a REAL GitHub Actions runner, not only in a local/Replit environment.
+
+All other migration-contract tests passed, including:
+- native PR / merge_group payload-authoritative validation
+- immutable migration history checks
+- partial-context fail-closed behavior
+- Gate N database credential rejection
+- safe historical materialization
+- CLI argument rejection
+- migration header/parser/sequence/checksum tests
+- capability guards
+- direct database credential access rejection
+- element-access fetch/eval/process.exit protection
+
+Therefore this task is ONLY about diagnosing and fixing the real GitHub Actions bounded exact-SHA ancestry/deepening failure.
+
+DO NOT weaken the security model merely to make CI green.
+
+First investigate the actual root cause.
+
+Specifically inspect:
+
+1. The checkout depth/history available in the real GitHub Actions runner.
+
+2. How the test constructs:
+   - HEAD
+   - trusted base SHA B0
+   - older ancestor SHA
+   - unrelated SHA
+   - nonexistent SHA
+
+3. Whether the test assumes repository history that is available locally but not in GitHub Actions checkout.
+
+4. Whether:
+   git fetch
+   --deepen
+   --shallow-since
+   exact SHA fetching
+   merge-base --is-ancestor
+   or remote ref availability
+   behaves differently in the GitHub Actions shallow clone.
+
+5. Whether the bounded deepening implementation actually guarantees that the trusted exact SHA and its ancestry become available before ancestry is evaluated.
+
+6. Whether the synthetic/test Git repository setup accidentally depends on commits or refs from the parent Lumera repository.
+
+7. Whether the real CI checkout uses fetch-depth behavior incompatible with this test.
+
+REQUIRED SECURITY PROPERTIES MUST REMAIN:
+
+- Trusted PR/merge_group base SHA must come from the authoritative GitHub event payload.
+- Never silently substitute origin/main, merge-base, HEAD^, or another inferred reference for the trusted SHA.
+- Missing/unprovable trusted ancestry must fail closed.
+- Unrelated SHA must still be rejected.
+- Nonexistent SHA must still be rejected.
+- Bounded deepening must remain bounded.
+- No arbitrary network capability.
+- No database capability.
+- No shell execution.
+- Only the already-approved narrow literal-git subprocess capability.
+- Do not weaken Gate N.
+- Do not weaken immutable migration history.
+- Do not remove or skip the failing test.
+- Do not change the test merely to accept the current broken behavior.
+- Do not use fetch-depth: 0 as a shortcut unless you can prove that it is the correct architecture and explain why bounded deepening remains meaningful. Prefer fixing the bounded exact-SHA design itself if that is the root cause.
+
+SCOPE:
+
+Prefer changes only in:
+- scripts/src/migration-contract/validate-ci-migration-contract.ts
+- scripts/src/migration-contract/ci-migration-contract.test.ts
+
+Only change workflow/release-chain files if root-cause evidence proves they are necessary.
+
+DO NOT touch:
+- application runtime
+- booking
+- auth
+- tenant isolation
+- database schema
+- migrations
+- migration ledger
+- adoption
+- fingerprint v4 / P.2c
+- bootstrap
+- production DB
+- live DB
+- baseline manifest authorization
+
+VALIDATION:
+
+Run at minimum:
+
+env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migration-contract
+
+pnpm --filter @workspace/scripts run test:schema-drift
+
+pnpm --filter @workspace/scripts run typecheck
+
+pnpm run test:github-workflows
+
+pnpm run check:diff
+
+Also reproduce the relevant shallow GitHub Actions topology locally if possible.
+
+Add a regression test that specifically reproduces the real GitHub Actions shallow-history condition which caused this failure.
+
+REPORT:
+
+A. Exact root cause
+B. Why local/Replit verification passed but real GitHub Actions failed
+C. Exact files changed
+D. Exact behavior before/after
+E. Security invariants preserved
+F. Tests and exact results
+G. Whether any workflow change was necessary
+H. Git status/diff summary
+I. Final verdict
+
+Do NOT start P.2c.
+
+STOP after this fix and report.

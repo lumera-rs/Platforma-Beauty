@@ -15,6 +15,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
 import {
   GetEducationCourseResponse,
+  GetPublicEducationCenterResponse,
   GetPublicEducationCourseResponse,
   GetPublicInstructorProfileResponse,
 } from "@workspace/api-zod";
@@ -37,6 +38,8 @@ import {
   employeeLocationAssignmentsTable,
   employeesTable,
   lessonProgressTable,
+  mediaAssetsTable,
+  mediaVariantsTable,
   observeDatabaseQueries,
   courseModulesTable,
   courseLessonsTable,
@@ -66,6 +69,15 @@ type RequestOptions = {
   body?: Record<string, unknown>;
   cookie?: string;
   headers?: Record<string, string>;
+};
+
+type SocialImageResponse = {
+  socialImage?: {
+    url: string;
+    width?: number;
+    height?: number;
+    type?: string;
+  };
 };
 
 async function request(baseUrl: string, path: string, options: RequestOptions = {}) {
@@ -120,6 +132,7 @@ async function run(): Promise<void> {
   const createdUserIds: string[] = [];
   const courseIds: string[] = [];
   const enrollmentIds: string[] = [];
+  const mediaAssetIds: string[] = [];
   let centerId: string | undefined;
   let salonId: string | undefined;
   const extraCenterIds: string[] = [];
@@ -677,6 +690,124 @@ async function run(): Promise<void> {
         portfolioMedia,
         "Public instructor profile exposes the persisted portfolio.",
       );
+
+      // Public education detail responses must expose exact crawler-safe metadata
+      // from each managed image's large fallback variant.
+      const courseImageAssetId = randomUUID();
+      const centerImageAssetId = randomUUID();
+      const instructorImageAssetId = randomUUID();
+      mediaAssetIds.push(courseImageAssetId, centerImageAssetId, instructorImageAssetId);
+      const managedImages = [
+        {
+          id: courseImageAssetId,
+          scope: "education-course",
+          resourceId: certCourse.id,
+          hash: "1".repeat(64),
+          originalFileName: "education-course.png",
+          originalContentType: "image/png",
+          originalWidth: 2400,
+          originalHeight: 1600,
+          fallbackType: "image/png",
+          fallbackWidth: 1800,
+          fallbackHeight: 1200,
+        },
+        {
+          id: centerImageAssetId,
+          scope: "education-center",
+          resourceId: center.id,
+          hash: "2".repeat(64),
+          originalFileName: "education-center.jpg",
+          originalContentType: "image/jpeg",
+          originalWidth: 2560,
+          originalHeight: 1440,
+          fallbackType: "image/jpeg",
+          fallbackWidth: 1920,
+          fallbackHeight: 1080,
+        },
+        {
+          id: instructorImageAssetId,
+          scope: "education-instructor",
+          resourceId: instructor.id,
+          hash: "3".repeat(64),
+          originalFileName: "education-instructor.webp",
+          originalContentType: "image/webp",
+          originalWidth: 1800,
+          originalHeight: 2400,
+          fallbackType: "image/webp",
+          fallbackWidth: 1200,
+          fallbackHeight: 1600,
+        },
+      ] as const;
+      await db.insert(mediaAssetsTable).values(managedImages.map((image) => ({
+        id: image.id,
+        ownerUserId: centerOwner.id,
+        scope: image.scope,
+        resourceId: image.resourceId,
+        visibility: "public",
+        originalFileName: image.originalFileName,
+        originalContentType: image.originalContentType,
+        width: image.originalWidth,
+        height: image.originalHeight,
+        contentHash: image.hash,
+        testCleanupKey: suffix,
+      })));
+      await db.insert(mediaVariantsTable).values(managedImages.map((image) => ({
+        assetId: image.id,
+        sizeName: "large",
+        format: "fallback",
+        objectPath: `tests/education-extras/${image.id}/large`,
+        contentType: image.fallbackType,
+        width: image.fallbackWidth,
+        height: image.fallbackHeight,
+        byteSize: 321,
+        etag: `"education-extras-${image.id}"`,
+      })));
+      const managedUrl = (image: typeof managedImages[number]) =>
+        `/api/media/${image.id}?v=legacy-fixture`;
+      await Promise.all([
+        db.update(coursesTable).set({ imageUrl: managedUrl(managedImages[0]) })
+          .where(eq(coursesTable.id, certCourse.id)),
+        db.update(educationCentersTable).set({ imageUrl: managedUrl(managedImages[1]) })
+          .where(eq(educationCentersTable.id, center.id)),
+        db.update(educationInstructorsTable).set({ photoUrl: managedUrl(managedImages[2]) })
+          .where(eq(educationInstructorsTable.id, instructor.id)),
+      ]);
+      const expectedSocialImage = (image: typeof managedImages[number]) => ({
+        url: `/api/media/${image.id}?v=${image.hash.slice(0, 16)}&size=large&format=fallback`,
+        width: image.fallbackWidth,
+        height: image.fallbackHeight,
+        type: image.fallbackType,
+      });
+
+      const managedCourseResponse = await request(baseUrl, `/education/public/courses/${certCourse.id}`);
+      assert.equal(managedCourseResponse.status, 200, "Managed-image public course must be available.");
+      const managedCourse = GetPublicEducationCourseResponse.parse(await json<unknown>(managedCourseResponse));
+      const managedCourseSocialImage = (managedCourse as typeof managedCourse & SocialImageResponse).socialImage;
+      assert.deepEqual(managedCourseSocialImage, expectedSocialImage(managedImages[0]));
+
+      const managedCenterResponse = await request(baseUrl, `/education/public/centers/${center.id}`);
+      assert.equal(managedCenterResponse.status, 200,
+        "Verified center with an active subscription must be eligible for public detail.");
+      const managedCenter = GetPublicEducationCenterResponse.parse(await json<unknown>(managedCenterResponse));
+      const managedCenterSocialImage = (managedCenter as typeof managedCenter & SocialImageResponse).socialImage;
+      assert.deepEqual(managedCenterSocialImage, expectedSocialImage(managedImages[1]));
+
+      const managedInstructorResponse = await request(baseUrl, `/education/instructors/${instructor.id}/public`);
+      assert.equal(managedInstructorResponse.status, 200, "Managed-image public instructor must be available.");
+      const managedInstructor = GetPublicInstructorProfileResponse.parse(await json<unknown>(managedInstructorResponse));
+      const managedInstructorSocialImage =
+        (managedInstructor as typeof managedInstructor & SocialImageResponse).socialImage;
+      assert.deepEqual(managedInstructorSocialImage, expectedSocialImage(managedImages[2]));
+
+      const legacyCourseResponse = await request(baseUrl, `/education/public/courses/${liveCourse.id}`);
+      assert.equal(legacyCourseResponse.status, 200, "Legacy-image public course must be available.");
+      const legacyCourse = GetPublicEducationCourseResponse.parse(await json<unknown>(legacyCourseResponse));
+      const legacyCourseSocialImage = (legacyCourse as typeof legacyCourse & SocialImageResponse).socialImage;
+      assert.deepEqual(legacyCourseSocialImage, { url: "/test-extras.jpg" });
+      assert.equal("width" in legacyCourseSocialImage!, false);
+      assert.equal("height" in legacyCourseSocialImage!, false);
+      assert.equal("type" in legacyCourseSocialImage!, false);
+      console.log("✓ Education details preserve managed social-image metadata and URL-only legacy images.");
 
       const certEnrollments = await db.select().from(courseEnrollmentsTable)
         .where(eq(courseEnrollmentsTable.courseId, certCourse.id));
@@ -1453,6 +1584,9 @@ async function run(): Promise<void> {
     if (extraCenterIds.length) {
       await db.delete(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, extraCenterIds));
       await db.delete(educationCentersTable).where(inArray(educationCentersTable.id, extraCenterIds));
+    }
+    if (mediaAssetIds.length) {
+      await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, mediaAssetIds));
     }
     if (salonId) {
       await db.delete(employeesTable).where(eq(employeesTable.salonId, salonId));

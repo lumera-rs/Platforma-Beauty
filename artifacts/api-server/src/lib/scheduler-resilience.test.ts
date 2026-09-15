@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import {
+  closePool,
+  pool,
+  runWithSchedulerDatabaseWorkload,
+  schedulerDatabaseConnectionCapacitySnapshot,
+  type DatabasePoolClient,
+} from "@workspace/db";
+import {
   createResilientScheduledJob,
   isTransientDatabaseFailure,
+  runSchedulerStartupSweep,
   schedulerFailureDiagnostics,
   schedulerDatabaseCapacitySnapshot,
   SCHEDULER_DATABASE_ACTIVITY_LIMIT,
@@ -115,6 +123,29 @@ async function run(): Promise<void> {
     assert.equal(job.snapshot().state, "retrying");
     assert.equal(job.snapshot().lastFailureClass, "transient_database");
     assert.equal(fake.scheduled.length, 1, "wrapped status timeouts retain bounded retry behavior");
+  }
+  {
+    assert.deepEqual(
+      schedulerFailureDiagnostics(new Error("timeout exceeded when trying to connect")),
+      {
+        dependency: "unknown",
+        errorCode: "POOL_ACQUISITION_TIMEOUT",
+        errorType: "Error",
+        causeType: "unknown",
+      },
+    );
+    assert.deepEqual(
+      schedulerFailureDiagnostics(new Error(
+        "Connection terminated due to connection timeout",
+        { cause: Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }) },
+      )),
+      {
+        dependency: "unknown",
+        errorCode: "ETIMEDOUT",
+        errorType: "Error",
+        causeType: "Error",
+      },
+    );
   }
 
   {
@@ -253,6 +284,130 @@ async function run(): Promise<void> {
     pending.callback();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(calls, 1, "stopped jobs must not execute their pending retry");
+  }
+
+  {
+    const capacity = schedulerDatabaseConnectionCapacitySnapshot();
+    const schedulerClients = await Promise.all(
+      Array.from(
+        { length: capacity.limit },
+        () => runWithSchedulerDatabaseWorkload(() => pool.connect()),
+      ),
+    );
+    let queuedClient: DatabasePoolClient | undefined;
+    try {
+      assert.deepEqual(schedulerDatabaseConnectionCapacitySnapshot(), {
+        active: capacity.limit,
+        queued: 0,
+        limit: capacity.limit,
+        reservedForInteractive: 2,
+      });
+      const queuedSchedulerConnect = runWithSchedulerDatabaseWorkload(
+        () => pool.connect().then((client) => {
+          queuedClient = client;
+          return client;
+        }),
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(schedulerDatabaseConnectionCapacitySnapshot().queued, 1);
+
+      const interactiveClient = await pool.connect();
+      interactiveClient.release();
+
+      schedulerClients[0]?.release();
+      await queuedSchedulerConnect;
+      assert.ok(queuedClient, "queued scheduler acquisition must resume after a scheduler client releases");
+    } finally {
+      queuedClient?.release();
+      schedulerClients.slice(1).forEach((client) => client.release());
+    }
+    assert.equal(schedulerDatabaseConnectionCapacitySnapshot().active, 0);
+  }
+
+  {
+    const callbackClient = await new Promise<DatabasePoolClient>((resolve, reject) => {
+      runWithSchedulerDatabaseWorkload(() => {
+        pool.connect((error, client, release) => {
+          if (error || !client) {
+            reject(error ?? new Error("callback checkout returned no client"));
+            return;
+          }
+          assert.equal(client.release, release);
+          resolve(client);
+        });
+      });
+    });
+    assert.equal(schedulerDatabaseConnectionCapacitySnapshot().active, 1);
+    callbackClient.release(new Error("dispose callback test client"));
+    assert.equal(schedulerDatabaseConnectionCapacitySnapshot().active, 0);
+    assert.throws(
+      () => callbackClient.release(),
+      /Release called on client which has already been released/,
+    );
+  }
+
+  {
+    const startupOrder: string[] = [];
+    let releaseFirst!: () => void;
+    const firstRun = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const sweep = runSchedulerStartupSweep([
+      {
+        async run() {
+          startupOrder.push("first-start");
+          await firstRun;
+          startupOrder.push("first-end");
+        },
+      },
+      { async run() { startupOrder.push("second"); } },
+      { async run() { startupOrder.push("third"); } },
+    ]);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(
+      startupOrder,
+      ["first-start"],
+      "the initial sweep must not fan out later jobs while the first is active",
+    );
+    releaseFirst();
+    await sweep;
+    assert.deepEqual(startupOrder, ["first-start", "first-end", "second", "third"]);
+  }
+
+  {
+    const capacity = schedulerDatabaseConnectionCapacitySnapshot();
+    const heldClients = await Promise.all(
+      Array.from(
+        { length: capacity.limit },
+        () => runWithSchedulerDatabaseWorkload(() => pool.connect()),
+      ),
+    );
+    const queuedPromise = runWithSchedulerDatabaseWorkload(() => pool.connect());
+    const queuedCallback = new Promise<Error>((resolve, reject) => {
+      runWithSchedulerDatabaseWorkload(() => {
+        pool.connect((error, client) => {
+          if (client) {
+            client.release();
+            reject(new Error("queued callback unexpectedly acquired a client"));
+            return;
+          }
+          if (!error) {
+            reject(new Error("queued callback failed without an error"));
+            return;
+          }
+          resolve(error);
+        });
+      });
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(schedulerDatabaseConnectionCapacitySnapshot().queued, 2);
+
+    const closing = closePool();
+    await assert.rejects(queuedPromise, /Database pool is closing/);
+    assert.match((await queuedCallback).message, /Database pool is closing/);
+    assert.equal(schedulerDatabaseConnectionCapacitySnapshot().queued, 0);
+    heldClients.forEach((client) => client.release());
+    await closing;
   }
 
   console.log("✓ scheduler resilience: timeout recovery, single-flight, permanent failure, and shutdown");

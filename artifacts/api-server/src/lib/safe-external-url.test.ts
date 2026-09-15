@@ -198,9 +198,18 @@ try {
   courseIds.push(createAccepted.body.id);
 
   const [directCourse] = await db.insert(coursesTable).values(
-    buildValidOnlineEducationCourse({ title: `Direct ${marker}`, category: "Test", price: 10_000, centerId: center!.id }),
+    buildValidOnlineEducationCourse({
+      title: `Direct ${marker}`,
+      category: "Test",
+      price: 10_000,
+      centerId: center!.id,
+      coverImageDescription: "Praktična demonstracija tretmana na modelu",
+    }),
   ).returning();
   courseIds.push(directCourse!.id);
+  const publicCourseWithDescription = await call(base, `/education/public/courses/${directCourse!.id}`, "GET");
+  assert.equal(publicCourseWithDescription.status, 200, "public course detail must satisfy the Course response contract");
+  assert.equal(publicCourseWithDescription.body.coverImageDescription, "Praktična demonstracija tretmana na modelu");
 
   const updateRejectedData = await call(base, `/education/courses/${directCourse!.id}`, "PATCH", {
     trailerUrl: "data:text/html,<script>alert(1)</script>",
@@ -218,8 +227,13 @@ try {
 
   const updateClearedNull = await call(base, `/education/courses/${directCourse!.id}`, "PATCH", {
     trailerUrl: null,
+    coverImageDescription: "   ",
   }, cookie);
   assert.equal(updateClearedNull.status, 200, "PATCH /education/courses/:id must accept clearing trailerUrl back to null");
+  assert.equal(updateClearedNull.body.coverImageDescription, null, "whitespace must clear the cover description");
+  const publicCourseAfterClear = await call(base, `/education/public/courses/${directCourse!.id}`, "GET");
+  assert.equal(publicCourseAfterClear.status, 200);
+  assert.equal(publicCourseAfterClear.body.coverImageDescription, null, "public course detail must expose a cleared description as null");
   console.log("POST/PATCH /education/courses trailerUrl scheme gate passed.");
 
   console.log("Task #9B safe external-URL regression passed.");

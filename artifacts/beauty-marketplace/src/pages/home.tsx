@@ -114,8 +114,15 @@ export default function Home() {
     <Layout>
       {/* Hero Section - Quiet Luxury aesthetic */}
       <section className="relative w-full bg-secondary pt-16 pb-20 md:pt-20 md:pb-24 overflow-hidden">
-        {/* We use a generated elegant background to set the tone */}
-        <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] opacity-20 bg-cover bg-center mix-blend-multiply" />
+        <img
+          src="/hero-bg.jpg"
+          alt=""
+          width={1024}
+          height={1024}
+          fetchPriority="high"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover object-center opacity-20 mix-blend-multiply"
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-secondary/80 to-secondary/30 pointer-events-none" />
 
         <div className="container mx-auto px-4 relative z-10 flex flex-col items-center text-center">

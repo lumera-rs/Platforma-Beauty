@@ -20,6 +20,13 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { createHash, randomBytes } from "node:crypto";
 import { activeProductSale, activeProductSalePriceSql } from "../lib/active-product-sale";
+import { publicSocialImage } from "./image-media";
+import {
+  GetPublicSupplierParams,
+  GetPublicSupplierResponse,
+  GetSupplierPublicProductParams,
+  GetSupplierPublicProductResponse,
+} from "@workspace/api-zod";
 
 const router = Router();
 const SORTS = ["RECOMMENDED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "BEST_RATED", "MOST_POPULAR"] as const;
@@ -158,15 +165,40 @@ async function activeB2cSupplier(slug: string) {
   )).limit(1);
   return supplier;
 }
-router.get("/suppliers", async (_req, res) => {
-  res.json(await db.select().from(suppliersTable).where(and(
-    eq(suppliersTable.active, true), inArray(suppliersTable.scope, ["B2C", "BOTH"]),
-  )).orderBy(asc(suppliersTable.name), asc(suppliersTable.id)));
-});
-router.get("/suppliers/:supplierSlug", async (req, res, next) => {
-  const supplier = await activeB2cSupplier(req.params.supplierSlug!);
-  if (!supplier) { next(); return; }
-  res.json(supplier);
+
+export function serializePublicSupplier(
+  supplier: typeof suppliersTable.$inferSelect,
+  socialImage: unknown,
+) {
+  return GetPublicSupplierResponse.parse({ ...supplier, socialImage });
+}
+
+export function serializeSupplierPublicProduct(
+  product: typeof productsTable.$inferSelect,
+  details: {
+    socialImage: unknown;
+    productType: unknown;
+    needTags: unknown;
+    relatedProducts: unknown;
+  },
+) {
+  return GetSupplierPublicProductResponse.parse({
+    ...publicBase(product),
+    ingredients: product.ingredients,
+    usageInstructions: product.usageInstructions,
+    socialImage: details.socialImage,
+    productType: details.productType,
+    needTags: details.needTags,
+    relatedProducts: details.relatedProducts,
+  });
+}
+
+router.get("/suppliers/:supplierSlug", async (req, res) => {
+  const params = GetPublicSupplierParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const supplier = await activeB2cSupplier(params.data.supplierSlug);
+  if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
+  res.json(serializePublicSupplier(supplier, await publicSocialImage(supplier.logoUrl)));
 });
 router.get("/suppliers/:supplierSlug/categories", async (req, res) => {
   const supplier = await activeB2cSupplier(req.params.supplierSlug!);
@@ -447,7 +479,10 @@ function publicBase(product: typeof productsTable.$inferSelect) {
   return {
     id: product.id, supplierId: product.supplierId, name: product.name, category: product.categoryName,
     categoryId: product.categoryId, subcategory: product.subcategoryName, brand: product.brand,
-    description: product.publicDescription!, imageUrl: product.imageUrl, images: product.images ?? [],
+    description: product.publicDescription!,
+    imageUrl: product.imageUrl,
+    coverImageDescription: product.coverImageDescription ?? null,
+    images: product.images ?? [],
     price, discountPrice, saleEndsAt: discountPrice ? sale?.endsAt ?? null : null,
     discountPercent: discountPrice ? Math.round((1 - discountPrice / configuredPrice) * 100) : null,
     priceOnRequest, cartEligible: !priceOnRequest,
@@ -542,88 +577,16 @@ export async function claimRecentlyViewedForUser(req: Request, res: Response, us
   res.clearCookie(VIEWER_COOKIE, { path: "/" });
 }
 
-router.get("/suppliers/:supplierSlug/public-products", async (req, res, next) => {
-  const supplier = await activeB2cSupplier(req.params.supplierSlug!);
-  if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
-  try {
-    const config = await settings();
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || config.pageSize));
-    const sort = String(req.query.sort ?? config.defaultSort) as Sort;
-    if (!config.enabledSortOptions.includes(sort) || !SORTS.includes(sort)) { res.status(400).json({ error: "Sort is not enabled." }); return; }
-    const categoryId = typeof req.query.categoryId === "string" ? req.query.categoryId : "";
-    const categoryIds = categoryId ? await categorySubtree(supplier.id, categoryId) : [];
-    if (categoryId && !categoryIds.length) { res.status(404).json({ error: "Category not found." }); return; }
-    const min = req.query.minPrice == null ? undefined : Number(req.query.minPrice);
-    const max = req.query.maxPrice == null ? undefined : Number(req.query.maxPrice);
-    if ((min != null && (!Number.isFinite(min) || min < 0)) || (max != null && (!Number.isFinite(max) || max < 0)) || (min != null && max != null && min > max)) {
-      res.status(400).json({ error: "Price range is invalid." }); return;
-    }
-    const f: FilterInput = {
-      search: typeof req.query.search === "string" ? req.query.search.trim().slice(0, 200) : undefined,
-      categoryIds, brands: list(req.query.brand), types: list(req.query.productType), tags: list(req.query.needTag),
-      min, max, showOutOfStock: config.showOutOfStock,
-    };
-    const where = productConditions(supplier.id, f);
-    const relevance = f.search ? desc(sql`CASE WHEN lower(${productsTable.name}) = ${f.search.toLowerCase()} THEN 3
-      WHEN lower(${productsTable.name}) LIKE ${`%${f.search.toLowerCase()}%`} THEN 2 ELSE 1 END`) : undefined;
-    const ordering = relevance ? [relevance, desc(sql`similarity(lower(${productsTable.name}), ${f.search!.toLowerCase()})`), asc(productsTable.id)]
-      : sort === "PRICE_ASC" ? [asc(priceExpr), asc(productsTable.id)]
-      : sort === "PRICE_DESC" ? [desc(priceExpr), asc(productsTable.id)]
-      : sort === "NEWEST" ? [desc(productsTable.createdAt), asc(productsTable.id)]
-      : sort === "BEST_RATED" ? [desc(ratingExpr), desc(productsTable.createdAt), asc(productsTable.id)]
-      : sort === "MOST_POPULAR" ? [desc(popularityExpr), desc(productsTable.createdAt), asc(productsTable.id)]
-      : [desc(productsTable.isBestseller), desc(productsTable.isNew), desc(productsTable.createdAt), asc(productsTable.id)];
-    const [totalRows, products, categoryFacets, facetCategories, brandFacets, typeFacets, tagFacets] = await Promise.all([
-      db.select({ value: count() }).from(productsTable).where(where),
-      db.select().from(productsTable).where(where).orderBy(...ordering).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ id: productsTable.categoryId, count: count() }).from(productsTable).where(productConditions(supplier.id, f, "category")).groupBy(productsTable.categoryId),
-      db.select({ id: productCategoriesTable.id, parentId: productCategoriesTable.parentId, name: productCategoriesTable.name })
-        .from(productCategoriesTable).where(and(eq(productCategoriesTable.supplierId, supplier.id), eq(productCategoriesTable.active, true))),
-      db.select({ value: productsTable.brand, count: count() }).from(productsTable).where(productConditions(supplier.id, f, "brand")).groupBy(productsTable.brand),
-      db.select({ id: b2cProductTypesTable.id, value: b2cProductTypesTable.slug, label: b2cProductTypesTable.label, count: count() })
-        .from(productsTable).innerJoin(b2cProductTypesTable, eq(productsTable.productTypeId, b2cProductTypesTable.id))
-        .where(and(productConditions(supplier.id, f, "type"), eq(b2cProductTypesTable.active, true))).groupBy(b2cProductTypesTable.id),
-      db.select({ id: b2cNeedTagsTable.id, value: b2cNeedTagsTable.key, label: b2cNeedTagsTable.label, count: sql<number>`count(distinct ${productsTable.id})` })
-        .from(productsTable).innerJoin(b2cProductNeedTagsTable, eq(productsTable.id, b2cProductNeedTagsTable.productId))
-        .innerJoin(b2cNeedTagsTable, eq(b2cProductNeedTagsTable.needTagId, b2cNeedTagsTable.id))
-        .where(and(productConditions(supplier.id, f, "tag"), eq(b2cNeedTagsTable.active, true))).groupBy(b2cNeedTagsTable.id),
-    ]);
-    const total = Number(totalRows[0]?.value ?? 0);
-    const prices = await db.select({ min: sql<number>`min(${priceExpr})`, max: sql<number>`max(${priceExpr})` }).from(productsTable)
-      .where(productConditions(supplier.id, { ...f, min: undefined, max: undefined }));
-    res.json({
-      items: products.map(publicBase), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      activeRange: { minPrice: prices[0]?.min == null ? null : Number(prices[0].min), maxPrice: prices[0]?.max == null ? null : Number(prices[0].max) },
-      facets: {
-        categories: facetCategories.map((category) => {
-          const direct = new Map(categoryFacets.map((item) => [item.id, Number(item.count)]));
-          const descendants = new Set([category.id]);
-          let changed = true;
-          while (changed) {
-            changed = false;
-            for (const candidate of facetCategories) if (candidate.parentId && descendants.has(candidate.parentId) && !descendants.has(candidate.id)) {
-              descendants.add(candidate.id); changed = true;
-            }
-          }
-          return { id: category.id, label: category.name, count: [...descendants].reduce((sum, id) => sum + (direct.get(id) ?? 0), 0) };
-        }),
-        brands: brandFacets.filter((x) => x.value).map((x) => ({ value: x.value, count: Number(x.count) })),
-        productTypes: typeFacets.map((x) => ({ ...x, count: Number(x.count) })),
-        needTags: tagFacets.map((x) => ({ ...x, count: Number(x.count) })),
-      },
-    });
-  } catch (error) { next(error); }
-});
-
-router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res, next) => {
-  const supplier = await activeB2cSupplier(req.params.supplierSlug!);
+router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, res) => {
+  const params = GetSupplierPublicProductParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const supplier = await activeB2cSupplier(params.data.supplierSlug);
   if (!supplier) { res.status(404).json({ error: "Supplier not found." }); return; }
   const [product] = await db.select().from(productsTable).where(and(
-    eq(productsTable.id, req.params.productId!),
+    eq(productsTable.id, params.data.productId),
     productConditions(supplier.id, { categoryIds: [], brands: [], types: [], tags: [], showOutOfStock: true }),
   )).limit(1);
-  if (!product) { next(); return; } // Preserve the existing detail route's related-products behavior.
+  if (!product) { res.status(404).json({ error: "Product not found." }); return; }
   const [productType, needTags] = await Promise.all([
     product.productTypeId ? db.select({ slug: b2cProductTypesTable.slug, label: b2cProductTypesTable.label })
       .from(b2cProductTypesTable).where(and(eq(b2cProductTypesTable.id, product.productTypeId), eq(b2cProductTypesTable.active, true))).limit(1) : [],
@@ -645,15 +608,19 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
   const related = relationIds.length
     ? relationIds.map((id) => byId.get(id)).filter((item): item is typeof relatedRows[number] => Boolean(item))
     : relatedRows;
-  res.json({ ...publicBase(product), ingredients: product.ingredients, usageInstructions: product.usageInstructions,
-    productType: productType[0] ?? null, needTags, relatedProducts: related.slice(0, 8).map((item) => {
+  res.json(serializeSupplierPublicProduct(product, {
+    socialImage: await publicSocialImage(product.imageUrl),
+    productType: productType[0] ?? null,
+    needTags,
+    relatedProducts: related.slice(0, 8).map((item) => {
       const view = publicBase(item);
       return {
         id: item.id, name: item.name, imageUrl: item.imageUrl, brand: item.brand,
         price: view.price, discountPrice: view.discountPrice, saleEndsAt: view.saleEndsAt,
         priceOnRequest: view.priceOnRequest, cartEligible: view.cartEligible,
       };
-    }) });
+    }),
+  }));
 });
 
 // This intentionally does not mint a viewer cookie: passive reads must not

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { GetSalonResponse } from "@workspace/api-zod";
 import {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
@@ -12,11 +13,14 @@ import {
   customerNotificationsTable,
   customerPackagePurchasesTable,
   db,
+  emailDeliveriesTable,
   employeeLocationAssignmentsTable,
+  employeeLeaveRequestsTable,
   employeeServicesTable,
   employeeTimeOffTable,
   employeesTable,
   mediaAssetsTable,
+  mediaVariantsTable,
   packagePurchaseServiceLinksTable,
   packageRedemptionsTable,
   pool,
@@ -37,6 +41,9 @@ import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
+const customerPhone = `+3816${(
+  BigInt(`0x${suffix.replaceAll("-", "").slice(0, 12)}`) % 100_000_000n
+).toString().padStart(8, "0")}`;
 const primarySalonDate = "2099-10-18";
 const movedSeriesDate = "2099-10-19";
 const completedOrCancelledDate = "2099-10-20";
@@ -101,6 +108,32 @@ async function request(
     status: response.status,
     body: response.status === 204 ? null : await response.json(),
   };
+}
+
+async function assertCancellationEmailPairs(appointmentIds: string[], message: string): Promise<void> {
+  const expectedKeys = appointmentIds.flatMap((appointmentId) => [
+    `appointment:${appointmentId}:customer:cancelled`,
+    `appointment:${appointmentId}:salon:cancelled`,
+  ]);
+  const rows = await db.select({ eventKey: emailDeliveriesTable.eventKey })
+    .from(emailDeliveriesTable)
+    .where(inArray(emailDeliveriesTable.eventKey, expectedKeys));
+  assert.deepEqual(
+    rows.map((row) => row.eventKey).sort(),
+    expectedKeys.sort(),
+    message,
+  );
+}
+
+async function assertNoCancellationEmails(appointmentIds: string[], message: string): Promise<void> {
+  const eventKeys = appointmentIds.flatMap((appointmentId) => [
+    `appointment:${appointmentId}:customer:cancelled`,
+    `appointment:${appointmentId}:salon:cancelled`,
+  ]);
+  const rows = await db.select({ eventKey: emailDeliveriesTable.eventKey })
+    .from(emailDeliveriesTable)
+    .where(inArray(emailDeliveriesTable.eventKey, eventKeys));
+  assert.equal(rows.length, 0, message);
 }
 
 async function getRequest(baseUrl: string, session: string, path: string): Promise<HttpResult> {
@@ -274,6 +307,40 @@ async function run(): Promise<void> {
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
 
+    const managedSalonImageAssetId = randomUUID();
+    const managedSalonImageHash = "b".repeat(64);
+    const managedSalonImageUrl = `/api/media/${managedSalonImageAssetId}?v=fixture-version`;
+    const managedSalonSocialImage = {
+      url: `/api/media/${managedSalonImageAssetId}?v=${managedSalonImageHash.slice(0, 16)}&size=large&format=fallback`,
+      width: 1600,
+      height: 900,
+      type: "image/png" as const,
+    };
+    await db.insert(mediaAssetsTable).values({
+      id: managedSalonImageAssetId,
+      ownerUserId: owner!.id,
+      scope: "salon-profile",
+      resourceId: salon!.id,
+      visibility: "public",
+      originalFileName: "managed-salon-social-image.png",
+      originalContentType: "image/png",
+      width: 2400,
+      height: 1350,
+      contentHash: managedSalonImageHash,
+      testCleanupKey: suffix,
+    });
+    await db.insert(mediaVariantsTable).values({
+      assetId: managedSalonImageAssetId,
+      sizeName: "large",
+      format: "fallback",
+      objectPath: `tests/${managedSalonImageAssetId}/large.png`,
+      contentType: managedSalonSocialImage.type,
+      width: managedSalonSocialImage.width,
+      height: managedSalonSocialImage.height,
+      byteSize: 123,
+      etag: `"${managedSalonImageAssetId}"`,
+    });
+
     const [service] = await db.insert(servicesTable).values({
       salonId: salon!.id,
       categoryName: "Test",
@@ -361,8 +428,8 @@ async function run(): Promise<void> {
       userId: customer!.id,
       firstName: customer!.firstName,
       lastName: customer!.lastName,
-      phone: "+381611234529",
-      phoneNormalized: "+381611234529",
+      phone: customerPhone,
+      phoneNormalized: customerPhone,
     }).returning();
     // A second, unrelated client. Resource capacity is about two different
     // people occupying two units at once; the same person cannot be in both,
@@ -486,25 +553,66 @@ async function run(): Promise<void> {
     assert.equal((await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, employeeUser!.id)))[0]!.activeSalonId, foreignSalon!.id);
     assert.equal((await request(baseUrl, employeeSession, "/employee/active-location", "PATCH", { salonId: salon!.id })).status, 200);
 
-    const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
-    assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
-    const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
-    for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
-      assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
+    const originalSalonImages = {
+      imageUrl: salon!.imageUrl,
+      gallery: salon!.gallery,
+      coverImageDescription: salon!.coverImageDescription,
+    };
+    const originalForeignSalonImages = { imageUrl: foreignSalon!.imageUrl, gallery: foreignSalon!.gallery };
+    const externalSalonImageUrl = "https://legacy.example.test/salon-social-image.jpg";
+    try {
+      await db.update(salonsTable).set({
+        imageUrl: managedSalonImageUrl,
+        gallery: ["/salon-gallery-image.jpg"],
+        coverImageDescription: "Naslovna fotografija test salona",
+      }).where(eq(salonsTable.id, salon!.id));
+      await db.update(salonsTable).set({
+        imageUrl: externalSalonImageUrl,
+        gallery: [],
+      }).where(eq(salonsTable.id, foreignSalon!.id));
+
+      const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
+      assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
+      const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
+      const parsedPublicProfile = GetSalonResponse.parse(publicProfile);
+      assert.deepEqual(
+        parsedPublicProfile.socialImage,
+        managedSalonSocialImage,
+        "a managed salon cover image must expose exact large fallback social metadata",
+      );
+      assert.equal(parsedPublicProfile.coverImageDescription, "Naslovna fotografija test salona");
+      for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
+        assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
+      }
+      assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
+      assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
+      assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
+      const publicStaff = publicProfile.staff;
+      assert.ok(Array.isArray(publicStaff), "public salon profiles must include their active staff");
+      const publicEmployee = publicStaff.find((item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null && item.id === employee!.id,
+      );
+      assert.equal(
+        publicEmployee?.canOrderIndependently,
+        false,
+        "public salon profiles must normalize an employee's omitted purchasing permission to the database default",
+      );
+
+      const externalProfileResponse = await fetch(`${baseUrl}/api/salons/${foreignSalon!.slug}`);
+      assert.equal(externalProfileResponse.status, 200, "a public salon with a legacy external image must remain discoverable");
+      const externalProfile = GetSalonResponse.parse(await externalProfileResponse.json());
+      assert.deepEqual(
+        externalProfile.socialImage,
+        { url: externalSalonImageUrl },
+        "a legacy external salon image must not claim managed dimensions or content type",
+      );
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "width"));
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "height"));
+      assert.ok(!Object.hasOwn(externalProfile.socialImage!, "type"));
+    } finally {
+      await db.update(salonsTable).set(originalSalonImages).where(eq(salonsTable.id, salon!.id));
+      await db.update(salonsTable).set(originalForeignSalonImages).where(eq(salonsTable.id, foreignSalon!.id));
     }
-    assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
-    assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
-    assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
-    const publicStaff = publicProfile.staff;
-    assert.ok(Array.isArray(publicStaff), "public salon profiles must include their active staff");
-    const publicEmployee = publicStaff.find((item): item is Record<string, unknown> =>
-      typeof item === "object" && item !== null && item.id === employee!.id,
-    );
-    assert.equal(
-      publicEmployee?.canOrderIndependently,
-      false,
-      "public salon profiles must normalize an employee's omitted purchasing permission to the database default",
-    );
 
     const publicSalonCards = await getPublicSalonCards(baseUrl, "city=Beograd");
     const publicFixtureCard = publicSalonCards.find((item) => item.id === salon!.id) as Record<string, unknown> | undefined;
@@ -695,8 +803,8 @@ async function run(): Promise<void> {
     );
 
     await db.update(usersTable).set({
-      phone: "+381611234529",
-      phoneNormalized: "+381611234529",
+      phone: customerPhone,
+      phoneNormalized: customerPhone,
     }).where(eq(usersTable.id, customer!.id));
     await db.update(servicesTable).set({
       homeServiceAvailable: true,
@@ -981,14 +1089,38 @@ async function run(): Promise<void> {
       false,
       "the salon profile response must retain the owner's men's-services designation",
     );
+    assert.equal(
+      (ownerServesMenUpdate.body as { coverImageDescription: string | null }).coverImageDescription,
+      null,
+      "an unrelated salon profile update must still satisfy the cover-description response contract",
+    );
+    const savedCoverDescription = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
+      coverImageDescription: "  Enterijer salona sa radnim mestima za tretmane  ",
+    });
+    assert.equal(savedCoverDescription.status, 200, "a salon owner must be able to save a cover description");
+    assert.equal(
+      (savedCoverDescription.body as { coverImageDescription: string | null }).coverImageDescription,
+      "Enterijer salona sa radnim mestima za tretmane",
+      "the salon profile response must return the normalized cover description",
+    );
+    const clearedCoverDescription = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
+      coverImageDescription: "   ",
+    });
+    assert.equal(clearedCoverDescription.status, 200, "a salon owner must be able to clear a cover description");
+    assert.equal(
+      (clearedCoverDescription.body as { coverImageDescription: string | null }).coverImageDescription,
+      null,
+      "whitespace-only salon cover descriptions must be returned as null",
+    );
     const [ownerUpdatedSalon] = await db.select({
       servesMen: salonsTable.servesMen,
       servesMenManuallySet: salonsTable.servesMenManuallySet,
+      coverImageDescription: salonsTable.coverImageDescription,
     }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
     assert.deepEqual(
       ownerUpdatedSalon,
-      { servesMen: false, servesMenManuallySet: true },
-      "the owner's men's-services designation must persist and opt out of inferred values",
+      { servesMen: false, servesMenManuallySet: true, coverImageDescription: null },
+      "the owner's profile settings must persist while a cleared cover description remains null",
     );
 
     const customerAppointments = await getRequest(baseUrl, customerSession, "/appointments");
@@ -1039,6 +1171,57 @@ async function run(): Promise<void> {
       .where(eq(customerNotificationsTable.userId, customer!.id));
     assert.ok(cancellationNotifications.some((item) => item.eventKey.includes(`appointment:${createdCustomerAppointment.id}:lifecycle:cancel:`)),
       "successful cancellation enqueues its durable customer notification");
+    const committedCancellationEmails = await db.select().from(emailDeliveriesTable).where(sql`
+      ${emailDeliveriesTable.eventKey} IN (
+        ${`appointment:${createdCustomerAppointment.id}:customer:cancelled`},
+        ${`appointment:${createdCustomerAppointment.id}:salon:cancelled`}
+      )
+    `);
+    assert.equal(committedCancellationEmails.length, 2,
+      "a committed cancellation atomically includes customer and salon email outbox rows");
+
+    // Inject a failure while the canonical cancellation layer writes the
+    // required email outbox row. The appointment update and outbox insert must
+    // share the same transaction and therefore both roll back.
+    const faultFunction = "appointment_cancel_email_fault";
+    await db.execute(sql.raw(`
+      DROP TRIGGER IF EXISTS ${faultFunction}_trigger ON email_deliveries;
+      CREATE OR REPLACE FUNCTION ${faultFunction}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.event_key LIKE 'appointment:%:customer:cancelled' THEN
+          RAISE EXCEPTION 'injected cancellation email enqueue failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER ${faultFunction}_trigger
+      BEFORE INSERT ON email_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${faultFunction}();
+    `));
+    try {
+      const faultBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+        salonId: salon!.id, serviceId: service!.id, date: "2099-12-08", startTime: "12:00", employeeId: employee!.id,
+      });
+      assert.equal(faultBooking.status, 201, "fault-injection appointment fixture is created");
+      const faultAppointmentId = (faultBooking.body as { id: string }).id;
+      const faultCancellation = await request(baseUrl, customerSession, `/appointments/${faultAppointmentId}/cancel`, "POST", {
+        reason: "fault injection",
+      });
+      assert.equal(faultCancellation.status, 500, "injected email enqueue failure is surfaced");
+      const [rolledBackAppointment] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, faultAppointmentId));
+      assert.ok(["pending", "confirmed"].includes(rolledBackAppointment!.status),
+        "email enqueue failure rolls back cancellation");
+      const rolledBackEmails = await db.select().from(emailDeliveriesTable).where(sql`
+        ${emailDeliveriesTable.eventKey} IN (
+          ${`appointment:${faultAppointmentId}:customer:cancelled`},
+          ${`appointment:${faultAppointmentId}:salon:cancelled`}
+        )
+      `);
+      assert.equal(rolledBackEmails.length, 0, "failed cancellation leaves no required email outbox row");
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${faultFunction}_trigger ON email_deliveries; DROP FUNCTION IF EXISTS ${faultFunction}();`));
+    }
     const [arrivedCustomerAppointment] = await db.insert(appointmentsTable).values({
       salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
       employeeId: employee!.id, serviceId: service!.id, date: "2099-12-01",
@@ -1074,6 +1257,10 @@ async function run(): Promise<void> {
     assert.ok(blockedGroupAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
     assert.equal((await db.select().from(appointmentStatusHistoryTable)
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
+    await assertNoCancellationEmails(
+      blockedGroupMembers.map((item) => item.id),
+      "rejected group cancellation creates no email obligations",
+    );
 
     const successfulGroupMembers = await db.insert(appointmentsTable).values([
       groupAppointmentValues(successfulGroup!.id, "2099-12-04", false),
@@ -1088,6 +1275,26 @@ async function run(): Promise<void> {
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, successfulGroupMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")));
     assert.equal(successfulGroupHistory.length, 2);
     assert.ok(successfulGroupHistory.every((item) => item.occurredAt instanceof Date));
+    await assertCancellationEmailPairs(
+      successfulGroupMembers.map((item) => item.id),
+      "owner group cancellation enqueues one customer/salon email pair per affected appointment",
+    );
+
+    const [employeeLifecycleAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id,
+      employeeId: employee!.id, serviceId: service!.id,
+      date: "2099-12-09", startTime: "16:00", endTime: "17:00",
+      durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const employeeLifecycleCancel = await request(
+      baseUrl, employeeSession, `/appointments/${employeeLifecycleAppointment!.id}/lifecycle`, "POST",
+      { action: "cancel", reason: "Employee cancellation email scope" },
+    );
+    assert.equal(employeeLifecycleCancel.status, 200, "assigned employee lifecycle cancellation must succeed");
+    await assertCancellationEmailPairs(
+      [employeeLifecycleAppointment!.id],
+      "employee lifecycle cancellation enqueues the required email pair",
+    );
 
     const [blockedSeries] = await db.insert(appointmentSeriesTable).values({
       salonId: salon!.id, salonCustomerId: contact!.id, serviceId: service!.id,
@@ -1104,11 +1311,81 @@ async function run(): Promise<void> {
     assert.ok(blockedSeriesAfter.every((item) => item.status === "confirmed" && item.cancelledAt === null && item.cancelledByUserId === null));
     assert.equal((await db.select().from(appointmentStatusHistoryTable)
       .where(and(inArray(appointmentStatusHistoryTable.appointmentId, blockedSeriesMembers.map((item) => item.id)), eq(appointmentStatusHistoryTable.action, "cancel")))).length, 0);
+
+    const [successfulSeries] = await db.insert(appointmentSeriesTable).values({
+      salonId: salon!.id, salonCustomerId: contact!.id, serviceId: service!.id,
+      employeeId: employee!.id, totalAppointments: 2, createdByUserId: owner!.id,
+    }).returning();
+    const successfulSeriesMembers = await db.insert(appointmentsTable).values([
+      { ...groupAppointmentValues(successfulGroup!.id, "2099-12-10", false), bookingGroupId: null, seriesId: successfulSeries!.id },
+      { ...groupAppointmentValues(successfulGroup!.id, "2099-12-11", false), bookingGroupId: null, seriesId: successfulSeries!.id },
+    ]).returning();
+    const successfulSeriesCancel = await request(
+      baseUrl, ownerSession, `/salon/appointment-series/${successfulSeries!.id}`, "DELETE", {},
+    );
+    assert.equal(successfulSeriesCancel.status, 200, "owner series cancellation must succeed");
+    await assertCancellationEmailPairs(
+      successfulSeriesMembers.map((item) => item.id),
+      "series cancellation enqueues one customer/salon email pair per affected appointment",
+    );
+
+    const leaveDate = "2099-12-12";
+    const leaveAppointments = await db.insert(appointmentsTable).values([
+      {
+        ...groupAppointmentValues(successfulGroup!.id, leaveDate, false),
+        bookingGroupId: null, startTime: "09:00", endTime: "10:00",
+      },
+      {
+        ...groupAppointmentValues(successfulGroup!.id, leaveDate, false),
+        bookingGroupId: null, startTime: "11:00", endTime: "12:00",
+      },
+    ]).returning();
+    const [leaveRequest] = await db.insert(employeeLeaveRequestsTable).values({
+      employeeId: employee!.id, startDate: leaveDate, endDate: leaveDate,
+      reason: "Cancellation email scope",
+    }).returning();
+    const leaveApproval = await request(
+      baseUrl, ownerSession, `/salon/leave-requests/${leaveRequest!.id}`, "PATCH",
+      { status: "approved", affectedAppointments: "cancel" },
+    );
+    assert.equal(leaveApproval.status, 200, "leave approval can canonically cancel affected appointments");
+    await assertCancellationEmailPairs(
+      leaveAppointments.map((item) => item.id),
+      "leave-triggered cancellation enqueues one customer/salon email pair per affected appointment",
+    );
     assertCalendarDate(
       (customerCancellation.body as { date: string }).date,
       updatedCustomerBookingDate,
       "the customer appointment cancellation response date",
     );
+
+    const [phonelessContact] = await db.insert(salonCustomersTable).values({
+      salonId: salon!.id, firstName: "Kontakt", lastName: "Bez telefona",
+      phone: null, phoneNormalized: null,
+    }).returning();
+    const [phonelessAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, salonCustomerId: phonelessContact!.id,
+      employeeId: employee!.id, serviceId: service!.id,
+      date: "2099-10-30", startTime: "16:00", endTime: "17:00",
+      durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const invalidGuestBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      guest: { firstName: "Nevalidan", lastName: "Telefon", phone: "bez-broja" },
+      employeeId: employee!.id,
+      date: "2099-10-31",
+      startTime: "16:00",
+    });
+    assert.equal(invalidGuestBooking.status, 400, "digit-free guest phone must be rejected before CRM matching");
+    const [phonelessContactAfter] = await db.select().from(salonCustomersTable)
+      .where(eq(salonCustomersTable.id, phonelessContact!.id));
+    assert.equal(phonelessContactAfter!.phone, null);
+    assert.equal(phonelessContactAfter!.phoneNormalized, null);
+    assert.equal(phonelessContactAfter!.userId, null, "invalid phone must not assign the phoneless CRM contact");
+    const [phonelessAppointmentAfter] = await db.select().from(appointmentsTable)
+      .where(eq(appointmentsTable.id, phonelessAppointment!.id));
+    assert.equal(phonelessAppointmentAfter!.salonCustomerId, phonelessContact!.id);
+    assert.equal(phonelessAppointmentAfter!.customerId, null, "invalid phone must not reassign existing appointments");
 
     const salonBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
       serviceId: service!.id,
@@ -1554,6 +1831,10 @@ async function run(): Promise<void> {
       { action: "cancel", reason: "Resource capacity regression cleanup" },
     );
     assert.equal(ownerCancelBooking.status, 200, "owner cancellation must succeed");
+    await assertCancellationEmailPairs(
+      [firstBookingBody.id],
+      "owner lifecycle cancellation enqueues the required email pair",
+    );
 
     // After cancellation, the same slot must become available again.
     const retryResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {

@@ -3,35 +3,18 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
+import staticPageDefinitions from './src/lib/static-seo-pages.json' with { type: 'json' };
 import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
-const fallbackDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+const fallbackDescription = staticPageDefinitions.find((page) => page.path === '/')?.description
+  ?? 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+const fallbackImageAlt = 'LUMERA platforma za beauty i wellness usluge, proizvode i edukacije';
+const fallbackImageMetadata = { width: 1200, height: 630, type: 'image/png' };
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
-const staticPages = new Map([
-  ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
-  ['/za-biznise', ['LUMERA Biznis Hub | Poslovna platforma', 'Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.', 'LUMERA Biznis Hub']],
-  ['/za-biznise/saloni', ['LUMERA za salone | Operativni sistem', 'Sve što vam je potrebno za vođenje i rast vašeg beauty salona.', 'LUMERA za salone']],
-  ['/za-biznise/edukativni-centri', ['LUMERA za edukativne centre | Infrastruktura', 'Infrastruktura za organizaciju i prodaju beauty edukacija.', 'LUMERA za edukativne centre']],
-  ['/za-biznise/poslovi', ['LUMERA Poslovi za biznise | Zapošljavanje', 'Pronađite najbolje talente za vaš salon ili edukativni centar.', 'LUMERA Poslovi za biznise']],
-  ['/za-biznise/edukacije', ['LUMERA Edukacije za biznise | Usavršavanje tima', 'Unapredite veštine svog tima kroz B2B beauty edukacije.', 'LUMERA Edukacije za biznise']],
-  ['/pridruzi-se-edukativni-centar', ['Registracija Edukativnog Centra | LUMERA', 'Registrujte svoj edukativni centar na LUMERA platformi.', 'Registracija Edukativnog Centra']],
-  ['/saloni', ['Saloni i beauty tretmani | LUMERA', 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', 'Pronađite salon i tretman koji vam odgovaraju.']],
-  ['/proizvodi', ['Beauty proizvodi za kupce | LUMERA', 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', 'Beauty proizvodi za kupce']],
-  ['/poslovi', ['Beauty poslovi i oglasi | LUMERA', 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', 'Beauty poslovi, angažmani i iznajmljivanje']],
-  ['/inspiracija', ['Beauty inspiracija | LUMERA vodič', 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', 'Inspiracija za sledeći beauty termin.']],
-  ['/recnik', ['Rečnik beauty pojmova | LUMERA', 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', 'Jasna objašnjenja beauty pojmova.']],
-  ['/brendovi', ['Profesionalni beauty brendovi | LUMERA', 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', 'Profesionalni brendovi koje koriste LUMERA saloni.']],
-  ['/edukacije', ['Beauty edukacije i kursevi | LUMERA', 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.', 'Stručni kursevi i beauty edukacije.']],
-  ['/uslovi-koriscenja', ['Uslovi korišćenja | LUMERA', 'Uslovi korišćenja LUMERA platforme.', 'Uslovi korišćenja']],
-  ['/politika-privatnosti', ['Politika privatnosti | LUMERA', 'Kako LUMERA obrađuje i štiti podatke korisnika.', 'Kako štitimo privatnost korisnika.']],
-  ['/politika-kolacica', ['Politika kolačića | LUMERA', 'Informacije o korišćenju kolačića na LUMERA platformi.', 'Informacije o kolačićima.']],
-  ['/uslovi-kupovine', ['Uslovi kupovine | LUMERA', 'Uslovi kupovine edukacija i usluga putem LUMERA platforme.', 'Uslovi kupovine na LUMERA platformi.']],
-  ['/otkazivanje-termina', ['Otkazivanje termina | LUMERA', 'Pravila i smernice za otkazivanje zakazanih termina.', 'Pravila otkazivanja termina.']],
-  ['/povracaj-sredstava', ['Povraćaj sredstava | LUMERA', 'Informacije o refundacijama i zaštiti kupovine na LUMERA platformi.', 'Informacije o povraćaju sredstava.']],
-]);
+const staticPages = new Map(staticPageDefinitions.map((page) => [page.path, page]));
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -43,7 +26,31 @@ function clip(value, limit = 158) {
 }
 
 function asAbsolute(origin, value) {
-  try { return new URL(value || '/og-lumera.svg', origin).href; } catch { return `${origin}/og-lumera.svg`; }
+  try { return new URL(value || '/og-lumera.png', origin).href; } catch { return `${origin}/og-lumera.png`; }
+}
+
+function toLastmod(...values) {
+  for (const value of values) {
+    if (!value) continue;
+    const localized = String(value).trim().match(/^(\d{1,2})\.\s*(januar|februar|mart|april|maj|jun|jul|avgust|septembar|oktobar|novembar|decembar)\s+(\d{4})\.$/i);
+    if (localized) {
+      const months = ['januar', 'februar', 'mart', 'april', 'maj', 'jun', 'jul', 'avgust', 'septembar', 'oktobar', 'novembar', 'decembar'];
+      const month = months.indexOf(localized[2].toLowerCase()) + 1;
+      return `${localized[3]}-${String(month).padStart(2, '0')}-${String(localized[1]).padStart(2, '0')}`;
+    }
+    const date = new Date(value);
+    if (!Number.isNaN(date.valueOf())) return date.toISOString().slice(0, 10);
+  }
+  return undefined;
+}
+
+function entityLastmod(entity) {
+  return toLastmod(entity?.updatedAt, entity?.modifiedAt, entity?.publishedAt, entity?.createdAt);
+}
+
+function latestLastmod(entities) {
+  const dates = (entities ?? []).map(entityLastmod).filter(Boolean).sort();
+  return dates.at(-1);
 }
 
 function requestOrigin(req) {
@@ -105,13 +112,29 @@ function pageShell(meta, body, origin) {
 }
 
 function makeMeta(pathname, title, description, options = {}) {
+  const usesFallbackImage = !options.image;
   return {
     pathname,
     title: clip(title, 60),
     description: clip(description),
-    image: options.image ?? '/og-lumera.svg',
+    image: options.image ?? '/og-lumera.png',
+    imageAlt: String(options.imageAlt ?? '').trim() || (options.image ? clip(title, 60) : fallbackImageAlt),
+    imageWidth: options.imageWidth ?? (usesFallbackImage ? fallbackImageMetadata.width : undefined),
+    imageHeight: options.imageHeight ?? (usesFallbackImage ? fallbackImageMetadata.height : undefined),
+    imageType: options.imageType ?? (usesFallbackImage ? fallbackImageMetadata.type : undefined),
     indexable: options.indexable ?? true,
     schema: options.schema,
+    heroPreload: options.heroPreload,
+  };
+}
+
+function socialImageOptions(entity, fallbackImage) {
+  const image = entity?.socialImage;
+  return {
+    image: image?.url ?? fallbackImage,
+    imageWidth: image?.width,
+    imageHeight: image?.height,
+    imageType: image?.type,
   };
 }
 
@@ -211,11 +234,41 @@ async function renderPublicPage(req, pathname) {
   const origin = requestOrigin(req);
   const staticPage = staticPages.get(pathname);
   if (staticPage) {
-    const [title, description, heading = title.replace(/\s*\|\s*LUMERA$/, '')] = staticPage;
+    const { title, description, indexable, heading = title.replace(/\s*\|\s*LUMERA$/, '') } = staticPage;
     if (pathname === '/') {
       const salons = await getJson(req, '/api/salons?page=1&pageSize=6') ?? [];
       const salonCards = salons.slice(0, 6).map((salon) => card({ href: `/saloni/${salon.slug}`, title: salon.name, description: salon.shortDescription, image: salon.imageUrl, detail: `${salon.city} · Ocena ${salon.rating}` })).join('');
-      const meta = makeMeta(pathname, title, description, { schema: { '@context': 'https://schema.org', '@type': 'WebSite', name: 'LUMERA', url: origin, description } });
+      const meta = makeMeta(pathname, title, description, {
+        heroPreload: '/hero-bg.jpg',
+        schema: {
+          '@context': 'https://schema.org',
+          '@graph': [
+            {
+              '@type': 'Organization',
+              '@id': `${origin}/#organization`,
+              name: 'LUMERA',
+              url: `${origin}/`,
+              logo: asAbsolute(origin, '/og-lumera.png'),
+            },
+            {
+              '@type': 'WebSite',
+              '@id': `${origin}/#website`,
+              name: 'LUMERA',
+              url: `${origin}/`,
+              description,
+              publisher: { '@id': `${origin}/#organization` },
+              potentialAction: {
+                '@type': 'SearchAction',
+                target: {
+                  '@type': 'EntryPoint',
+                  urlTemplate: `${origin}/saloni?category={search_term_string}`,
+                },
+                'query-input': 'required name=search_term_string',
+              },
+            },
+          ],
+        },
+      });
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p><p><a href="/saloni">Istražite sve salone i tretmane</a> · <a href="/edukacije">Pogledajte beauty edukacije</a></p></section><section><h2>Izdvojeni saloni</h2><div class="seo-grid">${salonCards || '<p>Saloni će uskoro biti dostupni.</p>'}</div></section>`, origin) };
     }
     if (pathname === '/saloni') {
@@ -274,7 +327,19 @@ async function renderPublicPage(req, pathname) {
     }
     if (pathname === '/edukacije') {
       const courses = await getJson(req, '/api/education/public/courses?page=1&pageSize=24') ?? [];
-      const meta = makeMeta(pathname, title, description);
+      const meta = makeMeta(pathname, title, description, {
+        schema: {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: 'LUMERA beauty edukacije',
+          itemListElement: courses.map((course, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/edukacije/${encodeURIComponent(course.id)}`,
+            name: course.title,
+          })),
+        },
+      });
       const cards = courses.map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description || `${course.category} · ${course.duration}`, image: course.imageUrl, detail: `${course.publisher} · ${course.price} RSD` })).join('');
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupne edukacije</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih edukacija.</p>'}</div></section>`, origin) };
     }
@@ -282,11 +347,24 @@ async function renderPublicPage(req, pathname) {
       const endpoint = pathname === '/inspiracija' ? '/api/inspiracija' : pathname === '/recnik' ? '/api/recnik' : '/api/brendovi';
       const items = await getJson(req, endpoint) ?? [];
       const cards = items.slice(0, 30).map((item) => card({ href: item.salon?.slug ? `/saloni/${item.salon.slug}` : '/saloni', title: item.title ?? item.term ?? item.name, description: item.definition ?? item.description, image: pathname === '/inspiracija' ? item.imageUrl : undefined, detail: item.salon?.name ?? item.category })).join('');
-      const meta = makeMeta(pathname, title, description);
+      const guideItems = items.slice(0, 30);
+      const meta = makeMeta(pathname, title, description, {
+        schema: {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: heading,
+          itemListElement: guideItems.map((item, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: item.title ?? item.term ?? item.name,
+            ...(item.salon?.slug ? { url: `${origin}/saloni/${encodeURIComponent(item.salon.slug)}` } : {}),
+          })),
+        },
+      });
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Sadržaj vodiča</h2><div class="seo-grid">${cards || '<p>Vodič je trenutno prazan.</p>'}</div></section>`, origin) };
     }
     const legalPage = legalPageByPath.get(pathname);
-    const meta = makeMeta(pathname, title, description, { indexable: pathname !== '/pridruzi-se-edukativni-centar' });
+    const meta = makeMeta(pathname, title, description, { indexable });
     if (legalPage) {
       const sections = legalPage.sections.map((section) => `<section><h2>${escapeHtml(section.title)}</h2>${section.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</section>`).join('');
       return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(legalPage.title)}</h1><p>${escapeHtml(legalPage.lead)}</p><p><strong>Poslednje ažuriranje:</strong> ${escapeHtml(legalPage.lastUpdated)}</p><p><strong>Radna pravna verzija:</strong> tekst mora biti potvrđen od strane odgovornog pravnog lica i pravnog savetnika pre komercijalnog lansiranja.</p>${sections}</article>`, origin) };
@@ -407,14 +485,15 @@ async function renderPublicPage(req, pathname) {
       { name: product.name, pathname: canonicalPath },
     ];
     const meta = makeMeta(canonicalPath, `${product.name} | ${supplier.name}`, description, {
-      image: product.images?.[0] ?? product.imageUrl,
+      ...socialImageOptions(product, product.imageUrl),
+      imageAlt: product.coverImageDescription,
       schema: {
         '@context': 'https://schema.org',
         '@graph': [{
           '@type': 'Product',
           name: product.name,
           description,
-          image: asAbsolute(origin, product.images?.[0] ?? product.imageUrl),
+          image: asAbsolute(origin, product.imageUrl),
           brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
           category: product.category,
           offers: {
@@ -429,7 +508,7 @@ async function renderPublicPage(req, pathname) {
     });
     return {
       meta,
-      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(product.name)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
+      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
     };
   }
 
@@ -468,7 +547,7 @@ async function renderPublicPage(req, pathname) {
       ...categoryCrumbs,
     ];
     const meta = makeMeta(canonicalPath, title, description, {
-      image: supplier.logoUrl,
+      ...socialImageOptions(supplier, supplier.logoUrl),
       schema: {
         '@context': 'https://schema.org',
         '@graph': [{
@@ -499,13 +578,14 @@ async function renderPublicPage(req, pathname) {
     const canonicalPath = `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`;
     const description = job.description || `${job.title} — ${beautyJobTypeLabel(job.type).toLowerCase()} u mestu ${job.city}.`;
     const meta = makeMeta(canonicalPath, `${job.title} | LUMERA Poslovi`, description, {
-      image: job.photos?.[0],
+      ...socialImageOptions(job, job.photos?.[0]),
+      imageAlt: job.coverImageDescription,
       schema: beautyJobSchema(job, origin, canonicalPath),
     });
     const price = job.priceAmount ? `${job.priceAmount} RSD${job.pricePeriod ? ` / ${job.pricePeriod}` : ''}` : job.negotiable ? 'Cena po dogovoru' : '';
     return {
       meta,
-      html: pageShell(meta, `<article><p class="seo-kicker">${escapeHtml(beautyJobIntentLabel(job.intent))} · ${escapeHtml(beautyJobTypeLabel(job.type))}</p><h1>${escapeHtml(job.title)}</h1><p>${escapeHtml(description)}</p>${job.photos?.[0] ? `<img src="${escapeHtml(job.photos[0])}" width="960" height="640" alt="${escapeHtml(job.title)}">` : ''}<p><strong>${escapeHtml(job.city)}, ${escapeHtml(job.region)}</strong>${price ? ` · ${escapeHtml(price)}` : ''}</p>${job.availabilityPattern ? `<p>Raspoloživost: ${escapeHtml(job.availabilityPattern)}</p>` : ''}<p>Oglašivač: ${escapeHtml(job.authorDisplayName)}</p><p><a href="/poslovi">Svi Beauty Poslovi oglasi</a></p></article>`, origin),
+      html: pageShell(meta, `<article><p class="seo-kicker">${escapeHtml(beautyJobIntentLabel(job.intent))} · ${escapeHtml(beautyJobTypeLabel(job.type))}</p><h1>${escapeHtml(job.title)}</h1><p>${escapeHtml(description)}</p>${job.photos?.[0] ? `<img src="${escapeHtml(job.photos[0])}" width="960" height="640" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>${escapeHtml(job.city)}, ${escapeHtml(job.region)}</strong>${price ? ` · ${escapeHtml(price)}` : ''}</p>${job.availabilityPattern ? `<p>Raspoloživost: ${escapeHtml(job.availabilityPattern)}</p>` : ''}<p>Oglašivač: ${escapeHtml(job.authorDisplayName)}</p><p><a href="/poslovi">Svi Beauty Poslovi oglasi</a></p></article>`, origin),
     };
   }
 
@@ -515,11 +595,14 @@ async function renderPublicPage(req, pathname) {
     if (!salon) return null;
     const description = salon.description || salon.shortDescription || `${salon.name} — salon i beauty tretmani u gradu ${salon.city}.`;
     const meta = makeMeta(pathname, `${salon.name} u ${salon.city} | LUMERA`, description, {
-      image: salon.gallery?.[0] ?? salon.imageUrl,
-      schema: { '@context': 'https://schema.org', '@type': 'BeautySalon', name: salon.name, description, image: asAbsolute(origin, salon.gallery?.[0] ?? salon.imageUrl), address: { '@type': 'PostalAddress', addressLocality: salon.city, addressCountry: 'RS' }, aggregateRating: salon.rating ? { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount ?? 0 } : undefined },
+      ...socialImageOptions(salon, salon.imageUrl),
+      imageAlt: salon.coverImageDescription,
+      schema: { '@context': 'https://schema.org', '@type': 'BeautySalon', name: salon.name, description, image: asAbsolute(origin, salon.socialImage?.url ?? salon.imageUrl), address: { '@type': 'PostalAddress', addressLocality: salon.city, addressCountry: 'RS' }, aggregateRating: salon.rating ? { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount ?? 0 } : undefined },
     });
     const services = (salon.services ?? []).slice(0, 24).map((service) => `<li>${escapeHtml(service.name)}${service.price ? ` — od ${escapeHtml(service.promoPrice ?? service.price)} RSD` : ''}</li>`).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${salon.gallery?.[0] || salon.imageUrl ? `<img src="${escapeHtml(salon.gallery?.[0] ?? salon.imageUrl)}" width="960" height="640" alt="${escapeHtml(salon.name)}">` : ''}<p>${escapeHtml(salon.city ?? '')}${salon.address ? ` · ${escapeHtml(salon.address)}` : ''}</p><p>Ocena: ${escapeHtml(salon.rating ?? 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section><p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
+    const heroImage = salon.imageUrl ?? salon.gallery?.[0];
+    const heroImageAlt = heroImage === salon.imageUrl ? meta.imageAlt : salon.name;
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}${salon.address ? ` · ${escapeHtml(salon.address)}` : ''}</p><p>Ocena: ${escapeHtml(salon.rating ?? 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section><p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
   }
 
   const courseMatch = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);
@@ -527,9 +610,44 @@ async function renderPublicPage(req, pathname) {
     const course = await getJson(req, `/api/education/public/courses/${encodeURIComponent(courseMatch[1])}`);
     if (!course) return null;
     const description = course.description || `${course.title} — stručna beauty edukacija na LUMERA platformi.`;
-    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { image: course.imageUrl, schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description, provider: { '@type': 'Organization', name: course.publisher }, image: asAbsolute(origin, course.imageUrl) } });
+    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { ...socialImageOptions(course, course.imageUrl), imageAlt: course.coverImageDescription, schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description, provider: { '@type': 'Organization', name: course.publisher }, image: asAbsolute(origin, course.socialImage?.url ?? course.imageUrl) } });
     const outcomes = (course.learningOutcomes ?? []).slice(0, 10).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(course.title)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
+  }
+
+  const bundleMatch = pathname.match(/^\/edukacije\/paketi\/([a-zA-Z0-9-]+)$/);
+  if (bundleMatch) {
+    const bundle = await getJson(req, `/api/education/bundles/${encodeURIComponent(bundleMatch[1])}`);
+    if (!bundle) return null;
+    const name = bundle.name || bundle.title || 'Paket edukacija';
+    const description = bundle.description || `${name} — paket stručnih beauty edukacija na LUMERA platformi.`;
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name,
+        description,
+        category: 'Paket beauty edukacija',
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'RSD',
+          price: String(bundle.price),
+          availability: 'https://schema.org/InStock',
+          url: `${origin}${pathname}`,
+        },
+        hasPart: (bundle.courses ?? []).map((course) => ({
+          '@type': 'Course',
+          name: course.title,
+          description: course.description,
+        })),
+      },
+    });
+    const courses = (bundle.courses ?? []).map((course) =>
+      `<li><a href="/edukacije/${escapeHtml(encodeURIComponent(course.courseId))}">${escapeHtml(course.title)}</a>${course.duration ? ` · ${escapeHtml(course.duration)}` : ''}</li>`).join('');
+    return {
+      meta,
+      html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><p><strong>${escapeHtml(bundle.price)} RSD</strong></p><section><h2>Kursevi u paketu</h2>${courses ? `<ul>${courses}</ul>` : '<p>Trenutno nema javnih kurseva u paketu.</p>'}</section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin),
+    };
   }
 
   const centerMatch = pathname.match(/^\/edukacije\/centri\/([a-zA-Z0-9-]+)$/);
@@ -538,7 +656,17 @@ async function renderPublicPage(req, pathname) {
     if (!center) return null;
     const name = center.name || 'Edukativni centar';
     const description = center.description || `Kursevi i edukacije centra ${name}.`;
-    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, { image: center.imageUrl });
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      ...socialImageOptions(center, center.imageUrl),
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'EducationalOrganization',
+        name,
+        description,
+        image: asAbsolute(origin, center.imageUrl),
+        url: `${origin}${pathname}`,
+      },
+    });
     const courses = (center.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Programi centra</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
@@ -549,7 +677,17 @@ async function renderPublicPage(req, pathname) {
     if (!instructor) return null;
     const name = instructor.name || 'Instruktor';
     const description = instructor.biography || `Upoznajte instruktora ${name} i dostupne beauty edukacije.`;
-    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, { image: instructor.photoUrl });
+    const meta = makeMeta(pathname, `${name} | LUMERA edukacije`, description, {
+      ...socialImageOptions(instructor, instructor.photoUrl),
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        name,
+        description,
+        image: asAbsolute(origin, instructor.photoUrl),
+        url: `${origin}${pathname}`,
+      },
+    });
     const courses = (instructor.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Edukacije instruktora</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
@@ -558,7 +696,8 @@ async function renderPublicPage(req, pathname) {
 
 function injectDocument(template, page, origin) {
   const canonical = `${origin}${page.meta.pathname}`;
-  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}"><meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}">`;
+  const imageDetails = `${page.meta.imageWidth ? `<meta property="og:image:width" content="${escapeHtml(page.meta.imageWidth)}">` : ''}${page.meta.imageHeight ? `<meta property="og:image:height" content="${escapeHtml(page.meta.imageHeight)}">` : ''}${page.meta.imageType ? `<meta property="og:image:type" content="${escapeHtml(page.meta.imageType)}">` : ''}`;
+  const metadata = `<title>${escapeHtml(page.meta.title)}</title><meta name="description" content="${escapeHtml(page.meta.description)}"><meta name="robots" content="${page.meta.indexable ? 'index, follow' : 'noindex, follow'}"><link rel="canonical" href="${escapeHtml(canonical)}">${page.meta.heroPreload ? `<link rel="preload" as="image" href="${escapeHtml(page.meta.heroPreload)}" fetchpriority="high">` : ''}<meta property="og:title" content="${escapeHtml(page.meta.title)}"><meta property="og:description" content="${escapeHtml(page.meta.description)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta property="og:image:alt" content="${escapeHtml(page.meta.imageAlt)}">${imageDetails}<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(page.meta.title)}"><meta name="twitter:description" content="${escapeHtml(page.meta.description)}"><meta name="twitter:url" content="${escapeHtml(canonical)}"><meta name="twitter:image" content="${escapeHtml(asAbsolute(origin, page.meta.image))}"><meta name="twitter:image:alt" content="${escapeHtml(page.meta.imageAlt)}">`;
   const withoutDefaultMetadata = stripSeoMetadata(template);
   return withoutDefaultMetadata
     .replace('</head>', `${metadata}${page.meta.schema ? `<script type="application/ld+json">${JSON.stringify(page.meta.schema).replace(/</g, '\\u003c')}</script>` : ''}</head>`)
@@ -579,27 +718,58 @@ function sitemapXml(origin, entries) {
 
 async function buildSitemap(req) {
   const origin = requestOrigin(req);
-  const entries = [...staticPages.keys(), ...categoryPages.keys()]
-    .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
-    .map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
-  const [salons, courses, suppliers, beautyJobs, taxonomy] = await Promise.all([
+  const entries = [
+    ...[...staticPages.values()].filter((page) => page.indexable).map((page) => page.path),
+    ...categoryPages.keys(),
+  ]
+    .map((pathname) => ({
+      pathname,
+      lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated),
+      priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7',
+    }));
+  const [salons, courses, bundles, suppliers, beautyJobs, taxonomy, inspiration, glossary, brands] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
+    getJson(req, '/api/education/bundles'),
     getJson(req, '/api/suppliers'),
     listAll(req, '/api/beauty-jobs', 100),
     getJson(req, '/api/education/public/taxonomy'),
+    getJson(req, '/api/inspiracija'),
+    getJson(req, '/api/recnik'),
+    getJson(req, '/api/brendovi'),
   ]);
+  const setCollectionLastmod = (pathname, entities) => {
+    const entry = entries.find((item) => item.pathname === pathname);
+    if (entry) entry.lastmod = latestLastmod(entities) ?? entry.lastmod;
+  };
+  setCollectionLastmod('/', salons);
+  setCollectionLastmod('/saloni', salons);
+  setCollectionLastmod('/edukacije', [...courses, ...(bundles ?? [])]);
+  setCollectionLastmod('/proizvodi', suppliers);
+  setCollectionLastmod('/poslovi', beautyJobs);
+  setCollectionLastmod('/inspiracija', inspiration);
+  setCollectionLastmod('/recnik', glossary);
+  setCollectionLastmod('/brendovi', brands);
   const seenCenters = new Set();
   const seenInstructors = new Set();
-  for (const salon of salons) entries.push({ pathname: `/saloni/${encodeURIComponent(salon.slug)}`, lastmod: salon.createdAt ? new Date(salon.createdAt).toISOString().slice(0, 10) : undefined, priority: '0.8' });
+  for (const salon of salons) entries.push({ pathname: `/saloni/${encodeURIComponent(salon.slug)}`, lastmod: entityLastmod(salon), priority: '0.8' });
   for (const course of courses) {
-    entries.push({ pathname: `/edukacije/${encodeURIComponent(course.id)}`, priority: '0.8' });
+    const lastmod = entityLastmod(course);
+    entries.push({ pathname: `/edukacije/${encodeURIComponent(course.id)}`, lastmod, priority: '0.8' });
     if (course.centerId && !seenCenters.has(course.centerId)) { seenCenters.add(course.centerId); entries.push({ pathname: `/edukacije/centri/${encodeURIComponent(course.centerId)}`, priority: '0.6' }); }
     if (course.instructorProfileId && !seenInstructors.has(course.instructorProfileId)) { seenInstructors.add(course.instructorProfileId); entries.push({ pathname: `/edukacije/instruktori/${encodeURIComponent(course.instructorProfileId)}`, priority: '0.6' }); }
   }
+  for (const bundle of bundles ?? []) {
+    entries.push({
+      pathname: `/edukacije/paketi/${encodeURIComponent(bundle.id)}`,
+      lastmod: entityLastmod(bundle),
+      priority: '0.7',
+    });
+  }
   for (const supplier of (suppliers ?? []).filter(isPublicRetailSupplier)) {
     const supplierPath = `/shop/${encodeURIComponent(supplier.slug)}`;
-    entries.push({ pathname: supplierPath, priority: '0.8' });
+    const supplierLastmod = entityLastmod(supplier);
+    entries.push({ pathname: supplierPath, lastmod: supplierLastmod, priority: '0.8' });
     const [categories, products] = await Promise.all([
       getJson(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/categories`),
       listAll(req, `/api/suppliers/${encodeURIComponent(supplier.slug)}/public-products`, 100),
@@ -607,24 +777,27 @@ async function buildSitemap(req) {
     for (const category of categories ?? []) {
       if (category.active) entries.push({
         pathname: `${supplierPath}/${category.path.split('/').map(encodeURIComponent).join('/')}`,
+        lastmod: entityLastmod(category),
         priority: '0.7',
       });
     }
     for (const product of products) {
-      entries.push({ pathname: `${supplierPath}/proizvod/${encodeURIComponent(product.id)}`, priority: '0.7' });
+      entries.push({ pathname: `${supplierPath}/proizvod/${encodeURIComponent(product.id)}`, lastmod: entityLastmod(product), priority: '0.7' });
     }
   }
   for (const job of beautyJobs) {
-    entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
+    entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: entityLastmod(job), priority: '0.7' });
   }
 
   if (Array.isArray(taxonomy)) {
     for (const section of taxonomy) {
-      entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}`, priority: '0.7' });
+      const sectionLastmod = entityLastmod(section);
+      entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}`, lastmod: sectionLastmod, priority: '0.7' });
       for (const category of (section.categories || [])) {
-        entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}`, priority: '0.6' });
+        const taxonomyCategoryLastmod = entityLastmod(category);
+        entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}`, lastmod: taxonomyCategoryLastmod, priority: '0.6' });
         for (const sub of (category.subcategories || [])) {
-          entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(sub.slug)}`, priority: '0.5' });
+          entries.push({ pathname: `/edukacije/sekcije/${encodeURIComponent(section.slug)}/${encodeURIComponent(category.slug)}/${encodeURIComponent(sub.slug)}`, lastmod: entityLastmod(sub), priority: '0.5' });
         }
       }
     }
@@ -636,6 +809,11 @@ async function buildSitemap(req) {
 function privateDocument(pathname, origin) {
   const meta = makeMeta(pathname, 'LUMERA | Privatna stranica', fallbackDescription, { indexable: false });
   return pageShell(meta, '<article><h1>LUMERA</h1><p>Ova stranica je dostupna u aplikaciji i nije namenjena indeksiranju pretraživača.</p><p><a href="/">Povratak na početnu</a></p></article>', origin);
+}
+
+function notFoundDocument(pathname, origin) {
+  const meta = makeMeta(pathname, 'Stranica nije pronađena | LUMERA', 'Tražena LUMERA stranica nije pronađena.', { indexable: false });
+  return pageShell(meta, '<article><h1>Stranica nije pronađena</h1><p>Proverite adresu ili nastavite pretragu javnog LUMERA sadržaja.</p><form action="/saloni" method="get" role="search"><label for="seo-search">Pretražite salone i tretmane</label><p><input id="seo-search" name="category" type="search" autocomplete="off"> <button type="submit">Pretraži</button></p></form><p><a href="/saloni">Svi saloni</a> · <a href="/edukacije">Beauty edukacije</a> · <a href="/inspiracija">Inspiracija</a> · <a href="/">Početna</a></p></article>', origin);
 }
 
 export async function createSeoResponse(req, template) {
@@ -692,15 +870,17 @@ export async function createSeoResponse(req, template) {
   if (pathname === '/sitemap.xml') {
     try { return { status: 200, type: 'application/xml; charset=utf-8', body: await buildSitemap(req) }; }
     catch {
-      const staticEntries = [...staticPages.keys()]
-        .filter((item) => item !== '/pridruzi-se-edukativni-centar')
-        .map((item) => ({ pathname: item }));
+      const staticEntries = [...staticPages.values()]
+        .filter((page) => page.indexable)
+        .map((page) => page.path)
+        .map((pathname) => ({ pathname, lastmod: toLastmod(legalPageByPath.get(pathname)?.lastUpdated) }));
       return { status: 503, type: 'application/xml; charset=utf-8', body: sitemapXml(origin, staticEntries) };
     }
   }
   const hasQuery = url.search.length > 0;
   try {
-    const page = !hasQuery ? await renderPublicPage(req, pathname) : null;
+    const page = await renderPublicPage(req, pathname);
+    if (page && hasQuery) page.meta = { ...page.meta, indexable: false };
     if (page) return { status: 200, type: 'text/html; charset=utf-8', body: injectDocument(template, page, origin) };
   } catch {
     // Fall through to the client app with a non-indexable response. Public API
@@ -710,15 +890,16 @@ export async function createSeoResponse(req, template) {
     ? `<link rel="canonical" href="${escapeHtml(`${origin}${pathname}`)}">`
     : '';
   const privateHead = `<title>LUMERA | Privatna stranica</title><meta name="description" content="${escapeHtml(fallbackDescription)}"><meta name="robots" content="noindex, follow">${queryCanonical}`;
+  const fallbackDocument = hasQuery ? privateDocument(pathname, origin) : notFoundDocument(pathname, origin);
   const html = stripSeoMetadata(template)
     .replace('</head>', `${privateHead}</head>`)
-    .replace('<div id="root"></div>', `${privateDocument(pathname, origin)}<div id="root"></div>`);
+    .replace('<div id="root"></div>', `${fallbackDocument}<div id="root"></div>`);
   return { status: hasQuery ? 200 : 404, type: 'text/html; charset=utf-8', body: html };
 }
 
 const mimeTypes = { '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
 
-async function start() {
+export async function startSeoServer() {
   const template = await fs.readFile(path.join(distDir, 'index.html'), 'utf8');
   const port = Number(process.env.PORT ?? 23561);
   createServer(async (req, res) => {
@@ -741,4 +922,7 @@ async function start() {
   }).listen(port, '0.0.0.0');
 }
 
-if (process.env.NODE_ENV !== 'test') void start();
+const isMainModule = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMainModule) void startSeoServer();

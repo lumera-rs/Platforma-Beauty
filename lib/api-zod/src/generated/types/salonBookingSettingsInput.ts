@@ -16,6 +16,12 @@ export interface SalonBookingSettingsInput {
   slotGranularityMinutes: SalonBookingSettingsInputSlotGranularityMinutes;
   /** @minimum 0 */
   minimumLeadTimeMinutes: number;
+  /**
+     * @minimum 0
+     * @maximum 3650
+     * @nullable
+     */
+  maxBookingHorizonDays: number | null;
   cancellationDeadlineMinutes: SalonBookingSettingsInputCancellationDeadlineMinutes;
   reminderOffsetsMinutes: SalonBookingSettingsInputReminderOffsetsMinutesItem[];
   reminderChannels: BookingReminderChannel[];

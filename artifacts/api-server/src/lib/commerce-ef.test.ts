@@ -135,7 +135,7 @@ test("admin profitability aggregates immutable B2C/B2B snapshots and excludes ca
   const adminCookie = await cookie(admin);
   const get = (extra = "") => api(`/admin/commerce/profitability?from=2025-01-15&to=2025-01-15&productId=${productId}${extra}`, adminCookie);
   for (const [granularity, period] of [["DAY", "2025-01-15"], ["WEEK", "2025-01-13"], ["MONTH", "2025-01-01"]] as const) {
-    const response = await get(`&granularity=${granularity}`);
+    const response = await get(`&granularity=${granularity}&supplierId=${product!.supplierId}&categoryId=${product!.categoryId}&brand=${encodeURIComponent(marker)}`);
     assert.equal(response.status, 200);
     const report = await response.json() as { kpis: { revenueRsd: number; cogsRsd: number; profitRsd: number; marginPercent: number; units: number }; timeSeries: Array<{ period: string }>; products: Array<{ productId: string; realizedRevenueRsd: number; cogsRsd: number }> };
     assert.deepEqual(report.kpis, { revenueRsd: 2700, cogsRsd: 1000, profitRsd: 1700, marginPercent: 62.96, units: 3 });
@@ -463,8 +463,8 @@ test("Deo E/F quote, POR matrix/feed, review reward/invitation, and RMA fences",
     assert.equal(AdminUpdateRmaStatusResponse.safeParse(statusBody).success, true);
     assert.equal((await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, `rma:${rma.id}:status:RECEIVED`))).length, 0);
 
-    const sensitiveValue = `${marker}-must-not-be-logged`;
-    const logged: unknown[] = [];
+  const sensitiveValue = `${marker}-admin-commerce-secret`;
+  const logged: unknown[] = [];
     const invalid = {
       ...retailAdminRow,
       target: "b2c",

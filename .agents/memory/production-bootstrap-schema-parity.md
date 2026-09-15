@@ -19,3 +19,9 @@ Schema-rollout serialization must use one advisory-lock identity that stays unch
 **Why:** During a rolling upgrade, deriving the lock key from the bootstrap version let old and new processes mutate the same PostgreSQL trigger catalogs concurrently. A non-blocking try-lock avoided the catalog race but allowed a process to serve requests before its required schema was ready.
 
 **How to apply:** Keep the lock key stable across releases, acquire it on the same held connection that runs the rollout, serialize direct test runners through the same boundary, and regression-test that a newer runner cannot return while an older-version owner holds the lock.
+
+Treat the rollout version as an optimization marker, not proof that every cheap additive structural dependency exists. Before the current-version fast path returns, replay idempotent repairs for columns that ORM queries, startup migrations, or background workers require immediately.
+
+**Why:** A shared or manually prepared database can record the current version while a concurrently added column is absent. Reporting readiness in that state lets startup continue until the first ORM query fails.
+
+**How to apply:** Put critical `ADD COLUMN IF NOT EXISTS` repairs before the fast-path return, guard tables that may not exist on old installations, keep the same additions in the full rollout after table creation, and test a current-version database with those columns deliberately removed.

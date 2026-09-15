@@ -1279,6 +1279,22 @@ paths:
         "304": { description: Not modified }
         "403": { description: Private media access denied }
         "404": { description: Image or requested variant not found }
+  /media/descriptions:
+    post:
+      operationId: getMediaDescriptions
+      tags: [media]
+      summary: Return descriptions for readable managed images
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaDescriptionsRequest" }
+      responses:
+        "200":
+          description: Readable image descriptions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaDescriptionsResponse" }
   /salon/appointments:
     get:
       operationId: listSalonAppointments
@@ -6666,7 +6682,7 @@ paths:
     get:
       operationId: listPublicSuppliers
       tags: [shop]
-      summary: List active public suppliers
+      summary: List active public suppliers with verified social-image metadata when managed media is selected
       responses:
         "200": { description: Active suppliers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Supplier" } } } } }
   /suppliers/{supplierSlug}:
@@ -6707,7 +6723,7 @@ paths:
     get:
       operationId: listSupplierPublicProducts
       tags: [shop]
-      summary: List active retail products from one active supplier
+      summary: List active retail products with selected social-image metadata from one active supplier
       parameters:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: categoryId, in: query, schema: { type: string } }
@@ -9978,6 +9994,16 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    PublicSocialImage:
+      type: object
+      description: Selected public social image. Dimensions and MIME type are present only when verified from a managed image variant.
+      additionalProperties: false
+      properties:
+        url: { type: string }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        type: { type: string, enum: [image/avif, image/webp, image/jpeg, image/png] }
+      required: [url]
     AdminPriceInquiry:
       type: object
       required:
@@ -10878,6 +10904,8 @@ components:
         city: { type: string }
         municipality: { type: string }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         rating: { type: number }
         reviewCount: { type: number }
         shortDescription: { type: string }
@@ -10897,7 +10925,7 @@ components:
         openSunday: { type: boolean }
         lastBookedAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: ["string", "null"], format: date-time }
-      required: [id, slug, name, city, municipality, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
+      required: [id, slug, name, city, municipality, imageUrl, coverImageDescription, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
     DiscoveryService:
       type: object
       properties:
@@ -11009,10 +11037,11 @@ components:
         servesMen: { type: boolean }
         openSunday: { type: boolean }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         gallery:
           type: array
           items: { type: string }
-      required: [id, name, slug, active, isVerified, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, gallery]
+      required: [id, name, slug, active, isVerified, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, coverImageDescription, gallery]
     SalonProfileMediaUpdate:
       type: object
       properties:
@@ -11022,10 +11051,15 @@ components:
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         gallery:
           type: array
           maxItems: 20
           items: { type: string, minLength: 1 }
+        galleryDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
     MediaUploadInput:
       type: object
       properties:
@@ -11055,6 +11089,27 @@ components:
         height: { type: number, minimum: 1, multipleOf: 1 }
         contentHash: { type: string }
       required: [id, imageUrl, width, height, contentHash]
+    MediaDescription:
+      type: object
+      properties:
+        url: { type: string, minLength: 1 }
+        altText: { type: string, maxLength: 240 }
+      required: [url, altText]
+    MediaDescriptionsRequest:
+      type: object
+      properties:
+        urls:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1 }
+      required: [urls]
+    MediaDescriptionsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MediaDescription" }
+      required: [items]
     OpeningHour:
       type: object
       properties:
@@ -11347,6 +11402,7 @@ components:
       properties:
         slotGranularityMinutes: { type: integer, enum: [5, 10, 15, 30], default: 15 }
         minimumLeadTimeMinutes: { type: integer, minimum: 0 }
+        maxBookingHorizonDays: { type: ["integer", "null"], minimum: 0, maximum: 3650 }
         cancellationDeadlineMinutes:
           type: integer
           enum: [720, 1440, 2880]
@@ -11368,7 +11424,7 @@ components:
         resourceDowntime:
           type: array
           items: { $ref: "#/components/schemas/ResourceDowntime" }
-      required: [slotGranularityMinutes, minimumLeadTimeMinutes, cancellationDeadlineMinutes, reminderOffsetsMinutes, reminderChannels, maxVisitGapMinutes, minimumUsefulLateTreatmentMinutes, dateHours, resourceDowntime]
+      required: [slotGranularityMinutes, minimumLeadTimeMinutes, maxBookingHorizonDays, cancellationDeadlineMinutes, reminderOffsetsMinutes, reminderChannels, maxVisitGapMinutes, minimumUsefulLateTreatmentMinutes, dateHours, resourceDowntime]
     SalonBookingSettings:
       allOf:
         - $ref: "#/components/schemas/SalonBookingSettingsInput"
@@ -13051,9 +13107,11 @@ components:
         brand: { type: ["string", "null"] }
         description: { type: string }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         price: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         saleEndsAt: { type: ["string", "null"], format: date-time }
@@ -14029,6 +14087,8 @@ components:
         inquiryCount30d: { type: number, multipleOf: 1, minimum: 0 }
         viewCount30d: { type: number, multipleOf: 1, minimum: 0 }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         archived: { type: boolean }
@@ -14053,7 +14113,7 @@ components:
         centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
-      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, reviewCount, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, published, archived]
+      required: [id, title, description, instructor, publisher, publisherType, category, taxonomyPath, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, reviewCount, certification, accredited, tags, faq, paymentMode, studentCount, inquiryCount30d, viewCount30d, imageUrl, coverImageDescription, published, archived]
     EducationCourseInput:
       type: object
       properties:
@@ -14092,6 +14152,7 @@ components:
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         startDate: { type: ["string", "null"], format: date }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
         giftVoucherEligible: { type: boolean }
@@ -14147,6 +14208,7 @@ components:
         paymentMode: { type: string, enum: [online_full, live_deposit, live_off_platform] }
         depositAmount: { type: ["number", "null"], minimum: 0 }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
@@ -14362,6 +14424,7 @@ components:
         city: { type: string }
         description: { type: string }
         imageUrl: { type: string }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         websiteUrl: { type: ["string", "null"] }
         instagramUrl: { type: ["string", "null"] }
         verified: { type: boolean }
@@ -15429,6 +15492,7 @@ components:
         id: { type: string }
         name: { type: string }
         photoUrl: { type: ["string", "null"] }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         biography: { type: string }
         industryYears: { type: number }
         experienceYears: { type: number }
@@ -16286,6 +16350,7 @@ components:
         description: { type: string }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
@@ -16372,9 +16437,14 @@ components:
         description: { type: string, minLength: 1 }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
+        imageDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
@@ -16437,9 +16507,14 @@ components:
         description: { type: string, minLength: 1 }
         shortDescription: { type: ["string", "null"] }
         imageUrl: { type: string, minLength: 1 }
+        coverImageDescription: { type: ["string", "null"], maxLength: 160 }
         images:
           type: array
           items: { type: string }
+        imageDescriptions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/MediaDescription" }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         costPriceRsd: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
         averageDurationDays: { type: ["integer", "null"], minimum: 1, maximum: 3650 }
@@ -16529,6 +16604,7 @@ components:
         slug: { type: string }
         scope: { type: string, enum: [B2B, B2C, BOTH] }
         logoUrl: { type: ["string", "null"] }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -18037,6 +18113,8 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, items: { type: string } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
+        socialImage: { $ref: "#/components/schemas/PublicSocialImage" }
         status: { type: string }
         moderationStatus: { type: string }
         moderationReason: { type: [string, "null"] }
@@ -18053,7 +18131,7 @@ components:
         isSaved: { type: boolean }
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
-      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, isUrgent, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, isUrgent, photos, coverImageDescription, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
     BeautyJobModerationAuditEvent:
       type: object
       description: Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.
@@ -18091,6 +18169,8 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        photoDescriptions: { type: array, maxItems: 8, items: { $ref: "#/components/schemas/MediaDescription" } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
         availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }
@@ -18112,6 +18192,8 @@ components:
         negotiable: { type: boolean }
         isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        photoDescriptions: { type: array, maxItems: 8, items: { $ref: "#/components/schemas/MediaDescription" } }
+        coverImageDescription: { type: [string, "null"], maxLength: 160 }
         availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
         availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }

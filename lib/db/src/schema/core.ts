@@ -15,6 +15,23 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+export type SerbianPhoneSqlColumn =
+  | "phone"
+  | "\"phone\""
+  | "\"salon_customers\".\"phone\"";
+
+export function serbianPhoneNormalizedSqlExpression(column: SerbianPhoneSqlColumn): string {
+  const internationalDigits =
+    `regexp_replace(regexp_replace(coalesce(${column}, ''), '[^0-9]', '', 'g'), '^00', '')`;
+  return `nullif(case when ${internationalDigits} like '0%' `
+    + `then '381' || substring(${internationalDigits} from 2) `
+    + `else ${internationalDigits} end, '')`;
+}
+
+const salonCustomerPhoneLookupExpression = sql.raw(
+  serbianPhoneNormalizedSqlExpression("\"phone\""),
+);
+
 export const userRoleEnum = pgEnum("user_role", [
   "SUPER_ADMIN",
   "ADMIN",
@@ -133,6 +150,7 @@ export const imageAssetsTable = pgTable("image_assets", {
   originalHeight: integer("original_height"),
   variants: jsonb("variants").$type<ImageAssetVariantSet>(),
   status: imageAssetStatusEnum("status").notNull().default("pending"),
+  altText: text("alt_text").notNull().default(""),
   failureReason: text("failure_reason"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -338,6 +356,7 @@ export const salonsTable = pgTable("salons", {
   shortDescription: text("short_description").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),
+  coverImageDescription: text("cover_image_description"),
   gallery: jsonb("gallery").$type<string[]>().notNull().default([]),
   videoUrl: text("video_url"),
   rating: integer("rating").notNull().default(0),
@@ -537,8 +556,23 @@ export const servicesTable = pgTable("services", {
       or (${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes} = ${table.durationMinutes})
     )
   `),
+  check("services_processing_segments_check", sql`
+    ${table.preProcessingMinutes} >= 0
+    and ${table.processingMinutes} >= 0
+    and ${table.postProcessingMinutes} >= 0
+    and (
+      (${table.preProcessingMinutes} = 0 and ${table.processingMinutes} = 0 and ${table.postProcessingMinutes} = 0)
+      or (
+        ${table.durationMinutes} = ${table.preProcessingMinutes} + ${table.processingMinutes} + ${table.postProcessingMinutes}
+        and ${table.durationMinutes} > 0
+      )
+    )
+  `),
   check("services_seat_capacity_check", sql`${table.seatCapacity} >= 1`),
-  check("services_required_employee_count_check", sql`${table.requiredEmployeeCount} >= 1`),
+  check(
+    "services_required_employee_count_check",
+    sql`${table.requiredEmployeeCount} >= 1 and ${table.requiredEmployeeCount} <= 20`,
+  ),
   check("services_deposit_amount_check", sql`${table.depositAmount} is null or ${table.depositAmount} >= 0`),
 ]);
 
@@ -624,6 +658,7 @@ export const salonBookingSettingsTable = pgTable("salon_booking_settings", {
   salonId: uuid("salon_id").primaryKey().references(() => salonsTable.id, { onDelete: "cascade" }),
   slotGranularityMinutes: integer("slot_granularity_minutes").notNull().default(15),
   minimumLeadTimeMinutes: integer("minimum_lead_time_minutes").notNull().default(0),
+  maxBookingHorizonDays: integer("max_booking_horizon_days"),
   cancellationDeadlineMinutes: integer("cancellation_deadline_minutes").notNull().default(0),
   reminderOffsetsMinutes: jsonb("reminder_offsets_minutes").$type<number[]>().notNull().default([]),
   reminderChannels: jsonb("reminder_channels").$type<Array<"email" | "sms" | "push">>().notNull().default([]),
@@ -636,6 +671,7 @@ export const salonBookingSettingsTable = pgTable("salon_booking_settings", {
   check("salon_booking_settings_granularity_check", sql`${table.slotGranularityMinutes} in (5, 10, 15, 30)`),
   check("salon_booking_settings_nonnegative_check", sql`
     ${table.minimumLeadTimeMinutes} >= 0
+    and (${table.maxBookingHorizonDays} is null or ${table.maxBookingHorizonDays} between 0 and 3650)
     and ${table.cancellationDeadlineMinutes} >= 0
     and ${table.maxVisitGapMinutes} >= 0
     and ${table.minimumUsefulLateTreatmentMinutes} >= 0`),
@@ -678,6 +714,10 @@ export const salonCustomersTable = pgTable("salon_customers", {
 }, (table) => [
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
+  index("salon_customers_phone_normalized_idx").on(table.phoneNormalized).where(sql`${table.phoneNormalized} is not null`),
+  index("salon_customers_phone_legacy_normalized_expr_idx")
+    .on(salonCustomerPhoneLookupExpression)
+    .where(sql`${salonCustomerPhoneLookupExpression} is not null`),
   // Per-salon retention samples seek from a random UUID cursor and take a
   // bounded circular range. This avoids sorting the platform-wide customer
   // table while still drawing a distinct sample inside every salon.

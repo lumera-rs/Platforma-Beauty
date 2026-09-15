@@ -6,8 +6,16 @@ const base: GenerateAvailabilityInput = {
   durationMinutes: 45,
   granularityMinutes: 15,
   employees: [{ id: "employee", name: "Employee" }],
-  salonHours: [{ weekday: 1, startTime: "09:00", endTime: "12:00" }],
-  employeeSchedules: [{ employeeId: "employee", weekday: 1, startTime: "09:30", endTime: "12:00" }],
+  salonHours: [
+    { weekday: 1, startTime: "09:00", endTime: "12:00" },
+    { weekday: 2, startTime: "09:00", endTime: "12:00" },
+    { weekday: 3, startTime: "09:00", endTime: "12:00" },
+  ],
+  employeeSchedules: [
+    { employeeId: "employee", weekday: 1, startTime: "09:30", endTime: "12:00" },
+    { employeeId: "employee", weekday: 2, startTime: "09:30", endTime: "12:00" },
+    { employeeId: "employee", weekday: 3, startTime: "09:30", endTime: "12:00" },
+  ],
   timeOff: [],
   appointments: [],
   resourceRequirements: [],
@@ -59,6 +67,27 @@ assert.deepEqual(generateAvailability({
   minimumLeadTimeMinutes: 55,
 }).map((slot) => slot.startTime), ["10:15", "10:30", "10:45", "11:00", "11:15"],
   "minimum lead time must suppress slots before the effective cutoff");
+
+assert.ok(generateAvailability({
+  ...base,
+  dates: ["2099-05-05"],
+  now: { date: "2099-05-04", time: "08:00" },
+  maxBookingHorizonDays: 1,
+}).length > 0, "the inclusive last horizon date remains bookable");
+
+assert.equal(generateAvailability({
+  ...base,
+  dates: ["2099-05-06"],
+  now: { date: "2099-05-04", time: "08:00" },
+  maxBookingHorizonDays: 1,
+}).length, 0, "dates beyond the horizon are not advertised");
+
+assert.ok(generateAvailability({
+  ...base,
+  dates: ["2099-05-06"],
+  now: { date: "2099-05-04", time: "08:00" },
+  maxBookingHorizonDays: null,
+}).length > 0, "a null horizon preserves unlimited legacy behavior");
 
 assert.ok(generateAvailability({
   ...base,

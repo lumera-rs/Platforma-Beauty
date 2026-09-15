@@ -1,10 +1,10 @@
 ---
 name: Index-first exact searches
-description: How to keep exact child-record lookups index-driven when a shared search box also supports broad parent-record text matching.
+description: How to keep exact and legacy-compatible lookups index-driven and deterministic.
 ---
 
-**Rule:** Route canonical exact terms through a separate query that begins at the indexed relation. Do not hide the exact lookup inside an `OR` with unindexed contains predicates over a growing parent table.
+**Rule:** Every branch of an exact-match `OR` must be independently index-backed. If canonical and legacy-normalized rows may both match, select the canonical row deterministically before deduplication.
 
-**Why:** An index can appear in an `EXPLAIN` subplan while PostgreSQL still scans the full parent relation to evaluate the surrounding `OR`. Disabling sequential scans in a regression can mask that scalability failure.
+**Why:** Moving a filter from memory into SQL does not bound database work when one `OR` branch still evaluates an expression across the table. PostgreSQL also sorts nulls first by default for `DESC`, which can make a legacy null row beat a canonical match unless null ordering is explicit.
 
-**How to apply:** Preserve broad contains semantics in a separate branch. Validate exact-search plans with normal planner settings and realistic relation cardinality, asserting both use of the intended index and absence of sequential scans on growing relations. Build new production indexes concurrently when writes must remain available.
+**How to apply:** Materialize expensive legacy normalization into an indexed generated column where needed, index canonical lookup keys globally when lookup scope is global, and use explicit `NULLS LAST` for descending canonical-preference expressions. Validate every lookup branch with plan assertions and realistic cardinality.

@@ -150,7 +150,7 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
   return (
     <Card className="group flex h-full flex-col overflow-hidden border-border/60 transition-all hover:border-primary/30 hover:shadow-xl hover:-translate-y-1">
       <Link href={`/edukacije/${course.id}`} className="block aspect-[16/9] overflow-hidden bg-muted relative">
-        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 640px) 100vw, 400px" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+        <OptimizedImage src={course.imageUrl} alt={course.coverImageDescription?.trim() || course.title} width={800} height={450} responsiveSizes="(max-width: 640px) 100vw, 400px" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
         <CourseWishlistButton course={course} />
         {placementLabel && (
           <div className="absolute top-3 right-3">
@@ -1231,7 +1231,7 @@ export function EducationPublicCourseDetail() {
   };
   const gallery = useMemo(() => course ? [
     { type: "image" as const, url: course.imageUrl },
-    ...course.gallery.map((media) => ({ type: "image" as const, url: media.url })),
+    ...course.gallery.map((media) => ({ type: "image" as const, url: media.url, altText: media.altText })),
   ].filter((item, index, values) => values.findIndex((candidate) => candidate.url === item.url) === index) : [], [course]);
 
   if (isLoading) return <Layout><div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
@@ -1242,7 +1242,12 @@ export function EducationPublicCourseDetail() {
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_330px]">
       <div className="space-y-8">
 
-        <SalonGallery media={gallery} salonName={course.title} />
+        <SalonGallery
+          media={gallery}
+          salonName={course.title}
+          coverImageUrl={course.imageUrl}
+          coverImageDescription={course.coverImageDescription}
+        />
         {course.trailerUrl && <SafeVideoEmbed url={course.trailerUrl} />}
 
         <div><div className="mb-3 flex flex-wrap gap-2"><Badge>{formatLabel[course.format]}</Badge><Badge variant="secondary">{levelLabel[course.level]}</Badge>{course.certification && <Badge variant="outline"><Award className="mr-1 h-3.5 w-3.5" /> Sertifikat</Badge>}</div><h1 className="font-serif text-4xl font-bold leading-tight">{course.title}</h1><p className="mt-4 text-lg leading-relaxed text-muted-foreground">{course.description}</p></div>

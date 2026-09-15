@@ -274,7 +274,7 @@ export default function Salons() {
                     <div className="relative w-full h-48 overflow-hidden bg-muted">
                       <OptimizedImage
                         src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
-                        alt={`${salon.name} — salon lepote`}
+                        alt={salon.coverImageDescription?.trim() || `${salon.name} — salon lepote`}
                         width={800}
                         height={384}
                         responsiveSizes="(max-width: 1024px) calc(100vw - 2rem), (max-width: 1280px) calc(50vw - 2rem), 400px"

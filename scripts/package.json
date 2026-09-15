@@ -5,16 +5,30 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "schema-drift:audit": "tsx ./src/audit-schema-drift.ts",
+    "schema-drift:audit:json-file": "tsx ./src/audit-schema-drift.ts --json-file=schema-drift-report.json",
+    "schema-drift:fingerprint": "tsx ./src/fingerprint-schema.ts",
+    "schema-drift:eligibility": "tsx ./src/schema-drift/eligibility-cli.ts",
+    "test:schema-drift": "tsx --test ./src/schema-drift/schema-drift.test.ts ./src/schema-drift/fingerprint.test.ts",
+    "test:schema-drift:eligibility": "tsx --test ./src/schema-drift/eligibility.test.ts ./src/schema-drift/eligibility-cli.test.ts",
+    "test:schema-drift:integration": "tsx --test ./src/schema-drift/schema-drift.integration.test.ts ./src/schema-drift/fingerprint.integration.test.ts",
+    "test:schema-drift:golden-fixture": "tsx --test ./src/schema-drift/fingerprint-golden-fixture.integration.test.ts",
+    "test:migration-contract": "tsx --test ./src/migration-contract/migration-contract.test.ts ./src/migration-contract/ci-migration-contract.test.ts",
+    "validate:ci:migration-contract": "tsx ./src/migration-contract/validate-ci-migration-contract.ts",
     "ensure:development-schema": "tsx ./src/ensure-development-schema.ts",
+    "ensure:retail-cart-index:ci": "tsx ./src/ensure-retail-cart-index-ci.ts",
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:browser": "tsx ./src/check-browser-spec-types.ts",
     "test:generated-api": "tsx ./src/generated-api-check.ts",
+    "test:internal-request-control-outputs": "tsx --test ./src/internal-request-control-output-check.test.ts && tsx ./src/internal-request-control-output-check.ts",
     "test:backend-standards": "tsx --test ./src/backend-standards-database.test.ts && tsx ./src/test-backend-standards.ts",
+    "test:backend-standards:static": "tsx ./src/test-backend-standards.ts --static-only",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",
     "test:frontend-standards": "tsx ./src/frontend-performance-standards.test.ts",
+    "test:seo-standards": "tsx ./src/seo-standards.test.ts",
     "test:frontend-interactions": "tsx --test ../lib/api-client-react/src/custom-fetch.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/api-error-regressions.test.ts && tsx ../artifacts/beauty-marketplace/src/lib/optimistic-interactions.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/date-range-presets.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/campaign-period-url.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/campaign-cancellation-warning.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/home-search-categories.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/education-dispute-analytics.test.ts && tsx --test ../artifacts/beauty-marketplace/src/lib/featured-salon-payment-contract.test.ts",
     "test:monitoring": "tsx ../artifacts/api-server/src/lib/monitoring.test.ts",
     "test:auth-registration": "pnpm run playwright:checked -- browser/auth-registration.spec.ts",
@@ -29,6 +43,9 @@
     "test:carousel": "pnpm run playwright:checked -- browser/carousel-regression.spec.ts",
     "test:review-photo-privacy": "pnpm run playwright:checked -- browser/review-photo-privacy.spec.ts",
     "test:admin-review-feedback": "pnpm run playwright:checked -- browser/admin-review-feedback.spec.ts",
+    "test:admin-category-reorder": "pnpm run playwright:checked -- browser/admin-category-reorder.spec.ts",
+    "test:admin-duplicate-actions": "pnpm run playwright:checked -- browser/admin-duplicate-actions.spec.ts",
+    "test:admin-integrations-response-validation": "pnpm run playwright:checked -- browser/admin-integrations-response-validation.spec.ts",
     "test:retention-conflict": "pnpm run playwright:checked -- browser/retention-conflict.spec.ts",
     "test:retention-identical-save": "pnpm run playwright:checked -- browser/retention-identical-save.spec.ts",
     "test:retention-preview": "tsx ./src/run-retention-preview.ts",
@@ -43,6 +60,8 @@
     "test:admin-salon-designations": "pnpm run playwright:checked -- browser/admin-salon-designations.spec.ts",
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
+    "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
+    "test:admin-bounded-pagination": "pnpm run playwright:checked -- browser/admin-bounded-pagination.spec.ts",
     "test:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts",
     "test:employee-location-deactivation-browser": "tsx ./src/run-employee-location-deactivation-browser.ts",
     "test:safe-external-url-rendering-browser": "tsx ./src/run-safe-external-url-rendering-browser.ts",
@@ -54,6 +73,9 @@
     "test:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts",
     "cleanup:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts --recover-interrupted-databases",
     "test:beauty-jobs-browser": "tsx ./src/run-beauty-jobs-browser.ts",
+    "test:cover-image-description-browser": "tsx ./src/run-cover-image-description-browser.ts",
+    "test:cover-image-description-browser:mobile": "tsx ./src/run-cover-image-description-browser.ts --mobile",
+    "cleanup:cover-image-description-browser": "tsx ./src/run-cover-image-description-browser.ts --recover-interrupted-databases",
     "cleanup:beauty-jobs-browser": "tsx ./src/run-beauty-jobs-browser.ts --recover-interrupted-databases",
     "test:salon-notifications:release": "tsx ./src/run-salon-notification-release.ts",
     "cleanup:salon-notifications": "tsx ./src/run-salon-notification-release.ts --recover-interrupted-databases",
@@ -75,6 +97,7 @@
     "test:business-guide-help": "pnpm run playwright:checked -- browser/business-guide-help-links.spec.ts",
     "test:multi-location": "pnpm run playwright:checked -- browser/multi-location-owner.spec.ts",
     "test:employee-location-booking": "pnpm run playwright:checked -- browser/employee-location-booking.spec.ts",
+    "test:employee-location-deactivation": "pnpm run playwright:checked -- browser/employee-location-deactivation.spec.ts",
     "test:education-gallery": "pnpm run playwright:checked -- browser/education-gallery.spec.ts",
     "test:social-oauth-return-to": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/social-oauth-return-to.test.ts && pnpm run playwright:checked -- browser/social-oauth-return-to.spec.ts",
     "test:retail-checkout-api": "tsx ./src/run-retail-checkout-api.ts",
@@ -87,6 +110,7 @@
     "test:runtime-security-suite": "tsx ./src/run-runtime-security-suite.ts",
     "test:api-regressions-lifecycle": "tsx --test ./src/run-api-regressions-lifecycle.test.ts",
     "test:release-chain": "tsx --test ./src/release-chain.test.ts",
+    "test:retail-cart-ci-preparation": "tsx --test ./src/ensure-retail-cart-index-ci.test.ts ./src/retail-cart-ci-preparation.test.ts",
     "cleanup:api-regressions": "tsx ./src/run-api-regressions.ts --recover-interrupted-databases",
     "test:retail-checkout": "tsx ./src/run-retail-checkout.ts",
     "test:shipping-config": "tsx ../artifacts/api-server/src/lib/shipping-config.test.ts",
@@ -103,17 +127,25 @@
     "test:anonymized-pg-dump": "bash ./src/anonymized-pg-dump.test.sh",
     "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",
     "test:admin-bounded-pagination": "tsx ./src/run-admin-bounded-pagination.ts",
-    "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts"
+    "test:owner-service-availability": "pnpm run playwright:checked -- browser/owner-service-availability.spec.ts",
+    "test:owner-appointment-employee-regression": "pnpm run playwright:checked -- browser/owner-appointment-employee-regression.spec.ts",
+    "test:owner-automation-b2b-order": "pnpm run playwright:checked -- browser/owner-automation-b2b-order.spec.ts",
+    "test:owner-loyalty-packages": "pnpm run playwright:checked -- browser/owner-loyalty-packages.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@workspace/db": "workspace:*",
     "@types/node": "catalog:",
+    "@types/pg": "^8.20.0",
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
+    "pg": "^8.23.0",
     "tsx": "catalog:",
-    "@workspace/api-zod": "workspace:*"
+    "yaml": "2.9.0"
   },
   "focusedAdministratorBrowserGates": {
+    "scriptNamePattern": "test:admin-*",
+    "specFilePattern": "browser/admin-*.spec.ts",
     "release": [
       "test:admin-access-configuration",
       "test:admin-bounded-pagination",
@@ -122,13 +154,21 @@
     ],
     "localOnly": [
       "test:admin-review-feedback",
-      "test:admin-salon-designations"
+      "test:admin-salon-designations",
+      "test:admin-category-reorder",
+      "test:admin-duplicate-actions",
+      "test:admin-integrations-response-validation"
     ]
   },
   "focusedOwnerBrowserGates": {
+    "scriptNamePattern": "test:owner-*",
+    "specFilePattern": "browser/owner-*.spec.ts",
     "release": [],
     "localOnly": [
-      "test:owner-service-availability"
+      "test:owner-service-availability",
+      "test:owner-appointment-employee-regression",
+      "test:owner-automation-b2b-order",
+      "test:owner-loyalty-packages"
     ]
   },
   "focusedEmployeeBrowserGates": {
@@ -136,7 +176,8 @@
     "specFilePattern": "browser/employee-*.spec.ts",
     "release": [],
     "localOnly": [
-      "test:employee-location-booking"
+      "test:employee-location-booking",
+      "test:employee-location-deactivation"
     ]
   }
 }

@@ -96,9 +96,18 @@ void test("real production boot path (index.ts) recovers from the broken current
     // via ensureBusinessGrowthSchema() itself, so this test does not
     // accidentally depend on the very function under test to set itself up.
     await execFileAsync("psql", [databaseUrl, "-c",
-      `INSERT INTO business_growth_schema_rollout (singleton, version, completed_at)
+      `ALTER TABLE salons DROP COLUMN IF EXISTS cover_image_description;
+       ALTER TABLE products DROP COLUMN IF EXISTS cover_image_description;
+       ALTER TABLE courses DROP COLUMN IF EXISTS cover_image_description;
+       ALTER TABLE beauty_job_listings DROP COLUMN IF EXISTS cover_image_description;
+       INSERT INTO business_growth_schema_rollout (singleton, version, completed_at)
        VALUES (true, ${BUSINESS_GROWTH_SCHEMA_VERSION}, now())
        ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version, completed_at = EXCLUDED.completed_at`]);
+    const { stdout: descriptionsBeforeExist } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
+      `SELECT count(*) FROM information_schema.columns
+       WHERE table_schema='public' AND column_name='cover_image_description'
+         AND table_name IN ('salons', 'products', 'courses', 'beauty_job_listings')`]);
+    assert.equal(descriptionsBeforeExist.trim(), "0", "test precondition: cover descriptions must be absent before boot");
     const { stdout: beforeExists } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
       "SELECT to_regclass('public.education_salon_cleanup_reports') IS NOT NULL"]);
     assert.equal(beforeExists.trim(), "f", "test precondition: cleanup-reports table must not exist before boot");
@@ -137,6 +146,11 @@ void test("real production boot path (index.ts) recovers from the broken current
     const { stdout: afterExists } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
       "SELECT to_regclass('public.education_salon_cleanup_reports') IS NOT NULL"]);
     assert.equal(afterExists.trim(), "t", "cleanup-reports table must exist after a real boot from the broken state");
+    const { stdout: descriptionsAfterExist } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
+      `SELECT count(*) FROM information_schema.columns
+       WHERE table_schema='public' AND column_name='cover_image_description'
+         AND table_name IN ('salons', 'products', 'courses', 'beauty_job_listings')`]);
+    assert.equal(descriptionsAfterExist.trim(), "4", "cover descriptions must be repaired before the API starts");
 
     const { stdout: versionAfter } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
       "SELECT version FROM business_growth_schema_rollout WHERE singleton = true"]);

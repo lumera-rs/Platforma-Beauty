@@ -38,7 +38,7 @@ import {
   UpdateBeautyJobSettingsBody, UpdateBeautyJobSettingsResponse,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
-import { attachReadyImageAssets } from "./image-media";
+import { attachReadyImageAssets, ImageAssetAttachmentError, publicSocialImage, updateImageAssetDescriptions } from "./image-media";
 import { expireBeautyJobListings } from "../lib/beauty-jobs-maintenance";
 import {
   deliverBeautyJobEmail,
@@ -104,6 +104,10 @@ async function applicantAuthenticated(req: import("express").Request, res: impor
   return user;
 }
 function validPhotos(photos: string[] | undefined) { return !photos || (photos.length <= 8 && photos.every((p) => MANAGED_URL.test(p))); }
+function normalizedCoverImageDescription(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  return value?.trim() || null;
+}
 function ensureCompatibility(categorySlug: string, type: string, availability?: string | null) {
   const rentalCategory = categorySlug === "iznajmljivanje-opreme" || categorySlug === "iznajmljivanje-prostora-stolice";
   if (RENTAL_TYPES.has(type) !== rentalCategory) return "Tip oglasa nije kompatibilan sa kategorijom.";
@@ -367,14 +371,33 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-post:${user.id}`}))`);
     const [recent] = await tx.select({ total: count() }).from(beautyJobListingsTable).where(and(authorFilter, sql`${beautyJobListingsTable.createdAt} >= ${since}`));
     if ((recent?.total ?? 0) >= cfg.hourlyPostingLimit) return null;
-    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingData } = body.data;
-    const [l] = await tx.insert(beautyJobListingsTable).values({ ...listingData, salonId: authorSalon?.id, userId: authorSalon ? null : user.id, postedByType: authorSalon ? "salon" : "user", photos: body.data.photos ?? [], expiresAt: new Date(Date.now() + cfg.listingExpiryDays * 86400000) }).returning();
+    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, photoDescriptions: _photoDescriptions, ...listingData } = body.data;
+    const [l] = await tx.insert(beautyJobListingsTable).values({
+      ...listingData,
+      coverImageDescription: normalizedCoverImageDescription(body.data.coverImageDescription) ?? null,
+      salonId: authorSalon?.id, userId: authorSalon ? null : user.id,
+      postedByType: authorSalon ? "salon" : "user", photos: body.data.photos ?? [],
+      expiresAt: new Date(Date.now() + cfg.listingExpiryDays * 86400000),
+    }).returning();
     if (RENTAL_TYPES.has(body.data.type)) await tx.insert(beautyJobListingAvailabilityTable).values({ listingId: l!.id, availabilityPattern: body.data.availabilityPattern!, dayLabels: body.data.dayLabels ?? [] });
     if (requiresSlots && body.data.availableSlots?.length) {
       await tx.insert(beautyJobRentalSlotsTable).values(body.data.availableSlots.map((slot) => ({ listingId: l!.id, startsAt: slot.startsAt, endsAt: slot.endsAt })));
     }
-    await attachReadyImageAssets(tx, user.id, body.data.photos ?? []); return l!;
+    await attachReadyImageAssets(tx, user.id, body.data.photos ?? []);
+    if (body.data.photoDescriptions !== undefined && !await updateImageAssetDescriptions(tx, {
+      userId: user.id,
+      items: body.data.photoDescriptions,
+      allowedUrls: body.data.photos ?? [],
+      allowManager: false,
+    })) throw new Error("BEAUTY_JOB_MEDIA_DESCRIPTION");
+    return l!;
+  }).catch((error: unknown) => {
+    if (error instanceof ImageAssetAttachmentError) return "INVALID_MEDIA" as const;
+    if (error instanceof Error && error.message === "BEAUTY_JOB_MEDIA_DESCRIPTION") return "INVALID_DESCRIPTION" as const;
+    throw error;
   });
+  if (created === "INVALID_MEDIA") return bad(res, "Jedna ili više fotografija nije dostupna ovom nalogu.");
+  if (created === "INVALID_DESCRIPTION") return bad(res, "Opis fotografije nije vezan za ovaj oglas.");
   if (!created) return res.status(429).json({ error: "Previše objava. Pokušajte kasnije.", code: "RATE_LIMITED" });
   const [row] = await listingQuery({ id: user.id, salonId: authorSalon?.id }).where(eq(beautyJobListingsTable.id, created.id)).limit(1);
   const slotMap = await rentalSlotsByListing([created.id]);
@@ -594,9 +617,12 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
     } else if (!requiresSlots && existingSlots.length) {
       await tx.delete(beautyJobRentalSlotsTable).where(eq(beautyJobRentalSlotsTable.listingId, existing.id));
     }
-    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingUpdates } = b.data;
+    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, photoDescriptions: _photoDescriptions, ...listingUpdates } = b.data;
     await tx.update(beautyJobListingsTable).set({
       ...listingUpdates,
+      ...(b.data.coverImageDescription !== undefined
+        ? { coverImageDescription: normalizedCoverImageDescription(b.data.coverImageDescription) }
+        : {}),
       photos: b.data.photos ?? lockedListing.photos,
       latitude: RENTAL_TYPES.has(type) ? null : b.data.latitude,
       longitude: RENTAL_TYPES.has(type) ? null : b.data.longitude,
@@ -616,7 +642,21 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
       await tx.delete(beautyJobListingAvailabilityTable).where(eq(beautyJobListingAvailabilityTable.listingId, existing.id));
     }
     await attachReadyImageAssets(tx, user.id, b.data.photos?.filter((x) => !lockedListing.photos.includes(x)) ?? []);
+    if (b.data.photoDescriptions !== undefined && !await updateImageAssetDescriptions(tx, {
+      userId: user.id,
+      items: b.data.photoDescriptions,
+      allowedUrls: b.data.photos ?? lockedListing.photos,
+      allowManager: isAdmin(user),
+    })) throw new Error("BEAUTY_JOB_MEDIA_DESCRIPTION");
     return null;
+  }).catch((error: unknown) => {
+    if (error instanceof ImageAssetAttachmentError) {
+      return "VALIDATION:Jedna ili više fotografija nije dostupna ovom nalogu.";
+    }
+    if (error instanceof Error && error.message === "BEAUTY_JOB_MEDIA_DESCRIPTION") {
+      return "VALIDATION:Opis fotografije nije vezan za ovaj oglas.";
+    }
+    throw error;
   });
   if (slotConflict) {
     const coordinateError = slotConflict.startsWith("COORDINATES:");
@@ -1387,7 +1427,10 @@ router.get("/beauty-jobs/:listingId", async (req, res, next) => { try {
   });
   if (!row) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   const slotMap = await rentalSlotsByListing([row.listing.id]);
-  res.json(GetBeautyJobResponse.parse(view({ ...row.listing, ...row }, slotMap.get(row.listing.id))));
+  res.json(GetBeautyJobResponse.parse({
+    ...view({ ...row.listing, ...row }, slotMap.get(row.listing.id)),
+    socialImage: await publicSocialImage(row.listing.photos[0]),
+  }));
 } catch (e) { next(e); } });
 
 export default router;

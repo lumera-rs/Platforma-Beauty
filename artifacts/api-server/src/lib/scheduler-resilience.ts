@@ -1,6 +1,9 @@
 import { logger } from "./logger";
 import { randomUUID } from "node:crypto";
-import { databasePoolStats } from "@workspace/db";
+import {
+  databasePoolStats,
+  runWithSchedulerDatabaseWorkload,
+} from "@workspace/db";
 
 export type SchedulerFailureClass = "transient_database" | "permanent";
 export type SchedulerRunState = "idle" | "running" | "retrying" | "failed";
@@ -93,32 +96,69 @@ const healthByJob = new Map<string, SchedulerJobHealth>();
  */
 export const SCHEDULER_DATABASE_ACTIVITY_LIMIT = Math.max(
   1,
-  databasePoolStats().max - 2,
+  Math.min(2, databasePoolStats().max - 2),
 );
 
 let activeDatabaseActivities = 0;
-const waitingDatabaseActivities: Array<() => void> = [];
+type SchedulerActivityWaiter = {
+  resolve: (release: () => void) => void;
+  reject: (error: SchedulerActivityStoppedError) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+};
+const waitingDatabaseActivities: SchedulerActivityWaiter[] = [];
 
-async function acquireSchedulerDatabaseActivity(): Promise<() => void> {
+class SchedulerActivityStoppedError extends Error {
+  constructor() {
+    super("Scheduler activity stopped before it started.");
+    this.name = "SchedulerActivityStoppedError";
+  }
+}
+
+function activityRelease(): () => void {
+  activeDatabaseActivities += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeDatabaseActivities -= 1;
+    while (waitingDatabaseActivities.length > 0) {
+      const next = waitingDatabaseActivities.shift();
+      if (!next) return;
+      if (next.onAbort) next.signal?.removeEventListener("abort", next.onAbort);
+      if (next.signal?.aborted) {
+        next.reject(new SchedulerActivityStoppedError());
+        continue;
+      }
+      next.resolve(activityRelease());
+      return;
+    }
+  };
+}
+
+async function acquireSchedulerDatabaseActivity(
+  signal?: AbortSignal,
+): Promise<() => void> {
+  if (signal?.aborted) throw new SchedulerActivityStoppedError();
   if (
     activeDatabaseActivities < SCHEDULER_DATABASE_ACTIVITY_LIMIT
     && waitingDatabaseActivities.length === 0
   ) {
-    activeDatabaseActivities += 1;
-    return releaseSchedulerDatabaseActivity;
+    return activityRelease();
   }
 
-  await new Promise<void>((resolve) => {
-    waitingDatabaseActivities.push(resolve);
+  return new Promise<() => void>((resolve, reject) => {
+    const waiter: SchedulerActivityWaiter = { resolve, reject, signal };
+    if (signal) {
+      waiter.onAbort = () => {
+        const index = waitingDatabaseActivities.indexOf(waiter);
+        if (index >= 0) waitingDatabaseActivities.splice(index, 1);
+        reject(new SchedulerActivityStoppedError());
+      };
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+    }
+    waitingDatabaseActivities.push(waiter);
   });
-  activeDatabaseActivities += 1;
-  return releaseSchedulerDatabaseActivity;
-}
-
-function releaseSchedulerDatabaseActivity(): void {
-  activeDatabaseActivities -= 1;
-  const next = waitingDatabaseActivities.shift();
-  next?.();
 }
 
 /**
@@ -216,11 +256,21 @@ function safeErrorType(error: unknown): string {
 
 function safeErrorCode(error: unknown): string | "unknown" {
   const code = errorCode(error);
-  if (!code) return "unknown";
   // PostgreSQL SQLSTATE values and a short set of Node/undici network codes
   // are opaque implementation identifiers, unlike error messages or queries.
-  if (/^[0-9A-Z]{5}$/.test(code) || SAFE_NETWORK_ERROR_CODES.has(code)) return code;
+  if (code && (/^[0-9A-Z]{5}$/.test(code) || SAFE_NETWORK_ERROR_CODES.has(code))) return code;
   return "unknown";
+}
+
+function isPoolAcquisitionTimeout(error: unknown): boolean {
+  // pg-pool emits these two exact messages without a code. Convert only the
+  // library's fixed strings to a stable enum; arbitrary error text stays out of
+  // diagnostics.
+  const message = errorMessage(error);
+  return (
+    message === "timeout exceeded when trying to connect"
+    || message === "Connection terminated due to connection timeout"
+  );
 }
 
 /**
@@ -234,6 +284,7 @@ export function schedulerFailureDiagnostics(error: unknown): SchedulerFailureDia
   let errorCodeValue: string | "unknown" = "unknown";
   let errorType = "unknown";
   let causeType: string | "unknown" = "unknown";
+  let poolAcquisitionTimeout = false;
 
   while (candidate && typeof candidate === "object" && !seen.has(candidate)) {
     seen.add(candidate);
@@ -241,10 +292,14 @@ export function schedulerFailureDiagnostics(error: unknown): SchedulerFailureDia
     if (errorType === "unknown") errorType = candidateType;
     else if (causeType === "unknown" && candidateType !== "unknown") causeType = candidateType;
     if (errorCodeValue === "unknown") errorCodeValue = safeErrorCode(candidate);
+    poolAcquisitionTimeout ||= isPoolAcquisitionTimeout(candidate);
     if (candidate instanceof SchedulerDependencyError) dependency = candidate.dependency;
     candidate = (candidate as { cause?: unknown }).cause;
   }
 
+  if (errorCodeValue === "unknown" && poolAcquisitionTimeout) {
+    errorCodeValue = "POOL_ACQUISITION_TIMEOUT";
+  }
   return { dependency, errorCode: errorCodeValue, errorType, causeType };
 }
 
@@ -303,6 +358,7 @@ export class ResilientScheduledJob {
   private readonly random: () => number;
   private readonly timer: SchedulerTimer;
   private retryTimer: TimerHandle | null = null;
+  private activityAbortController: AbortController | null = null;
   private running = false;
   private stopped = false;
   private retryAttempts = 0;
@@ -364,10 +420,15 @@ export class ResilientScheduledJob {
     const startedAt = this.timer.now();
     const runId = randomUUID();
     this.health.lastStartedAt = startedAt.toISOString();
-    const releaseDatabaseActivity = await acquireSchedulerDatabaseActivity();
+    const activityAbortController = new AbortController();
+    this.activityAbortController = activityAbortController;
+    let releaseDatabaseActivity: (() => void) | null = null;
     try {
+      releaseDatabaseActivity = await acquireSchedulerDatabaseActivity(
+        activityAbortController.signal,
+      );
       if (this.stopped) return;
-      await this.runJob();
+      await runWithSchedulerDatabaseWorkload(() => this.runJob());
       this.retryAttempts = 0;
       this.health.state = "idle";
       this.health.lastSucceededAt = this.timer.now().toISOString();
@@ -376,6 +437,11 @@ export class ResilientScheduledJob {
       this.health.deferredCycles = 0;
       this.health.nextRetryAt = null;
     } catch (error) {
+      if (error instanceof SchedulerActivityStoppedError || this.stopped) {
+        this.health.state = "idle";
+        this.health.nextRetryAt = null;
+        return;
+      }
       const failureClass: SchedulerFailureClass = isTransientDatabaseFailure(error)
         ? "transient_database"
         : "permanent";
@@ -418,13 +484,17 @@ export class ResilientScheduledJob {
         );
       }
     } finally {
-      releaseDatabaseActivity();
+      releaseDatabaseActivity?.();
+      if (this.activityAbortController === activityAbortController) {
+        this.activityAbortController = null;
+      }
       this.running = false;
     }
   }
 
   stop(): void {
     this.stopped = true;
+    this.activityAbortController?.abort();
     if (this.retryTimer) {
       this.timer.clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -453,4 +523,12 @@ export class ResilientScheduledJob {
 
 export function createResilientScheduledJob(options: ResilientSchedulerOptions): ResilientScheduledJob {
   return new ResilientScheduledJob(options);
+}
+
+export async function runSchedulerStartupSweep(
+  jobs: ReadonlyArray<{ run(): Promise<void> }>,
+): Promise<void> {
+  for (const job of jobs) {
+    await job.run();
+  }
 }

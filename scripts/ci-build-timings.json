@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "warningMultiplier": 1.5,
+  "warningMinimumIncreaseSeconds": 30,
+  "historyLimit": 5,
+  "sustainedSlowdownRuns": 3,
+  "baselinesSeconds": {
+    "build:release": 105,
+    "scripts:typecheck": 25,
+    "internal-request-control-outputs": 10,
+    "beauty-marketplace-typecheck": 25,
+    "frontend-generated-typecheck": 25,
+    "api-server-typecheck": 25,
+    "browser-specs-typecheck": 25,
+    "browser-fixtures": 10,
+    "bundle-budget": 10,
+    "frontend-standards": 10,
+    "seo-standards": 10,
+    "frontend-interactions": 10,
+    "validate:ci:build:total": 270,
+    "database:test:monitoring": 90,
+    "database:test:backend-standards:static": 30,
+    "database:release:2-backend": 320,
+    "database:release:3-api": 320,
+    "validate:ci:database:total": 650,
+    "browser:release:4-isolated": 650,
+    "browser:release:5-final": 75,
+    "validate:ci:browser:total": 750
+  }
+}

@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gt, inArray, lt } from "drizzle-orm";
-import { imageAssetsTable, db, type ImageAssetVariantSet } from "@workspace/db";
+import {
+  imageAssetsTable,
+  mediaAssetsTable,
+  mediaVariantsTable,
+  db,
+  type ImageAssetVariantSet,
+} from "@workspace/db";
 import { getCurrentUser } from "../lib/auth";
 import {
   ALLOWED_IMAGE_CONTENT_TYPES,
@@ -19,12 +25,83 @@ import { getObjectStorage } from "../lib/object-storage";
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MANAGED_IMAGE_URL_PATTERN = /^\/api\/media\/images\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\?.*)?$/i;
+const LEGACY_MANAGED_IMAGE_URL_PATTERN = /^\/api\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\?.*)?$/i;
 const IMAGE_UPLOAD_TTL_MS = 30 * 60 * 1000;
 const UNATTACHED_READY_TTL_MS = 24 * 60 * 60 * 1000;
 const PERMANENT_ASSET_EXPIRY = new Date("9999-12-31T23:59:59.999Z");
 
 function imageUrl(assetId: string): string {
   return `/api/media/images/${assetId}`;
+}
+
+export type PublicSocialImage = {
+  url: string;
+  width?: number;
+  height?: number;
+  type?: "image/avif" | "image/webp" | "image/jpeg" | "image/png";
+};
+
+function publicImageContentType(value: string): PublicSocialImage["type"] {
+  return value === "image/avif" || value === "image/webp" || value === "image/jpeg" || value === "image/png"
+    ? value
+    : undefined;
+}
+
+/**
+ * Resolve the deterministic, crawler-safe representation of a public image.
+ * Managed images publish their exact large fallback variant metadata. Legacy
+ * and external images retain only their URL because their bytes are not under
+ * this service's control.
+ */
+export async function publicSocialImage(rawUrl: string | null | undefined): Promise<PublicSocialImage | undefined> {
+  if (!rawUrl) return undefined;
+  const normalizedUrl = rawUrl.trim();
+  const imageAssetMatch = MANAGED_IMAGE_URL_PATTERN.exec(normalizedUrl);
+  if (imageAssetMatch?.[1]) {
+    const assetId = imageAssetMatch[1];
+    const [asset] = await db.select({ variants: imageAssetsTable.variants })
+      .from(imageAssetsTable)
+      .where(and(eq(imageAssetsTable.id, assetId), eq(imageAssetsTable.status, "ready")))
+      .limit(1);
+    const variant = asset?.variants?.large.fallback;
+    if (!variant) return { url: rawUrl };
+    return {
+      url: `${imageUrl(assetId)}?size=large&format=fallback`,
+      width: variant.width,
+      height: variant.height,
+      type: variant.contentType,
+    };
+  }
+
+  const legacyAssetMatch = LEGACY_MANAGED_IMAGE_URL_PATTERN.exec(normalizedUrl);
+  if (!legacyAssetMatch?.[1]) return { url: rawUrl };
+  const assetId = legacyAssetMatch[1];
+  const [asset] = await db.select({
+    contentHash: mediaAssetsTable.contentHash,
+    width: mediaAssetsTable.width,
+    height: mediaAssetsTable.height,
+    contentType: mediaAssetsTable.originalContentType,
+  }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  if (!asset) return { url: rawUrl };
+  const [fallback] = await db.select({
+    width: mediaVariantsTable.width,
+    height: mediaVariantsTable.height,
+    contentType: mediaVariantsTable.contentType,
+  }).from(mediaVariantsTable).where(and(
+    eq(mediaVariantsTable.assetId, assetId),
+    eq(mediaVariantsTable.sizeName, "large"),
+    eq(mediaVariantsTable.format, "fallback"),
+  )).limit(1);
+  const selected = fallback ?? asset;
+  const type = publicImageContentType(selected.contentType);
+  if (!type) return { url: rawUrl };
+  const query = fallback ? "size=large&format=fallback" : "size=original&format=original";
+  return {
+    url: `/api/media/${assetId}?v=${asset.contentHash.slice(0, 16)}&${query}`,
+    width: selected.width,
+    height: selected.height,
+    type,
+  };
 }
 
 function cleanFilename(value: unknown): string | null {
@@ -52,6 +129,13 @@ function managedImageAssetIds(value: unknown, ids = new Set<string>()): Set<stri
 
 type ImageAssetTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export class ImageAssetAttachmentError extends Error {
+  constructor() {
+    super("One or more managed image assets are not ready or do not belong to this user.");
+    this.name = "ImageAssetAttachmentError";
+  }
+}
+
 export async function attachReadyImageAssets(
   tx: ImageAssetTransaction,
   uploadedByUserId: string,
@@ -69,8 +153,36 @@ export async function attachReadyImageAssets(
     ))
     .returning({ id: imageAssetsTable.id });
   if (attached.length !== assetIds.length) {
-    throw new Error("One or more managed image assets are not ready or do not belong to this user.");
+    throw new ImageAssetAttachmentError();
   }
+}
+
+export async function updateImageAssetDescriptions(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  options: {
+    userId: string;
+    items: readonly { url: string; altText: string }[];
+    allowedUrls: readonly string[];
+    allowManager: boolean;
+  },
+): Promise<boolean> {
+  const allowedUrls = new Set(options.allowedUrls);
+  if (options.items.some((item) => !allowedUrls.has(item.url))) return false;
+  for (const item of options.items) {
+    const assetId = MANAGED_IMAGE_URL_PATTERN.exec(item.url)?.[1];
+    if (!assetId) return false;
+    const conditions = [
+      eq(imageAssetsTable.id, assetId),
+      eq(imageAssetsTable.status, "ready"),
+    ];
+    if (!options.allowManager) conditions.push(eq(imageAssetsTable.uploadedByUserId, options.userId));
+    const [updated] = await tx.update(imageAssetsTable)
+      .set({ altText: item.altText.trim() })
+      .where(and(...conditions))
+      .returning({ id: imageAssetsTable.id });
+    if (!updated) return false;
+  }
+  return true;
 }
 
 router.post("/media/uploads/request-url", async (req, res): Promise<void> => {

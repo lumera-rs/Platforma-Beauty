@@ -102,7 +102,7 @@
 - [Employee schedule weekdays](employee-schedule-weekdays.md) — location schedule fixtures use ISO weekdays 1–7; zero-based days silently trigger fallback availability.
 - [Grouped booking mutation boundary](grouped-booking-mutation-boundary.md) — every legacy single-item mutation must defer to the canonical group layout boundary.
 - [Web Push trust boundaries](web-push-trust-boundaries.md) — validate provider endpoints, VAPID key pairs, source freshness, and scope-relative links before offline delivery.
-- [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — connectionTimeoutMillis also limits queued checkout of existing clients, not just new connections.
+- [pg-pool acquisition deadlines](pg-pool-acquisition-deadlines.md) — deadlines cover busy clients; custom checkout queues must drain when the pool closes.
 - [Deployment runtime detection](deployment-runtime-detection.md) — destructive harnesses need layered deployment guards; REPLIT_ENVIRONMENT alone is not authoritative.
 - [Capacity harness serving boundary](capacity-harness-serving-boundary.md) — measure real request routes without unrelated production schedulers or startup seeders.
 - [Booking overload admission](booking-overload-admission.md) — bound every booking creator as one workload; capacity 429s belong in the full-arrival latency objective.
@@ -148,3 +148,12 @@
 - [Test-only request controls](test-only-request-controls.md) — inventory every transport, scan guarded aliases, and enforce denial where each Express input becomes observable.
 - [Static browser config symlinks](static-browser-config-symlinks.md) — validate and consume canonical package exports without changing runner-relative testDir behavior.
 - [Declaration inventory parsing](declaration-inventory-parsing.md) — use the TypeScript AST for declaration shape checks; hand-written scanners cannot safely model nested template substitutions.
+- [Public social image metadata](public-social-image-metadata.md) — pin OG metadata to an explicit managed variant; URL-only legacy images must never gain inferred dimensions or MIME.
+- [CI timing calibration](ci-timing-calibration.md) — pre-instrumentation Actions runs provide provisional job totals, not phase observations; recalibrate after timing artifacts accumulate.
+- [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.
+- [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
+- [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
+- [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.
+- [Shallow Git ancestry evidence](shallow-git-ancestry-evidence.md) — incidental local shallow negotiation can mask a wrong fetch anchor; distinguish object presence from ancestry proof.
+- [Lifecycle verification evidence](lifecycle-verification-evidence.md) — lost phase logs prevent causal claims; interrupted suites never count as complete validation.
+- [Browser fixture failure classification](browser-fixture-failure-classification.md) — a rejected mocked identity can cause secondary redirect failures without exercising application authorization.

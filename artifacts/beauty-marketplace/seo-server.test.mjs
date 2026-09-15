@@ -1,13 +1,74 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { createSeoResponse } from './seo-server.mjs';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 
 const template = '<!doctype html><html><head><title>Placeholder</title><meta name="description" content="placeholder"></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>';
+const indexSource = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const stylesSource = readFileSync(new URL('./src/index.css', import.meta.url), 'utf8');
+const homeSource = readFileSync(new URL('./src/pages/home.tsx', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('./src/App.tsx', import.meta.url), 'utf8');
 
 function request(pathname) {
   return { url: pathname, headers: { host: 'lumera.example', 'x-forwarded-proto': 'https' } };
 }
+
+async function reservePort() {
+  const server = createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+test('direct entry point serves HTTP on the explicit PORT and shuts down cleanly', { timeout: 10_000 }, async (t) => {
+  const port = await reservePort();
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./seo-server.mjs', import.meta.url))], {
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  });
+
+  const deadline = Date.now() + 5_000;
+  let response;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      assert.fail(`SEO server exited before accepting HTTP requests: ${stderr}`);
+    }
+    try {
+      response = await fetch(`http://127.0.0.1:${port}/uslovi-koriscenja`);
+      break;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  assert.ok(response, `SEO server did not accept HTTP requests on PORT=${port}: ${stderr}`);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>Uslovi korišćenja \| LUMERA<\/title>/);
+
+  child.kill('SIGTERM');
+  const [exitCode, signal] = await once(child, 'exit');
+  assert.equal(exitCode, null);
+  assert.equal(signal, 'SIGTERM');
+});
 
 test('shared category definitions use unique route, slug, and API mappings', () => {
   const requiredFields = ['slug', 'path', 'apiCategory', 'label', 'h1', 'title', 'description', 'intro'];
@@ -59,6 +120,19 @@ test('a pinned public origin cannot be replaced by forwarded host headers', asyn
   }
 });
 
+test('document and app sources preserve zoom, local Inter, LCP priority, and lazy admin isolation', () => {
+  assert.doesNotMatch(indexSource, /(?:maximum-scale|minimum-scale|user-scalable)\s*=/i);
+  assert.doesNotMatch(`${indexSource}\n${stylesSource}`, /fonts\.(?:googleapis|gstatic)\.com/i);
+  assert.match(stylesSource, /font-family:\s*['"]Inter['"]/);
+  assert.match(stylesSource, /font-display:\s*swap/);
+  assert.match(stylesSource, /url\(['"]?\/fonts\/inter-latin\.woff2['"]?\)/);
+  assert.ok(existsSync(new URL('./public/fonts/inter-latin.woff2', import.meta.url)));
+  assert.ok(existsSync(new URL('./public/fonts/inter-latin-ext.woff2', import.meta.url)));
+  assert.match(homeSource, /<img[\s\S]*src="\/hero-bg\.jpg"[\s\S]*fetchPriority="high"/);
+  assert.doesNotMatch(appSource, /^import\s+.+from\s+['"]\.\/pages\/admin\//m);
+  assert.match(appSource, /const Admin[A-Za-z0-9]+\s*=\s*lazy\(\(\)\s*=>\s*import\(['"]\.\/pages\/admin\//);
+});
+
 test('query variants and protected routes are never indexable', async () => {
   const queryResponse = await createSeoResponse(request('/saloni?city=Beograd'), template);
   const shopQueryResponse = await createSeoResponse(request('/shop/aurora?brand=Lumera&sort=PRICE_ASC&page=2'), template);
@@ -73,6 +147,177 @@ test('query variants and protected routes are never indexable', async () => {
   assert.match(privateResponse.body, /name="robots" content="noindex, follow"/);
   assert.doesNotMatch(privateResponse.body, /rel="canonical"/);
   assert.doesNotMatch(privateResponse.body, /<meta property="og:title"/);
+  for (const body of [queryResponse.body, shopQueryResponse.body, productQueryResponse.body]) {
+    assert.equal((body.match(/rel="canonical"/g) ?? []).length, 1);
+    assert.doesNotMatch(body, /canonical" href="[^"]*\?/);
+  }
+});
+
+test('homepage emits Organization, WebSite SearchAction and the real hero preload', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const response = await createSeoResponse(request('/'), template);
+    assert.equal(response.status, 200);
+    assert.match(response.body, /"@type":"Organization"/);
+    assert.match(response.body, /"@type":"WebSite"/);
+    assert.match(response.body, /"@type":"SearchAction"/);
+    assert.match(response.body, /"urlTemplate":"https:\/\/lumera\.example\/saloni\?category=\{search_term_string\}"/);
+    assert.match(response.body, /<link rel="preload" as="image" href="\/hero-bg\.jpg" fetchpriority="high">/);
+    assert.equal((response.body.match(/href="\/hero-bg\.jpg"/g) ?? []).length, 1);
+    const otherPage = await createSeoResponse(request('/recnik'), template);
+    assert.doesNotMatch(otherPage.body, /rel="preload"[^>]+hero-bg\.jpg/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('public education, inspiration, and glossary collections emit list schema', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const pathname = new URL(input).pathname;
+    const payload = pathname === '/api/education/public/courses'
+      ? [{ id: 'course-1', title: 'Balayage kurs' }]
+      : pathname === '/api/inspiracija'
+        ? [{ title: 'Letnja kosa', salon: { slug: 'studio-kosa' } }]
+        : pathname === '/api/recnik'
+          ? [{ term: 'Balayage', definition: 'Tehnika bojenja.' }]
+          : [];
+    return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    for (const pathname of ['/edukacije', '/inspiracija', '/recnik']) {
+      const response = await createSeoResponse(request(pathname), template);
+      assert.equal(response.status, 200);
+      assert.match(response.body, /"@type":"ItemList"/);
+      assert.match(response.body, /"@type":"ListItem"/);
+    }
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('public education bundle has matching server content, metadata, and Product schema', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname !== '/api/education/bundles/bundle-1') {
+      return new Response('{}', { status: 404 });
+    }
+    return new Response(JSON.stringify({
+      id: 'bundle-1',
+      name: 'Kompletna nail art obuka',
+      description: 'Paket od dva praktična kursa.',
+      price: 18900,
+      updatedAt: '2026-09-08T12:30:00.000Z',
+      courses: [
+        { courseId: 'course-1', title: 'Osnove nail arta', duration: '2 dana', description: 'Prvi nivo.' },
+        { courseId: 'course-2', title: 'Napredni nail art', duration: '3 dana', description: 'Drugi nivo.' },
+      ],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const response = await createSeoResponse(request('/edukacije/paketi/bundle-1'), template);
+    assert.equal(response.status, 200);
+    assert.match(response.body, /<title>Kompletna nail art obuka \| LUMERA edukacije<\/title>/);
+    assert.match(response.body, /rel="canonical" href="https:\/\/lumera\.example\/edukacije\/paketi\/bundle-1"/);
+    assert.match(response.body, /name="robots" content="index, follow"/);
+    assert.match(response.body, /"@type":"Product"/);
+    assert.match(response.body, /"@type":"Offer"/);
+    assert.match(response.body, /href="\/edukacije\/course-1"/);
+    const queryResponse = await createSeoResponse(request('/edukacije/paketi/bundle-1?ref=kampanja'), template);
+    assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/edukacije\/paketi\/bundle-1"/);
+    assert.match(queryResponse.body, /name="robots" content="noindex, follow"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('education center and instructor detail pages expose entity schema and absolute images', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const url = new URL(input);
+    const payload = url.pathname === '/api/education/public/centers/center-1'
+      ? { name: 'Akademija LUMERA', description: 'Centar za stručne edukacije.', imageUrl: '/center.jpg', courses: [] }
+      : url.pathname === '/api/education/instructors/instructor-1/public'
+        ? { name: 'Ana Edukator', biography: 'Licencirani edukator.', photoUrl: '/ana.jpg', courses: [] }
+        : null;
+    return new Response(JSON.stringify(payload), {
+      status: payload ? 200 : 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const center = await createSeoResponse(request('/edukacije/centri/center-1'), template);
+    const instructor = await createSeoResponse(request('/edukacije/instruktori/instructor-1'), template);
+    assert.match(center.body, /"@type":"EducationalOrganization"/);
+    assert.match(center.body, /"image":"https:\/\/lumera\.example\/center\.jpg"/);
+    assert.match(center.body, /property="og:image" content="https:\/\/lumera\.example\/center\.jpg"/);
+    assert.match(instructor.body, /"@type":"Person"/);
+    assert.match(instructor.body, /"image":"https:\/\/lumera\.example\/ana\.jpg"/);
+    assert.match(instructor.body, /property="og:image" content="https:\/\/lumera\.example\/ana\.jpg"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('server metadata publishes verified social image values without guessing legacy dimensions or MIME', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (input) => {
+    const url = new URL(input);
+    const payload = url.pathname === '/api/salons/managed'
+      ? {
+          name: 'Managed salon',
+          city: 'Beograd',
+          description: 'Salon sa upravljanom slikom.',
+          imageUrl: '/legacy.jpg',
+          gallery: ['/legacy.jpg'],
+          socialImage: {
+            url: '/api/media/images/00000000-0000-4000-8000-000000000001?size=large&format=fallback',
+            width: 1920,
+            height: 1280,
+            type: 'image/png',
+          },
+          services: [],
+        }
+      : url.pathname === '/api/salons/legacy'
+        ? {
+            name: 'Legacy salon',
+            city: 'Beograd',
+            description: 'Salon sa legacy slikom.',
+            imageUrl: 'https://legacy.example/photo.jpg',
+            gallery: [],
+            services: [],
+          }
+        : null;
+    return new Response(JSON.stringify(payload), {
+      status: payload ? 200 : 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const managed = await createSeoResponse(request('/saloni/managed'), template);
+    assert.match(managed.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/00000000-0000-4000-8000-000000000001\?size=large&amp;format=fallback"/);
+    assert.match(managed.body, /property="og:image:width" content="1920"/);
+    assert.match(managed.body, /property="og:image:height" content="1280"/);
+    assert.match(managed.body, /property="og:image:type" content="image\/png"/);
+
+    const legacy = await createSeoResponse(request('/saloni/legacy'), template);
+    assert.match(legacy.body, /property="og:image" content="https:\/\/legacy\.example\/photo\.jpg"/);
+    assert.doesNotMatch(legacy.body, /property="og:image:(?:width|height|type)"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('server 404 offers useful public navigation and SPA-compatible salon search', async () => {
+  const response = await createSeoResponse(request('/nepostojeca-stranica'), template);
+  assert.equal(response.status, 404);
+  assert.match(response.body, /<h1>Stranica nije pronađena<\/h1>/);
+  assert.match(response.body, /<form action="\/saloni" method="get" role="search">/);
+  assert.match(response.body, /name="category"/);
+  assert.match(response.body, /href="\/edukacije"/);
+  assert.match(response.body, /name="robots" content="noindex, follow"/);
 });
 
 test('public content is outside the React root for safe client takeover', async () => {
@@ -141,6 +386,17 @@ test('category pages are included in the canonical sitemap', async () => {
     for (const category of categoryDefinitions) {
       assert.match(response.body, new RegExp(`https:\\/\\/lumera\\.example${category.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     }
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('sitemap uses the authored legal-page date rather than an invented current date', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const response = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.match(response.body, /<loc>https:\/\/lumera\.example\/uslovi-koriscenja<\/loc><lastmod>2026-08-24<\/lastmod>/);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -302,7 +558,81 @@ test('supplier-qualified product uses only public B2C DTO fields in Product and 
     assert.match(detail.body, /"@type":"Product"/);
     assert.match(detail.body, /"@type":"Offer"/);
     assert.match(detail.body, /"price":"1999"/);
+    assert.match(detail.body, /property="og:image" content="https:\/\/lumera\.example\/serum\.jpg"/);
+    assert.match(detail.body, /name="twitter:image" content="https:\/\/lumera\.example\/serum\.jpg"/);
     assert.doesNotMatch(detail.body, /B2B-SKU-PRIVATE|Interni privatni opis|wholesalePrice|"stock"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('owner cover descriptions drive social and visible image alt with a title fallback after removal', async () => {
+  const originalFetch = global.fetch;
+  const fixtures = {
+    '/api/suppliers/aurora': { id: 's1', slug: 'aurora', name: 'Aurora Beauty', scope: 'B2C', active: true },
+    '/api/suppliers/aurora/public-products/p1': {
+      id: 'p1', supplierId: 's1', name: 'Javni serum', category: 'Nega',
+      description: 'Opis proizvoda.', imageUrl: '/serum-cover.jpg', images: ['/serum-gallery.jpg'],
+      socialImage: {
+        url: '/api/media/images/product-cover?size=large&format=fallback',
+        width: 1600,
+        height: 1200,
+        type: 'image/jpeg',
+      },
+      coverImageDescription: 'Bočica seruma pored cveta kamilice', price: 2499,
+    },
+    '/api/beauty-jobs/job-1': {
+      id: 'job-1', type: 'job', intent: 'offering', title: 'Potreban frizer',
+      description: 'Opis oglasa.', city: 'Beograd', region: 'Vračar',
+      photos: ['/job.jpg'], coverImageDescription: 'Moderan frizerski radni prostor',
+      authorDisplayName: 'Studio LUMERA',
+    },
+    '/api/salons/studio-lumera': {
+      name: 'Studio LUMERA', city: 'Beograd', description: 'Opis salona.',
+      imageUrl: '/salon-cover.jpg', gallery: ['/salon-gallery.jpg'],
+      socialImage: {
+        url: '/api/media/images/salon-cover?size=large&format=fallback',
+        width: 1920,
+        height: 1280,
+        type: 'image/jpeg',
+      },
+      coverImageDescription: 'Enterijer salona sa dve radne stolice',
+    },
+    '/api/education/public/courses/course-1': {
+      title: 'Balayage kurs', description: 'Opis kursa.', imageUrl: '/course.jpg',
+      coverImageDescription: 'Instruktorka demonstrira balayage tehniku',
+      publisher: 'LUMERA Akademija', format: 'in-person', duration: '2 dana', price: 12000,
+    },
+  };
+  global.fetch = supplierCatalogFetch(fixtures);
+  try {
+    const cases = [
+      ['/shop/aurora/proizvod/p1', 'Bočica seruma pored cveta kamilice'],
+      ['/poslovi/potreban-frizer/job-1', 'Moderan frizerski radni prostor'],
+      ['/saloni/studio-lumera', 'Enterijer salona sa dve radne stolice'],
+      ['/edukacije/course-1', 'Instruktorka demonstrira balayage tehniku'],
+    ];
+    for (const [pathname, imageAlt] of cases) {
+      const response = await createSeoResponse(request(pathname), template);
+      assert.equal(response.status, 200);
+      assert.match(response.body, new RegExp(`property="og:image:alt" content="${imageAlt}"`));
+      assert.match(response.body, new RegExp(`name="twitter:image:alt" content="${imageAlt}"`));
+      assert.match(response.body, new RegExp(`<img[^>]+alt="${imageAlt}"`));
+    }
+    const productResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1'), template);
+    assert.match(productResponse.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/product-cover\?size=large&amp;format=fallback"/);
+    assert.match(productResponse.body, /property="og:image:alt" content="Bočica seruma pored cveta kamilice"/);
+    assert.doesNotMatch(productResponse.body, /property="og:image" content="[^"]*serum-gallery/);
+    const salonResponse = await createSeoResponse(request('/saloni/studio-lumera'), template);
+    assert.match(salonResponse.body, /property="og:image" content="https:\/\/lumera\.example\/api\/media\/images\/salon-cover\?size=large&amp;format=fallback"/);
+    assert.match(salonResponse.body, /property="og:image:alt" content="Enterijer salona sa dve radne stolice"/);
+    assert.match(salonResponse.body, /<img src="\/salon-cover\.jpg"[^>]+alt="Enterijer salona sa dve radne stolice"/);
+    assert.doesNotMatch(salonResponse.body, /<img src="\/salon-gallery\.jpg"[^>]+alt="Enterijer salona sa dve radne stolice"/);
+
+    fixtures['/api/suppliers/aurora/public-products/p1'].coverImageDescription = '   ';
+    const fallback = await createSeoResponse(request('/shop/aurora/proizvod/p1'), template);
+    assert.match(fallback.body, /property="og:image:alt" content="Javni serum \| Aurora Beauty"/);
+    assert.match(fallback.body, /<img[^>]+alt="Javni serum \| Aurora Beauty"/);
   } finally {
     global.fetch = originalFetch;
   }
@@ -310,14 +640,14 @@ test('supplier-qualified product uses only public B2C DTO fields in Product and 
 
 test('sitemap contains only active retail supplier, category, and supplier-qualified product URLs', async () => {
   const originalFetch = global.fetch;
-  const active = { id: 's1', slug: 'aurora', name: 'Aurora', scope: 'B2C', active: true };
+  const active = { id: 's1', slug: 'aurora', name: 'Aurora', scope: 'B2C', active: true, updatedAt: '2026-08-20T12:00:00Z' };
   const fixtures = {
     '/api/suppliers': [active, { id: 's2', slug: 'pro', name: 'Pro', scope: 'B2B', active: true }, { id: 's3', slug: 'off', name: 'Off', scope: 'BOTH', active: false }],
     '/api/salons': [],
     '/api/education/public/courses': [],
     '/api/beauty-jobs': [],
-    '/api/suppliers/aurora/categories': [{ id: 'c3', name: 'Duboka', path: 'nega/lice/duboka', active: true }, { id: 'off-c', name: 'Skrivena', path: 'skrivena', active: false }],
-    '/api/suppliers/aurora/public-products': { items: [{ id: 'p1' }], total: 1, page: 1, pageSize: 100, totalPages: 1 },
+    '/api/suppliers/aurora/categories': [{ id: 'c3', name: 'Duboka', path: 'nega/lice/duboka', active: true, updatedAt: '2026-08-21T12:00:00Z' }, { id: 'off-c', name: 'Skrivena', path: 'skrivena', active: false }],
+    '/api/suppliers/aurora/public-products': { items: [{ id: 'p1', updatedAt: '2026-08-22T12:00:00Z' }], total: 1, page: 1, pageSize: 100, totalPages: 1 },
   };
   global.fetch = supplierCatalogFetch(fixtures);
   try {
@@ -326,7 +656,13 @@ test('sitemap contains only active retail supplier, category, and supplier-quali
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora<\/loc>/);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka/);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora<\/loc><lastmod>2026-08-20<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka<\/loc><lastmod>2026-08-21<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1<\/loc><lastmod>2026-08-22<\/lastmod>/);
     assert.doesNotMatch(sitemap.body, /\/shop\/(?:pro|off|aurora\/skrivena)|\/proizvodi\/p1/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/<\/loc><changefreq>/, 'Home omits lastmod when its salon source has no dated item');
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/proizvodi<\/loc><lastmod>2026-08-20<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/brendovi<\/loc><changefreq>/, 'URLs without a real source date omit lastmod');
   } finally {
     global.fetch = originalFetch;
   }

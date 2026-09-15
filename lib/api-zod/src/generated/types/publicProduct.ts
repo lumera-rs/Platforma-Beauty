@@ -7,6 +7,7 @@
  */
 import type { ProductCharacteristic } from './productCharacteristic';
 import type { PublicProductVariant } from './publicProductVariant';
+import type { PublicSocialImage } from './publicSocialImage';
 import type { RetailProductReviewSummary } from './retailProductReviewSummary';
 
 /**
@@ -25,7 +26,13 @@ export interface PublicProduct {
   brand?: string | null;
   description: string;
   imageUrl: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  coverImageDescription?: string | null;
   images: string[];
+  socialImage?: PublicSocialImage;
   /**
      * @minimum 1
      * @nullable
