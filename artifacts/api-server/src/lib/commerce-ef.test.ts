@@ -565,3 +565,99 @@ test("admin commerce response contracts fail closed without logging payload valu
     await db.update(b2bQuotesTable).set({ itemSnapshots: stored.itemSnapshots }).where(eq(b2bQuotesTable.id, quote.id));
   }
 });
+
+test("bulk matrix canonicalizes legacy swatches without rewriting the stored product", async () => {
+  const [before] = await db.select({ variants: productsTable.variants })
+    .from(productsTable).where(eq(productsTable.id, productId));
+  assert.equal((before?.variants?.[0]?.swatch as { hex?: string } | null)?.hex, "#aabbcc");
+  const expectedStock = before?.variants?.[0]?.stock;
+  assert.ok(typeof expectedStock === "number");
+
+  const matrixResponse = await api(`/public/products/${productId}/bulk-matrix`);
+  assert.equal(matrixResponse.status, 200, await matrixResponse.clone().text());
+  const matrix = await matrixResponse.json() as {
+    rows: Array<{ value: string; label: string; stock: number; swatch: unknown }>;
+  };
+  assert.equal(matrix.rows.length, 1);
+  assert.deepEqual(matrix.rows[0], {
+    value: "red",
+    label: "Red",
+    sku: null,
+    available: true,
+    stock: expectedStock,
+    swatch: { kind: "COLOR", hex: "#AABBCC" },
+    mainImageUrl: null,
+    altText: null,
+    sortOrder: 0,
+    unitPrice: 1000,
+    tierPricePreview: [],
+  });
+
+  const supplierDetailResponse = await api(`/suppliers/${marker}/public-products/${productId}`);
+  assert.equal(supplierDetailResponse.status, 200, await supplierDetailResponse.clone().text());
+  const supplierDetail = await supplierDetailResponse.json() as {
+    variants: Array<{ value: string; swatch: unknown }>;
+  };
+  assert.deepEqual(supplierDetail.variants.find((variant) => variant.value === "red")?.swatch, {
+    kind: "COLOR",
+    hex: "#AABBCC",
+  });
+
+  const globalDetailResponse = await api(`/shop/public/products/${productId}`);
+  assert.equal(globalDetailResponse.status, 200, await globalDetailResponse.clone().text());
+  const globalDetail = await globalDetailResponse.json() as {
+    variants: Array<{ value: string; swatch: unknown }>;
+  };
+  assert.deepEqual(globalDetail.variants.find((variant) => variant.value === "red")?.swatch, {
+    kind: "COLOR",
+    hex: "#AABBCC",
+  });
+
+  const [after] = await db.select({ variants: productsTable.variants })
+    .from(productsTable).where(eq(productsTable.id, productId));
+  assert.equal((after?.variants?.[0]?.swatch as { hex?: string } | null)?.hex, "#aabbcc",
+    "GET serializers and bulk output must not backfill legacy rows");
+});
+
+test("malformed stored COLOR swatches remain visible to public validation instead of becoming null", async () => {
+  const [baseProduct] = await db.select({ categoryId: productsTable.categoryId })
+    .from(productsTable).where(eq(productsTable.id, productId));
+  assert.ok(baseProduct);
+  const [malformed] = await db.insert(productsTable).values({
+    supplierId: ids.suppliers[0]!,
+    categoryId: baseProduct.categoryId,
+    categoryName: marker,
+    name: `${marker} malformed stored swatch`,
+    description: marker,
+    publicDescription: `${marker} malformed public description`,
+    imageUrl: "/malformed-stored-swatch.jpg",
+    price: 700,
+    publicPrice: 800,
+    professionalEnabled: true,
+    retailEnabled: true,
+    stock: 1,
+    sku: `${marker}-malformed-stored-swatch`,
+    unit: "kom",
+    variants: [{
+      value: "malformed",
+      label: "Malformed",
+      stock: 1,
+      swatch: { kind: "COLOR", hex: "#RGB" },
+    }],
+  }).returning();
+  assert.ok(malformed);
+  ids.products.push(malformed.id);
+  try {
+    const supplierDetailResponse = await api(`/suppliers/${marker}/public-products/${malformed.id}`);
+    assert.equal(supplierDetailResponse.status, 500, await supplierDetailResponse.clone().text());
+    const globalDetailResponse = await api(`/shop/public/products/${malformed.id}`);
+    assert.equal(globalDetailResponse.status, 500, await globalDetailResponse.clone().text());
+
+    const [stored] = await db.select({ variants: productsTable.variants })
+      .from(productsTable).where(eq(productsTable.id, malformed.id));
+    assert.deepEqual(stored?.variants?.[0]?.swatch, { kind: "COLOR", hex: "#RGB" });
+    assert.notEqual(stored?.variants?.[0]?.swatch, null, "malformed stored COLOR data must not be hidden as null");
+  } finally {
+    await db.delete(productsTable).where(eq(productsTable.id, malformed.id));
+  }
+});

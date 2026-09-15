@@ -50,6 +50,7 @@ import {
   GetPublicSupplierResponse,
   GetShopApprovalRequestResponse,
   GetSupplierPublicProductResponse,
+  ListPublicProductsResponse,
   ListPublicSuppliersResponse,
   ListMyShopApprovalRequestsResponseItem,
   ListShopApprovalRequestsResponseItem,
@@ -496,6 +497,226 @@ test("supplier B2B products require authentication and public products expose on
   assert.deepEqual(publicVariants.map((variant) => variant.value), ["secret"]);
   assert.equal(Object.hasOwn(publicVariants[0]!, "stock"), false, "public variant leaked stock");
   assert.equal(Object.hasOwn(publicVariants[0]!, "sku"), false, "public variant leaked sku");
+});
+
+test("product swatches canonicalize across create, patch, legacy public reads, and bulk matrix without changing other variant data", async () => {
+  const createVariants = [
+    {
+      value: "lower",
+      label: "Lower variant",
+      priceAdjust: 25,
+      stock: 4,
+      sku: `${marker}-swatch-lower`,
+      swatch: { kind: "COLOR" as const, hex: "#aabbcc" },
+      mainImageUrl: null,
+      altText: "Lower variant alt",
+      sortOrder: 1,
+    },
+    {
+      value: "mixed",
+      label: "Mixed variant",
+      price: 1_250,
+      stock: 5,
+      sku: `${marker}-swatch-mixed`,
+      swatch: { kind: "COLOR" as const, hex: "#AaBbCc" },
+      mainImageUrl: null,
+      altText: "Mixed variant alt",
+      sortOrder: 2,
+    },
+  ];
+  const createImageAssetId = randomUUID();
+  mediaAssetIds.push(createImageAssetId);
+  await db.insert(mediaAssetsTable).values({
+    id: createImageAssetId,
+    ownerUserId: adminId,
+    scope: "product",
+    visibility: "public",
+    originalFileName: "swatch-product.jpg",
+    originalContentType: "image/jpeg",
+    width: 100,
+    height: 100,
+    contentHash: `${marker}-${createImageAssetId}`,
+  });
+  const managedCreateImageUrl = `/api/media/${createImageAssetId}`;
+  const createBody = {
+    supplierId: supplierA.id,
+    name: `${marker} swatch create`,
+    categoryId: orderedProduct.categoryId,
+    categoryName: orderedProduct.categoryName,
+    description: `${marker} swatch description`,
+    imageUrl: managedCreateImageUrl,
+    price: 1_000,
+    publicDescription: `${marker} swatch public description`,
+    publicPrice: 1_500,
+    retailEnabled: false,
+    professionalEnabled: true,
+    bulkMatrixEnabled: true,
+    stock: 9,
+    sku: `${marker}-swatch-create`,
+    unit: "kom",
+    weightGrams: 100,
+    variantType: "finish",
+    variants: createVariants,
+  };
+  const createdResponse = await api("/admin/products", adminCookie, {
+    method: "POST",
+    body: JSON.stringify(createBody),
+  });
+  assert.equal(createdResponse.status, 201, await createdResponse.clone().text());
+  const created = await createdResponse.json() as {
+    id: string;
+    variants: typeof createVariants;
+  };
+  productIds.push(created.id);
+  const createdVariants = createVariants.map((variant) => ({
+    ...variant,
+    swatch: { kind: "COLOR" as const, hex: "#AABBCC" },
+  }));
+  assert.deepEqual(created.variants, createdVariants, "create response must canonicalize only COLOR hex characters");
+  const [createdRow] = await db.select().from(productsTable).where(eq(productsTable.id, created.id));
+  assert.ok(createdRow);
+  assert.deepEqual(createdRow.variants, createdVariants, "canonical swatches must be persisted");
+
+  const patchVariants = [
+    {
+      ...createVariants[0]!,
+      swatch: { kind: "COLOR" as const, hex: "#abcdef" },
+    },
+    {
+      ...createVariants[1]!,
+      swatch: { kind: "COLOR" as const, hex: "#Ff00aa" },
+    },
+  ];
+  const patchedResponse = await api(`/admin/products/${created.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ variants: patchVariants }),
+  });
+  assert.equal(patchedResponse.status, 200, await patchedResponse.clone().text());
+  const patched = await patchedResponse.json() as { variants: typeof patchVariants };
+  const patchedVariants = patchVariants.map((variant) => ({
+    ...variant,
+    swatch: { kind: "COLOR" as const, hex: variant.swatch.hex.toUpperCase() },
+  }));
+  assert.deepEqual(patched.variants, patchedVariants, "patch response must preserve variant order and fields");
+  const [patchedRow] = await db.select().from(productsTable).where(eq(productsTable.id, created.id));
+  assert.ok(patchedRow);
+  assert.deepEqual(patchedRow.variants, patchedVariants, "patched canonical swatches must be persisted");
+
+  const beforeInvalidPatch = patchedRow.variants;
+  for (const invalidHex of ["#RGB", "aabbcc", "red", "", "#gggggg"]) {
+    const invalidResponse = await api(`/admin/products/${created.id}`, adminCookie, {
+      method: "PATCH",
+      body: JSON.stringify({
+        variants: [
+          { ...patchVariants[0]!, swatch: { kind: "COLOR", hex: invalidHex } },
+          patchVariants[1],
+        ],
+      }),
+    });
+    assert.equal(invalidResponse.status, 400, `invalid swatch ${JSON.stringify(invalidHex)} must be rejected`);
+    const [afterInvalid] = await db.select({ variants: productsTable.variants })
+      .from(productsTable).where(eq(productsTable.id, created.id));
+    assert.deepEqual(afterInvalid?.variants, beforeInvalidPatch, `invalid swatch ${JSON.stringify(invalidHex)} must not change stored data`);
+  }
+
+  const invalidSku = `${marker}-swatch-invalid-create`;
+  const invalidCreate = await api("/admin/products", adminCookie, {
+    method: "POST",
+    body: JSON.stringify({
+      ...createBody,
+      name: `${marker} invalid swatch create`,
+      sku: invalidSku,
+      variants: [{ ...createVariants[0]!, swatch: { kind: "COLOR", hex: "#RGB" } }],
+      stock: 4,
+    }),
+  });
+  assert.equal(invalidCreate.status, 400);
+  assert.equal((await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, invalidSku))).length, 0);
+
+  const legacyName = `${marker} legacy lowercase swatch`;
+  const [legacyProduct] = await db.insert(productsTable).values({
+    supplierId: supplierA.id,
+    categoryId: orderedProduct.categoryId,
+    categoryName: orderedProduct.categoryName,
+    name: legacyName,
+    description: `${marker} legacy description`,
+    publicDescription: `${marker} legacy public description`,
+    imageUrl: "/supplier-catalog-legacy-swatch.jpg",
+    price: 1_100,
+    publicPrice: 1_600,
+    professionalEnabled: true,
+    retailEnabled: true,
+    bulkMatrixEnabled: true,
+    stock: 6,
+    sku: `${marker}-swatch-legacy`,
+    unit: "kom",
+    variants: [{
+      value: "legacy",
+      label: "Legacy variant",
+      stock: 6,
+      sku: `${marker}-swatch-legacy-variant`,
+      swatch: { kind: "COLOR", hex: "#dDeEfF" },
+      sortOrder: 1,
+    }],
+  }).returning();
+  assert.ok(legacyProduct);
+  productIds.push(legacyProduct.id);
+  const legacyHexBeforeReads = "#dDeEfF";
+
+  const supplierListResponse = await api(`/suppliers/${supplierA.slug}/public-products?pageSize=100`);
+  assert.equal(supplierListResponse.status, 200, await supplierListResponse.clone().text());
+  const supplierList = ListSupplierPublicProductsResponse.parse(await supplierListResponse.json());
+  const supplierListProduct = supplierList.items.find((item) => item.id === legacyProduct.id);
+  assert.ok(supplierListProduct);
+  assert.deepEqual(supplierListProduct.variants[0]?.swatch, { kind: "COLOR", hex: "#DDEEFF" });
+
+  const supplierDetailResponse = await api(`/suppliers/${supplierA.slug}/public-products/${legacyProduct.id}`);
+  assert.equal(supplierDetailResponse.status, 200, await supplierDetailResponse.clone().text());
+  const supplierDetail = GetSupplierPublicProductResponse.parse(await supplierDetailResponse.json());
+  assert.deepEqual(supplierDetail.variants[0]?.swatch, { kind: "COLOR", hex: "#DDEEFF" });
+
+  const globalListResponse = await api("/shop/public/products?pageSize=100");
+  assert.equal(globalListResponse.status, 200, await globalListResponse.clone().text());
+  const globalList = ListPublicProductsResponse.parse(await globalListResponse.json());
+  const globalListProduct = globalList.items.find((item) => item.id === legacyProduct.id);
+  assert.ok(globalListProduct);
+  assert.deepEqual(globalListProduct.variants[0]?.swatch, { kind: "COLOR", hex: "#DDEEFF" });
+
+  const globalSearchResponse = await api(`/shop/public/products?search=${encodeURIComponent(legacyName)}&pageSize=100`);
+  assert.equal(globalSearchResponse.status, 200, await globalSearchResponse.clone().text());
+  const globalSearch = ListPublicProductsResponse.parse(await globalSearchResponse.json());
+  const globalSearchProduct = globalSearch.items.find((item) => item.id === legacyProduct.id);
+  assert.ok(globalSearchProduct);
+  assert.deepEqual(globalSearchProduct.variants[0]?.swatch, { kind: "COLOR", hex: "#DDEEFF" });
+
+  const globalDetailResponse = await api(`/shop/public/products/${legacyProduct.id}`);
+  assert.equal(globalDetailResponse.status, 200, await globalDetailResponse.clone().text());
+  const globalDetail = GetPublicProductResponse.parse(await globalDetailResponse.json());
+  assert.deepEqual(globalDetail.variants[0]?.swatch, { kind: "COLOR", hex: "#DDEEFF" });
+
+  const matrixResponse = await api(`/public/products/${legacyProduct.id}/bulk-matrix`);
+  assert.equal(matrixResponse.status, 200, await matrixResponse.clone().text());
+  const matrix = await matrixResponse.json() as {
+    rows: Array<Record<string, unknown>>;
+  };
+  assert.deepEqual(matrix.rows, [{
+    value: "legacy",
+    label: "Legacy variant",
+    stock: 6,
+    sku: `${marker}-swatch-legacy-variant`,
+    swatch: { kind: "COLOR", hex: "#DDEEFF" },
+    mainImageUrl: null,
+    altText: null,
+    sortOrder: 1,
+    available: true,
+    unitPrice: 1_100,
+    tierPricePreview: [],
+  }], "bulk matrix must use the same canonical swatch");
+
+  const [legacyAfterReads] = await db.select({ variants: productsTable.variants })
+    .from(productsTable).where(eq(productsTable.id, legacyProduct.id));
+  assert.equal((legacyAfterReads?.variants?.[0]?.swatch as { hex?: string } | null)?.hex, legacyHexBeforeReads,
+    "read-side compatibility must not rewrite legacy database rows");
 });
 
 test("supplier public product filters, paging, ranges, sorting, and facets share one canonical result set", async () => {

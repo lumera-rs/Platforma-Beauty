@@ -20,6 +20,7 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { createHash, randomBytes } from "node:crypto";
 import { activeProductSale, activeProductSalePriceSql } from "../lib/active-product-sale";
+import { canonicalizeColorSwatch } from "../lib/product-swatch";
 import { publicSocialImage } from "./image-media";
 import {
   GetPublicSupplierParams,
@@ -498,7 +499,7 @@ function publicBase(product: typeof productsTable.$inferSelect) {
       label: variant.label,
       cartEligible: inventory.kind !== "invalid"
         && (inventory.kind === "per-variant" ? variant.stock! > 0 : product.stock > 0),
-      swatch: variant.swatch ?? null,
+      swatch: canonicalizeColorSwatch(variant.swatch) ?? null,
       imageUrl: variant.mainImageUrl ?? null,
     })),
   };

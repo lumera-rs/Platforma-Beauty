@@ -38,6 +38,7 @@ import
 import { expireFeaturedPlacementPaymentInTx } from "../lib/featured-placement-payment-reminders";
 import { safeIsoTimestamp } from "../lib/date-serialization";
 import { isSafeExternalHttpUrl } from "../lib/safe-external-url";
+import { canonicalizeColorSwatch } from "../lib/product-swatch";
 import {
   batchPublicFeaturedEducationCourseState,
   isPubliclyFeaturedEducationCourse,
@@ -13410,7 +13411,7 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
       label: variant.label,
       cartEligible: inventory.kind !== "invalid"
         && (inventory.kind === "per-variant" ? variant.stock! > 0 : item.stock > 0),
-      swatch: variant.swatch ?? null,
+      swatch: canonicalizeColorSwatch(variant.swatch) ?? null,
       imageUrl: variant.mainImageUrl ?? null,
     })),
   };
@@ -27188,6 +27189,26 @@ function publicStorefrontError(data: {
   return null;
 }
 
+function canonicalizeProductVariants<T extends object>(variants: T[] | null): T[] | null;
+function canonicalizeProductVariants<T extends object>(
+  variants: T[] | null | undefined,
+): T[] | null | undefined;
+function canonicalizeProductVariants<T extends object>(
+  variants: T[] | null | undefined,
+): T[] | null | undefined {
+  if (variants === null || variants === undefined) return variants;
+
+  let changed = false;
+  const normalized = variants.map((variant) => {
+    if (!Object.prototype.hasOwnProperty.call(variant, "swatch")) return variant;
+    const swatch = canonicalizeColorSwatch((variant as { swatch?: unknown }).swatch);
+    if (swatch === (variant as { swatch?: unknown }).swatch) return variant;
+    changed = true;
+    return { ...variant, swatch } as T;
+  });
+  return changed ? normalized : variants;
+}
+
 function validateVariantInventory(
   variants: Array<{ label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string; swatch?: { kind: "TEXT" | "COLOR" | "IMAGE"; text?: string; hex?: string; imageUrl?: string } | null; mainImageUrl?: string | null; altText?: string | null; sortOrder?: number }> | null,
   stock: number,
@@ -27609,6 +27630,9 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = {
     ...parsed.data,
+    ...(parsed.data.variants !== undefined
+      ? { variants: canonicalizeProductVariants(parsed.data.variants) }
+      : {}),
     coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) ?? null,
   };
   if (!body.supplierId) { res.status(400).json({ error: "Dobavljač je obavezan." }); return; }
@@ -27871,6 +27895,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = {
     ...parsed.data,
+    ...(parsed.data.variants !== undefined
+      ? { variants: canonicalizeProductVariants(parsed.data.variants) }
+      : {}),
     ...(parsed.data.coverImageDescription !== undefined
       ? { coverImageDescription: normalizedCoverImageDescription(parsed.data.coverImageDescription) }
       : {}),
@@ -27903,7 +27930,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     if (skuTaken) { res.status(409).json({ error: "Proizvod sa ovim SKU već postoji." }); return; }
   }
   const nextStock = body.stock ?? existing.stock;
-  const nextVariants = body.variants !== undefined ? body.variants : existing.variants;
+  const nextVariants = canonicalizeProductVariants(
+    body.variants !== undefined ? body.variants : existing.variants,
+  );
   const variantError = validateVariantInventory(nextVariants, nextStock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
   const merchandising = canonicalMerchandisingConfig(body, {
