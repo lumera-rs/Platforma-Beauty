@@ -1,0 +1,1206 @@
+PRODUCTION BOOT HARDENING — PHASE 4
+MIGRATION BASELINE + RUNNER + LEDGER + SAFE ADOPTION
+PARALLEL / NOT WIRED TO PRODUCTION
+
+You MAY modify code.
+
+Phases 1, 2 and 3 are independently APPROVED.
+
+Current independently verified state:
+
+Branch:
+fix-production-demo-seed-boundary
+
+Latest independently verified HEAD:
+dab58ca089e8cd0cee494112202a9ee8043dc7b2
+
+Commit:
+Add startup DDL pool configuration and update schema definitions
+
+IMPORTANT:
+Replit's automatic-checkpoint reporting has repeatedly been inaccurate.
+
+Always verify actual HEAD using:
+
+git rev-parse HEAD
+
+Do not trust a "no checkpoint" field without verifying HEAD directly.
+
+==================================================
+0. PHASE 4 PURPOSE
+==================================================
+
+We are building the FUTURE production migration system.
+
+Phase 4 must introduce:
+
+1. a canonical baseline migration;
+2. a migration ledger;
+3. a migration runner;
+4. exact-fingerprint adoption logic for existing databases;
+5. fresh-database application logic;
+6. fail-closed mismatch behavior;
+7. interrupted/non-transactional migration state handling;
+8. isolated tests.
+
+CRITICAL:
+
+THE NEW MIGRATION SYSTEM MUST NOT BE WIRED TO NORMAL APPLICATION STARTUP.
+
+Existing startup DDL remains the current production schema authority during
+this phase.
+
+Do NOT remove any of the existing:
+
+8 startup DDL owners
+1,459 startup DDL operations.
+
+Phase 2 must continue reporting exactly:
+
+8 owners
+1,459 operations
+baseline match true.
+
+==================================================
+1. HARD SAFETY RULES
+==================================================
+
+DO NOT:
+
+- Publish;
+- Deploy;
+- modify production;
+- connect to the production database;
+- connect to any ambient/shared database;
+- use Replit production DB credentials;
+- modify production secrets;
+- remove startup DDL;
+- call the migration runner from index.ts;
+- call the migration runner from app.ts;
+- call the migration runner from server boot;
+- call the migration runner from HTTP requests;
+- replace current ensure* routines;
+- change scheduler/outbox startup behavior;
+- change Replit deployment configuration;
+- change GitHub workflows;
+- push/merge/rebase/reset Git history;
+- start Phase 5.
+
+No production adoption is allowed in Phase 4.
+
+==================================================
+2. VERIFY REPOSITORY STATE FIRST
+==================================================
+
+Before modifying anything report:
+
+- branch;
+- actual HEAD;
+- commit message;
+- tracked modifications;
+- staged files;
+- untracked files;
+- git diff --check.
+
+Expected branch:
+
+fix-production-demo-seed-boundary
+
+Expected starting HEAD:
+
+dab58ca089e8cd0cee494112202a9ee8043dc7b2
+
+If the HEAD differs:
+
+STOP first and explain exactly why.
+
+Do not silently continue from an unexpected source state.
+
+==================================================
+3. DISCOVERY BEFORE IMPLEMENTATION
+==================================================
+
+Before writing code, inspect the repository and map ALL existing migration
+and schema-authority mechanisms.
+
+At minimum inspect:
+
+- Drizzle schema definitions;
+- drizzle config;
+- existing migrations directories;
+- migration scripts;
+- schema push scripts;
+- startup ensure* routines;
+- Business Growth migration/reconciliation ledger;
+- schema-drift/fingerprint tooling;
+- Phase 2 startup DDL inventory;
+- current package scripts;
+- release-chain scripts;
+- database package;
+- test database infrastructure;
+- CI isolated PostgreSQL infrastructure.
+
+Determine:
+
+A. whether a migration table already exists;
+B. whether an existing migration runner can be safely reused;
+C. whether an existing checksum mechanism exists;
+D. whether an existing advisory-lock convention exists;
+E. whether there is a safe disposable PostgreSQL test harness;
+F. whether pg_dump is available in the environment;
+G. whether an existing schema fingerprint can represent the adoption
+   contract.
+
+Do NOT create a second competing migration system if the repository already
+contains a correct reusable primitive.
+
+==================================================
+4. STOP CONDITION — BASELINE SOURCE
+==================================================
+
+The baseline must represent the schema expected after the CURRENT approved
+schema authorities have converged.
+
+Do NOT manually invent a baseline SQL file from memory.
+
+Preferred source:
+
+a disposable/isolated PostgreSQL database constructed from the current
+approved schema, followed by:
+
+pg_dump --schema-only
+
+with deterministic normalization/review.
+
+If a safe disposable PostgreSQL environment is NOT available:
+
+STOP.
+
+Do NOT connect to production.
+Do NOT use an ambient database.
+Do NOT fabricate the baseline.
+
+Report what infrastructure is missing.
+
+==================================================
+5. DISPOSABLE DATABASE ONLY
+==================================================
+
+If database execution is required in this phase, it must be an explicitly
+isolated disposable PostgreSQL instance/database created for Phase 4 tests.
+
+Before using it prove:
+
+- it is NOT production;
+- it is NOT staging/shared;
+- it contains no user data;
+- credentials are test-only;
+- database name/host clearly correspond to disposable test infrastructure.
+
+If this cannot be proven:
+
+STOP.
+
+Never infer safety merely because NODE_ENV=test.
+
+==================================================
+6. CANONICAL BASELINE MIGRATION
+==================================================
+
+Create a canonical baseline migration representing the approved current
+schema.
+
+The baseline must include all structural objects required by a FRESH
+database, including as applicable:
+
+- schemas;
+- tables;
+- columns;
+- types/enums;
+- primary keys;
+- unique constraints;
+- foreign keys;
+- check constraints;
+- indexes;
+- extensions;
+- functions;
+- triggers;
+- required structural database objects.
+
+Pay special attention to previously identified startup-only objects,
+including:
+
+- pg_trgm if currently required;
+- trigger definitions;
+- Business Growth structural objects;
+- media structural objects;
+- shipping;
+- marketplace;
+- referral;
+- web push;
+- booking;
+- education bundle.
+
+Do NOT include:
+
+- demo users;
+- demo salons;
+- marketplace demo content;
+- jobs/courses demo content;
+- development fixtures;
+- production business data;
+- arbitrary seed rows;
+- maintenance backfills unless they are strictly required structural
+  metadata and independently justified.
+
+Separate STRUCTURE from DATA.
+
+==================================================
+7. BASELINE DETERMINISM
+==================================================
+
+The baseline must be deterministic and reviewable.
+
+Normalize irrelevant pg_dump noise where appropriate, but do NOT normalize
+away semantic information.
+
+The same canonical baseline content must produce the same SHA-256 checksum.
+
+Store the expected SHA-256 in the migration metadata/manifest.
+
+Do not use timestamps or nondeterministic content as part of the checksum
+payload.
+
+==================================================
+8. MIGRATION MANIFEST
+==================================================
+
+Introduce an explicit ordered migration manifest.
+
+Each migration must have at minimum:
+
+- stable migration ID;
+- human-readable name;
+- SHA-256 checksum;
+- execution mode:
+  TRANSACTIONAL
+  or
+  NON_TRANSACTIONAL;
+- ordered position/version;
+- migration file reference.
+
+The baseline should be migration 0001 or an equivalent clearly defined
+initial migration.
+
+Do not infer migration ordering from filesystem enumeration alone.
+
+==================================================
+9. MIGRATION LEDGER
+==================================================
+
+Introduce a dedicated migration ledger with equivalent semantics to:
+
+lumera_migrations
+
+Required information:
+
+- migration ID;
+- checksum;
+- state/status;
+- started_at;
+- completed_at;
+- execution mode;
+- optional diagnostic/error metadata where safe.
+
+Required states must distinguish at least:
+
+APPLYING
+APPLIED
+FAILED
+
+and, if needed for safe adoption:
+
+ADOPTED
+
+or an equivalent explicit representation.
+
+The system must be able to distinguish:
+
+"baseline executed"
+
+from:
+
+"existing schema verified and baseline adopted without execution."
+
+==================================================
+10. LEDGER SAFETY
+==================================================
+
+The ledger itself must be created safely and idempotently.
+
+Do not silently overwrite:
+
+- an existing migration row;
+- a checksum;
+- a failed state;
+- an applying/interrupted state.
+
+If the same migration ID exists with a different checksum:
+
+FAIL CLOSED.
+
+If an unknown migration exists ahead of the binary's manifest:
+
+FAIL CLOSED.
+
+Do not automatically repair migration history.
+
+==================================================
+11. MIGRATION RUNNER
+==================================================
+
+Implement a migration runner that is callable EXPLICITLY.
+
+It must NOT be invoked automatically by production application startup.
+
+The runner must:
+
+1. obtain a bounded global migration lock;
+2. read/initialize the ledger;
+3. validate manifest vs ledger;
+4. validate checksums;
+5. determine current frontier;
+6. apply only the next valid migrations in order;
+7. persist state transitions;
+8. release lock/client safely;
+9. fail closed on inconsistency.
+
+No concurrent runners may apply the same migration twice.
+
+==================================================
+12. BOUNDED LOCKING
+==================================================
+
+Use a stable migration advisory lock or equivalent repository-approved
+locking mechanism.
+
+No unbounded wait.
+
+Use explicit lock/statement timeout behavior.
+
+Do NOT reuse hashtext-based locking blindly if a safer stable key mechanism
+already exists or can be defined explicitly.
+
+The runner must fail safely when it cannot acquire the lock.
+
+==================================================
+13. TRANSACTIONAL MIGRATIONS
+==================================================
+
+For TRANSACTIONAL migrations:
+
+Required semantic order:
+
+BEGIN
+→ ledger APPLYING as appropriate
+→ migration SQL
+→ ledger APPLIED
+→ COMMIT
+
+or another transactionally equivalent design.
+
+Any SQL failure must rollback structural changes and must not leave the
+migration falsely APPLIED.
+
+Test this.
+
+==================================================
+14. NON-TRANSACTIONAL MIGRATIONS
+==================================================
+
+The design must support future operations that cannot run inside a normal
+transaction, e.g. CREATE INDEX CONCURRENTLY.
+
+For NON_TRANSACTIONAL migrations:
+
+- record durable APPLYING state before execution;
+- execute outside transaction as required;
+- mark APPLIED only after successful completion.
+
+CRITICAL:
+
+If execution is interrupted while APPLYING:
+
+the next runner invocation MUST NOT blindly rerun it.
+
+It must HALT with an explicit interrupted/non-transactional recovery state.
+
+No automatic guess that the migration completed.
+
+Manual/operator reconciliation belongs to a later explicit workflow.
+
+==================================================
+15. CHECKSUM SAFETY
+==================================================
+
+Before applying or adopting any migration:
+
+calculate SHA-256 from the actual canonical migration content.
+
+If:
+
+manifest checksum
+!= file checksum
+
+FAIL CLOSED.
+
+If:
+
+ledger checksum
+!= manifest checksum
+
+FAIL CLOSED.
+
+Applied migration files are immutable.
+
+==================================================
+16. FRESH DATABASE PATH
+==================================================
+
+Implement and test:
+
+EMPTY DATABASE
+→ migration runner
+→ baseline migration executes
+→ ledger records APPLIED
+→ resulting structural fingerprint equals canonical expected fingerprint.
+
+Then rerun:
+
+runner again
+
+Required:
+
+NO schema change
+NO duplicate migration
+NO duplicate objects
+NO additional ledger row
+successful idempotent no-op.
+
+==================================================
+17. EXISTING DATABASE ADOPTION
+==================================================
+
+Implement a SEPARATE explicit adoption operation.
+
+It must NOT be the default behavior of the normal runner.
+
+Purpose:
+
+an existing database that already has the approved schema may mark the
+baseline as ADOPTED without replaying baseline SQL.
+
+Required adoption flow:
+
+1. acquire migration lock;
+2. verify ledger state;
+3. calculate LIVE structural fingerprint;
+4. compare against EXACT expected baseline fingerprint;
+5. only on exact semantic match:
+   write baseline ledger row as ADOPTED;
+6. execute ZERO baseline DDL.
+
+If fingerprint differs:
+
+FAIL CLOSED.
+
+No partial adoption.
+No "close enough".
+No automatic schema repair.
+No adoption based merely on tables existing.
+
+==================================================
+18. ADOPTION FINGERPRINT
+==================================================
+
+Reuse the repository's strongest existing semantic schema comparator where
+possible.
+
+Fingerprint must cover structural semantics relevant to production,
+including at least:
+
+- tables/columns/types/nullability/defaults;
+- PK;
+- unique;
+- FK;
+- checks;
+- indexes;
+- extensions;
+- functions/triggers where required by baseline correctness.
+
+IMPORTANT:
+
+The previously built schema-drift comparator may not currently cover every
+startup-only trigger/function/extension.
+
+Inspect coverage before reuse.
+
+If it is insufficient for SAFE adoption:
+
+extend a Phase-4-specific structural fingerprint rather than pretending the
+existing fingerprint is complete.
+
+Do NOT weaken comparison to make adoption pass.
+
+==================================================
+19. ADOPTION MUST NOT RUN IN PHASE 4 PRODUCTION
+==================================================
+
+Phase 4 may implement and test adoption ONLY against disposable databases.
+
+Do NOT adopt:
+
+- production;
+- staging;
+- any shared environment;
+- any existing Replit database.
+
+Actual production adoption belongs to Phase 5 after restore-point and
+operator procedure are approved.
+
+==================================================
+20. FINGERPRINT MISMATCH TEST
+==================================================
+
+Create disposable DB with one meaningful structural difference.
+
+Examples:
+
+- missing index;
+- altered nullable flag;
+- changed FK;
+- changed CHECK;
+- missing trigger.
+
+Run adoption.
+
+Required:
+
+REFUSED
+ZERO baseline DDL
+ZERO adopted ledger state.
+
+==================================================
+21. CHECKSUM MISMATCH TEST
+==================================================
+
+Simulate:
+
+ledger migration ID exists
+but checksum differs from manifest.
+
+Required:
+
+runner refuses to proceed.
+
+No migration SQL executed.
+
+==================================================
+22. UNKNOWN/FUTURE MIGRATION TEST
+==================================================
+
+Simulate ledger containing a migration ID/version not known to the current
+binary.
+
+Required:
+
+FAIL CLOSED.
+
+This protects rollback/older binaries from unknowingly operating against a
+newer schema.
+
+==================================================
+23. CONCURRENT RUNNER TEST
+==================================================
+
+Against disposable PostgreSQL:
+
+start two migration runners concurrently.
+
+Required:
+
+only one owns migration execution.
+
+The other:
+
+- waits only within the configured bound;
+- or fails cleanly due to lock contention.
+
+Never double-apply baseline.
+
+Ledger remains consistent.
+
+==================================================
+24. TRANSACTIONAL FAILURE TEST
+==================================================
+
+Create a controlled transactional test migration:
+
+valid statement
+→ deliberate failing statement
+→ another statement
+
+Required:
+
+rollback.
+
+No partial structural result.
+
+Migration must not be recorded APPLIED.
+
+==================================================
+25. NON-TRANSACTIONAL INTERRUPTION TEST
+==================================================
+
+Create a controlled test-only NON_TRANSACTIONAL migration state:
+
+ledger = APPLYING
+execution incomplete/unknown.
+
+Next runner invocation:
+
+must STOP.
+
+It must NOT automatically rerun the migration.
+
+It must NOT mark it APPLIED.
+
+==================================================
+26. CHECKSUM FILE-TAMPERING TEST
+==================================================
+
+Create test copy/mutation of a migration file after manifest checksum is
+defined.
+
+Required:
+
+runner refuses before SQL execution.
+
+==================================================
+27. ADOPTION IDEMPOTENCY TEST
+==================================================
+
+For a disposable DB whose schema exactly matches baseline:
+
+first explicit adoption:
+ADOPTED
+
+second explicit adoption:
+safe no-op / already adopted
+
+No duplicate row.
+No baseline DDL.
+
+==================================================
+28. FRESH VS ADOPTED EQUIVALENCE
+==================================================
+
+This is a critical test.
+
+Create two disposable databases:
+
+DB A:
+fresh → execute baseline
+
+DB B:
+construct approved current schema → explicit baseline adoption
+
+After completion:
+
+their structural fingerprints must be IDENTICAL.
+
+Ledger state may differ:
+
+A = APPLIED
+B = ADOPTED
+
+Schema itself must be equivalent.
+
+==================================================
+29. NO PRODUCTION BOOT WIRING
+==================================================
+
+Add a static regression test proving that normal production startup cannot
+reach:
+
+- migration runner;
+- baseline executor;
+- adoption command.
+
+At minimum trace:
+
+index.ts
+app.ts
+production startup dependency graph.
+
+Required:
+
+NO PATH.
+
+Do not merely rely on "we didn't call it."
+
+Make it executable regression coverage.
+
+==================================================
+30. CURRENT STARTUP DDL MUST REMAIN
+==================================================
+
+Phase 4 does NOT cut over production.
+
+After implementation rerun Phase 2.
+
+Required:
+
+8 owners
+1,459 operations
+baseline match true.
+
+No existing startup DDL owner may disappear.
+
+No operation count may change.
+
+No Phase 2 baseline update.
+
+==================================================
+31. PHASE 3 REGRESSION
+==================================================
+
+Run Phase 3 DB-free startup safety:
+
+12/12 PASS.
+
+The new migration code must not interfere with:
+
+- startup pool resolver;
+- transactions;
+- locks;
+- timeout restoration;
+- CI wiring.
+
+==================================================
+32. PHASE 1 REGRESSION
+==================================================
+
+Required:
+
+production request/startup boundary:
+10/10 PASS
+
+production demo-seed:
+11/11 PASS.
+
+No demo writer may become reachable.
+
+==================================================
+33. DATABASE-ROLE SCOPE
+==================================================
+
+Do NOT redesign production database roles in Phase 4.
+
+A dedicated migration role is a later phase.
+
+However:
+
+structure the runner so it does not assume application startup owns schema
+DDL forever.
+
+Do not weaken current permissions.
+
+==================================================
+34. PRODUCTION COMPATIBILITY GATE SCOPE
+==================================================
+
+Do NOT replace production boot with a migration compatibility gate yet.
+
+That belongs to a later phase.
+
+If you build reusable read-only compatibility primitives as part of runner
+validation, keep them unconnected to production boot.
+
+==================================================
+35. BUSINESS GROWTH HISTORY
+==================================================
+
+Do NOT blindly replay the historical Business Growth migration/reconciler
+sequence as the new migration history.
+
+The current converged structural state should be represented by the Phase 4
+baseline.
+
+Historical production reconciliation/backfill history is NOT equivalent to
+a replayable migration chain.
+
+Preserve current runtime behavior for now.
+
+==================================================
+36. DATA BACKFILLS
+==================================================
+
+Do NOT put large production data backfills into the structural baseline.
+
+If current startup code contains data reconciliation/backfills:
+
+classify them separately.
+
+Report which future maintenance/bootstrap operations will need handling in
+later phases.
+
+Do not solve them by embedding business data into baseline SQL.
+
+==================================================
+37. TRIGGERS / FUNCTIONS / EXTENSIONS
+==================================================
+
+Explicitly verify baseline coverage of database objects that ordinary table
+fingerprints can miss.
+
+At minimum inspect:
+
+- triggers;
+- trigger functions;
+- ordinary functions required by constraints/indexes;
+- extensions;
+- expression indexes;
+- partial indexes.
+
+Report exact coverage.
+
+This is especially important because adoption must not approve a database
+that merely has matching tables while required behavioral objects are
+missing.
+
+==================================================
+38. MIGRATION FILE IMMUTABILITY
+==================================================
+
+Add tests/guarding so an already-manifested migration cannot be silently
+edited without checksum failure.
+
+Do not auto-update manifest checksums.
+
+Checksum changes require deliberate migration-author review.
+
+==================================================
+39. ERROR MESSAGES
+==================================================
+
+Failures must clearly distinguish:
+
+- lock timeout;
+- checksum mismatch;
+- unknown migration;
+- interrupted APPLYING migration;
+- adoption fingerprint mismatch;
+- SQL execution failure;
+- ledger inconsistency.
+
+Do not log secrets or connection strings.
+
+==================================================
+40. NO DATABASE URL LEAKAGE
+==================================================
+
+Tests and error output must not print:
+
+- DATABASE_URL;
+- DB password;
+- connection string;
+- secret values.
+
+==================================================
+41. CLI / EXPLICIT ENTRYPOINTS
+==================================================
+
+If explicit commands are introduced, use clearly separate commands such as:
+
+migration status
+migration apply
+migration adopt-baseline
+
+or repository-consistent equivalents.
+
+Dangerous operations must not happen merely by importing a module.
+
+Importing migration modules must have ZERO DB side effects.
+
+==================================================
+42. STATUS MUST BE READ-ONLY
+==================================================
+
+If migration status command exists:
+
+it must not apply migrations;
+it must not adopt;
+it must not repair;
+it must not write schema.
+
+Status = inspection only.
+
+==================================================
+43. NO AUTOMATIC ADOPTION
+==================================================
+
+The normal migration apply command must NEVER decide:
+
+"schema appears populated, therefore adopt."
+
+Existing database adoption must require the explicit adoption operation.
+
+==================================================
+44. TEST ENVIRONMENT CLEANUP
+==================================================
+
+All disposable databases/resources created by tests must be cleaned up.
+
+Failure paths must also clean up when practical.
+
+Do not leave background servers/processes running.
+
+==================================================
+45. TEST REAL POSTGRESQL SEMANTICS
+==================================================
+
+Unit tests alone are insufficient for Phase 4.
+
+Core runner behavior must be tested against real disposable PostgreSQL for:
+
+- advisory locking;
+- transactions;
+- ledger persistence;
+- concurrency;
+- schema fingerprint;
+- adoption.
+
+Mocks may supplement but not replace these tests.
+
+==================================================
+46. PHASE 4 CI STRATEGY
+==================================================
+
+Add Phase 4 tests to the appropriate ISOLATED POSTGRESQL CI path.
+
+Do NOT put real-Postgres tests into the DB-free static chain.
+
+Keep DB-free static checks DB-free.
+
+Any pure static/unit safety tests may run in DB-free CI if appropriate.
+
+Do not weaken or bypass existing CI.
+
+==================================================
+47. RELEASE CHAIN
+==================================================
+
+Wire Phase 4 validation into the existing validation/release structure only
+after all Phase 4 tests pass independently.
+
+Do NOT modify GitHub workflow files unless absolutely required.
+
+Prefer existing package-script/CI phases.
+
+If workflow modification appears necessary:
+
+STOP and report why before changing it.
+
+==================================================
+48. IMPLEMENTATION DISCIPLINE
+==================================================
+
+Before each broad change ask:
+
+Does this change production startup behavior?
+
+If YES:
+
+do not make it in Phase 4.
+
+Does this remove current startup DDL?
+
+If YES:
+
+do not make it.
+
+Does this contact a non-disposable DB?
+
+If YES:
+
+STOP.
+
+Does this require production credentials?
+
+If YES:
+
+STOP.
+
+==================================================
+49. CHANGE-RADIUS DISCOVERY
+==================================================
+
+Unlike Phase 3, Phase 4 will require new files.
+
+Before editing:
+
+produce the intended file/change plan.
+
+Group into:
+
+A. baseline migration;
+B. manifest;
+C. ledger/runner;
+D. adoption/fingerprint;
+E. CLI;
+F. tests;
+G. package scripts/CI integration.
+
+Then implement.
+
+If implementation requires changing:
+
+index.ts
+app.ts
+production startup owners
+production routes
+deployment config
+GitHub workflows
+
+STOP before doing so.
+
+==================================================
+50. FINAL REQUIRED VERIFICATION
+==================================================
+
+Before PASS:
+
+Phase 4:
+- fresh DB baseline apply PASS;
+- rerun no-op PASS;
+- exact adoption PASS;
+- adoption mismatch refusal PASS;
+- checksum mismatch refusal PASS;
+- unknown/future migration refusal PASS;
+- concurrent runner PASS;
+- transactional rollback PASS;
+- nontransactional interrupted-state halt PASS;
+- migration-file tamper refusal PASS;
+- adoption idempotency PASS;
+- fresh/adopted structural equivalence PASS;
+- no production boot path PASS.
+
+Phase 1:
+10/10 PASS
+11/11 PASS
+
+Phase 2:
+6/6 PASS
+8 owners
+1,459 operations
+baseline match true
+
+Phase 3:
+12/12 DB-free PASS
+
+Typechecks:
+PASS
+
+git diff --check:
+PASS
+
+No production DB contacted.
+No Publish/Deploy.
+No Phase 5.
+
+==================================================
+51. AUTO-CHECKPOINT REPORTING
+==================================================
+
+Because Replit has repeatedly misreported automatic checkpoints:
+
+At the end run/read actual:
+
+git rev-parse HEAD
+
+and compare it with the starting HEAD.
+
+Report:
+
+- starting HEAD;
+- ending HEAD;
+- whether HEAD actually moved;
+- commit message;
+- exact checkpoint files;
+- attached_assets included yes/no.
+
+Do NOT state "no checkpoint" merely from Replit UI state.
+
+==================================================
+52. FINAL REPORT FORMAT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE GIT STATE
+2. EXISTING MIGRATION / SCHEMA AUTHORITY DISCOVERY
+3. DISPOSABLE DATABASE PROOF
+4. IMPLEMENTATION FILE PLAN
+5. CANONICAL BASELINE
+6. BASELINE CHECKSUM / MANIFEST
+7. MIGRATION LEDGER
+8. MIGRATION RUNNER
+9. LOCK / TIMEOUT MODEL
+10. TRANSACTIONAL MIGRATION MODEL
+11. NON-TRANSACTIONAL MIGRATION MODEL
+12. ADOPTION MODEL
+13. STRUCTURAL FINGERPRINT COVERAGE
+14. CLI / EXPLICIT ENTRYPOINTS
+15. FRESH DATABASE TEST
+16. IDEMPOTENT RERUN TEST
+17. EXACT ADOPTION TEST
+18. ADOPTION MISMATCH TEST
+19. CHECKSUM / TAMPER TESTS
+20. UNKNOWN MIGRATION TEST
+21. CONCURRENT RUNNER TEST
+22. TRANSACTIONAL FAILURE TEST
+23. NON-TRANSACTIONAL INTERRUPTION TEST
+24. FRESH VS ADOPTED EQUIVALENCE
+25. PRODUCTION BOOT ISOLATION
+26. PHASE 1 REGRESSION
+27. PHASE 2 REGRESSION
+28. PHASE 3 REGRESSION
+29. CI / RELEASE WIRING
+30. TYPECHECK / STATIC RESULTS
+31. DATA / BACKFILL CLASSIFICATION
+32. TRIGGER / FUNCTION / EXTENSION COVERAGE
+33. SECURITY / SECRET HANDLING
+34. CHANGE RADIUS
+35. GIT / AUTO-CHECKPOINT STATE
+36. DEFERRED ITEMS
+37. NEW BLOCKERS
+38. DECISION: PASS / STOPPED / FAIL
+
+PASS requires every Phase 4 safety property above.
+
+PASS DOES NOT authorize production adoption.
+PASS DOES NOT authorize removal of startup DDL.
+PASS DOES NOT authorize Publish/Deploy.
+PASS DOES NOT authorize Phase 5.
+
+If a safe disposable PostgreSQL environment cannot be proven:
+STOP.
+
+If canonical baseline cannot be generated/reproduced safely:
+STOP.
+
+If exact adoption fingerprint cannot cover required structural semantics:
+STOP rather than weakening adoption.
+
+STOP.

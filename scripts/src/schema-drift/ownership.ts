@@ -8,6 +8,15 @@ export const ownershipExceptions: OwnershipException[] = [
   {
     objectType: "TABLE",
     schema: "public",
+    name: "lumera_migration_ledger",
+    owner: "Phase 4 migration runner",
+    mechanism: "scripts/src/migrations/ledger.ts ledger bookkeeping",
+    reason: "Migration execution history is runner metadata, not application schema.",
+    temporary: false,
+  },
+  {
+    objectType: "TABLE",
+    schema: "public",
     name: "education_salon_cleanup_reports",
     owner: "startup Business Growth bootstrap",
     mechanism: "ensureBusinessGrowthSchema cleanup-report DDL",

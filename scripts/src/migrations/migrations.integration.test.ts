@@ -1,0 +1,303 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import pg from "pg";
+import { checkProductionRequestDependencyBoundary } from "../production-request-dependency-boundary";
+import {
+  readPostgresFingerprintCompatibility,
+  readPostgresSnapshot,
+} from "../schema-drift/catalog";
+import { fingerprintSnapshot } from "../schema-drift/fingerprint";
+import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transaction";
+import { ownershipExceptions } from "../schema-drift/ownership";
+import { readOnlyQueryLayer } from "../schema-drift/read-only-query";
+import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
+import { loadMigration, loadMigrations } from "./files";
+import { ensureLedger, readLedger } from "./ledger";
+import type { LoadedMigration } from "./types";
+
+const unitOnly = process.env.LUMERA_PHASE4_UNIT_ONLY === "1";
+const disposableUrl = process.env.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL;
+if (!unitOnly && (!disposableUrl || process.env.LUMERA_PHASE4_DISPOSABLE_DB !== "1")) {
+  throw new Error(
+    "Phase 4 integration tests require LUMERA_PHASE4_DISPOSABLE_DATABASE_URL and "
+    + "LUMERA_PHASE4_DISPOSABLE_DB=1; set LUMERA_PHASE4_UNIT_ONLY=1 for unit-only runs",
+  );
+}
+
+const skip = unitOnly ? { skip: "unit-only run" } : undefined;
+
+function migration(id: string, mode: "transactional" | "nontransactional", body: string): LoadedMigration {
+  return {
+    id,
+    directory: `${id}_integration_case`,
+    checksum: `${id}${"0".repeat(64 - id.length)}`,
+    mode,
+    description: `Integration ${id}`,
+    structuralFingerprint: "",
+    physicalFingerprint: "",
+    fingerprintVersion: 3,
+    formatVersion: 2,
+    postgresMajor: 16,
+    postgresVersionNum: 160010,
+    normalizedObjectCount: 0,
+    enumCount: 0,
+    triggerCount: 0,
+    sql: body,
+    body,
+    preconditions: [],
+    postconditions: [],
+    recovery: "integration recovery",
+  };
+}
+
+async function withDatabase<T>(callback: (pool: pg.Pool) => Promise<T>): Promise<T> {
+  const admin = new pg.Pool({ connectionString: disposableUrl!, max: 2 });
+  const name = `lumera_phase4_${process.pid}_${randomBytes(5).toString("hex")}`;
+  const quote = (value: string): string => `"${value.replaceAll('"', '""')}"`;
+  let child: pg.Pool | undefined;
+  try {
+    await admin.query(`CREATE DATABASE ${quote(name)}`);
+    const childUrl = new URL(disposableUrl!);
+    childUrl.pathname = `/${name}`;
+    child = new pg.Pool({ connectionString: childUrl.toString(), max: 4 });
+    return await callback(child);
+  } finally {
+    await child?.end().catch(() => undefined);
+    await admin.query(`DROP DATABASE IF EXISTS ${quote(name)} WITH (FORCE)`).catch(() => undefined);
+    await admin.end();
+  }
+}
+
+async function withClient<T>(pool: pg.Pool, callback: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    return await callback(client);
+  } finally {
+    client.release();
+  }
+}
+
+async function fingerprint(pool: pg.Pool): Promise<{
+  structuralFingerprint: string;
+  physicalFingerprint: string;
+}> {
+  return withClient(pool, async (client) => {
+    await beginFingerprintTransaction(client);
+    try {
+      const readOnly = readOnlyQueryLayer(client);
+      const result = fingerprintSnapshot(
+        await readPostgresSnapshot(readOnly),
+        ownershipExceptions,
+        await readPostgresFingerprintCompatibility(readOnly),
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+async function executeCanonicalBody(pool: pg.Pool): Promise<void> {
+  const [canonical] = await loadMigrations();
+  await withClient(pool, async (client) => {
+    await client.query("BEGIN");
+    try {
+      await client.query(canonical!.body);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+test("fresh apply and rerun are a no-op", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const first = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const second = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    assert.deepEqual(first.applied, ["000001"]);
+    assert.deepEqual(second.applied, []);
+    assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
+      .map((item) => item.state), ["APPLIED"]);
+  });
+});
+
+test("exact adoption and second adoption are idempotent", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const first = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    const second = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    assert.deepEqual(first.adopted, ["000001"]);
+    assert.deepEqual(second.adopted, ["000001"]);
+    assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
+      .map((item) => item.state), ["ADOPTED"]);
+  });
+});
+
+test("adoption mismatch leaves zero adopted state", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    await assert.rejects(
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      /baseline adoption mismatch/u,
+    );
+    await withClient(pool, async (client) => {
+      const row = await client.query(
+        "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+      );
+      assert.equal(row.rows[0]?.["ledger"], null);
+    });
+  });
+});
+
+test("manifest tamper is rejected before any SQL is sent", skip, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "lumera-phase4-"));
+  try {
+    const source = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../lib/db/migrations/000001_canonical_schema/migration.sql",
+    );
+    const target = path.join(root, "000001_canonical_schema", "migration.sql");
+    await mkdir(path.dirname(target), { recursive: true });
+    const bytes = await readFile(source);
+    bytes[bytes.length - 1] = bytes[bytes.length - 1] === 0x0a ? 0x20 : 0x0a;
+    await writeFile(target, bytes);
+    await assert.rejects(() => loadMigrations(root), /checksum mismatch/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ledger checksum mismatch and unknown future migration fail closed", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = [migration("000001", "transactional", "CREATE TABLE phase4_never_run (id integer)")];
+    await withClient(pool, async (client) => {
+      await ensureLedger(client);
+      await client.query(
+        "INSERT INTO public.lumera_migration_ledger (migration_id, checksum, mode, state) VALUES ($1, $2, $3, $4)",
+        ["000001", "tampered", "transactional", "APPLIED"],
+      );
+    });
+    await assert.rejects(
+      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      /Ledger checksum mismatch/u,
+    );
+    await withClient(pool, async (client) => {
+      await client.query(
+        "UPDATE public.lumera_migration_ledger SET checksum = $2 WHERE migration_id = $1",
+        ["000001", migrations[0]!.checksum],
+      );
+      await client.query(
+        "INSERT INTO public.lumera_migration_ledger (migration_id, checksum, mode, state) VALUES ($1, $2, $3, $4)",
+        ["999999", "future", "transactional", "APPLIED"],
+      );
+    });
+    await assert.rejects(
+      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      /unknown or future migration/u,
+    );
+  });
+});
+
+test("concurrent runners serialize without double application", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = [migration("000001", "transactional",
+      "CREATE TABLE phase4_concurrent_marker (id integer); SELECT pg_sleep(0.2)")];
+    const first = withClient(pool, (client) => applyMigrations(client, {
+      migrations, lockTimeoutMs: 10_000, lockPollMs: 20,
+    }));
+    const second = withClient(pool, (client) => applyMigrations(client, {
+      migrations, lockTimeoutMs: 10_000, lockPollMs: 20,
+    }));
+    const results = await Promise.all([first, second]);
+    assert.equal(results.filter((result) => result.applied.length === 1).length, 1);
+    assert.equal(results.filter((result) => result.skipped.length === 1).length, 1);
+  });
+});
+
+test("transactional rollback leaves no partial object or APPLIED state", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = [migration("000001", "transactional",
+      "CREATE TABLE phase4_partial_object (id integer); SELECT 1 / 0")];
+    await assert.rejects(
+      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      /Migration 000001 failed/u,
+    );
+    await withClient(pool, async (client) => {
+      const object = await client.query("SELECT to_regclass('public.phase4_partial_object') AS object");
+      assert.equal(object.rows[0]?.["object"], null);
+      const rows = await readLedger(client);
+      assert.equal(rows[0]?.state, "FAILED");
+    });
+  });
+});
+
+test("preexisting nontransactional APPLYING halts without rerun", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = [migration("000001", "nontransactional", "CREATE TABLE phase4_nontransactional_marker (id integer)")];
+    await withClient(pool, async (client) => {
+      await ensureLedger(client);
+      await client.query(
+        "INSERT INTO public.lumera_migration_ledger (migration_id, checksum, mode, state) VALUES ($1, $2, $3, $4)",
+        [migrations[0]!.id, migrations[0]!.checksum, "nontransactional", "APPLYING"],
+      );
+    });
+    await assert.rejects(
+      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      /Interrupted nontransactional migration is halted/u,
+    );
+    await withClient(pool, async (client) => {
+      const object = await client.query("SELECT to_regclass('public.phase4_nontransactional_marker') AS object");
+      assert.equal(object.rows[0]?.["object"], null);
+      assert.equal((await readLedger(client))[0]?.state, "APPLYING");
+    });
+  });
+});
+
+test("fresh and adopted databases have equivalent structural and physical fingerprints", skip, async () => {
+  let fresh: { structuralFingerprint: string; physicalFingerprint: string } | undefined;
+  let adopted: { structuralFingerprint: string; physicalFingerprint: string } | undefined;
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    fresh = await fingerprint(pool);
+  });
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    await executeCanonicalBody(pool);
+    await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    adopted = await fingerprint(pool);
+  });
+  assert.deepEqual(adopted, fresh);
+});
+
+test("status is read-only", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    await withClient(pool, async (client) => {
+      assert.deepEqual((await migrationStatus(client, migrations))
+        .map((item) => item.state), ["PENDING"]);
+      const relation = await client.query(
+        "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+      );
+      assert.equal(relation.rows[0]?.["ledger"], null);
+    });
+  });
+});
+
+test("production startup cannot reach migration runner", async () => {
+  const report = checkProductionRequestDependencyBoundary({
+    rootFiles: ["artifacts/api-server/src/index.ts"],
+    forbiddenModulePatterns: [/(?:^|\/)scripts\/src\/migrations(?:\/|$)/iu],
+  });
+  assert.equal(report.violations.length, 0);
+});
