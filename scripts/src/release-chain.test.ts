@@ -38,12 +38,16 @@ type WorkflowJob = {
     uses?: string;
     name?: string;
     run?: string;
+    if?: string;
+    env?: Record<string, unknown>;
+    "continue-on-error"?: boolean;
     with?: Record<string, unknown>;
   }>;
 };
 
 type GitHubWorkflow = {
   on?: Record<string, unknown>;
+  env?: Record<string, unknown>;
   jobs?: Record<string, WorkflowJob>;
 };
 
@@ -1268,6 +1272,7 @@ test("branch CI isolates database checks and orders browser journeys after every
     "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
     "pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation",
     "pnpm run validate:ci:database",
+    "pnpm run test:migrations:integration",
   ];
   let previousDatabasePreparationIndex = -1;
   for (const command of databasePreparationCommands) {
@@ -1302,6 +1307,39 @@ test("branch CI isolates database checks and orders browser journeys after every
     1,
     "The database backend-standard audit must run exactly once.",
   );
+  const migrationIntegrationSteps = databaseSteps.filter(
+    (step) => step.run?.trim() === "pnpm run test:migrations:integration",
+  );
+  assert.equal(
+    migrationIntegrationSteps.length,
+    1,
+    "The real Phase 4 migration integration suite must run exactly once.",
+  );
+  const migrationIntegrationStep = migrationIntegrationSteps[0]!;
+  const databaseChecksStepIndex = findDatabaseStep("pnpm run validate:ci:database");
+  const migrationIntegrationStepIndex = findDatabaseStep("pnpm run test:migrations:integration");
+  assert.equal(
+    migrationIntegrationStepIndex,
+    databaseChecksStepIndex + 1,
+    "The Phase 4 migration integration suite must run immediately after existing database checks.",
+  );
+  assert.equal(
+    migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL,
+    "postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database",
+  );
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DB, "1");
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DB, undefined);
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(parsedWorkflow.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(migrationIntegrationStep["continue-on-error"], undefined);
+  assert.equal(migrationIntegrationStep.if, undefined);
+  const serializedMigrationIntegrationStep = JSON.stringify(migrationIntegrationStep);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(workflow, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\$\{\{\s*secrets\./u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\b(?:publish|deploy)\b/iu);
   assert.doesNotMatch(
     databaseStepRuns.join("\n"),
     /ensure(?::|-)?development-schema/,

@@ -18,6 +18,7 @@ export interface MigrationManifestEntry {
   readonly normalizedObjectCount: number;
   readonly enumCount: number;
   readonly triggerCount: number;
+  readonly functionCount: number;
 }
 
 export interface LoadedMigration extends MigrationManifestEntry {

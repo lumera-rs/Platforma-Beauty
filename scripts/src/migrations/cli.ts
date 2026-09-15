@@ -9,15 +9,48 @@ function argument(argv: readonly string[], name: string): string | undefined {
 }
 
 function usage(): never {
-  throw new Error("Usage: migrations <status|apply|adopt-baseline> [--database-url=DATABASE_URL]");
+  throw new Error(
+    "Usage: migrations <status|apply|adopt-baseline> "
+    + "[--database-url=DATABASE_URL] [--confirm]",
+  );
+}
+
+function hasConfirmation(argv: readonly string[]): boolean {
+  return argv.some((item) => item === "--confirm" || item === "--confirm=true" || item === "--confirm=yes");
+}
+
+export interface MigrationCliOptions {
+  readonly command: "status" | "apply" | "adopt-baseline";
+  readonly databaseUrl: string;
+}
+
+export function parseMigrationCliOptions(
+  argv: readonly string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): MigrationCliOptions {
+  const command = argv[0];
+  if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
+  const explicitDatabaseUrl = argument(argv, "database-url");
+  const mutating = command === "apply" || command === "adopt-baseline";
+  if (mutating && !explicitDatabaseUrl?.trim()) {
+    throw new Error("Mutating migrations require an explicit --database-url target");
+  }
+  if (mutating && !hasConfirmation(argv)) {
+    throw new Error("Mutating migrations require explicit confirmation with --confirm");
+  }
+  const databaseUrl = explicitDatabaseUrl ?? environment.DATABASE_URL;
+  if (!databaseUrl?.trim()) throw new Error("An explicitly supplied DATABASE_URL is required");
+  return { command, databaseUrl };
+}
+
+export function safeErrorText(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.replace(/\bpostgres(?:ql)?:\/\/[^\s"'`]+/giu, "<redacted-database-url>");
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
-  const command = argv[0];
-  if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
-  const supplied = argument(argv, "database-url") ?? process.env.DATABASE_URL;
-  if (!supplied?.trim()) throw new Error("An explicitly supplied DATABASE_URL is required");
-  const pool = new pg.Pool({ connectionString: supplied, max: 1 });
+  const { command, databaseUrl } = parseMigrationCliOptions(argv);
+  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
   try {
     const client = await pool.connect();
     try {
@@ -40,7 +73,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 const invokedDirectly = process.argv[1]?.endsWith("/migrations/cli.ts") ?? false;
 if (invokedDirectly) {
   main().catch((error: unknown) => {
-    process.stderr.write(`Migration command failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`Migration command failed: ${safeErrorText(error)}\n`);
     process.exitCode = 2;
   });
 }

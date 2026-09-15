@@ -3,7 +3,7 @@ import type {
   BackingIndexDetails, CheckDefinition, ColumnDefinition, ExclusionDefinition,
   ForeignKeyDefinition, IndexDefinition,
   KeyDefinition, PostgresFingerprintCompatibility, SchemaSnapshot, TableDefinition,
-  EnumDefinition, TriggerDefinition, UnmodelledObjectCensus,
+  EnumDefinition, FunctionDefinition, TriggerDefinition, UnmodelledObjectCensus,
 } from "./model";
 import {
   POSTGRES_DEPARSE_FORMAT,
@@ -245,6 +245,39 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
       (SELECT jsonb_agg(jsonb_build_object('name',e.extname,'schema',n.nspname,'version',e.extversion)
         ORDER BY e.extname) FROM pg_catalog.pg_extension e
         JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace) AS extensions`);
+  const functionsResult = await client.query(`
+    SELECT n.nspname AS schema_name, p.proname AS function_name,
+      CASE p.prokind WHEN 'f' THEN 'function' WHEN 'p' THEN 'procedure'
+        WHEN 'w' THEN 'window_function'
+        ELSE p.prokind::text END AS function_kind,
+      pg_catalog.pg_get_function_identity_arguments(p.oid) AS identity_arguments,
+      pg_catalog.pg_get_function_arguments(p.oid) AS function_arguments,
+      COALESCE(pg_catalog.pg_get_function_result(p.oid), '') AS return_type,
+      p.proretset AS return_set, l.lanname AS language,
+      CASE p.provolatile WHEN 'i' THEN 'immutable' WHEN 's' THEN 'stable'
+        WHEN 'v' THEN 'volatile' ELSE p.provolatile::text END AS volatility,
+      CASE p.proparallel WHEN 's' THEN 'safe' WHEN 'r' THEN 'restricted'
+        WHEN 'u' THEN 'unsafe' ELSE p.proparallel::text END AS parallel,
+      p.proisstrict AS strict, p.proleakproof AS leakproof,
+      p.prosecdef AS security_definer, p.procost AS cost, p.prorows AS rows,
+      COALESCE(to_jsonb(p.proconfig), '[]'::jsonb) AS configuration,
+      pg_catalog.pg_get_functiondef(p.oid) AS function_definition
+    FROM pg_catalog.pg_proc p
+    JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+    JOIN pg_catalog.pg_language l ON l.oid=p.prolang
+    WHERE p.prokind IN ('f','p','w')
+      AND n.nspname NOT IN ('pg_catalog','information_schema')
+      AND n.nspname !~ '^pg_'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_depend d
+        JOIN pg_catalog.pg_extension e ON e.oid=d.refobjid
+        WHERE d.classid='pg_catalog.pg_proc'::pg_catalog.regclass
+          AND d.objid=p.oid AND d.deptype='e'
+      )
+    ORDER BY n.nspname,p.proname,
+      pg_catalog.pg_get_function_identity_arguments(p.oid),
+      pg_catalog.pg_get_functiondef(p.oid)`);
 
   const map = new Map<string, TableDefinition>();
   for (const row of tablesResult.rows) {
@@ -371,6 +404,25 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     functionDefinition: String(row["function_definition"]),
     };
   });
+  const functions: FunctionDefinition[] = (functionsResult?.rows ?? []).map((row) => ({
+    schema: String(row["schema_name"]),
+    name: String(row["function_name"]),
+    kind: String(row["function_kind"]),
+    identityArguments: String(row["identity_arguments"]),
+    arguments: String(row["function_arguments"]),
+    returnType: String(row["return_type"]),
+    returnSet: Boolean(row["return_set"]),
+    language: String(row["language"]),
+    volatility: String(row["volatility"]),
+    parallel: String(row["parallel"]),
+    strict: Boolean(row["strict"]),
+    leakproof: Boolean(row["leakproof"]),
+    securityDefiner: Boolean(row["security_definer"]),
+    cost: Number(row["cost"]),
+    rows: Number(row["rows"]),
+    configuration: strings(row["configuration"]),
+    definition: String(row["function_definition"]),
+  }));
   const modeledConstraintTriggerIds = new Set(
     (triggersResult?.rows ?? [])
       .map((row) => String(row["constraint_oid"] ?? "0"))
@@ -395,7 +447,7 @@ export async function readPostgresSnapshot(client: DatabaseClient): Promise<Sche
     policies: array("policies"),
     extensions: array("extensions"),
   };
-  return { tables: [...map.values()], enums, triggers, unmodelled };
+  return { tables: [...map.values()], enums, triggers, functions, unmodelled };
 }
 
 function triggerWhenExpression(definition: string): string | null {

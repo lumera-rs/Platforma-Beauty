@@ -9,11 +9,12 @@ import {
   type SchemaSnapshot,
   type TableDefinition,
   type TriggerDefinition,
+  type FunctionDefinition,
   type UnmodelledObjectCensus,
 } from "./model";
 
 export const FINGERPRINT_ALGORITHM = "sha256" as const;
-export const FINGERPRINT_VERSION = 3 as const;
+export const FINGERPRINT_VERSION = 4 as const;
 export const FINGERPRINT_FORMAT_VERSION = 2 as const;
 export const SCHEMA_FORMAT_VERSION = 1 as const;
 
@@ -89,6 +90,7 @@ export interface FingerprintPayload {
   tables: StructuralTable[] | TableDefinition[];
   enums: NonNullable<SchemaSnapshot["enums"]>;
   triggers: TriggerDefinition[];
+  functions: FunctionDefinition[];
   unmodelled: UnmodelledObjectCensus;
 }
 
@@ -107,6 +109,7 @@ export interface CatalogFingerprintResult {
   normalizedObjectCount: number;
   enumCount: number;
   triggerCount: number;
+  functionCount: number;
   unmodelledObjectCensus: UnmodelledObjectCensus;
   ownershipExceptions: AppliedOwnershipException[];
   structuralPayload: FingerprintPayload;
@@ -180,6 +183,7 @@ function withoutOwnedTables(
     enums: snapshot.enums,
     triggers: (snapshot.triggers ?? []).filter((trigger) =>
       !excludedTables.has(`${trigger.tableSchema}\u0000${trigger.tableName}`)),
+    functions: snapshot.functions,
     unmodelled: {
       ...snapshot.unmodelled!,
       rlsTables: snapshot.unmodelled!.rlsTables.filter((item) =>
@@ -202,6 +206,7 @@ function objectCount(snapshot: SchemaSnapshot): number {
     + table.indexes.length, 0)
     + (snapshot.enums?.length ?? 0)
     + (snapshot.triggers?.length ?? 0)
+    + (snapshot.functions?.length ?? 0)
     + censusCount(snapshot.unmodelled!);
 }
 
@@ -235,6 +240,7 @@ export function fingerprintSnapshot(
     tables: included.tables.map(structuralTable),
     enums: included.enums!,
     triggers: included.triggers!,
+    functions: included.functions!,
     unmodelled: included.unmodelled!,
   };
   const physicalPayload: FingerprintPayload = {
@@ -245,6 +251,7 @@ export function fingerprintSnapshot(
     tables: included.tables,
     enums: included.enums!,
     triggers: included.triggers!,
+    functions: included.functions!,
     unmodelled: included.unmodelled!,
   };
   return {
@@ -258,6 +265,7 @@ export function fingerprintSnapshot(
     normalizedObjectCount: objectCount(included),
     enumCount: included.enums!.length,
     triggerCount: included.triggers!.length,
+    functionCount: included.functions!.length,
     unmodelledObjectCensus: included.unmodelled!,
     ownershipExceptions,
     structuralPayload,
@@ -363,6 +371,26 @@ function validateSnapshot(snapshot: SchemaSnapshot, registry: OwnershipException
     if (triggerKeys.has(key)) throw new Error(`Duplicate catalog trigger: ${key}`);
     triggerKeys.add(key);
     if (value.events.length === 0) throw new Error(`Missing trigger events for ${key}`);
+  }
+  const functionKeys = new Set<string>();
+  for (const value of snapshot.functions ?? []) {
+    const key = `${value.schema}.${value.name}.${value.kind}.${value.identityArguments}`;
+    for (const [text, label] of [
+      [value.schema, "function schema"], [value.name, "function name"],
+      [value.kind, "function kind"],
+      [value.language, "function language"], [value.volatility, "function volatility"],
+      [value.parallel, "function parallel"], [value.definition, "function definition"],
+    ] as const) requireText(text, `${label} for ${key}`);
+    if (value.kind !== "function" && value.kind !== "procedure"
+      && value.kind !== "window_function") {
+      throw new Error(`Unsupported routine kind for ${key}`);
+    }
+    if (value.kind !== "procedure") requireText(value.returnType, `function return type for ${key}`);
+    if (functionKeys.has(key)) throw new Error(`Duplicate catalog function: ${key}`);
+    functionKeys.add(key);
+    if (!Number.isFinite(value.cost) || !Number.isFinite(value.rows)) {
+      throw new Error(`Invalid function execution metadata for ${key}`);
+    }
   }
   const ownershipKeys = new Set<string>();
   for (const exception of registry) {

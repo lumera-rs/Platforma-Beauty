@@ -40,13 +40,14 @@ function migration(id: string, mode: "transactional" | "nontransactional", body:
     description: `Integration ${id}`,
     structuralFingerprint: "",
     physicalFingerprint: "",
-    fingerprintVersion: 3,
+    fingerprintVersion: 4,
     formatVersion: 2,
     postgresMajor: 16,
     postgresVersionNum: 160010,
     normalizedObjectCount: 0,
     enumCount: 0,
     triggerCount: 0,
+    functionCount: 0,
     sql: body,
     body,
     preconditions: [],
@@ -143,6 +144,78 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
   });
 });
 
+test("baseline adoption refuses when its standalone routine is missing", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const before = await fingerprint(pool);
+    await withClient(pool, (client) => client.query(
+      "DROP FUNCTION public.prevent_incomplete_commercial_snapshot_insert()",
+    ));
+    const after = await fingerprint(pool);
+    assert.notDeepEqual(after, before);
+    await assert.rejects(
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      /baseline adoption mismatch/u,
+    );
+    await withClient(pool, async (client) => {
+      const ledger = await client.query(
+        "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+      );
+      assert.equal(ledger.rows[0]?.["ledger"], null);
+    });
+  });
+});
+
+test("baseline adoption refuses an added standalone routine", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const baseline = await fingerprint(pool);
+    await withClient(pool, (client) => client.query(`
+      CREATE FUNCTION public.phase4_standalone_routine() RETURNS integer
+      LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$`));
+    const added = await fingerprint(pool);
+    assert.notDeepEqual(added, baseline);
+    await assert.rejects(
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      /baseline adoption mismatch/u,
+    );
+    await withClient(pool, async (client) => {
+      const ledger = await client.query(
+        "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+      );
+      assert.equal(ledger.rows[0]?.["ledger"], null);
+    });
+  });
+});
+
+test("baseline adoption refuses a mutated baseline standalone routine", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const baseline = await fingerprint(pool);
+    await withClient(pool, (client) => client.query(`
+      CREATE OR REPLACE FUNCTION public.prevent_incomplete_commercial_snapshot_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RETURN NEW;
+      END $$`));
+    const mutated = await fingerprint(pool);
+    assert.notDeepEqual(mutated, baseline);
+    await assert.rejects(
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      /baseline adoption mismatch/u,
+    );
+    await withClient(pool, async (client) => {
+      const ledger = await client.query(
+        "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+      );
+      assert.equal(ledger.rows[0]?.["ledger"], null);
+    });
+  });
+});
+
 test("adoption mismatch leaves zero adopted state", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
@@ -230,7 +303,7 @@ test("transactional rollback leaves no partial object or APPLIED state", skip, a
       "CREATE TABLE phase4_partial_object (id integer); SELECT 1 / 0")];
     await assert.rejects(
       () => withClient(pool, (client) => applyMigrations(client, { migrations })),
-      /Migration 000001 failed/u,
+      /division by zero/u,
     );
     await withClient(pool, async (client) => {
       const object = await client.query("SELECT to_regclass('public.phase4_partial_object') AS object");

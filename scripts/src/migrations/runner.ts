@@ -85,6 +85,8 @@ async function executeMigration(
       if (finishTransactional) await finishTransactional();
       await client.query("COMMIT");
     } catch (error) {
+      // The migration error is the actionable error. A failed rollback is
+      // cleanup context and must never replace it.
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
     }
@@ -103,6 +105,39 @@ async function executeMigration(
  * only SQL quoting/comment boundaries; it does not attempt to parse SQL.
  */
 export function splitSqlStatements(sql: string): string[] {
+  const hasExecutableSql = (value: string): boolean => {
+    let cursor = 0;
+    while (cursor < value.length) {
+      if (/\s/u.test(value[cursor] ?? "")) {
+        cursor += 1;
+        continue;
+      }
+      if (value.startsWith("--", cursor)) {
+        const end = value.indexOf("\n", cursor + 2);
+        cursor = end < 0 ? value.length : end + 1;
+        continue;
+      }
+      if (value.startsWith("/*", cursor)) {
+        let depth = 1;
+        cursor += 2;
+        while (cursor < value.length && depth > 0) {
+          if (value.startsWith("/*", cursor)) {
+            depth += 1;
+            cursor += 2;
+          } else if (value.startsWith("*/", cursor)) {
+            depth -= 1;
+            cursor += 2;
+          } else {
+            cursor += 1;
+          }
+        }
+        if (depth > 0) throw new Error("Migration contains an unterminated block comment");
+        continue;
+      }
+      return true;
+    }
+    return false;
+  };
   const statements: string[] = [];
   let start = 0;
   let index = 0;
@@ -132,9 +167,17 @@ export function splitSqlStatements(sql: string): string[] {
     }
     if (sql[index] === "'" || sql[index] === '"') {
       const quote = sql[index];
+      // With PostgreSQL's standard_conforming_strings=on, backslashes in
+      // ordinary strings and quoted identifiers are ordinary characters.
+      // Only the explicit E'...' form uses backslash escapes.
+      const prefix = sql[index - 1];
+      const beforePrefix = sql[index - 2];
+      const escapeString = quote === "'"
+        && (prefix === "e" || prefix === "E")
+        && (beforePrefix === undefined || !/[A-Za-z0-9_$]/u.test(beforePrefix));
       index += 1;
       while (index < sql.length) {
-        if (sql[index] === "\\") {
+        if (escapeString && sql[index] === "\\") {
           index += Math.min(2, sql.length - index);
         } else if (sql[index] === quote && sql[index + 1] === quote) {
           index += 2;
@@ -162,15 +205,13 @@ export function splitSqlStatements(sql: string): string[] {
     }
     if (sql[index] === ";") {
       const statement = sql.slice(start, index).trim();
-      if (statement.replace(/(?:--[^\n]*|\/\*[\s\S]*?\*\/|\s)/gu, "") !== "") {
-        statements.push(statement);
-      }
+      if (hasExecutableSql(statement)) statements.push(statement);
       start = index + 1;
     }
     index += 1;
   }
   const final = sql.slice(start).trim();
-  if (final.replace(/(?:--[^\n]*|\/\*[\s\S]*?\*\/|\s)/gu, "") !== "") statements.push(final);
+  if (hasExecutableSql(final)) statements.push(final);
   return statements;
 }
 
@@ -208,8 +249,10 @@ export async function applyMigrations(
         if (migration.mode === "nontransactional") await markFinished(client, migration.id, "APPLIED");
         applied.push(migration.id);
       } catch (error) {
-        await markFailed(client, migration.id, errorText(error));
-        throw new Error(`Migration ${migration.id} failed: ${errorText(error)}`);
+        // Keep the migration operation error primary. Ledger failure is
+        // secondary cleanup and must not hide the SQL/condition failure.
+        await markFailed(client, migration.id, errorText(error)).catch(() => undefined);
+        throw error;
       }
     }
     return { applied, skipped };
@@ -278,6 +321,7 @@ export async function adoptBaseline(
       || fingerprint.normalizedObjectCount !== expected.normalizedObjectCount
       || fingerprint.enumCount !== expected.enumCount
       || fingerprint.triggerCount !== expected.triggerCount
+      || fingerprint.functionCount !== expected.functionCount
     ) {
       throw new Error(
         `Migration baseline adoption mismatch: expected structural ${expected.structuralFingerprint} `

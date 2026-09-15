@@ -1,0 +1,855 @@
+PHASE 4 CORRECTION — CLOSE B1/B2/B3/B4/B5
+DURABLE ROUTINES FINGERPRINT + ERROR PRECEDENCE + SQL SPLITTER
++ CLI SAFETY + ISOLATED CI WIRING
+
+You MAY modify code.
+
+DO NOT START PHASE 5.
+DO NOT PUBLISH.
+DO NOT DEPLOY.
+DO NOT CONNECT TO PRODUCTION OR SHARED DATABASES.
+DO NOT ADOPT ANY REAL DATABASE.
+DO NOT REMOVE STARTUP DDL.
+DO NOT WIRE MIGRATIONS TO PRODUCTION BOOT.
+DO NOT PUSH/MERGE/REBASE/RESET.
+
+Claude independently reviewed Phase 4 and returned:
+
+PHASE 4 CHANGES REQUIRED
+
+Current independently verified Git state:
+
+Branch:
+fix-production-demo-seed-boundary
+
+HEAD:
+b05dbf8384ef695a61bc4132a938e3ef4c1c172f
+
+Commit:
+Add ownership schema tracking and migration baseline assets
+
+IMPORTANT:
+The prior Replit report incorrectly said HEAD had not moved.
+Always verify actual git rev-parse HEAD yourself.
+
+==================================================
+1. VERIFY PRE-CHANGE STATE
+==================================================
+
+Before editing report:
+
+- branch;
+- actual HEAD;
+- commit message;
+- tracked modifications;
+- staged;
+- untracked;
+- git diff --check.
+
+Expected HEAD:
+
+b05dbf8384ef695a61bc4132a938e3ef4c1c172f
+
+If HEAD differs:
+
+STOP and report before editing.
+
+==================================================
+2. BLOCKERS TO CLOSE
+==================================================
+
+Close exactly these Phase 4 findings:
+
+B1 P1:
+Adoption fingerprint omits standalone/non-trigger PostgreSQL functions.
+
+B2 P2:
+Real PostgreSQL migration integration suite is not wired into the isolated
+GitHub Database checks job.
+
+B3 P2:
+Primary migration errors can be masked by markFailed/unlock cleanup errors.
+
+B4 P3:
+splitSqlStatements incorrectly treats backslash as an escape in ordinary
+PostgreSQL strings and quoted identifiers under standard_conforming_strings=on.
+
+B5 P3:
+Migration CLI can silently inherit ambient DATABASE_URL for dangerous
+apply/adopt operations.
+
+Do not expand into Phase 5 work.
+
+==================================================
+3. B1 — USE THE DURABLE SOLUTION
+==================================================
+
+Do NOT solve B1 by deleting:
+
+prevent_incomplete_commercial_snapshot_insert()
+
+or by requiring all functions to be trigger-attached.
+
+Implement durable PostgreSQL routine/function fingerprint coverage.
+
+The adoption fingerprint must cover application-owned standalone functions,
+including functions not reachable from pg_trigger.
+
+The baseline migration itself should remain semantically unchanged.
+
+Do NOT remove the orphan function merely to make the existing fingerprint pass.
+
+==================================================
+4. INSPECT CURRENT FINGERPRINT IMPLEMENTATION
+==================================================
+
+Before modifying it, inspect in full:
+
+- catalog snapshot extraction;
+- fingerprint model/types;
+- normalization;
+- structural fingerprint;
+- physical fingerprint;
+- unmodelled-object census;
+- ownership filtering;
+- schema-drift tests;
+- golden fixture tests.
+
+Identify the exact current pg_proc coverage.
+
+Claude independently proved:
+
+- baseline has 21 functions;
+- only 20 are trigger-attached;
+- dropping
+  public.prevent_incomplete_commercial_snapshot_insert()
+  currently leaves BOTH fingerprints unchanged.
+
+Reproduce this only against a proven disposable PostgreSQL database.
+
+Never against production/shared DB.
+
+==================================================
+5. ADD ROUTINES/FUNCTIONS TO CATALOG MODEL
+==================================================
+
+Extend the catalog/fingerprint model so application-owned PostgreSQL
+functions/routines are explicitly represented.
+
+Use pg_proc / pg_namespace and PostgreSQL catalog APIs.
+
+At minimum capture semantic properties required to distinguish function
+behavior.
+
+Prefer canonical PostgreSQL definitions such as:
+
+pg_get_functiondef(...)
+
+plus stable identity metadata as needed.
+
+Coverage must distinguish:
+
+- schema;
+- function/procedure identity;
+- argument identity/signature;
+- return semantics where applicable;
+- language;
+- volatility/behavioral properties where relevant;
+- security-definer semantics;
+- canonical function body/definition.
+
+Avoid unstable OIDs.
+
+Do not include system-owned PostgreSQL routines.
+
+==================================================
+6. TRIGGER FUNCTION DEDUPLICATION
+==================================================
+
+Trigger functions are already represented through trigger coverage.
+
+Design routine census so trigger-attached functions do not create unstable
+or contradictory duplicate semantics.
+
+It is acceptable for routine coverage to include all application routines
+including trigger functions IF normalization is deterministic and both
+fresh/adopted fingerprints remain exact.
+
+Do not weaken existing trigger definition coverage.
+
+==================================================
+7. FINGERPRINT VERSION
+==================================================
+
+Because fingerprint semantics are changing, bump the fingerprint version
+deliberately.
+
+Expected direction:
+
+v3 → v4
+
+or repository-consistent equivalent.
+
+Do not silently change v3 semantics without a version change.
+
+==================================================
+8. REGENERATE EXPECTED PHASE 4 FINGERPRINT METADATA
+==================================================
+
+After adding routines coverage, using ONLY a proven disposable PostgreSQL
+database:
+
+recalculate:
+
+- structural fingerprint;
+- physical fingerprint;
+- normalized object count;
+- any affected census counts;
+- fingerprint version.
+
+Update Phase 4 manifest metadata accordingly.
+
+IMPORTANT:
+
+The canonical migration.sql content should remain unchanged unless an
+independent reproducibility problem proves otherwise.
+
+Its SHA-256 should therefore remain:
+
+643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60
+
+If migration.sql changes unexpectedly:
+
+STOP.
+
+Do not silently regenerate it.
+
+==================================================
+9. NEAR-MISS ADOPTION TEST — REQUIRED
+==================================================
+
+Add a real PostgreSQL regression test specifically for the bug Claude found.
+
+Disposable DB:
+
+1. replay exact canonical baseline;
+2. verify fingerprint matches;
+3. DROP:
+
+public.prevent_incomplete_commercial_snapshot_insert()
+
+4. verify fingerprint now differs;
+5. run explicit baseline adoption.
+
+Required:
+
+ADOPTION REFUSED
+ZERO ADOPTED ledger state
+ZERO baseline SQL executed.
+
+This test is mandatory.
+
+==================================================
+10. EXTRA ROUTINE TEST
+==================================================
+
+Add another regression:
+
+1. exact baseline;
+2. CREATE an arbitrary application-owned standalone function;
+3. fingerprint must differ;
+4. adoption must refuse.
+
+Also mutate a standalone function body/signature where practical and prove
+the fingerprint changes.
+
+==================================================
+11. EXISTING TRIGGER FUNCTION REGRESSION
+==================================================
+
+Preserve existing behavior:
+
+mutating a trigger-attached function must still change the fingerprint.
+
+Do not regress trigger coverage while adding routines.
+
+==================================================
+12. VIEW / MATVIEW NOTE
+==================================================
+
+Claude noted that census currently carries only names for views/matviews/
+sequences.
+
+The current baseline contains zero such objects.
+
+Do not broaden Phase 4 unnecessarily unless the routines implementation
+naturally requires it.
+
+Report this as deferred fingerprint hardening for future migrations.
+
+It is not a current blocker because baseline has zero such objects.
+
+==================================================
+13. B3 — PRESERVE PRIMARY ERROR
+==================================================
+
+Audit runner.ts failure cleanup.
+
+Claude found:
+
+- unguarded markFailed(...) can replace the original migration SQL error;
+- unguarded unlock can replace the original error.
+
+Fix error precedence.
+
+Required semantic rule:
+
+If primary migration operation fails:
+
+PRIMARY ERROR REMAINS THE THROWN ERROR.
+
+Any secondary:
+
+- markFailed failure;
+- rollback failure;
+- unlock failure;
+- release/cleanup failure
+
+must not replace it.
+
+Attach/log secondary context safely if repository conventions allow, without
+printing secrets.
+
+If no primary error occurred and cleanup itself fails, the cleanup failure
+may surface.
+
+==================================================
+14. B3 ADVERSARIAL TESTS
+==================================================
+
+Add focused tests for:
+
+A. migration SQL fails + markFailed succeeds
+→ original SQL error surfaces.
+
+B. migration SQL fails + markFailed fails
+→ original SQL error still surfaces.
+
+C. migration SQL fails + unlock fails
+→ original SQL error still surfaces.
+
+D. successful migration + unlock fails
+→ unlock failure surfaces.
+
+E. rollback failure after primary migration failure
+→ original migration failure remains primary.
+
+Use real/fake clients as appropriate, but do not weaken real PostgreSQL
+integration coverage.
+
+==================================================
+15. B4 — FIX POSTGRESQL STRING SPLITTING
+==================================================
+
+Audit splitSqlStatements.
+
+Under PostgreSQL default:
+
+standard_conforming_strings = on
+
+backslash is NOT an escape in ordinary:
+
+'...'
+
+strings or:
+
+"..."
+
+quoted identifiers.
+
+Do not treat \ as an escape there.
+
+Keep correct escape handling for explicit escape strings:
+
+E'...'
+
+if the splitter supports them.
+
+Preserve support for:
+
+- quoted semicolons;
+- dollar-quoted function bodies;
+- DO blocks;
+- line comments;
+- nested block comments;
+- positional parameters such as $1.
+
+==================================================
+16. B4 REGRESSION TESTS
+==================================================
+
+Add tests covering at minimum:
+
+ordinary string ending/containing backslash near semicolon;
+quoted identifier containing backslash;
+E'...' escaped string;
+dollar-quoted function with semicolons;
+nested block comments;
+DO block.
+
+The splitter must produce correct statement boundaries.
+
+==================================================
+17. B5 — CLI SAFETY
+==================================================
+
+Do not allow dangerous migration operations to silently target whatever
+DATABASE_URL happens to exist in the shell.
+
+Dangerous operations:
+
+apply
+adopt-baseline
+
+must require explicit operator intent.
+
+Use the smallest repository-consistent design.
+
+Preferred shape:
+
+- explicit --database-url argument
+AND/OR
+- explicit confirmation flag for mutating commands.
+
+But do not put credentials into process output or logs.
+
+Status may remain read-only and may use a configured DB according to a
+clearly documented rule.
+
+==================================================
+18. B5 HARD REQUIREMENT
+==================================================
+
+The following must NOT be sufficient by itself:
+
+DATABASE_URL=<some database>
+pnpm run migrations:apply
+
+Mutating migration CLI must refuse unless explicit migration-target
+confirmation is provided.
+
+Likewise for adopt-baseline.
+
+No default production execution.
+
+==================================================
+19. CLI TESTS
+==================================================
+
+Add tests proving:
+
+ambient DATABASE_URL only
+→ apply REFUSED
+
+ambient DATABASE_URL only
+→ adopt REFUSED
+
+explicit authorized target/confirmation
+→ command may proceed
+
+No URL/password printed.
+
+No production DB contacted in tests.
+
+==================================================
+20. B2 — CI WIRING
+==================================================
+
+Only after B1/B3/B4/B5 tests pass independently, wire the real PostgreSQL
+migration integration suite into GitHub's existing isolated:
+
+Database checks (isolated PostgreSQL)
+
+job.
+
+Claude independently confirmed workflow modification is required.
+
+Authorized files for B2:
+
+.github/workflows/ci.yml
+scripts/src/release-chain.test.ts
+
+Do not change production deployment workflow.
+
+==================================================
+21. EXACT CI SAFETY MODEL
+==================================================
+
+The Phase 4 integration suite must receive its disposable confirmation ONLY
+inside the isolated database job/step.
+
+Use:
+
+LUMERA_PHASE4_DISPOSABLE_DATABASE_URL:
+postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+
+LUMERA_PHASE4_DISPOSABLE_DB: "1"
+
+Do not source these from production secrets.
+
+Do not use:
+
+${{ secrets.* }}
+
+Do not make integration tests automatically accept DATABASE_URL.
+
+Do not infer disposable from CI=true.
+
+Do not set these variables globally.
+
+Step-local only.
+
+==================================================
+22. CI COMMAND
+==================================================
+
+In the existing database job, after the existing:
+
+Run database checks
+
+step, add the dedicated blocking step:
+
+Run Phase 4 migration integration suite
+
+running:
+
+pnpm run test:migrations:integration
+
+No:
+
+continue-on-error
+if: failure()
+backgrounding
+|| true
+
+A failing suite must make:
+
+Database checks (isolated PostgreSQL)
+
+red.
+
+==================================================
+23. CI GREEN-WASHING GUARD
+==================================================
+
+Claude found:
+
+LUMERA_PHASE4_UNIT_ONLY=1
+
+can make the integration file skip DB tests while exiting successfully.
+
+The isolated CI job must never set/use this bypass.
+
+Add release-chain/workflow regression coverage proving the Phase 4
+integration step does NOT contain or inherit:
+
+LUMERA_PHASE4_UNIT_ONLY
+
+and genuinely runs the DB suite.
+
+Do not remove the unit-only mechanism if it is useful for local unit tests;
+prevent its use in the required real-DB CI gate.
+
+==================================================
+24. RELEASE-CHAIN TEST
+==================================================
+
+Update scripts/src/release-chain.test.ts to assert:
+
+- test:migrations:integration appears exactly once in the database job;
+- it is ordered after existing database checks as intended;
+- the step has both explicit Phase 4 disposable env variables;
+- LUMERA_PHASE4_DISPOSABLE_DB is exactly "1";
+- no LUMERA_PHASE4_UNIT_ONLY;
+- no continue-on-error;
+- no production secret;
+- no Publish/Deploy behavior.
+
+==================================================
+25. DO NOT MODIFY EXISTING DISPOSABLE BARRIER
+==================================================
+
+Preserve integration-test requirements:
+
+LUMERA_PHASE4_DISPOSABLE_DATABASE_URL
+LUMERA_PHASE4_DISPOSABLE_DB=1
+
+No fallback to ambient:
+
+DATABASE_URL
+PGHOST
+PGDATABASE.
+
+==================================================
+26. REAL POSTGRESQL TESTING
+==================================================
+
+For local verification create/prove a fresh disposable PostgreSQL 16
+environment.
+
+No ambient DB.
+
+No production/shared DB.
+
+Run:
+
+migration unit tests
+real PostgreSQL migration tests
+schema fingerprint tests
+migration contract tests
+
+Include the new near-miss function adoption regressions.
+
+Clean up all disposable resources afterward.
+
+==================================================
+27. BASELINE IMMUTABILITY
+==================================================
+
+Reconfirm:
+
+migration.sql SHA-256 remains:
+
+643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60
+
+The migration SQL itself must not be changed by this correction.
+
+Only fingerprint metadata may change because fingerprint semantics changed.
+
+If baseline SQL changes:
+
+STOP.
+
+==================================================
+28. MIGRATION CONTRACT
+==================================================
+
+Run migration-contract validation.
+
+It must still recognize:
+
+000001_canonical_schema
+
+correctly.
+
+Because the migration is not yet on main, historical protection count may
+still be zero.
+
+Do not interpret that as a failure.
+
+Do not alter the baseline checksum merely to satisfy tests.
+
+==================================================
+29. PRODUCTION BOOT ISOLATION
+==================================================
+
+Re-run executable/static dependency boundary.
+
+Required:
+
+NO path from:
+
+index.ts
+app.ts
+production routes
+
+to:
+
+migration runner
+baseline executor
+adoption.
+
+Phase 4 remains parallel/unwired.
+
+==================================================
+30. PHASE 1 REGRESSION
+==================================================
+
+Required:
+
+production request/startup boundary:
+10/10 PASS
+
+production demo-seed safety:
+11/11 PASS
+
+==================================================
+31. PHASE 2 REGRESSION
+==================================================
+
+Required:
+
+6/6 PASS
+8 owners
+1,459 startup DDL operations
+0 violations
+baseline match true
+
+Do not modify Phase 2 startup DDL baseline.
+
+==================================================
+32. PHASE 3 REGRESSION
+==================================================
+
+Required:
+
+12/12 DB-free PASS.
+
+==================================================
+33. TYPECHECK / STATIC
+==================================================
+
+Required:
+
+scripts typecheck PASS
+API typecheck PASS
+git diff --check PASS
+
+Run relevant workflow/release-chain tests.
+
+==================================================
+34. CHANGE RADIUS
+==================================================
+
+At the end report every changed file grouped by:
+
+A. fingerprint v4 / routine coverage
+B. Phase 4 manifest metadata
+C. adoption regressions
+D. runner error precedence
+E. SQL splitter
+F. CLI safety
+G. CI workflow
+H. release-chain regression
+
+No production startup implementation file should change.
+
+==================================================
+35. NO GIT HISTORY OPERATIONS
+==================================================
+
+Do not:
+
+push
+pull
+merge
+rebase
+reset
+checkout
+switch
+
+Replit may auto-checkpoint.
+
+Do not create a manual commit.
+
+==================================================
+36. AUTO-CHECKPOINT VERIFICATION
+==================================================
+
+At end run/read actual:
+
+git rev-parse HEAD
+
+Compare to:
+
+b05dbf8384ef695a61bc4132a938e3ef4c1c172f
+
+Report:
+
+- actual ending HEAD;
+- whether it moved;
+- actual commit message if moved;
+- exact checkpoint contents;
+- whether attached_assets entered checkpoint;
+- working tree state.
+
+Do not trust UI checkpoint status.
+
+==================================================
+37. STOP CONDITIONS
+==================================================
+
+STOP if:
+
+- production/shared DB would be required;
+- migration.sql would need semantic change;
+- adoption still accepts missing standalone function;
+- fingerprint v4 cannot deterministically represent routines;
+- Phase 2 8/1459 changes;
+- production boot gains migration dependency;
+- CI wiring would require production secret;
+- unexpected Git source state appears before editing.
+
+==================================================
+38. FINAL REQUIRED RESULTS
+==================================================
+
+B1:
+- standalone functions represented;
+- fingerprint version deliberately updated;
+- dropping baseline standalone function changes fingerprint;
+- adding arbitrary standalone function changes fingerprint;
+- adoption refuses both;
+- trigger function coverage remains intact.
+
+B2:
+- required isolated Database checks runs integration suite;
+- explicit step-local disposable env;
+- no unit-only bypass;
+- failing suite blocks job.
+
+B3:
+- original migration error cannot be masked by cleanup.
+
+B4:
+- PostgreSQL string splitting semantics corrected and tested.
+
+B5:
+- ambient DATABASE_URL alone cannot run apply/adopt.
+
+Phase 4:
+- unit tests PASS;
+- real PostgreSQL tests PASS;
+- exact adoption PASS;
+- near-miss adoption refusal PASS;
+- fresh/adopted equivalence PASS;
+- migration contract PASS.
+
+Previous phases:
+Phase 1 10/10 + 11/11
+Phase 2 6/6 + 8 owners + 1459 operations + baseline true
+Phase 3 12/12
+
+No production DB.
+No Publish/Deploy.
+No Phase 5.
+
+==================================================
+39. FINAL DECISION
+==================================================
+
+Return exactly one:
+
+PASS
+
+STOPPED
+
+FAIL
+
+PASS means ALL B1-B5 are closed and all regressions pass.
+
+PASS DOES NOT authorize Phase 5.
+PASS DOES NOT authorize production adoption.
+PASS DOES NOT authorize Publish/Deploy.
+
+STOP.

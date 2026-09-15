@@ -117,6 +117,25 @@ export interface TriggerDefinition {
   definition: string;
   functionDefinition: string;
 }
+export interface FunctionDefinition {
+  schema: string;
+  name: string;
+  kind: string;
+  identityArguments: string;
+  arguments: string;
+  returnType: string;
+  returnSet: boolean;
+  language: string;
+  volatility: string;
+  parallel: string;
+  strict: boolean;
+  leakproof: boolean;
+  securityDefiner: boolean;
+  cost: number;
+  rows: number;
+  configuration: string[];
+  definition: string;
+}
 export interface PolicyCensusEntry {
   schema: string;
   table: string;
@@ -141,6 +160,7 @@ export interface SchemaSnapshot {
   tables: TableDefinition[];
   enums?: EnumDefinition[];
   triggers?: TriggerDefinition[];
+  functions?: FunctionDefinition[];
   unmodelled?: UnmodelledObjectCensus;
 }
 export const SUPPORTED_POSTGRES_MAJOR_VERSIONS = [16] as const;
@@ -1277,6 +1297,21 @@ export function normalizeSnapshot(
     })).sort((a, b) => compareCodeUnits(
       `${a.tableSchema}.${a.tableName}.${a.name}`,
       `${b.tableSchema}.${b.tableName}.${b.name}`,
+    )),
+    functions: (snapshot.functions ?? []).map((value) => ({
+      ...value,
+      kind: value.kind.toLowerCase(),
+      identityArguments: normalizeSql(value.identityArguments, undefined, options) ?? "",
+      arguments: normalizeSql(value.arguments, undefined, options) ?? "",
+      returnType: normalizeSql(value.returnType, undefined, options) ?? "",
+      language: value.language.toLowerCase(),
+      volatility: value.volatility.toLowerCase(),
+      parallel: value.parallel.toLowerCase(),
+      configuration: [...value.configuration].sort(compareCodeUnits),
+      definition: normalizeSql(value.definition, undefined, options)!,
+    })).sort((a, b) => compareCodeUnits(
+      `${a.schema}.${a.name}.${a.kind}.${a.identityArguments}`,
+      `${b.schema}.${b.name}.${b.kind}.${b.identityArguments}`,
     )),
     unmodelled: normalizeCensus(snapshot.unmodelled),
   };

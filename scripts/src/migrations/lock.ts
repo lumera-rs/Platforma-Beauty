@@ -28,11 +28,28 @@ export async function withMigrationAdvisoryLock<T>(
     }
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(pollMs, timeoutMs)));
   }
+  let result: T | undefined;
+  let primaryError: unknown;
+  let hasPrimaryError = false;
   try {
-    return await operation();
-  } finally {
+    result = await operation();
+  } catch (error) {
+    hasPrimaryError = true;
+    primaryError = error;
+  }
+
+  let cleanupError: unknown;
+  let hasCleanupError = false;
+  try {
     await client.query(
       "SELECT pg_catalog.pg_advisory_unlock(pg_catalog.hashtext('lumera:phase4:migrations'))",
     );
+  } catch (error) {
+    hasCleanupError = true;
+    cleanupError = error;
   }
+
+  if (hasPrimaryError) throw primaryError;
+  if (hasCleanupError) throw cleanupError;
+  return result as T;
 }

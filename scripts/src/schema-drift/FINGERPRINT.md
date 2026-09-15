@@ -12,7 +12,7 @@ database row.
 
 Legacy `schema-drift:audit` intentionally strips catalog-added casts while
 comparing defaults and expressions (for example, an enum literal or `jsonb`
-literal). That tolerance is scoped to audit normalization. Version-3
+literal). That tolerance is scoped to audit normalization. Version-4
 fingerprints retain casts and remain strict.
 
 The fingerprint CLI accepts no eligibility arguments and has no imports from
@@ -30,7 +30,7 @@ baseline-adoption path.
 Both hashes use SHA-256 over a versioned, locale-neutral canonical UTF-8 JSON
 payload:
 
-Fingerprint result format 2 and fingerprint payload version 3 support
+Fingerprint result format 2 and fingerprint payload version 4 support
 PostgreSQL 16. The result records the exact
 `serverVersionNum`, the parsed major version, and deparser family
 `postgresql-16-deparser-v1`. The deparser family is part of both hash payloads;
@@ -38,8 +38,8 @@ the patch version is visible metadata but does not by itself change the hashes.
 Any unsupported major version, malformed version response, or missing
 compatibility metadata fails closed before a fingerprint can be produced.
 Adding support for another PostgreSQL major requires a reviewed deparser-format
-identifier and updated golden catalog fixtures. Version-2 digests are not
-interpreted as version 3. The DDL fixture is not in the normal integration suite:
+identifier and updated golden catalog fixtures. Earlier payload digests are not
+interpreted as version 4. The DDL fixture is not in the normal integration suite:
 `test:schema-drift:golden-fixture` requires both
 `SCHEMA_DRIFT_DISPOSABLE_DB=1` and a database name containing a `test` or
 `disposable` token, and otherwise fails closed. It pins the same deparser
@@ -59,6 +59,11 @@ and trigger-name sensitivity. It must never run against the development DB.
   are represented. PostgreSQL enum identities and label order, non-internal
   public-table trigger definitions, target function identity, arguments, and the
   pinned-deparser `pg_get_functiondef` function definition are also represented.
+  Version 4 additionally models every non-system, non-extension-owned application
+  function, window function, or procedure, including its identity signature, arguments, return
+  semantics, language, execution properties, configuration, and canonical
+  `pg_get_functiondef` output. This includes standalone routines that no trigger
+  references.
   Physical constraint and index names are omitted. Trigger names remain
   structural because they control same-kind firing order and are exposed as
   `TG_NAME` to trigger functions.
@@ -86,8 +91,8 @@ privilege separation, an immutable migration ledger, baseline as ledger row
 zero, backup/restore-point evidence, the migration frontier, and convergence of
 fresh and adopted databases.
 
-The JSON result exposes both normalized payloads, enum/trigger counts, and the
-unmodelled census for review and diffing.
+The JSON result exposes both normalized payloads, enum/trigger/function counts,
+and the unmodelled census for review and diffing.
 Payload ordering is independent of input table, constraint, check, and index
 ordering. Column positions and key/index column order remain meaningful.
 Fingerprint transactions pin `search_path` to `pg_catalog` before invoking

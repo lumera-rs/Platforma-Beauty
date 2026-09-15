@@ -418,6 +418,11 @@ jobs:
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:database
+      - name: Run Phase 4 migration integration suite
+        env:
+          LUMERA_PHASE4_DISPOSABLE_DATABASE_URL: postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+          LUMERA_PHASE4_DISPOSABLE_DB: "1"
+        run: pnpm run test:migrations:integration
       - name: Upload database timing history
         if: ${{ always() }}
         continue-on-error: true
