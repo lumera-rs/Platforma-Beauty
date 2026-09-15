@@ -53,12 +53,12 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 type Json = Record<string, unknown>;
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const suffix = randomUUID();
   const passwordHash = await hashPassword(`employee-deactivation-scoping-${suffix}`);
   let server: ReturnType<typeof app.listen> | undefined;

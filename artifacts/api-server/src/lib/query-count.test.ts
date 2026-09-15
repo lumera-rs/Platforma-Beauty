@@ -22,7 +22,7 @@ import {
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Query count tests");
 
@@ -39,7 +39,7 @@ const probes: QueryProbe[] = [
 ];
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const suffix = randomUUID();
   const [owner] = await db.insert(usersTable).values({
     firstName: "Query",

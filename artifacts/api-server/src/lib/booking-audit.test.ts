@@ -784,8 +784,7 @@ async function run(): Promise<void> {
           employeeId: fixture.employeeFId, date, startTime,
         }),
       });
-      // Scoped to this request: ensureDemoData() seeds appointments for every
-      // employee it can see, including this fixture's, on the same dates.
+      // Scope the assertion to this audit customer's booking attempt.
       const rows = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
         eq(appointmentsTable.customerId, fixture.customerId),
         eq(appointmentsTable.date, date),
@@ -1193,11 +1192,10 @@ async function run(): Promise<void> {
     });
 
     // ── Z2 — every "impossible state" query, expected 0 ──
-    // Two scopes on purpose. `ensureDemoData()` inserts demo appointments
-    // straight into the table without going through the booking path, so a
-    // whole-database count says nothing about booking correctness. The findings
-    // below are raised only from rows this run actually booked over HTTP; the
-    // whole-database numbers are reported as context.
+    // Two scopes on purpose. Historical or explicitly initialized fixture rows
+    // bypass the booking path, so a whole-database count says nothing about
+    // request-time booking correctness. Findings are raised only from rows this
+    // run booked over HTTP; whole-database numbers remain context.
     await probe("Z2 no appointment booked through the API is in an impossible state", async () => {
       // `created_by_user_id` is written only by insertInitializedAppointmentInTx,
       // so this excludes both the demo seeder and the probes' own direct inserts.
@@ -1268,7 +1266,7 @@ async function run(): Promise<void> {
       if (duplicateCount > 0) breaches.push(`duplicate receipt per scope: ${duplicateCount}`);
 
       note(`Z2 booked-over-HTTP scope — ${bookedCounts.join("; ")}`);
-      note(`Z2 whole database (includes ensureDemoData rows inserted outside the booking path) — ${wholeDbCounts.join("; ")}`);
+      note(`Z2 whole database (may include explicit or historical fixture rows outside the booking path) — ${wholeDbCounts.join("; ")}`);
       if (!breaches.length) return null;
 
       record({
@@ -1280,8 +1278,8 @@ async function run(): Promise<void> {
       return breaches.join("; ");
     });
 
-    // ── Z3 — the demo seeder writes rows the booking path could never produce ──
-    await probe("Z3 seeded demo appointments are internally consistent", async () => {
+    // ── Z3 — historical/explicit fixture rows remain internally consistent ──
+    await probe("Z3 explicit or historical fixture appointments are internally consistent", async () => {
       const result = await db.execute(sql`select count(*)::int as n from appointments a
         where a.duration_minutes <> (
           (split_part(a.end_time, ':', 1)::int * 60 + split_part(a.end_time, ':', 2)::int)
@@ -1292,11 +1290,10 @@ async function run(): Promise<void> {
       record({
         id: "BOOKING-F12",
         severity: "LOW",
-        title: "ensureDemoData() inserts appointments whose duration_minutes contradicts their own start/end window",
-        evidence: `${mismatched} seeded rows carry e.g. 09:00-10:00 with duration_minutes = 45. `
-          + `These are written straight to the table, bypassing the booking path, so availability and `
-          + `any duration-based reporting disagree with the row itself. Not a booking-path defect, but `
-          + `ensureDemoData() runs against whatever database it is pointed at`,
+        title: "Fixture appointments have duration_minutes values that contradict their start/end windows",
+        evidence: `${mismatched} fixture or historical rows have a duration that disagrees with their window. `
+          + `These rows bypassed the booking path, so availability and duration-based reporting disagree. `
+          + `Normal HTTP requests no longer initialize fixtures; this remains a data-quality observation.`,
       });
       return `${mismatched} seeded rows disagree with their own window`;
     });
