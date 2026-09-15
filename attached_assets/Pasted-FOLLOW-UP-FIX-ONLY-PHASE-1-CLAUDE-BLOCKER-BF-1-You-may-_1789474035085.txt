@@ -1,0 +1,128 @@
+FOLLOW-UP FIX ONLY — PHASE 1 CLAUDE BLOCKER BF-1
+
+You may modify code.
+
+Claude Code independently reviewed Production Boot Hardening Phase 1.
+
+Overall Phase 1 behavior is correct, but Claude found ONE blocking issue
+in the startup dependency guard.
+
+Fix ONLY this blocker.
+
+DO NOT start Phase 2.
+DO NOT address any non-blocking findings.
+DO NOT redesign anything.
+DO NOT modify production behavior.
+DO NOT modify database/schema/migrations.
+DO NOT run DDL.
+DO NOT query or modify production data.
+DO NOT modify scheduler/outbox.
+DO NOT modify deployment configuration.
+DO NOT commit/push/reset/checkout/switch/stage.
+DO NOT touch attached_assets/.
+
+BLOCKER BF-1
+
+In:
+
+scripts/src/production-request-dependency-boundary.ts
+
+checkRealRepositoryProductionStartupDemoBoundary()
+
+currently calls:
+
+checkProductionRequestDependencyBoundary({
+  repositoryRoot,
+  rootFiles: DEFAULT_PRODUCTION_STARTUP_ROOTS,
+  includeDefaultForbiddenPatterns: false,
+  forbiddenModulePatterns: [
+    ...
+  ],
+})
+
+This disables the existing default fixture/maintenance denylist for the
+production startup root.
+
+That unnecessarily leaves startup imports such as:
+
+- lib/seed.ts
+- lib/demo/*
+- lib/demo-fixtures*
+- lib/fixtures/*
+- other existing default forbidden fixture/maintenance modules
+
+outside this startup guard.
+
+Claude independently verified that the real startup graph scans 143 modules
+with ZERO violations when the default denylist is retained.
+
+REQUIRED MINIMAL FIX
+
+Remove ONLY:
+
+includeDefaultForbiddenPatterns: false,
+
+from checkRealRepositoryProductionStartupDemoBoundary().
+
+Do not weaken or change the existing default denylist.
+
+Do not change the request-boundary configuration.
+
+For this follow-up, do NOT remove/refactor the
+includeDefaultForbiddenPatterns option globally.
+That can be considered separately later.
+
+The objective here is the smallest safe correction.
+
+VERIFY AFTER CHANGE
+
+Run safely:
+
+1. production request/startup dependency boundary suite
+2. production demo seed safety suite
+3. scripts typecheck
+4. API-server typecheck
+5. git diff --check
+
+Also explicitly verify that the startup guard now catches hypothetical
+imports of:
+
+- lib/seed.ts
+- lib/demo/*
+- lib/fixtures/*
+- production-marketplace-demo-seed
+
+while the current real startup graph still passes.
+
+GIT SAFETY
+
+Replit has already created an automatic checkpoint for Phase 1.
+Do NOT attempt to repair Git history during this task.
+
+Do NOT:
+- commit
+- push
+- reset
+- checkout
+- switch
+- stage
+
+If Replit creates another automatic checkpoint, only REPORT it.
+
+FINAL RESPONSE
+
+Return:
+
+1. FILE CHANGED
+2. EXACT DIFF
+3. STARTUP GUARD RESULT
+4. REQUEST GUARD RESULT
+5. TEST RESULTS
+6. SECURITY INVARIANTS
+7. GIT / AUTO-CHECKPOINT STATUS
+8. DECISION: PASS / FAIL
+
+STOP.
+
+Do not address Claude's non-blocking findings.
+Do not start Phase 2.

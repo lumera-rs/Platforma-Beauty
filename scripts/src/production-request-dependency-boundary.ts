@@ -738,7 +738,6 @@ export function checkRealRepositoryProductionStartupDemoBoundary(
   return checkProductionRequestDependencyBoundary({
     repositoryRoot,
     rootFiles: DEFAULT_PRODUCTION_STARTUP_ROOTS,
-    includeDefaultForbiddenPatterns: false,
     forbiddenModulePatterns: [
       /(?:^|\/)production-marketplace-demo-seed(?:\.[a-z0-9]+)?$/iu,
       /(?:^|\/)(?:production[-_]demo|demo[-_]bootstrap)(?:[-_/]|\.|$)/iu,
