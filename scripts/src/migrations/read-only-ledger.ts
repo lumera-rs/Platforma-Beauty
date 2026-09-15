@@ -7,11 +7,12 @@ export async function readLedgerForPreflight(client: DatabaseClient): Promise<Mi
       COALESCE((
         SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
           'name', a.attname,
-          'type', pg_catalog.format_type(a.atttypid, a.atttypmod),
+          'type', t.typname,
           'notNull', a.attnotnull,
           'default', pg_catalog.pg_get_expr(d.adbin, d.adrelid, true)
         ) ORDER BY a.attname)
         FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
         LEFT JOIN pg_catalog.pg_attrdef d
           ON d.adrelid=a.attrelid AND d.adnum=a.attnum
         WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
@@ -32,20 +33,21 @@ export async function readLedgerForPreflight(client: DatabaseClient): Promise<Mi
   const constraints = row?.["constraints"];
   const normalizedColumns = Array.isArray(columns) ? columns.map((value) => {
     const column = value as Record<string, unknown>;
+    const defaultExpression = column["default"];
     return {
       name: column["name"],
       type: column["type"],
       notNull: column["notNull"],
-      default: column["default"],
+      default: defaultExpression === `"clock_timestamp"()` ? "clock_timestamp()" : defaultExpression,
     };
   }) : [];
   const expectedColumns = [
     { name: "checksum", type: "text", notNull: true, default: null },
     { name: "error", type: "text", notNull: false, default: null },
-    { name: "finished_at", type: "timestamp with time zone", notNull: false, default: null },
+    { name: "finished_at", type: "timestamptz", notNull: false, default: null },
     { name: "migration_id", type: "text", notNull: true, default: null },
     { name: "mode", type: "text", notNull: true, default: null },
-    { name: "started_at", type: "timestamp with time zone", notNull: true, default: "clock_timestamp()" },
+    { name: "started_at", type: "timestamptz", notNull: true, default: "clock_timestamp()" },
     { name: "state", type: "text", notNull: true, default: null },
   ];
   if (

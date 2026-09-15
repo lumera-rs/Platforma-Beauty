@@ -392,6 +392,84 @@ test("Phase 5A preflight is READY for exact baseline and creates no object or le
   });
 });
 
+test("Phase 5A preflight recognizes the real canonical ADOPTED ledger", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    const baseline = migrations[0]!;
+    await withClient(pool, async (client) => {
+      await ensureLedger(client);
+      await client.query(`INSERT INTO public.lumera_migration_ledger
+        (migration_id,checksum,mode,state,started_at,finished_at,error)
+        VALUES ($1,$2,$3,'ADOPTED',clock_timestamp(),clock_timestamp(),NULL)`,
+      [baseline.id, baseline.checksum, baseline.mode]);
+    });
+    const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(report.readiness, "ALREADY_INITIALIZED");
+    assert.equal(report.ledger.state, "VALID");
+    assert.ok(!report.blockers.includes("LEDGER_UNREADABLE"));
+  });
+});
+
+test("Phase 5A preflight classifies an empty real ledger as inconsistent", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const migrations = await loadMigrations();
+    await withClient(pool, (client) => ensureLedger(client));
+    const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+    assert.equal(report.readiness, "NOT_READY");
+    assert.ok(report.blockers.includes("LEDGER_INCONSISTENT"));
+    assert.ok(!report.blockers.includes("LEDGER_UNREADABLE"));
+  });
+});
+
+test("Phase 5A ledger exclusion preserves only the exact canonical identity", skip, async () => {
+  await withDatabase(async (pool) => {
+    await executeCanonicalBody(pool);
+    const baseline = await fingerprint(pool);
+    await withClient(pool, (client) => ensureLedger(client));
+    const withLedger = await fingerprint(pool);
+    assert.equal(withLedger.structuralFingerprint, baseline.structuralFingerprint);
+    assert.equal(withLedger.physicalFingerprint, baseline.physicalFingerprint);
+
+    for (const sql of [
+      "CREATE TABLE public.unrelated_phase5a_table (id integer)",
+      "CREATE FUNCTION public.unrelated_phase5a_function() RETURNS integer LANGUAGE sql AS 'SELECT 1'",
+      "CREATE TABLE public.lumera_migration_ledgers (id integer)",
+      "CREATE SCHEMA phase5a_other; CREATE TABLE phase5a_other.lumera_migration_ledger (id integer)",
+    ]) {
+      const database = await withDatabase(async (isolated) => {
+        await executeCanonicalBody(isolated);
+        await isolated.query(sql);
+        return fingerprint(isolated);
+      });
+      assert.notDeepEqual(database, baseline, sql);
+    }
+  });
+});
+
+test("Phase 5A transaction is PostgreSQL-enforced repeatable-read read-only", skip, async () => {
+  await withDatabase(async (pool) => {
+    await withClient(pool, async (client) => {
+      await beginFingerprintTransaction(client);
+      const isolation = await client.query(
+        "SELECT current_setting('transaction_isolation') AS isolation, current_setting('transaction_read_only') AS read_only",
+      );
+      assert.equal(isolation.rows[0]?.["isolation"], "repeatable read");
+      assert.equal(isolation.rows[0]?.["read_only"], "on");
+      await assert.rejects(
+        () => client.query("CREATE TABLE phase5a_write_must_fail (id integer)"),
+        (error: unknown) => (error as { code?: string }).code === "25006",
+      );
+      await client.query("ROLLBACK");
+    });
+    assert.equal(
+      (await pool.query("SELECT to_regclass('public.phase5a_write_must_fail') AS object")).rows[0]?.["object"],
+      null,
+    );
+  });
+});
+
 test("Phase 5A preflight blocks routine and trigger drift", skip, async () => {
   await withDatabase(async (pool) => {
     await executeCanonicalBody(pool);
@@ -409,58 +487,76 @@ test("Phase 5A preflight blocks routine and trigger drift", skip, async () => {
   });
 });
 
-test("Phase 5A preflight blocks every unsafe ledger state without repairing it", skip, async () => {
-  await withDatabase(async (pool) => {
+for (const unsafe of [
+  { title: "unknown migration", id: "999999", checksum: "x".repeat(64), state: "ADOPTED", error: null, code: "UNKNOWN_MIGRATION:999999" },
+  { title: "failed migration", id: "000001", checksum: "BASELINE", state: "FAILED", error: "test", code: "FAILED_MIGRATION:000001" },
+  { title: "applying migration", id: "000001", checksum: "BASELINE", state: "APPLYING", error: null, code: "APPLYING_MIGRATION:000001" },
+  { title: "checksum mismatch", id: "000001", checksum: "x".repeat(64), state: "ADOPTED", error: null, code: "CHECKSUM_MISMATCH:000001" },
+] as const) {
+  test(`Phase 5A preflight blocks ${unsafe.title} without repair`, skip, async () => {
+    await withDatabase(async (pool) => {
     await executeCanonicalBody(pool);
     const migrations = await loadMigrations();
     const baseline = migrations[0]!;
     await withClient(pool, (client) => ensureLedger(client));
-    const empty = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
-    assert.equal(empty.readiness, "NOT_READY");
-    assert.ok(empty.blockers.includes("LEDGER_INCONSISTENT"));
-    const cases = [
-      { id: "999999", checksum: "x".repeat(64), mode: "transactional", state: "ADOPTED", error: null, code: "UNKNOWN_MIGRATION:999999" },
-      { id: baseline.id, checksum: baseline.checksum, mode: baseline.mode, state: "FAILED", error: "test", code: `FAILED_MIGRATION:${baseline.id}` },
-      { id: baseline.id, checksum: baseline.checksum, mode: baseline.mode, state: "APPLYING", error: null, code: `APPLYING_MIGRATION:${baseline.id}` },
-      { id: baseline.id, checksum: "x".repeat(64), mode: baseline.mode, state: "ADOPTED", error: null, code: `CHECKSUM_MISMATCH:${baseline.id}` },
-    ] as const;
-    for (const value of cases) {
-      await pool.query("TRUNCATE public.lumera_migration_ledger");
       await pool.query(
         `INSERT INTO public.lumera_migration_ledger
           (migration_id,checksum,mode,state,error) VALUES ($1,$2,$3,$4,$5)`,
-        [value.id, value.checksum, value.mode, value.state, value.error],
+        [
+          unsafe.id,
+          unsafe.checksum === "BASELINE" ? baseline.checksum : unsafe.checksum,
+          baseline.mode,
+          unsafe.state,
+          unsafe.error,
+        ],
       );
       const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
       assert.equal(report.readiness, "NOT_READY");
-      assert.ok(report.blockers.includes(value.code));
+      assert.ok(report.blockers.includes(unsafe.code));
       assert.equal((await pool.query("SELECT count(*)::int AS count FROM public.lumera_migration_ledger"))
         .rows[0]?.["count"], 1);
-    }
+    });
   });
-});
+}
 
-test("Phase 5A preflight blocks a malformed existing ledger", skip, async () => {
-  await withDatabase(async (pool) => {
-    await executeCanonicalBody(pool);
-    const migrations = await loadMigrations();
-    await pool.query(`CREATE TABLE public.lumera_migration_ledger (
+test("Phase 5A preflight rejects every malformed ledger shape", skip, async (context) => {
+  const canonical = `(
       migration_id text PRIMARY KEY,
       checksum text NOT NULL,
-      mode text NOT NULL CHECK (mode IN ('transactional','nontransactional')),
-      state text NOT NULL CHECK (state IN ('APPLYING','APPLIED','FAILED','ADOPTED','OTHER')),
+      mode text NOT NULL CHECK (mode IN ('transactional', 'nontransactional')),
+      state text NOT NULL CHECK (state IN ('APPLYING', 'APPLIED', 'FAILED', 'ADOPTED')),
       started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
       finished_at timestamptz,
       error text
-    )`);
-    await pool.query(`INSERT INTO public.lumera_migration_ledger
-      VALUES ('000001', $1, 'transactional', 'ADOPTED', now(), now(), NULL)`,
-    [migrations[0]!.checksum]);
-    const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
-    assert.equal(report.readiness, "NOT_READY");
-    assert.equal(report.ledger.state, "BLOCKED");
-    assert.ok(report.blockers.includes("LEDGER_UNREADABLE"));
-  });
+    )`;
+  const cases = [
+      { title: "extra column", sql: canonical.replace(/\)$/, ", extra text)") },
+      { title: "missing column", sql: canonical.replace(/,\s*error text\s*\)$/, ")") },
+      { title: "wrong data type", sql: canonical.replace("checksum text NOT NULL", "checksum varchar NOT NULL") },
+      { title: "wrong nullability", sql: canonical.replace("checksum text NOT NULL", "checksum text") },
+      { title: "wrong default", sql: canonical.replace("DEFAULT clock_timestamp()", "DEFAULT now()") },
+      { title: "missing primary key", sql: canonical.replace(" PRIMARY KEY", "") },
+      { title: "wrong primary key", sql: canonical.replace("migration_id text PRIMARY KEY", "migration_id text, PRIMARY KEY (checksum)") },
+      { title: "weakened mode check", sql: canonical.replace("mode IN ('transactional', 'nontransactional')", "mode IN ('transactional', 'nontransactional') OR true") },
+      { title: "weakened state check", sql: canonical.replace("state IN ('APPLYING', 'APPLIED', 'FAILED', 'ADOPTED')", "state IN ('APPLYING', 'APPLIED', 'FAILED', 'ADOPTED') OR true") },
+      { title: "extra allowed state", sql: canonical.replace("'ADOPTED')", "'ADOPTED', 'OTHER')") },
+      { title: "view", sql: `VIEW public.lumera_migration_ledger AS SELECT
+          ''::text migration_id, ''::text checksum, ''::text mode, ''::text state,
+          clock_timestamp() started_at, NULL::timestamptz finished_at, NULL::text error` },
+    ];
+  for (const malformed of cases) {
+    await context.test(malformed.title, async () => {
+      await withDatabase(async (pool) => {
+        await executeCanonicalBody(pool);
+        const migrations = await loadMigrations();
+        await pool.query(`CREATE ${malformed.sql.startsWith("VIEW") ? malformed.sql : `TABLE public.lumera_migration_ledger ${malformed.sql}`}`);
+        const report = await withClient(pool, (client) => preflightBaselineAdoption(client, migrations));
+        assert.equal(report.readiness, "NOT_READY");
+        assert.equal(report.ledger.state, "BLOCKED");
+        assert.ok(report.blockers.includes("LEDGER_UNREADABLE"));
+      });
+    });
+  }
 });
 
 test("Phase 5A preflight blocks unsupported version contract and missing extension", skip, async () => {

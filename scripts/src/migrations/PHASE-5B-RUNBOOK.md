@@ -5,14 +5,16 @@ apply, deployment, backup deletion, or restore.
 
 ## Proven repository and platform contract
 
-- The application is currently published as a public Replit Autoscale deployment.
+- The repository configures a public Replit Autoscale deployment target; repository
+  configuration alone does not prove that a deployment is currently live.
 - The API requires an externally injected `DATABASE_URL`, binds the injected
   `PORT`, and exposes `/healthz`.
 - API startup runs eight existing additive schema owners before HTTP binding.
   Those 1,459 startup DDL operations remain authoritative and must not change in
   Phase 5B.
-- Repository build/start commands do not invoke `drizzle-kit push`, migration
-  apply, or baseline adoption. Replit's exact revision-overlap and implicit
+- The repository does not pin a `[deployment]` run command. The configured
+  build and artifact package start commands do not invoke `drizzle-kit push`,
+  migration apply, or baseline adoption. Replit's exact revision-overlap and implicit
   production-schema-diff behavior is not proven. Treat it as unknown.
 - Replit documents managed daily backups and point-in-time recovery. Current
   account retention, restore permissions, restore target behavior, and manual

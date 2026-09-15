@@ -1,0 +1,522 @@
+PHASE 5A — TARGETED CORRECTION
+CANONICAL LEDGER READ-ONLY VALIDATION
+
+You MAY modify code.
+
+DO NOT START PHASE 5B.
+DO NOT CONNECT TO PRODUCTION.
+DO NOT RUN PRODUCTION PREFLIGHT.
+DO NOT ADOPT.
+DO NOT APPLY MIGRATIONS.
+DO NOT PUBLISH.
+DO NOT DEPLOY.
+DO NOT REMOVE STARTUP DDL.
+DO NOT PUSH/MERGE/REBASE/RESET.
+
+Claude independently reviewed Phase 5A and returned:
+
+PHASE 5A CHANGES REQUIRED
+
+There is ONE blocking defect.
+
+==================================================
+1. VERIFY GIT STATE FIRST
+==================================================
+
+Expected branch:
+
+fix-production-demo-seed-boundary
+
+Expected HEAD:
+
+91d19bbea255921cd1226ac0b3606e1d59b35195
+
+Expected commit:
+
+Add production hardening migration tests and documentation
+
+Before editing run/read:
+
+git rev-parse HEAD
+git status --short
+git diff --check
+
+If HEAD differs:
+
+STOP and report.
+
+Do not trust Replit checkpoint UI.
+
+==================================================
+2. BLOCKER
+==================================================
+
+Claude independently proved:
+
+read-only-ledger.ts rejects the REAL canonical migration ledger.
+
+Root cause:
+
+pinFingerprintEnvironment sets:
+
+quote_all_identifiers = on
+
+Under that setting PostgreSQL catalog/deparser output includes quoted forms.
+
+Observed:
+
+quote_all_identifiers=on
+
+checksum.type:
+"\"text\""
+
+started_at.default:
+"\"clock_timestamp\"()"
+
+But read-only-ledger.ts expects:
+
+text
+
+clock_timestamp()
+
+Therefore a ledger created by the real production ensureLedger path is
+classified:
+
+LEDGER_UNREADABLE
+
+even though it is canonical.
+
+Consequences:
+
+- ALREADY_INITIALIZED is unreachable;
+- post-adoption verification cannot succeed;
+- integration suite is actually 18/19, not 18/18;
+- UNKNOWN_MIGRATION / FAILED_MIGRATION / APPLYING_MIGRATION /
+  CHECKSUM_MISMATCH cases currently do not reach their intended assertions.
+
+==================================================
+3. FIX ONLY THE ROOT CAUSE
+==================================================
+
+Fix canonical ledger-shape comparison so it is deterministic under the
+actual pinned fingerprint environment.
+
+Preferred solutions, in order:
+
+A. Normalize/unquote the catalog/deparser forms before comparison;
+
+or
+
+B. compare against the exact canonical forms produced while
+quote_all_identifiers=on;
+
+or
+
+C. locally set quote_all_identifiers=off ONLY for the ledger-shape
+inspection if you can prove this does not affect fingerprint semantics.
+
+Choose the smallest robust solution after inspecting the actual PostgreSQL
+catalog outputs.
+
+Do NOT weaken shape validation.
+
+Do NOT simply accept both arbitrary forms with loose matching.
+
+Do NOT remove quote_all_identifiers pinning globally.
+
+==================================================
+4. CANONICAL LEDGER TEST — MANDATORY
+==================================================
+
+Using ONLY disposable PostgreSQL 16.10:
+
+create the ledger through the REAL production:
+
+ensureLedger
+
+path.
+
+Then insert a valid canonical baseline row with state:
+
+ADOPTED
+
+Run the REAL Phase 5A preflight.
+
+Required:
+
+ALREADY_INITIALIZED
+
+and NOT:
+
+LEDGER_UNREADABLE.
+
+This test must exercise production ledger creation and production preflight
+reader code.
+
+==================================================
+5. EMPTY LEDGER CASE
+==================================================
+
+Create the real canonical ledger through ensureLedger but leave it empty.
+
+Required:
+
+NOT_READY
+
+with the intended:
+
+LEDGER_INCONSISTENT
+
+or current canonical equivalent.
+
+It must NOT become:
+
+LEDGER_UNREADABLE.
+
+==================================================
+6. REQUIRED LEDGER FAILURE CASES
+==================================================
+
+Using a correctly-shaped canonical ledger independently verify:
+
+UNKNOWN_MIGRATION
+→ intended NOT_READY blocker
+
+FAILED_MIGRATION
+→ intended NOT_READY blocker
+
+APPLYING_MIGRATION
+→ intended NOT_READY blocker
+
+CHECKSUM_MISMATCH
+→ intended NOT_READY blocker
+
+All four cases must actually execute.
+
+Do not allow one earlier assertion to prevent later cases from being tested.
+
+Prefer separate test cases/subtests so one failure cannot hide the others.
+
+==================================================
+7. MALFORMED LEDGER MUST STILL FAIL
+==================================================
+
+After fixing canonical recognition, prove shape validation still has
+discriminating power.
+
+Test at minimum:
+
+- extra column;
+- missing column;
+- wrong data type;
+- wrong nullability;
+- wrong default;
+- missing/wrong PK;
+- weakened mode CHECK;
+- weakened state CHECK;
+- extra allowed state;
+- VIEW using canonical ledger name.
+
+Required:
+
+LEDGER_UNREADABLE / NOT_READY.
+
+Do not repair anything.
+
+==================================================
+8. LEDGER FINGERPRINT EXCLUSION
+==================================================
+
+Reconfirm:
+
+exact canonical application schema
++
+exact canonical migration ledger
+
+still preserves the approved application fingerprint.
+
+Also reconfirm:
+
+unrelated extra table
+→ fingerprint mismatch
+
+unrelated extra function
+→ fingerprint mismatch
+
+near-miss ledger name
+→ fingerprint mismatch
+
+ledger in another schema
+→ fingerprint mismatch.
+
+Do not change fingerprint v4 semantics.
+
+==================================================
+9. NON-BLOCKING HARDENING — INCLUDE IF SMALL
+==================================================
+
+Claude identified several non-blocking improvements.
+
+Since this is a focused correction, implement them ONLY if they remain
+small and isolated.
+
+A. Mutation guard:
+
+Current preflight.test.ts mutation guard greps only preflight.ts.
+
+Strengthen it to follow the actual transitive preflight dependency graph or
+otherwise cover:
+
+preflight.ts
+read-only-ledger.ts
+catalog/fingerprint modules reachable from preflight.
+
+Goal:
+
+a future mutation introduced in a dependency should fail the guard.
+
+Do not create a brittle giant repository-wide grep.
+
+B. baselineChecksum evidence:
+
+Current report emits:
+
+baselineChecksum: "MATCH"
+
+as a hardcoded literal.
+
+Make this meaning explicit or derive it from actual successfully-loaded
+manifest/checksum validation so a reviewer cannot mistake it for an
+independent live DB checksum.
+
+Do not weaken checksum validation.
+
+C. Runbook wording:
+
+Correct claims that are not repository-provable.
+
+Do not state as PROVEN that the application is "currently published/live"
+merely because deploymentTarget = autoscale.
+
+Repository proves configured Autoscale target, not necessarily current live
+state.
+
+Also clarify that the repository does not pin a [deployment] run command.
+
+D. URL file timeout:
+
+Investigate whether reading a FIFO or blocking special file through
+--database-url-file can hang indefinitely.
+
+If a small safe bounded-read implementation is possible, add it.
+
+Do not weaken /dev/stdin support.
+
+If not addressed, report it as deferred P3.
+
+NONE of A-D may expand this task into Phase 5B.
+
+==================================================
+10. DO NOT TOUCH
+==================================================
+
+Do not modify:
+
+canonical migration.sql
+fingerprint v4 semantics
+Phase 2 startup DDL baseline
+8 startup DDL owners
+production startup
+index.ts
+app.ts
+production routes
+.github/workflows/ci.yml
+deployment configuration.
+
+If any of these appear necessary:
+
+STOP.
+
+==================================================
+11. REAL POSTGRESQL VERIFICATION
+==================================================
+
+Create an independently proven disposable PostgreSQL 16.10 environment.
+
+No:
+
+DATABASE_URL
+PGHOST
+PGDATABASE
+
+from production/shared environments.
+
+Run the complete migration integration suite.
+
+Required:
+
+ALL tests PASS.
+
+The current suite reportedly contains 19 tests.
+
+Expected after correction:
+
+19/19 PASS
+
+unless you deliberately add new tests, in which case report the new exact
+count and require ALL PASS.
+
+Do not report 18/18.
+
+==================================================
+12. PREFLIGHT UNIT TESTS
+==================================================
+
+Run all Phase 5A/preflight unit tests.
+
+All PASS.
+
+==================================================
+13. PHASE 4 REGRESSION
+==================================================
+
+Required:
+
+fingerprint:
+104/104 PASS
+
+migration contract:
+60/60 PASS
+
+release-chain:
+23/23 PASS
+
+baseline SHA:
+
+643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60
+
+unchanged.
+
+==================================================
+14. PHASE 1–3 REGRESSION
+==================================================
+
+Required:
+
+Phase 1:
+10/10
+11/11
+
+Phase 2:
+6/6
+8 owners
+1,459 operations
+baseline true
+
+Phase 3:
+12/12
+
+==================================================
+15. READ-ONLY INVARIANT
+==================================================
+
+Reconfirm actual preflight transaction:
+
+REPEATABLE READ
+READ ONLY
+
+and PostgreSQL rejects a write with SQLSTATE 25006.
+
+No preflight path may create:
+
+ledger
+tables
+schema
+extensions
+
+or repair anything.
+
+==================================================
+16. BOOT ISOLATION
+==================================================
+
+Reconfirm no path from production startup to:
+
+preflight
+migration apply
+adoptBaseline.
+
+==================================================
+17. CHANGE RADIUS
+==================================================
+
+Expected blocking fix should primarily touch:
+
+scripts/src/migrations/read-only-ledger.ts
+scripts/src/migrations/migrations.integration.test.ts
+
+Possibly, for small hardening only:
+
+scripts/src/migrations/preflight.test.ts
+scripts/src/migrations/preflight.ts
+scripts/src/migrations/preflight-cli.ts
+scripts/src/migrations/PHASE-5B-RUNBOOK.md
+
+Do not expand beyond this without STOP/report.
+
+==================================================
+18. AUTO-CHECKPOINT
+==================================================
+
+At end run/read actual:
+
+git rev-parse HEAD
+git status --short
+git diff --check
+
+Starting HEAD:
+
+91d19bbea255921cd1226ac0b3606e1d59b35195
+
+Report:
+
+- ending HEAD;
+- whether HEAD moved;
+- actual commit message if moved;
+- exact changed/checkpointed files;
+- attached_assets state;
+- working tree state.
+
+Do not trust UI checkpoint status.
+
+==================================================
+19. FINAL DECISION
+==================================================
+
+Return exactly one:
+
+PASS
+
+STOPPED
+
+FAIL
+
+PASS requires:
+
+- canonical real ensureLedger ledger is readable;
+- valid ADOPTED baseline produces ALREADY_INITIALIZED;
+- empty canonical ledger reaches LEDGER_INCONSISTENT;
+- UNKNOWN/FAILED/APPLYING/CHECKSUM cases all genuinely execute;
+- malformed ledgers remain rejected;
+- integration suite is genuinely all green;
+- preflight remains PostgreSQL-enforced read-only;
+- Phase 1–4 regressions remain green;
+- no production DB touched;
+- no production/startup/deployment changes.
+
+PASS DOES NOT authorize Phase 5B.
+PASS DOES NOT authorize a production connection.
+PASS DOES NOT authorize adoption.
+PASS DOES NOT authorize Publish/Deploy.
+
+STOP.

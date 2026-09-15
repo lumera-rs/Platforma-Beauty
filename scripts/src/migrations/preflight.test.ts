@@ -35,10 +35,35 @@ test("preflight errors redact PostgreSQL URLs", () => {
 });
 
 test("preflight runtime has no migration mutation imports or calls", async () => {
-  const source = await readFile(new URL("./preflight.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /from ["'].\/runner["']/u);
-  assert.doesNotMatch(source, /from ["'].\/ledger["']/u);
-  assert.doesNotMatch(source, /\b(?:applyMigrations|adoptBaseline|ensureLedger|adoptLedgerRow)\b/u);
-  assert.doesNotMatch(source, /\b(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/u);
-  assert.match(source, /beginFingerprintTransaction\(client\)/u);
+  const runtimeFiles = [
+    "./preflight.ts",
+    "./read-only-ledger.ts",
+    "../schema-drift/catalog.ts",
+    "../schema-drift/fingerprint.ts",
+    "../schema-drift/fingerprint-transaction.ts",
+    "../schema-drift/ownership.ts",
+    "../schema-drift/read-only-query.ts",
+  ];
+  const sources = await Promise.all(runtimeFiles.map(async (file) => ({
+    file,
+    source: await readFile(new URL(file, import.meta.url), "utf8"),
+  })));
+  for (const { file, source } of sources) {
+    assert.doesNotMatch(source, /from ["'].\/runner["']/u, file);
+    assert.doesNotMatch(source, /from ["'].\/ledger["']/u, file);
+    assert.doesNotMatch(source, /\b(?:applyMigrations|adoptBaseline|ensureLedger|adoptLedgerRow)\b/u, file);
+    if ([
+      "./preflight.ts",
+      "./read-only-ledger.ts",
+      "../schema-drift/catalog.ts",
+      "../schema-drift/fingerprint-transaction.ts",
+    ].includes(file)) {
+      assert.doesNotMatch(source, /\b(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/u, file);
+    }
+  }
+  assert.match(sources[0]!.source, /beginFingerprintTransaction\(client\)/u);
+  const queryGuard = sources.find(({ file }) => file === "../schema-drift/read-only-query.ts")!.source;
+  for (const verb of ["CREATE", "ALTER", "DROP", "INSERT", "UPDATE", "DELETE"]) {
+    assert.match(queryGuard, new RegExp(`\\\\b[^\\n]*${verb}[^\\n]*\\\\b`, "u"), verb);
+  }
 });
