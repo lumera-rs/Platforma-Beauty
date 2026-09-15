@@ -1,0 +1,303 @@
+PHASE 3 — FINAL BLOCKER P3-BL-3 ONLY
+WIRE STARTUP DDL SAFETY TESTS INTO THE EXISTING DB-FREE CI CHAIN
+
+You MAY modify code.
+
+Claude Code completed the final independent Phase 3 verification.
+
+Current decision:
+
+CHANGES REQUIRED
+
+ONLY ONE Phase 3 blocker remains:
+
+P3-BL-3 — test:startup-ddl-safety exists and passes 12/12 when run
+manually, but it is not invoked by the existing automated
+validate:publish / backend static chain.
+
+Do NOT reopen Phase 3 implementation.
+Do NOT change runtime schema code.
+Do NOT modify the baseline.
+Do NOT modify startup-ddl-safety.ts.
+Do NOT modify startup-ddl-safety.test.ts unless the wiring itself proves
+the test cannot run correctly through the chain.
+Do NOT start Phase 4.
+Do NOT publish/deploy.
+Do NOT contact any database.
+Do NOT run migrations or DDL.
+Do NOT perform Git history operations.
+Do NOT touch attached_assets/.
+
+==================================================
+1. VERIFY CURRENT STATE FIRST
+==================================================
+
+Read Git state directly.
+
+Expected current branch:
+
+fix-production-demo-seed-boundary
+
+Expected current HEAD:
+
+c5e764404fd8a6aa26944ed08fdecf604e09539d
+
+IMPORTANT:
+
+Do NOT trust previous Replit checkpoint reporting.
+
+Claude independently confirmed that c5e76440 is a Replit automatic
+checkpoint even though the previous Agent report claimed no checkpoint
+occurred.
+
+Report actual HEAD before editing.
+
+Working tree is expected clean.
+
+==================================================
+2. VERIFY THE WIRING GAP
+==================================================
+
+Before changing anything, independently confirm:
+
+scripts/package.json defines:
+
+test:startup-ddl-safety
+
+and that the suite currently runs:
+
+12/12 PASS
+
+Then trace the real chain from:
+
+validate:publish
+
+through:
+
+test:backend-standards:static
+
+and confirm test:startup-ddl-safety is currently NOT reached.
+
+Do not rely on the previous report.
+
+==================================================
+3. MAKE THE SMALLEST SAFE CORRECTION
+==================================================
+
+Modify ONLY the existing scripts-level DB-free static chain.
+
+Preferred exact correction:
+
+In:
+
+scripts/package.json
+
+change the existing:
+
+test:backend-standards:static
+
+chain so that it runs:
+
+pnpm run test:production-startup-ddl-inventory
+&&
+pnpm run test:startup-ddl-safety
+&&
+tsx ./src/test-backend-standards.ts --static-only
+
+Preserve any other commands already present in that script.
+
+Do NOT duplicate:
+
+test:production-startup-ddl-inventory
+
+if it is already there.
+
+Do NOT wire the test independently in multiple places.
+
+The goal is ONE canonical transitive path:
+
+validate:publish
+→ existing backend static validation chain
+→ test:backend-standards:static
+→ test:production-startup-ddl-inventory
+→ test:startup-ddl-safety
+→ backend static checks
+
+Use the actual repository script structure rather than blindly replacing
+unrelated script content.
+
+==================================================
+4. SAFETY REQUIREMENTS
+==================================================
+
+The startup DDL safety suite must remain DB-free.
+
+Before and during validation explicitly unset/avoid:
+
+DATABASE_URL
+PGHOST
+PGDATABASE
+
+The suite uses fake pool/client infrastructure and must not attempt a
+database connection.
+
+If wiring it into the chain causes any real DB access:
+
+STOP.
+
+Do not work around it by providing a database.
+
+==================================================
+5. REQUIRED VERIFICATION
+==================================================
+
+After the one-line wiring change, prove all of the following:
+
+A. Direct suite:
+
+pnpm run test:startup-ddl-safety
+
+Expected:
+12/12 PASS
+
+B. Scripts-level backend static chain:
+
+pnpm run test:backend-standards:static
+
+Expected:
+- production startup DDL inventory executes;
+- startup DDL safety suite visibly executes 12/12;
+- backend static standards execute;
+- complete command exits 0.
+
+C. Root/transitive chain used by validate:publish:
+
+Trace and, where safely possible, execute the relevant DB-free path to prove
+test:startup-ddl-safety is transitively reached.
+
+Do NOT run Publish itself.
+
+D. Verify an exhaustive search now finds exactly the intended invocation
+through the canonical chain and no accidental duplicate independent wiring.
+
+==================================================
+6. REGRESSION CHECK
+==================================================
+
+Reconfirm:
+
+Phase 1:
+- production request/startup boundary 10/10 PASS
+- production demo-seed safety 11/11 PASS
+
+Phase 2:
+- startup DDL inventory/mutation suite 6/6 PASS
+- owners 8
+- operations 1,459
+- violations 0
+- baseline match true
+
+Phase 3:
+- startup DDL safety 12/12 PASS
+
+Typechecks:
+- scripts PASS
+- API server PASS
+
+Also run:
+
+git diff --check
+
+==================================================
+7. DO NOT CHANGE THESE FILES
+==================================================
+
+Do NOT modify:
+
+artifacts/api-server/src/lib/business-growth-schema.ts
+artifacts/api-server/src/lib/media-schema.ts
+artifacts/api-server/src/lib/shipping-config.ts
+artifacts/api-server/src/lib/marketplace-performance-schema.ts
+artifacts/api-server/src/lib/referral-schema.ts
+artifacts/api-server/src/lib/web-push-schema.ts
+artifacts/api-server/src/lib/booking-command-schema.ts
+artifacts/api-server/src/lib/education-bundle-purchase-schema.ts
+artifacts/api-server/src/lib/startup-ddl-safety.ts
+artifacts/api-server/src/lib/startup-ddl-safety.test.ts
+scripts/src/production-startup-ddl-baseline.json
+scripts/src/production-startup-ddl-inventory.ts
+scripts/src/production-startup-ddl-inventory.test.ts
+
+Expected implementation change radius:
+
+scripts/package.json ONLY.
+
+If another tracked file needs modification:
+
+STOP and explain why before changing it.
+
+==================================================
+8. GIT SAFETY
+==================================================
+
+Do NOT intentionally run:
+
+git add
+git commit
+git push
+git pull
+git reset
+git checkout
+git switch
+git merge
+git rebase
+
+Replit may create an automatic checkpoint.
+
+If it does, REPORT it based on actual Git state:
+
+- previous HEAD;
+- new HEAD;
+- commit message;
+- files in checkpoint;
+- whether attached_assets were included.
+
+Do not claim "no checkpoint" without comparing HEAD before and after.
+
+==================================================
+9. FINAL REPORT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE GIT STATE
+2. WIRING GAP CONFIRMATION
+3. FILE CHANGED
+4. EXACT SCRIPT CHANGE
+5. DIRECT 12/12 RESULT
+6. BACKEND STATIC CHAIN RESULT
+7. VALIDATE:PUBLISH TRANSITIVE REACHABILITY
+8. DB-FREE VERIFICATION
+9. PHASE 1 RESULT
+10. PHASE 2 RESULT
+11. PHASE 3 RESULT
+12. TYPECHECK RESULT
+13. GIT DIFF CHECK
+14. POST-CHANGE GIT / CHECKPOINT STATE
+15. DECISION: PASS / STOPPED / FAIL
+
+PASS requires:
+
+- only scripts/package.json changed;
+- test:startup-ddl-safety runs automatically through the canonical backend
+  static chain;
+- that chain is transitively reached by validate:publish;
+- 12/12 Phase 3 tests execute from inside that chain;
+- no DB connection occurs;
+- Phase 1 remains green;
+- Phase 2 remains green;
+- no baseline/runtime file changed.
+
+Do not start Phase 4.
+
+STOP.
