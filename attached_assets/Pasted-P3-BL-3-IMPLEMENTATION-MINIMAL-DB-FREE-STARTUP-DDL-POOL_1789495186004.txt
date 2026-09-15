@@ -1,0 +1,626 @@
+P3-BL-3 IMPLEMENTATION
+MINIMAL DB-FREE STARTUP DDL POOL BOUNDARY + CI WIRING
+
+You MAY modify code.
+
+Claude Code completed the independent READ-ONLY root-cause review.
+
+FINAL DECISION:
+
+SAFE TO IMPLEMENT MINIMAL DB-FREE BOUNDARY FIX
+
+This task closes ONLY P3-BL-3.
+
+Do NOT start Phase 4.
+Do NOT redesign database architecture.
+Do NOT weaken production DATABASE_URL validation.
+Do NOT provide a dummy DATABASE_URL.
+Do NOT connect to any database.
+Do NOT start the server.
+Do NOT run DDL or migrations.
+Do NOT modify the Phase 2 baseline.
+Do NOT touch attached_assets/.
+Do NOT perform Git history operations.
+
+==================================================
+1. VERIFY ACTUAL GIT STATE FIRST
+==================================================
+
+Read Git state directly.
+
+Expected branch:
+
+fix-production-demo-seed-boundary
+
+Latest independently verified HEAD:
+
+78d212a7918c2e8d37c8e3e0997463b5f0eb6750
+
+Commit:
+
+"Add phase 3 startup DDL script"
+
+Claude verified this checkpoint contains only the previous prompt attachment
+relative to c5e76440 and no source/config changes.
+
+Do NOT rely on previous Agent checkpoint reporting.
+
+Report:
+
+- branch;
+- HEAD;
+- tracked modifications;
+- staged;
+- untracked;
+- working-tree state.
+
+No Git mutation.
+
+==================================================
+2. ROOT CAUSE — DO NOT RE-DIAGNOSE BROADLY
+==================================================
+
+Verified root cause:
+
+Seven startup DDL owner modules statically import the runtime VALUE:
+
+pool
+
+from:
+
+@workspace/db
+
+That causes:
+
+lib/db/src/index.ts
+
+to evaluate during module loading.
+
+With DATABASE_URL unset, it throws before the Phase 3 tests register.
+
+Fake pool injection currently solves call-time coupling but not load-time
+coupling.
+
+The test must become genuinely DB-free without weakening production
+validation.
+
+==================================================
+3. ADD ONE DB-FREE POOL RESOLVER
+==================================================
+
+Create:
+
+artifacts/api-server/src/lib/startup-ddl-pool.ts
+
+Implement the minimal equivalent of:
+
+import type { pool as productionPool } from "@workspace/db";
+
+export type StartupDdlPool =
+  Pick<typeof productionPool, "connect">;
+
+export async function resolveStartupDdlPool(
+  override?: StartupDdlPool
+): Promise<StartupDdlPool> {
+  return override ?? (await import("@workspace/db")).pool;
+}
+
+Adapt formatting/types only if required by repository conventions.
+
+CRITICAL:
+
+The static @workspace/db import in this file must remain TYPE-ONLY.
+
+The production pool VALUE must be reached only through the literal dynamic:
+
+import("@workspace/db")
+
+when no override is supplied.
+
+Do NOT catch or weaken DATABASE_URL errors.
+
+==================================================
+4. EDIT EXACTLY SEVEN OWNERS
+==================================================
+
+Edit ONLY these seven runtime owners for the DB-free boundary:
+
+1.
+artifacts/api-server/src/lib/media-schema.ts
+
+2.
+artifacts/api-server/src/lib/booking-command-schema.ts
+
+3.
+artifacts/api-server/src/lib/marketplace-performance-schema.ts
+
+4.
+artifacts/api-server/src/lib/web-push-schema.ts
+
+5.
+artifacts/api-server/src/lib/education-bundle-purchase-schema.ts
+
+6.
+artifacts/api-server/src/lib/business-growth-schema.ts
+
+7.
+artifacts/api-server/src/lib/shipping-config.ts
+
+For each:
+
+A. Remove the runtime VALUE import of pool from @workspace/db.
+
+B. Import:
+
+StartupDdlPool
+resolveStartupDdlPool
+
+from:
+
+./startup-ddl-pool
+
+C. Replace the current default-pool signature:
+
+poolOverride: Pick<typeof pool, "connect"> = pool
+
+or its equivalent
+
+with:
+
+poolOverride?: StartupDdlPool
+
+D. Replace:
+
+await poolOverride.connect()
+
+with the semantic equivalent of:
+
+const startupPool = await resolveStartupDdlPool(poolOverride);
+const client = await startupPool.connect();
+
+OR a same-line equivalent if necessary to preserve existing DDL sink line
+numbers.
+
+Do not change any transaction/lock/timeout/cleanup logic.
+
+==================================================
+5. RE-POINT TWO NON-POOL VALUE DEPENDENCIES
+==================================================
+
+Claude verified @workspace/db/schema is DB-free.
+
+BUSINESS GROWTH:
+
+serbianPhoneNormalizedSqlExpression
+
+must be imported as a runtime value from:
+
+@workspace/db/schema
+
+instead of the @workspace/db root.
+
+SHIPPING:
+
+shippingRulesTable
+
+must be imported as a runtime value from:
+
+@workspace/db/schema
+
+instead of the @workspace/db root.
+
+Any DatabasePoolClient imports that are TYPE-ONLY may remain type imports
+from @workspace/db because they are erased.
+
+Do NOT introduce another copy of these schema values.
+
+==================================================
+6. DO NOT TOUCH REFERRAL
+==================================================
+
+Do NOT modify:
+
+artifacts/api-server/src/lib/referral-schema.ts
+
+The startup DDL safety suite does not import it.
+
+Its current Phase 3 implementation was already reviewed as structurally
+correct.
+
+Changing it is unnecessary and would create baseline path churn.
+
+==================================================
+7. BASELINE PATH PRESERVATION — CRITICAL
+==================================================
+
+DO NOT MODIFY:
+
+scripts/src/production-startup-ddl-baseline.json
+
+Claude independently calculated that careless line movement could churn up
+to 1,450 of 1,459 baseline entries.
+
+Therefore preserve the number of source lines ABOVE EVERY EXISTING DDL SINK
+in all seven owner files.
+
+This is a hard implementation constraint.
+
+You may:
+
+- replace existing import lines in-place;
+- combine imports where necessary;
+- replace existing signature/connect lines in-place;
+- use compact formatting where needed.
+
+You must NOT:
+
+- add/remove lines above DDL sinks;
+- broadly format the files;
+- move DDL statements;
+- move SQL sinks;
+- move functions;
+- split owners into new implementation files.
+
+After implementation, the Phase 2 baseline MUST match without modification.
+
+If ANY baseline path changes:
+
+STOP.
+
+Restore source layout to preserve existing sink locations.
+
+DO NOT re-baseline.
+
+==================================================
+8. FIRST ACCEPTANCE — PER-MODULE DB-FREE IMPORT
+==================================================
+
+Before CI wiring, unset:
+
+DATABASE_URL
+PGHOST
+PGDATABASE
+
+Import each of the seven owners individually.
+
+Every one must load successfully:
+
+media-schema.ts → LOADED_OK
+booking-command-schema.ts → LOADED_OK
+marketplace-performance-schema.ts → LOADED_OK
+web-push-schema.ts → LOADED_OK
+education-bundle-purchase-schema.ts → LOADED_OK
+business-growth-schema.ts → LOADED_OK
+shipping-config.ts → LOADED_OK
+
+No database connection.
+
+If any still imports @workspace/db runtime transitively and throws:
+
+STOP and diagnose that exact remaining edge.
+
+Do not provide DATABASE_URL.
+
+==================================================
+9. NEGATIVE CONTROL — PRODUCTION VALIDATION
+==================================================
+
+With DATABASE_URL unset, directly import:
+
+@workspace/db
+
+Expected:
+
+FAIL with the existing:
+
+DATABASE_URL must be set
+
+error.
+
+This proves production validation was NOT weakened.
+
+Do NOT modify lib/db/**.
+
+==================================================
+10. SECOND ACCEPTANCE — PHASE 3 TEST DB-FREE
+==================================================
+
+Run with database environment removed:
+
+env -u DATABASE_URL -u PGHOST -u PGDATABASE \
+  pnpm --filter @workspace/scripts run test:startup-ddl-safety
+
+Required:
+
+12/12 PASS
+
+No database connection.
+No server startup.
+
+If it fails because of another eager DB import:
+
+STOP.
+
+Do not work around it with a fake URL.
+
+==================================================
+11. PHASE 2 GATE BEFORE CI WIRING
+==================================================
+
+Run the full Phase 2 startup DDL inventory/mutation suite.
+
+Required:
+
+6/6 PASS
+
+Real repository must remain:
+
+owners: 8
+operations: 1,459
+unexpected: 0
+missing: 0
+unknown SQL: 0
+unresolved dependencies: 0
+violations: 0
+baseline match: true
+
+CRITICAL:
+
+Baseline file must remain byte-for-byte unchanged from the current approved
+baseline.
+
+All 1,459 fingerprints must remain unchanged.
+
+If baseline match is false:
+
+STOP.
+
+Do NOT update baseline.
+
+Fix source layout instead.
+
+==================================================
+12. TYPECHECK BEFORE WIRING
+==================================================
+
+Run:
+
+scripts typecheck
+API-server typecheck
+
+Both must PASS.
+
+If dynamic import typing or StartupDdlPool typing requires a broader
+architectural change:
+
+STOP.
+
+Do not redesign.
+
+==================================================
+13. ONLY AFTER §§8–12 PASS — WIRE CI
+==================================================
+
+Only after all DB-free and baseline gates pass, modify:
+
+scripts/package.json
+
+Add exactly ONE canonical invocation:
+
+pnpm run test:startup-ddl-safety
+
+to the existing scripts-level:
+
+test:backend-standards:static
+
+chain.
+
+The intended canonical sequence is:
+
+pnpm run test:production-startup-ddl-inventory
+&& pnpm run test:startup-ddl-safety
+&& tsx ./src/test-backend-standards.ts --static-only
+
+Preserve any other required existing command.
+
+Do not duplicate wiring elsewhere.
+
+==================================================
+14. VERIFY COMPLETE DB-FREE STATIC CHAIN
+==================================================
+
+Run with DB variables explicitly absent:
+
+env -u DATABASE_URL -u PGHOST -u PGDATABASE CI=true \
+  pnpm run test:backend-standards:static
+
+Verify the actual root/workspace script structure and use the correct root
+command if needed.
+
+Required visible execution:
+
+Phase 2 startup inventory:
+6/6 PASS
+
+Phase 3 startup DDL safety:
+12/12 PASS
+
+Backend static checks:
+13/13 PASS
+
+Complete command:
+exit 0
+
+No database connection.
+
+==================================================
+15. VERIFY VALIDATE:PUBLISH REACHABILITY
+==================================================
+
+Trace the actual script graph and prove:
+
+validate:publish
+→ root test:backend-standards:static
+→ scripts test:backend-standards:static
+→ test:production-startup-ddl-inventory
+→ test:startup-ddl-safety
+→ backend static checks
+
+Do NOT run Publish/deploy.
+
+Do not add another independent invocation.
+
+==================================================
+16. PHASE 1 REGRESSION
+==================================================
+
+Run:
+
+production request/startup boundary
+Expected:
+10/10 PASS
+
+production demo-seed safety
+Expected:
+11/11 PASS
+
+Reconfirm:
+
+production startup → marketplace demo writer: IMPOSSIBLE
+production startup → development/test fixtures: IMPOSSIBLE
+production request → demo fixture: IMPOSSIBLE
+
+==================================================
+17. FINAL PHASE 2/3 REGRESSION
+==================================================
+
+Re-run after CI wiring:
+
+Phase 2:
+6/6 PASS
+8 owners
+1,459 operations
+baseline match true
+
+Phase 3:
+12/12 PASS DB-free
+
+Typechecks:
+PASS
+
+git diff --check:
+PASS
+
+==================================================
+18. CHANGE RADIUS
+==================================================
+
+Expected tracked implementation radius:
+
+NEW:
+artifacts/api-server/src/lib/startup-ddl-pool.ts
+
+EDIT:
+artifacts/api-server/src/lib/media-schema.ts
+artifacts/api-server/src/lib/booking-command-schema.ts
+artifacts/api-server/src/lib/marketplace-performance-schema.ts
+artifacts/api-server/src/lib/web-push-schema.ts
+artifacts/api-server/src/lib/education-bundle-purchase-schema.ts
+artifacts/api-server/src/lib/business-growth-schema.ts
+artifacts/api-server/src/lib/shipping-config.ts
+scripts/package.json
+
+Exactly 9 tracked files maximum.
+
+Do NOT modify:
+
+referral-schema.ts
+startup-ddl-safety.ts
+startup-ddl-safety.test.ts
+production-startup-ddl-baseline.json
+production-startup-ddl-inventory.ts
+production-startup-ddl-inventory.test.ts
+lib/db/**
+package.json root
+GitHub workflows
+deployment configuration
+
+If another tracked file appears necessary:
+
+STOP and explain.
+
+==================================================
+19. GIT SAFETY
+==================================================
+
+Do NOT intentionally run:
+
+git add
+git commit
+git push
+git pull
+git reset
+git checkout
+git switch
+git merge
+git rebase
+
+Replit may automatically checkpoint.
+
+Record actual:
+
+- HEAD before;
+- HEAD after;
+- checkpoint yes/no;
+- commit message;
+- exact files included;
+- whether attached_assets were included.
+
+Verify HEAD directly.
+
+==================================================
+20. FINAL REPORT
+==================================================
+
+Return exactly:
+
+1. PRE-CHANGE GIT STATE
+2. FILES CHANGED
+3. DB-FREE POOL BOUNDARY
+4. SEVEN OWNER CHANGES
+5. DB/SCHEMA VALUE IMPORT CHANGES
+6. PER-MODULE DB-FREE IMPORT RESULT
+7. PRODUCTION NEGATIVE CONTROL
+8. DIRECT PHASE 3 DB-FREE RESULT
+9. PHASE 2 PRE-WIRING RESULT
+10. BASELINE INTEGRITY
+11. TYPECHECK PRE-WIRING RESULT
+12. CI WIRING
+13. COMPLETE DB-FREE STATIC CHAIN
+14. VALIDATE:PUBLISH REACHABILITY
+15. PHASE 1 RESULT
+16. FINAL PHASE 2 RESULT
+17. FINAL PHASE 3 RESULT
+18. GIT DIFF / CHANGE-RADIUS RESULT
+19. GIT / AUTO-CHECKPOINT STATUS
+20. DECISION: PASS / STOPPED / FAIL
+
+PASS requires ALL:
+
+- all seven owner modules load with DB env absent;
+- direct @workspace/db import still fails without DATABASE_URL;
+- startup-ddl-safety passes 12/12 with DB env absent;
+- no DB connection is attempted;
+- Phase 2 remains 8 owners / 1,459 operations / baseline true;
+- baseline file unchanged;
+- all DDL fingerprints unchanged;
+- both typechecks pass;
+- startup-ddl-safety is wired exactly once through the canonical static chain;
+- complete DB-free chain passes;
+- Phase 1 remains green;
+- no out-of-radius tracked file changed.
+
+PASS does NOT authorize Publish/Deploy.
+PASS does NOT start Phase 4.
+
+STOP.
