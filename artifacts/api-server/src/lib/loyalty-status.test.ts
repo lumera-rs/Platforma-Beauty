@@ -14,14 +14,14 @@ import {
 import { GetLoyaltyStatusResponse } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 // Regression: with zero active loyalty tiers the loyalty status endpoint must
 // return a schema-valid neutral default (preserving any accrued spend) instead
 // of throwing / returning HTTP 500. We temporarily deactivate all active tiers,
 // exercise the endpoint, then restore the tiers exactly as they were.
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
 
   const suffix = randomUUID();
   const passwordHash = await hashPassword(`loyalty-zero-tier-${suffix}`);

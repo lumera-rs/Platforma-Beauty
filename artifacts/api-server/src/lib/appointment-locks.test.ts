@@ -17,7 +17,7 @@ import {
 import { lockAppointmentResources } from "./appointment-locks";
 import { canonicalAvailability } from "./availability-store";
 import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID();
 const date = "2099-10-18";
@@ -26,7 +26,7 @@ const crossLocationDate = "2099-10-20";
 const pause = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [owner] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (!owner) throw new Error("Appointment concurrency test requires a seeded owner.");
 

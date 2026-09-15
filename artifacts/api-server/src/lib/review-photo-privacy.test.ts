@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID();
 const customerEmail = `review-privacy-${suffix}@example.test`;
@@ -67,7 +67,7 @@ async function assertPublicReviewMetricsMatchVisibleReviews(
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const createdUserIds: string[] = [];
   let salonId: string | undefined;
   let serviceId: string | undefined;

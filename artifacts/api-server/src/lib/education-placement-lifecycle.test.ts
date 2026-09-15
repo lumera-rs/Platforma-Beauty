@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 import { runFeaturedPlacementPaymentReminderSweep } from "./featured-placement-payment-reminders";
 import { buildValidOnlineEducationCourse, installTemporaryEducationIpsSettings } from "./education-test-fixtures";
 
@@ -161,7 +161,7 @@ async function settle(
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];
   let centerId: string | undefined;

@@ -38,7 +38,7 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { lockAppointmentResources } from "./appointment-locks";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID();
 const customerPhone = `+3816${(
@@ -202,7 +202,7 @@ async function assertPublicSalonBooleanFilter(
 
 async function run(): Promise<void> {
   await ensureBusinessGrowthSchema();
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [seededMenService] = await db.select({
     salonId: servicesTable.salonId,
   }).from(servicesTable).where(eq(servicesTable.categoryName, "Muški frizeri")).limit(1);

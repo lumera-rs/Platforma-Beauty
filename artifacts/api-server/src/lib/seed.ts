@@ -1,79 +1,177 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { courierServicesTable } from "@workspace/db";
-import {
-  appointmentsTable,
-  beautyGlossaryTable,
-  courseCategoriesTable,
-  courseDaysTable,
-  courseEnrollmentsTable,
-  courseLessonsTable,
-  courseModulesTable,
-  courseSessionsTable,
-  coursesTable,
-  db,
-  educationCentersTable,
-  educationCenterSubscriptionsTable,
-  educationCourseTypesTable,
-  educationEscrowsTable,
-  educationFinancialEventsTable,
-  educationLedgerEntriesTable,
-  educationPlatformSettingsTable,
-  educationSectionsTable,
-  educationSubcategoriesTable,
-  educationThreadsTable,
-  employeeServicesTable,
-  employeesTable,
-  inspirationItemsTable,
-  lessonProgressTable,
-  loyaltyTiersTable,
-  oauthIdentitiesTable,
-  orderItemsTable,
-  ordersTable,
-  productCategoriesTable,
-  productBrandsTable,
-  productsTable,
-  salonHoursTable,
-  salonBrandsTable,
-  salonCustomersTable,
-  salonLoyaltyStatusesTable,
-  salonsTable,
-  serviceCategoriesTable,
-  serviceTemplatesTable,
-  servicesTable,
-  subscriptionPlansTable,
-  subscriptionsTable,
-  suppliersTable,
-  usersTable,
-} from "@workspace/db";
-import { hashPassword } from "./auth";
-import {
-  lockEducationBillingRules,
-  lockEducationCenterFinancials,
-  resolveEducationBillingSettings,
-} from "./education-billing";
-import { getOrCreateShippingConfig } from "./shipping-config";
 import { EDUCATION_TAXONOMY } from "./education-taxonomy";
-import { issueOnlineEnrollmentFields } from "./education-entitlement";
-import { logger } from "./logger";
 
-let seedPromise: Promise<void> | undefined;
+type SeedDatabase = typeof import("@workspace/db");
+
+let db!: SeedDatabase["db"];
+let appointmentsTable!: SeedDatabase["appointmentsTable"];
+let beautyGlossaryTable!: SeedDatabase["beautyGlossaryTable"];
+let courseCategoriesTable!: SeedDatabase["courseCategoriesTable"];
+let courseDaysTable!: SeedDatabase["courseDaysTable"];
+let courseEnrollmentsTable!: SeedDatabase["courseEnrollmentsTable"];
+let courseLessonsTable!: SeedDatabase["courseLessonsTable"];
+let courseModulesTable!: SeedDatabase["courseModulesTable"];
+let courseSessionsTable!: SeedDatabase["courseSessionsTable"];
+let coursesTable!: SeedDatabase["coursesTable"];
+let educationCentersTable!: SeedDatabase["educationCentersTable"];
+let educationCenterSubscriptionsTable!: SeedDatabase["educationCenterSubscriptionsTable"];
+let educationCourseTypesTable!: SeedDatabase["educationCourseTypesTable"];
+let educationEscrowsTable!: SeedDatabase["educationEscrowsTable"];
+let educationFinancialEventsTable!: SeedDatabase["educationFinancialEventsTable"];
+let educationLedgerEntriesTable!: SeedDatabase["educationLedgerEntriesTable"];
+let educationPlatformSettingsTable!: SeedDatabase["educationPlatformSettingsTable"];
+let educationSectionsTable!: SeedDatabase["educationSectionsTable"];
+let educationSubcategoriesTable!: SeedDatabase["educationSubcategoriesTable"];
+let educationThreadsTable!: SeedDatabase["educationThreadsTable"];
+let employeeServicesTable!: SeedDatabase["employeeServicesTable"];
+let employeesTable!: SeedDatabase["employeesTable"];
+let inspirationItemsTable!: SeedDatabase["inspirationItemsTable"];
+let lessonProgressTable!: SeedDatabase["lessonProgressTable"];
+let loyaltyTiersTable!: SeedDatabase["loyaltyTiersTable"];
+let orderItemsTable!: SeedDatabase["orderItemsTable"];
+let ordersTable!: SeedDatabase["ordersTable"];
+let productCategoriesTable!: SeedDatabase["productCategoriesTable"];
+let productBrandsTable!: SeedDatabase["productBrandsTable"];
+let productsTable!: SeedDatabase["productsTable"];
+let salonHoursTable!: SeedDatabase["salonHoursTable"];
+let salonBrandsTable!: SeedDatabase["salonBrandsTable"];
+let salonCustomersTable!: SeedDatabase["salonCustomersTable"];
+let salonLoyaltyStatusesTable!: SeedDatabase["salonLoyaltyStatusesTable"];
+let salonsTable!: SeedDatabase["salonsTable"];
+let serviceCategoriesTable!: SeedDatabase["serviceCategoriesTable"];
+let serviceTemplatesTable!: SeedDatabase["serviceTemplatesTable"];
+let servicesTable!: SeedDatabase["servicesTable"];
+let subscriptionPlansTable!: SeedDatabase["subscriptionPlansTable"];
+let subscriptionsTable!: SeedDatabase["subscriptionsTable"];
+let suppliersTable!: SeedDatabase["suppliersTable"];
+let usersTable!: SeedDatabase["usersTable"];
+let courierServicesTable!: SeedDatabase["courierServicesTable"];
+
+let hashPassword!: typeof import("./auth").hashPassword;
+let lockEducationBillingRules!: typeof import("./education-billing").lockEducationBillingRules;
+let lockEducationCenterFinancials!: typeof import("./education-billing").lockEducationCenterFinancials;
+let resolveEducationBillingSettings!: typeof import("./education-billing").resolveEducationBillingSettings;
+let getOrCreateShippingConfig!: typeof import("./shipping-config").getOrCreateShippingConfig;
+let issueOnlineEnrollmentFields!: typeof import("./education-entitlement").issueOnlineEnrollmentFields;
+
+let seedDependenciesPromise: Promise<void> | undefined;
+
+async function loadSeedDependencies(): Promise<void> {
+  if (!seedDependenciesPromise) {
+    seedDependenciesPromise = (async () => {
+      const [database, auth, billing, shipping, entitlement] = await Promise.all([
+        import("@workspace/db"),
+        import("./auth"),
+        import("./education-billing"),
+        import("./shipping-config"),
+        import("./education-entitlement"),
+      ]);
+      ({
+        db,
+        appointmentsTable,
+        beautyGlossaryTable,
+        courseCategoriesTable,
+        courseDaysTable,
+        courseEnrollmentsTable,
+        courseLessonsTable,
+        courseModulesTable,
+        courseSessionsTable,
+        coursesTable,
+        educationCentersTable,
+        educationCenterSubscriptionsTable,
+        educationCourseTypesTable,
+        educationEscrowsTable,
+        educationFinancialEventsTable,
+        educationLedgerEntriesTable,
+        educationPlatformSettingsTable,
+        educationSectionsTable,
+        educationSubcategoriesTable,
+        educationThreadsTable,
+        employeeServicesTable,
+        employeesTable,
+        inspirationItemsTable,
+        lessonProgressTable,
+        loyaltyTiersTable,
+        orderItemsTable,
+        ordersTable,
+        productCategoriesTable,
+        productBrandsTable,
+        productsTable,
+        salonHoursTable,
+        salonBrandsTable,
+        salonCustomersTable,
+        salonLoyaltyStatusesTable,
+        salonsTable,
+        serviceCategoriesTable,
+        serviceTemplatesTable,
+        servicesTable,
+        subscriptionPlansTable,
+        subscriptionsTable,
+        suppliersTable,
+        usersTable,
+        courierServicesTable,
+      } = database);
+      hashPassword = auth.hashPassword;
+      lockEducationBillingRules = billing.lockEducationBillingRules;
+      lockEducationCenterFinancials = billing.lockEducationCenterFinancials;
+      resolveEducationBillingSettings = billing.resolveEducationBillingSettings;
+      getOrCreateShippingConfig = shipping.getOrCreateShippingConfig;
+      issueOnlineEnrollmentFields = entitlement.issueOnlineEnrollmentFields;
+    })();
+  }
+  await seedDependenciesPromise;
+}
 
 /**
  * Demo identities (including a SUPER_ADMIN) ship with a password documented
- * in the repository, so creating them is safe only outside production, or in
- * production when an operator has explicitly opted into a showcase/demo
- * deployment. This must never default to "on" for real production traffic.
+ * in the repository, so creating them is restricted to explicit development
+ * and test fixture runtimes.  The legacy production opt-in name remains
+ * exported for source compatibility but is never honored.
  */
 export const PRODUCTION_DEMO_SEED_OPT_IN_ENV = "LUMERA_ALLOW_PRODUCTION_DEMO_SEED";
 
 export function productionDemoSeedAllowed(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return environment.NODE_ENV !== "production" || environment[PRODUCTION_DEMO_SEED_OPT_IN_ENV] === "1";
+  // Kept as a compatibility export for callers that used the old decision
+  // helper.  The historical production opt-in is intentionally ignored:
+  // fixture creation is available only in an explicitly named development or
+  // test runtime.
+  return isExplicitFixtureRuntime(environment);
 }
 
 const LEGACY_CATALOG_SUPPLIER_ID = "9b5970ea-0a8c-5e60-9d32-2a09f0890560";
-const DEMO_EDUCATION_OWNER_EMAIL = "edukacija@lumera.local";
+
+export function isExplicitFixtureRuntime(environment: NodeJS.ProcessEnv = process.env): boolean {
+  // Keep the cheap pre-import check aligned with the authoritative
+  // @workspace/db/destructive-test-runtime guard.  This must run before any
+  // lazy fixture/database import so a deployment cannot masquerade as
+  // NODE_ENV=test.
+  return (environment.NODE_ENV === "development" || environment.NODE_ENV === "test")
+    && environment.REPLIT_DEPLOYMENT !== "1"
+    && environment.REPL_DEPLOYMENT !== "1";
+}
+
+function requireExplicitFixtureRuntime(): void {
+  if (!isExplicitFixtureRuntime(process.env)) {
+    throw new Error(
+      "Development/test fixtures require NODE_ENV=development or NODE_ENV=test.",
+    );
+  }
+}
+
+/**
+ * Compatibility wrapper for existing explicit fixture/bootstrap callers.
+ * The implementation lives outside this fixture facade so the production
+ * marketplace bootstrap does not import the fixture sequence.
+ */
+export async function restoreDemoEducationOwnerRole(
+  database?: Pick<typeof import("@workspace/db").db, "update">,
+): Promise<void> {
+  const { restoreDemoEducationOwnerRole: restore } = await import("./demo-identity-repair");
+  await restore(database);
+}
+
 function educationTaxonomyKey(value: string): string {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "")
     .toLocaleLowerCase("sr-Latn").replace(/đ/g, "dj")
@@ -97,6 +195,8 @@ function splitTaxonomyItems(value: string): string[] {
 }
 
 export async function seedEducationTaxonomy(): Promise<void> {
+  requireExplicitFixtureRuntime();
+  await loadSeedDependencies();
   const taxonomy = EDUCATION_TAXONOMY;
   for (const [sectionIndex, sectionSeed] of taxonomy.entries()) {
     const sectionSlug = educationTaxonomyKey(sectionSeed.name);
@@ -161,16 +261,6 @@ export async function seedEducationTaxonomy(): Promise<void> {
       }
     }
   }
-}
-
-export async function restoreDemoEducationOwnerRole(
-  database: Pick<typeof db, "update"> = db,
-): Promise<void> {
-  await database.update(usersTable).set({
-    role: "EDUKATIVNI_CENTAR",
-    active: true,
-    updatedAt: new Date(),
-  }).where(eq(usersTable.email, DEMO_EDUCATION_OWNER_EMAIL));
 }
 
 async function ensureLegacyCatalogSupplier(): Promise<string> {
@@ -372,62 +462,65 @@ const serviceTemplateSeeds: ServiceTemplateSeed[] = [
   }),
 ];
 
+let fixturePromise: Promise<void> | undefined;
+
+/**
+ * Compatibility entry point retained for existing development/test callers.
+ * Production and all non-explicit runtimes return before the fixture module is
+ * imported, before database dependencies are imported, and before any query.
+ */
 export async function ensureDemoData(): Promise<void> {
-  if (!seedPromise) seedPromise = seed();
-  return seedPromise;
+  if (!isExplicitFixtureRuntime()) return;
+  return initializeDevelopmentTestFixtures();
 }
 
-async function seed(): Promise<void> {
+/**
+ * Strictly named fixture entry point.  Unlike ensureDemoData(), this refuses
+ * production rather than silently becoming a no-op.
+ */
+export async function initializeDevelopmentTestFixtures(): Promise<void> {
+  // Never accept a caller-supplied environment object here.  In particular,
+  // a production process must not be able to pass a test-shaped object and
+  // bypass the runtime boundary.
+  if (!isExplicitFixtureRuntime(process.env)) {
+    throw new Error(
+      "Development/test fixtures require NODE_ENV=development or NODE_ENV=test.",
+    );
+  }
+  if (!fixturePromise) {
+    fixturePromise = import("./development-test-fixtures")
+      .then(({ initializeDevelopmentTestFixtures: initialize }) => initialize());
+  }
+  return fixturePromise;
+}
+
+/**
+ * Internal implementation called only by development-test-fixtures.ts after
+ * the explicit runtime check has passed.
+ */
+export async function runDemoFixtureSequence(): Promise<void> {
+  if (!isExplicitFixtureRuntime(process.env)) {
+    throw new Error(
+      "Development/test fixtures require NODE_ENV=development or NODE_ENV=test.",
+    );
+  }
+  await loadSeedDependencies();
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existing) {
-    await db.execute(sql`
-      update ${usersTable}
-      set password_set_at = now()
-      where ${usersTable.passwordSetAt} is null
-        and not exists (
-          select 1 from ${oauthIdentitiesTable}
-          where ${oauthIdentitiesTable.userId} = ${usersTable.id}
-        )
-    `);
-    for (const [city, postalCode] of Object.entries(postalCodesByCity)) {
-      await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
-    }
+    // Explicit fixture runs may reconcile the managed demo records below.
+    // Generic maintenance/backfill never runs from this fixture sequence.
     await restoreDemoEducationOwnerRole();
     await seedEducationTaxonomy();
     await seedEducationContent();
     await seedEducationMonetization();
     await seedMarketplaceTaxonomy();
-    await synchronizeInferredServesMen();
     await seedCourierServices();
     await seedFutureBookingAvailability();
-    await backfillSalonCustomers();
+    await seedDevelopmentFixtureSalonCustomers();
     await setDemoLotosActiveSalon();
     await seedShippingConfig();
     await seedDemoRetailCatalog();
     return;
-  }
-
-  if (!productionDemoSeedAllowed()) {
-    // A fresh production database with no users yet: never auto-create the
-    // well-known demo accounts (including a SUPER_ADMIN) with the password
-    // documented in the repository. Real accounts are created only through
-    // normal registration/admin-setup flows, which do not depend on this
-    // function having run. Set LUMERA_ALLOW_PRODUCTION_DEMO_SEED=1 only for
-    // an intentional, non-production-data showcase deployment.
-    logger.warn(
-      { nodeEnv: process.env.NODE_ENV ?? null },
-      "Demo account seeding skipped: production database has no users yet and " +
-        `${PRODUCTION_DEMO_SEED_OPT_IN_ENV} is not set to \"1\". No demo accounts were created.`,
-    );
-    return;
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    logger.warn(
-      {},
-      `Demo account seeding is running in production because ${PRODUCTION_DEMO_SEED_OPT_IN_ENV}=1 is set. ` +
-        "This creates well-known demo identities and must only be used for an intentional showcase deployment, never real customer data.",
-    );
   }
 
   const passwordHash = await hashPassword("LumeraDemo2026!");
@@ -559,7 +652,7 @@ async function seed(): Promise<void> {
   ));
 
   await seedFutureBookingAvailability();
-  await backfillSalonCustomers();
+  await seedDevelopmentFixtureSalonCustomers();
 
   const legacyCatalogSupplierId = await ensureLegacyCatalogSupplier();
   const productCategoryRows = await db.insert(productCategoriesTable).values([
@@ -736,7 +829,6 @@ async function seed(): Promise<void> {
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, passwordSetAt, role: "ADMIN" });
   await seedMarketplaceTaxonomy();
-  await synchronizeInferredServesMen();
   await seedCourierServices();
   void customer;
 }
@@ -868,11 +960,11 @@ async function seedFutureBookingAvailability(): Promise<void> {
 }
 
 /**
- * Gives each salon a CRM contact for registered customers from older online
- * appointments. The insert is intentionally additive so a salon's existing
- * contact data, especially SMS opt-out, remains authoritative.
+ * Fixture-scoped CRM reconciliation.  Unlike the production maintenance
+ * backfill, this only follows appointments explicitly created by the demo
+ * availability fixture and only uses the fixture's local accounts.
  */
-export async function backfillSalonCustomers(): Promise<void> {
+async function seedDevelopmentFixtureSalonCustomers(): Promise<void> {
   await db.execute(sql`
     INSERT INTO ${salonCustomersTable}
       (salon_id, user_id, first_name, last_name, email, phone)
@@ -881,6 +973,8 @@ export async function backfillSalonCustomers(): Promise<void> {
     FROM ${appointmentsTable} a
     INNER JOIN ${usersTable} u ON u.id = a.customer_id
     WHERE a.customer_id IS NOT NULL
+      AND a.notes LIKE '%[demo-availability]%'
+      AND u.email LIKE '%@lumera.local'
       AND NOT EXISTS (
         SELECT 1
         FROM ${salonCustomersTable} existing_contact
@@ -895,11 +989,19 @@ export async function backfillSalonCustomers(): Promise<void> {
     UPDATE ${appointmentsTable} a
     SET salon_customer_id = contact.id
     FROM ${salonCustomersTable} contact
+    INNER JOIN ${usersTable} u ON u.id = contact.user_id
     WHERE a.salon_customer_id IS NULL
       AND a.customer_id IS NOT NULL
+      AND a.notes LIKE '%[demo-availability]%'
+      AND u.email LIKE '%@lumera.local'
       AND contact.salon_id = a.salon_id
       AND contact.user_id = a.customer_id
   `);
+}
+
+export async function backfillSalonCustomers(): Promise<void> {
+  const { backfillSalonCustomers: backfill } = await import("./seed-maintenance");
+  await backfill();
 }
 
 async function seedCourierServices(): Promise<void> {
@@ -1091,33 +1193,8 @@ async function seedB2BShopTaxonomy(): Promise<void> {
   });
   if (toInsert.length) await db.insert(productsTable).values(toInsert);
 
-  // Older seed data stored gift-card values as labels without their price adjustments.
-  // Backfill only missing adjustments so existing admin-configured prices remain authoritative.
-  const [giftCard] = await db.select().from(productsTable).where(eq(productsTable.sku, "GPK-045")).limit(1);
-  if (giftCard?.variants?.some((variant) => variant.label === "Vrednost" && variant.priceAdjust === undefined)) {
-    const variants = giftCard.variants.map((variant) => {
-      if (variant.label !== "Vrednost" || variant.priceAdjust !== undefined) return variant;
-      const amount = Number.parseInt(variant.value.replace(/\D/g, ""), 10);
-      return Number.isFinite(amount) ? { ...variant, priceAdjust: amount - giftCard.price } : variant;
-    });
-    await db.update(productsTable).set({ variants }).where(eq(productsTable.id, giftCard.id));
-  }
-
-  // Backfill weight for any existing products that were seeded before this column was added.
-  // Use a deterministic heuristic so production/existing data is not left with null weights.
-  await db.execute(
-    sql`UPDATE products SET weight_grams = CASE
-      WHEN unit ~* '^[0-9]+\\s*ml$' THEN GREATEST(50, (substring(unit from '^([0-9]+)'))::int + 80)
-      WHEN unit ~* '^[0-9]+\\s*g$'  THEN GREATEST(50, (substring(unit from '^([0-9]+)'))::int + 60)
-      WHEN unit ~* 'set\\s*[0-9]+' OR unit ~* '^set$' THEN 500
-      WHEN unit ~* '[0-9]+\\s*kom$' THEN GREATEST(150, (substring(unit from '([0-9]+)\\s*kom'))::int * 5)
-      WHEN unit ~* '^[0-9]+\\s*m$' THEN 400
-      WHEN unit ~* 'kom' AND (name ~* 'krevet|stolica|frezark|fen|presa|mašinic|lampa|steriliz|aparat|kabinet') THEN 3500
-      WHEN unit ~* 'kom' THEN 400
-      ELSE 300
-    END
-    WHERE weight_grams IS NULL`
-  );
+  // Gift-card variant and missing-weight reconciliation are explicit
+  // maintenance operations, not part of fixture initialization.
   await seedShippingConfig();
 }
 
@@ -1200,35 +1277,12 @@ async function seedServiceTemplateLibrary(): Promise<void> {
   }
 }
 
-function serviceTargetsMen(service: Pick<typeof servicesTable.$inferSelect, "categoryName" | "tags">): boolean {
-  return service.categoryName === "Muški frizeri"
-    || service.tags.some((tag) => tag.toLowerCase().includes("muškar"));
-}
-
-async function synchronizeInferredServesMen(): Promise<void> {
-  const activeServices = await db.select({
-    salonId: servicesTable.salonId,
-    categoryName: servicesTable.categoryName,
-    tags: servicesTable.tags,
-  }).from(servicesTable).where(eq(servicesTable.active, true));
-  const salonIdsServingMen = [...new Set(activeServices.filter(serviceTargetsMen).map((service) => service.salonId))];
-
-  await db.update(salonsTable)
-    .set({ servesMen: false })
-    .where(eq(salonsTable.servesMenManuallySet, false));
-  if (salonIdsServingMen.length) {
-    await db.update(salonsTable)
-      .set({ servesMen: true })
-      .where(and(
-        eq(salonsTable.servesMenManuallySet, false),
-        inArray(salonsTable.id, salonIdsServingMen),
-      ));
-  }
-}
-
 export async function seedEducationContent(
-  database: Pick<typeof db, "select" | "insert" | "update"> = db,
+  database?: Pick<typeof db, "select" | "insert" | "update">,
 ): Promise<void> {
+  requireExplicitFixtureRuntime();
+  await loadSeedDependencies();
+  database ??= db;
   await database.update(coursesTable).set({
     onlineAccessDays: 365,
     extensionPrice1Month: 1900,
@@ -1374,6 +1428,8 @@ export async function ensureSeedEducationEscrowSnapshot(input: {
   centerId: string;
   price: number;
 }) {
+  requireExplicitFixtureRuntime();
+  await loadSeedDependencies();
   return db.transaction(async (tx) => {
     await lockEducationBillingRules(tx, "shared");
     await lockEducationCenterFinancials(tx, input.centerId);

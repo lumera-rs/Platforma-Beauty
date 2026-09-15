@@ -14,7 +14,7 @@ import { CreateEducationGroupEnrollmentsBody, RedeemEducationGiftVoucherBody } f
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { DIGITAL_CONTENT_CONSENT_TEXT, DIGITAL_CONTENT_CONSENT_VERSION } from "./education-entitlement";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 import {
   buildValidOnlineEducationCourse,
   buildValidOnlineEducationEnrollmentRequest,
@@ -32,7 +32,7 @@ async function request(base: string, cookie: string, path: string, method = "GET
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const { restore: restoreIpsSettings } = await installTemporaryEducationIpsSettings();
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];

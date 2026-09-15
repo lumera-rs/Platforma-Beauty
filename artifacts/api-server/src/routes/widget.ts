@@ -22,7 +22,6 @@ import {
   CreateWidgetAppointmentBody,
   GetWidgetAvailabilityQueryParams,
 } from "@workspace/api-zod";
-import { ensureDemoData } from "../lib/seed";
 import { admitBookingRequest } from "../lib/booking-admission";
 import { publishSalonNotificationUpdate } from "../lib/salon-notification-events";
 import { canonicalAvailability } from "../lib/availability-store";
@@ -160,7 +159,6 @@ async function widgetSalon(slug: string) {
 router.get("/widget/salons/:slug", async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_READS)) return;
-  await ensureDemoData();
   const salon = await widgetSalon(slug);
   if (!salon) { res.status(404).json({ error: "Salon nije dostupan za online zakazivanje." }); return; }
   const services = await db.select().from(servicesTable).where(and(
