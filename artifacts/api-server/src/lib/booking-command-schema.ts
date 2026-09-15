@@ -1,12 +1,12 @@
-import { pool } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 const LOCK_KEY = 0x42434d44;
 
 /** Replay-safe rollout used in production, where drizzle-kit push is not run. */
-export async function ensureBookingCommandSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
+export async function ensureBookingCommandSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
   if (!/^[a-z_][a-z0-9_]*$/i.test(schemaName)) throw new Error("Invalid schema name.");
   const schema = `"${schemaName}"`;
-  const client = await poolOverride.connect();
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect();
   let locked = false; try { await client.query("begin"); await setLocalStartupDdlTimeouts(client);
     await client.query("SELECT pg_advisory_lock($1)", [LOCK_KEY]); locked = true;
     await client.query(`

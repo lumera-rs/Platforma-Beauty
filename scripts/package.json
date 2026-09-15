@@ -123,7 +123,7 @@
     "booking-qa": "tsx ./src/run-booking-qa.ts",
     "playwright:checked": "tsx ./src/run-playwright-with-preflight.ts",
     "test:internal-request-control-outputs": "tsx --test ./src/internal-request-control-output-check.test.ts ./src/dependency-declaration-parser-guard.test.ts && tsx ./src/internal-request-control-output-check.ts",
-    "test:backend-standards:static": "pnpm run test:production-startup-ddl-inventory && tsx ./src/test-backend-standards.ts --static-only",
+    "test:backend-standards:static": "pnpm run test:production-startup-ddl-inventory && pnpm run test:startup-ddl-safety && tsx ./src/test-backend-standards.ts --static-only",
     "anonymized-pg-dump": "bash ./anonymized-pg-dump.sh",
     "test:anonymized-pg-dump": "bash ./src/anonymized-pg-dump.test.sh",
     "test:admin-navigation-regression": "tsx ./src/run-admin-navigation-regression.ts",

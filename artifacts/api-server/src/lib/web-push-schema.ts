@@ -1,4 +1,4 @@
-import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import type { DatabasePoolClient as PoolClient } from "@workspace/db"; import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 const LOCK_KEY = "lumera:web-push-schema:v1";
 
@@ -7,8 +7,8 @@ function quotedSchema(value: string) {
   return `"${value}"`;
 }
 
-export async function ensureWebPushSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
-  const client = await poolOverride.connect();
+export async function ensureWebPushSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect();
   let locked = false;
   try {
     await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);

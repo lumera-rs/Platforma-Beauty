@@ -1,10 +1,10 @@
 import { asc } from "drizzle-orm";
-import {
-  db,
-  pool,
-  type DatabasePoolClient as PoolClient,
-  shippingRulesTable,
-} from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import type { DatabasePoolClient as PoolClient } from "@workspace/db";
+import { shippingRulesTable } from "@workspace/db/schema";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
+import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+
+
 
 const SHIPPING_RULES_LOCK_KEY = "lumera:shipping-rules-singleton";
 const SHIPPING_RULES_INDEX_NAME = "shipping_rules_singleton_unique";
@@ -16,9 +16,9 @@ type ShippingRuleInsert = typeof shippingRulesTable.$inferInsert;
  * collapse any legacy duplicates to the stable lowest UUID and enforce the
  * singleton with a database-level unique expression index.
  */
-export async function ensureShippingConfigSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
+export async function ensureShippingConfigSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
   quoteSchema(schemaName);
-  const client = await poolOverride.connect();
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect();
   let locked = false;
   try {
     await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY]);
@@ -73,6 +73,7 @@ export async function runShippingConfigSchemaDdl(
 export async function getOrCreateShippingConfig(
   initialValues: ShippingRuleInsert = {},
 ): Promise<typeof shippingRulesTable.$inferSelect> {
+  const { db } = await import("@workspace/db");
   const [existing] = await db.select().from(shippingRulesTable)
     .orderBy(asc(shippingRulesTable.id))
     .limit(1);

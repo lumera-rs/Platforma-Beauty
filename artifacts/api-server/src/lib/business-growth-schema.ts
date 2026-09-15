@@ -1,9 +1,9 @@
-import {
-  pool,
-  serbianPhoneNormalizedSqlExpression,
-  type DatabasePoolClient as PoolClient,
-} from "@workspace/db";
+import type { DatabasePoolClient as PoolClient } from "@workspace/db";
+import { serbianPhoneNormalizedSqlExpression } from "@workspace/db/schema";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
 import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, readStartupDdlSessionTimeouts, restoreStartupDdlSessionTimeouts, type StartupDdlSessionTimeouts } from "./startup-ddl-safety";
+
+
 
 /**
  * Production deployments do NOT run drizzle-kit push. This module performs a
@@ -5166,9 +5166,9 @@ export async function runBusinessGrowthSchemaDdl(
  * `public` in autocommit, then releases the lock and client. Logs completion
  * only after all DDL succeeds; any failure propagates to fail startup.
  */
-export async function ensureBusinessGrowthSchema(schemaName = "public", poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
+export async function ensureBusinessGrowthSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
   quoteSchema(schemaName); // validate early, before acquiring resources
-  const client = await poolOverride.connect();
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect();
   let previousSearchPath: string | undefined; let previousTimeouts: StartupDdlSessionTimeouts | undefined; let startupError: unknown;
   try { previousSearchPath = await currentSearchPath(client); previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await runBusinessGrowthSchemaDdl(client, schemaName);

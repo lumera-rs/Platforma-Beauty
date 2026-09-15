@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
 import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, readStartupDdlSessionTimeouts, restoreStartupDdlSessionTimeouts, type StartupDdlSessionTimeouts } from "./startup-ddl-safety";
 
 /**
@@ -12,8 +12,8 @@ import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, read
  */
 const MARKETPLACE_PERFORMANCE_INDEX_LOCK = 0x4d500001;
 
-export async function ensureMarketplacePerformanceIndexes(poolOverride: Pick<typeof pool, "connect"> = pool): Promise<void> {
-  const client = await poolOverride.connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
+export async function ensureMarketplacePerformanceIndexes(poolOverride?: StartupDdlPool): Promise<void> {
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
   let locked = false; let startupError: unknown;
   try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await client.query("select pg_advisory_lock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
