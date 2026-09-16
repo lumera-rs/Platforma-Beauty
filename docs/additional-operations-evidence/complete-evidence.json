@@ -1,6 +1,9 @@
 [
   {
     "id": "business-growth/bundle-payment-backfill",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5087-5108",
     "sourceEvidence": [
@@ -49,6 +52,9 @@
   },
   {
     "id": "business-growth/education-snapshot-backfills",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:229-238",
     "sourceEvidence": [
@@ -97,6 +103,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1066-5602134427af494b",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1066:5",
     "sourceEvidence": [
@@ -145,6 +154,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1155-097a5b1129d827b2",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1155:5",
     "sourceEvidence": [
@@ -193,6 +205,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1234-1d61851271544400",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1234:5",
     "sourceEvidence": [
@@ -241,6 +256,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1236-2d62e2481fe32512",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1236:5",
     "sourceEvidence": [
@@ -289,6 +307,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1293-e4681f51bbe828b9",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1293:5",
     "sourceEvidence": [
@@ -337,6 +358,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1594-f6fc741bbccc403d",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1594:5",
     "sourceEvidence": [
@@ -385,6 +409,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1888-578a52d56c8c901a",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1888:5",
     "sourceEvidence": [
@@ -433,6 +460,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1955-d8aebdcf413ec207",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1955:5",
     "sourceEvidence": [
@@ -481,6 +511,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1993-78f264bf1242ad45",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1993:5",
     "sourceEvidence": [
@@ -529,6 +562,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2182-1dcabc3abb504aa4",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2182:5",
     "sourceEvidence": [
@@ -577,6 +613,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2359-05cc08a5872f1ce2",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2359:5",
     "sourceEvidence": [
@@ -625,6 +664,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-239-3c7d7a0db051017c",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:239:5",
     "sourceEvidence": [
@@ -679,6 +721,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2422-7a8726353abf6169",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2422:5",
     "sourceEvidence": [
@@ -727,6 +772,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2695-39cdb0336fc9d71c",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2695:5",
     "sourceEvidence": [
@@ -775,6 +823,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2881-fac76aef0bba8911",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2881:5",
     "sourceEvidence": [
@@ -823,6 +874,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2919-6b25b308a9585583",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2919:5",
     "sourceEvidence": [
@@ -871,6 +925,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2936-d3851b0242da2b62",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2936:5",
     "sourceEvidence": [
@@ -919,6 +976,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2968-494603558aae3266",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2968:5",
     "sourceEvidence": [
@@ -967,6 +1027,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2976-412e8f0768e1bc53",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2976:5",
     "sourceEvidence": [
@@ -1015,6 +1078,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3132-bf601a52b45412ad",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3132:5",
     "sourceEvidence": [
@@ -1063,6 +1129,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3331-f96678a064f57e85",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3331:5",
     "sourceEvidence": [
@@ -1111,6 +1180,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3572-250192559736fe3b",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3572:5",
     "sourceEvidence": [
@@ -1159,6 +1231,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3596-db0912b7323d3d0c",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3596:5",
     "sourceEvidence": [
@@ -1207,6 +1282,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3654-b0ba64dd10e18464",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3654:5",
     "sourceEvidence": [
@@ -1255,6 +1333,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3711-e115085ae3a4eea5",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3711:5",
     "sourceEvidence": [
@@ -1303,6 +1384,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3730-d7b68a70ac97f701",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3730:5",
     "sourceEvidence": [
@@ -1351,6 +1435,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3755-614961c1b7f1f97a",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3755:5",
     "sourceEvidence": [
@@ -1399,6 +1486,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3986-3bf6cb92731753e4",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3986:5",
     "sourceEvidence": [
@@ -1447,6 +1537,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3997-5176a2b88baf0779",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3997:5",
     "sourceEvidence": [
@@ -1495,6 +1588,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4045-8ed7a084462e9112",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4045:5",
     "sourceEvidence": [
@@ -1543,6 +1639,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4048-10e4a54f14166cb6",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4048:5",
     "sourceEvidence": [
@@ -1591,6 +1690,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4384-e015e2034c777257",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4384:5",
     "sourceEvidence": [
@@ -1639,6 +1741,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4440-3b021060842ebb73",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4440:5",
     "sourceEvidence": [
@@ -1687,6 +1792,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4549-fee2c22731f4db15",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4549:5",
     "sourceEvidence": [
@@ -1735,6 +1843,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4550-6ad13fc9e1caeb85",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4550:5",
     "sourceEvidence": [
@@ -1783,6 +1894,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4605-bca8bd2f500d308e",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4605:5",
     "sourceEvidence": [
@@ -1831,6 +1945,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4612-65b1d33770d816b1",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4612:5",
     "sourceEvidence": [
@@ -1879,6 +1996,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4617-2b63853ba688a383",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4617:5",
     "sourceEvidence": [
@@ -1927,6 +2047,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4620-20518488727fd1ea",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4620:5",
     "sourceEvidence": [
@@ -1975,6 +2098,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4628-9cb6b5d7843e9b57",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4628:5",
     "sourceEvidence": [
@@ -2023,6 +2149,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4633-646139d3dc75e519",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4633:5",
     "sourceEvidence": [
@@ -2071,6 +2200,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4637-02f9ac5d3b3e194f",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4637:5",
     "sourceEvidence": [
@@ -2119,6 +2251,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4638-413cfe6b52f96aea",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4638:5",
     "sourceEvidence": [
@@ -2167,6 +2302,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4644-20d1b40e2d83dc7f",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4644:5",
     "sourceEvidence": [
@@ -2215,6 +2353,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4750-a8631b053767de30",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4750:6",
     "sourceEvidence": [
@@ -2263,6 +2404,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4801-3cae2900c669c65a",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4801:5",
     "sourceEvidence": [
@@ -2311,6 +2455,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4881-71c900be3d31c484",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4881:5",
     "sourceEvidence": [
@@ -2359,6 +2506,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4894-2fb599a7e242329d",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4894:5",
     "sourceEvidence": [
@@ -2407,6 +2557,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4923-c22773f2337b6668",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4923:5",
     "sourceEvidence": [
@@ -2455,6 +2608,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4928-501a649d7423c9cf",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4928:5",
     "sourceEvidence": [
@@ -2503,6 +2659,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-515-8dbd4712bbb5dcb2",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:515:5",
     "sourceEvidence": [
@@ -2551,6 +2710,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-642-75642b872948bafa",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:642:5",
     "sourceEvidence": [
@@ -2599,6 +2761,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-646-85bc0eb2701b10cf",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:646:5",
     "sourceEvidence": [
@@ -2647,6 +2812,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-714-c3afd57975f260f8",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:714:5",
     "sourceEvidence": [
@@ -2695,6 +2863,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-795-ccea7319f2053e67",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:795:5",
     "sourceEvidence": [
@@ -2743,6 +2914,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-834-3074db9313c774db",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:834:5",
     "sourceEvidence": [
@@ -2791,6 +2965,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-841-b832bbaa7343d506",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:841:5",
     "sourceEvidence": [
@@ -2839,6 +3016,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-949-43751b9dc71e8688",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:949:5",
     "sourceEvidence": [
@@ -2887,6 +3067,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-961-843af46de48ee47e",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:961:5",
     "sourceEvidence": [
@@ -2935,6 +3118,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-977-05799e55766b423f",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:977:5",
     "sourceEvidence": [
@@ -2983,6 +3169,9 @@
   },
   {
     "id": "business-growth/bundle-payment-immutability-function",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5112-5120",
     "sourceEvidence": [
@@ -3065,6 +3254,9 @@
   },
   {
     "id": "business-growth/gift-voucher-immutability-function",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5051-5066",
     "sourceEvidence": [
@@ -3147,6 +3339,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1013-2873cfc7bde28e7c",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1013:5",
     "sourceEvidence": [
@@ -3223,6 +3418,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1024-b6bf3966fbd7c255",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1024:5",
     "sourceEvidence": [
@@ -3299,6 +3497,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1101-d98ce7dad1bf3273",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1101:5",
     "sourceEvidence": [
@@ -3375,6 +3576,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1110-a554a73f2cc12f0d",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1110:5",
     "sourceEvidence": [
@@ -3451,6 +3655,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1127-82d60245f86ef653",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1127:5",
     "sourceEvidence": [
@@ -3527,6 +3734,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1137-78d662770c04a367",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1137:5",
     "sourceEvidence": [
@@ -3603,6 +3813,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1203-314a9adb25ea1a7a",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1203:5",
     "sourceEvidence": [
@@ -3679,6 +3892,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1342-41322590b0facfaf",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1342:5",
     "sourceEvidence": [
@@ -3755,6 +3971,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1377-7a16f65e6e343d67",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1377:5",
     "sourceEvidence": [
@@ -3831,6 +4050,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1415-e4229e6071e9a67a",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1415:5",
     "sourceEvidence": [
@@ -3907,6 +4129,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-1427-c335b6f63de49bb8",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:1427:5",
     "sourceEvidence": [
@@ -3983,6 +4208,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2500-b465c4834db0bf01",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2500:5",
     "sourceEvidence": [
@@ -4059,6 +4287,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2606-f73073563692a53c",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2606:5",
     "sourceEvidence": [
@@ -4135,6 +4366,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2625-8d5de63e198cd17a",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2625:5",
     "sourceEvidence": [
@@ -4211,6 +4445,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2646-f754b207b4953c65",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2646:5",
     "sourceEvidence": [
@@ -4287,6 +4524,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2683-5485f544de16d7bb",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2683:5",
     "sourceEvidence": [
@@ -4363,6 +4603,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2832-30aedb47b317e08d",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2832:5",
     "sourceEvidence": [
@@ -4439,6 +4682,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-2845-4ff564bcb8cbfe1b",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:2845:5",
     "sourceEvidence": [
@@ -4515,6 +4761,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3100-5160af5bfa71def3",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3100:5",
     "sourceEvidence": [
@@ -4591,6 +4840,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3428-ea1abf46bda6e98c",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3428:5",
     "sourceEvidence": [
@@ -4667,6 +4919,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3438-1b685f86e49f086f",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3438:5",
     "sourceEvidence": [
@@ -4743,6 +4998,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3453-5f85daadd826e97e",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3453:5",
     "sourceEvidence": [
@@ -4819,6 +5077,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-3494-e2e6198fa61aa689",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:3494:5",
     "sourceEvidence": [
@@ -4895,6 +5156,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4140-168dce238fe4d30f",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4140:5",
     "sourceEvidence": [
@@ -4971,6 +5235,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4168-0ef0ddc715fef765",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4168:5",
     "sourceEvidence": [
@@ -5047,6 +5314,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4551-946da234d73bf7e2",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4551:5",
     "sourceEvidence": [
@@ -5123,6 +5393,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-4939-216de9e834eb57cb",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:4939:5",
     "sourceEvidence": [
@@ -5199,6 +5472,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-550-f22c72e35ddc73eb",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:550:5",
     "sourceEvidence": [
@@ -5275,6 +5551,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-552-338d4a1040e1d84d",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:552:5",
     "sourceEvidence": [
@@ -5351,6 +5630,9 @@
   },
   {
     "id": "ensureBusinessGrowthSchema/source-discovered-747-eb2ed4eed4debb49",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:747:5",
     "sourceEvidence": [
@@ -5427,9 +5709,12 @@
   },
   {
     "id": "booking-command/transaction-and-advisory-lock",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureBookingCommandSchema",
     "sourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-38",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-39",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/booking-command-schema.ts",
@@ -5440,7 +5725,7 @@
       {
         "path": "artifacts/api-server/src/lib/booking-command-schema.ts",
         "startLine": 34,
-        "endLine": 38,
+        "endLine": 39,
         "sqlOrCode": "    await client.query(\"commit\"); } catch (error) { await client.query(\"rollback\").catch(() => {}); throw error; } finally {\n    try {\n      if (locked) await client.query(\"SELECT pg_advisory_unlock($1)\", [LOCK_KEY]).catch(() => {});\n    } finally {\n      client.release();\n    }"
       }
     ],
@@ -5458,9 +5743,12 @@
   },
   {
     "id": "business-growth/advisory-lock-and-session-state",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5153-5160,5190-5204",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5197,5201-5204",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5198,5201-5205",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/business-growth-schema.ts",
@@ -5477,13 +5765,13 @@
       {
         "path": "artifacts/api-server/src/lib/business-growth-schema.ts",
         "startLine": 5171,
-        "endLine": 5197,
+        "endLine": 5198,
         "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let previousSearchPath: string | undefined; let previousTimeouts: StartupDdlSessionTimeouts | undefined; let startupError: unknown;\n  try { previousSearchPath = await currentSearchPath(client); previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);\n    await runBusinessGrowthSchemaDdl(client, schemaName);\n    const cleanup = await client.query<{\n      candidates: number; detached_users: number; deleted_salons: number; retired_salons: number;\n    }>(`SELECT candidates, detached_users, deleted_salons, retired_salons\n         FROM ${quoteSchema(schemaName)}.education_salon_cleanup_reports WHERE version = 99`);\n    if (cleanup.rows[0]) {\n      logger.info(\n        { version: 99, ...cleanup.rows[0] },\n        \"Education registration salon cleanup report\",\n      );\n    }\n    logger.info(\n      { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },\n      \"Business Growth database schema is ready\",\n    );\n  } catch (error) { startupError = error; throw error; } finally { let cleanupError: unknown; if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError = error; });\n    // Restore search_path on the pooled client so it does not leak to reuse.\n    try {\n      if (previousSearchPath) await client.query(`SET search_path TO ${previousSearchPath}`);\n    } catch (error) {\n      cleanupError ??= error;\n    }\n    client.release();\n    if (cleanupError && !startupError) throw cleanupError;\n  }"
       },
       {
         "path": "artifacts/api-server/src/lib/business-growth-schema.ts",
         "startLine": 5201,
-        "endLine": 5204,
+        "endLine": 5205,
         "sqlOrCode": "async function currentSearchPath(client: PoolClient): Promise<string> {\n  const result = await client.query<{ search_path: string }>(\"SHOW search_path\");\n  const value = result.rows[0]?.search_path;\n  return value && value.trim().length ? value : '\"$user\", public';\n}"
       }
     ],
@@ -5501,6 +5789,9 @@
   },
   {
     "id": "business-growth/cleanup-report-read",
+    "schemaVersion": 1,
+    "category": "cleanup-reporting",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5175-5178",
     "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5175-5184",
@@ -5525,6 +5816,9 @@
   },
   {
     "id": "business-growth/rollout-marker-read",
+    "schemaVersion": 1,
+    "category": "rollout-marker",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5036-5042",
     "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5035-5043",
@@ -5549,6 +5843,9 @@
   },
   {
     "id": "business-growth/rollout-marker-write",
+    "schemaVersion": 1,
+    "category": "rollout-marker",
+    "status": "UNRESOLVED",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5145-5148",
     "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5139-5149",
@@ -5573,6 +5870,9 @@
   },
   {
     "id": "education-bundle/learner-id-backfill",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureEducationBundlePurchaseSchema",
     "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:54-58",
     "sourceEvidence": [
@@ -5597,6 +5897,9 @@
   },
   {
     "id": "education-bundle/payment-reference-backfill",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureEducationBundlePurchaseSchema",
     "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:24-31",
     "sourceEvidence": [
@@ -5621,6 +5924,9 @@
   },
   {
     "id": "education-bundle/payment-reference-function",
+    "schemaVersion": 1,
+    "category": "function-replacement",
+    "status": "UNRESOLVED",
     "owner": "ensureEducationBundlePurchaseSchema",
     "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:39-47",
     "sourceEvidence": [
@@ -5645,6 +5951,9 @@
   },
   {
     "id": "education-bundle/transaction-and-advisory-lock",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureEducationBundlePurchaseSchema",
     "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:9-12,81-84",
     "evidenceSourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:6-8,85",
@@ -5666,7 +5975,7 @@
     "effects": "Operational transaction, timeout and advisory-lock scaffolding.",
     "repeatSafety": "UNKNOWN. The code proves conditional unlock/client release but swallows rollback/unlock failure and does not prove downstream actions repeat-safe.",
     "stateDependence": "Client/lock/transaction availability and preceding-owner success determine execution; production state uninspected.",
-    "canonicalComparison": "Canonical contains final bundle objects but no this transaction, timeout, advisory-lock, or pooled-client lifecycle. Runtime behavior is absent.",
+    "canonicalComparison": "Canonical bundle definitions are at lib/db/migrations/000001_canonical_schema/migration.sql:3421-3448 (education_bundle_purchases), 14775-14778 (immutability trigger), and 16440-16444 (learner FK). Three reproducible whole-file searches return no matches: `rg -n -i '^(BEGIN|COMMIT|ROLLBACK);?$' lib/db/migrations/000001_canonical_schema/migration.sql`; `rg -n -F -e 'pg_advisory_lock(' -e 'pg_advisory_unlock(' lib/db/migrations/000001_canonical_schema/migration.sql`; and `rg -n -i '^[[:space:]]*SET[[:space:]]+LOCAL[[:space:]]+(lock_timeout|statement_timeout)' lib/db/migrations/000001_canonical_schema/migration.sql`. Runtime transaction/timeout/advisory-lock lifecycle behavior is absent.",
     "evidenceAssessment": "UNRESOLVED — provisional only.",
     "uncertainties": [
       "Why must this share Business Growth lock?",
@@ -5675,9 +5984,12 @@
   },
   {
     "id": "marketplace/advisory-lock-and-session-state",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureMarketplacePerformanceIndexes",
     "sourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:18-20,39-44",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-46",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-47",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts",
@@ -5688,7 +6000,7 @@
       {
         "path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts",
         "startLine": 39,
-        "endLine": 46,
+        "endLine": 47,
         "sqlOrCode": "  } catch (error) { startupError = error; throw error; } finally {\n    let cleanupError: unknown;\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock($1)\", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });\n    }\n    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });\n    client.release();\n    if (cleanupError && !startupError) throw cleanupError;\n  }"
       }
     ],
@@ -5705,6 +6017,9 @@
   },
   {
     "id": "media/transaction-and-advisory-lock",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureMediaSchema",
     "sourcePath": "artifacts/api-server/src/lib/media-schema.ts:105-109",
     "sourceEvidence": [
@@ -5735,6 +6050,9 @@
   },
   {
     "id": "referral/tracking-start-backfill",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureReferralSchema",
     "sourcePath": "artifacts/api-server/src/lib/referral-schema.ts:27-41",
     "sourceEvidence": [
@@ -5759,6 +6077,9 @@
   },
   {
     "id": "referral/transaction-and-advisory-lock",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureReferralSchema",
     "sourcePath": "artifacts/api-server/src/lib/referral-schema.ts:16-18,48-53",
     "evidenceSourcePath": "artifacts/api-server/src/lib/referral-schema.ts:12-15,49-55",
@@ -5780,7 +6101,7 @@
     "effects": "Runtime transaction and advisory-lock scaffolding.",
     "repeatSafety": "UNKNOWN; successful lock lifecycle is coded but rollback/unlock failure is suppressed and paired backfill/schema effects are state-dependent.",
     "stateDependence": "Depends on client/lock/transaction state and prior owner success; production uninspected.",
-    "canonicalComparison": "Canonical has referral definitions, not this lock/timeout/transaction protocol.",
+    "canonicalComparison": "Canonical referral definitions are at lib/db/migrations/000001_canonical_schema/migration.sql:5645-5663 (referral tables) and 18560-18564 (attribution FK). Three reproducible whole-file searches return no matches: `rg -n -i '^(BEGIN|COMMIT|ROLLBACK);?$' lib/db/migrations/000001_canonical_schema/migration.sql`; `rg -n -F -e 'pg_advisory_lock(' -e 'pg_advisory_unlock(' lib/db/migrations/000001_canonical_schema/migration.sql`; and `rg -n -i '^[[:space:]]*SET[[:space:]]+LOCAL[[:space:]]+(lock_timeout|statement_timeout)' lib/db/migrations/000001_canonical_schema/migration.sql`. The definitions do not represent this runtime protocol.",
     "evidenceAssessment": "UNRESOLVED — provisional only.",
     "uncertainties": [
       "What serialization and recovery mechanism replaces this paired runtime transaction?"
@@ -5788,20 +6109,23 @@
   },
   {
     "id": "shipping/duplicate-row-cleanup",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureShippingConfigSchema",
     "sourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,54-65",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,47-65",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-36,47-66",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/shipping-config.ts",
         "startLine": 24,
-        "endLine": 35,
+        "endLine": 36,
         "sqlOrCode": "    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound both advisory-lock and table-lock waits.\n    await runShippingConfigSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY])\n        .catch(() => {});\n    }"
       },
       {
         "path": "artifacts/api-server/src/lib/shipping-config.ts",
         "startLine": 47,
-        "endLine": 65,
+        "endLine": 66,
         "sqlOrCode": "export async function runShippingConfigSchemaDdl(\n  client: PoolClient,\n  schemaName: string,\n): Promise<void> {\n  const schema = quoteSchema(schemaName);\n  // Index names are scoped by the current schema in PostgreSQL; keep the\n  // table qualified while making the target schema local to this transaction.\n  await client.query(`set local search_path to ${schema}`);\n  await client.query(`lock table ${schema}.shipping_rules in share row exclusive mode`);\n  await client.query(`\n    delete from ${schema}.shipping_rules\n    where id <> (\n      select id from ${schema}.shipping_rules order by id asc limit 1\n    )\n  `);\n  await client.query(`\n    create unique index if not exists ${SHIPPING_RULES_INDEX_NAME}\n    on ${schema}.shipping_rules ((true))\n  `);\n}"
       }
     ],
@@ -5819,6 +6143,9 @@
   },
   {
     "id": "ensureWebPushSchema/source-discovered-82-dd7107a5f655438a",
+    "schemaVersion": 1,
+    "category": "data-backfill",
+    "status": "UNRESOLVED",
     "owner": "ensureWebPushSchema",
     "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:82:22",
     "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:82",
@@ -5843,14 +6170,17 @@
   },
   {
     "id": "web-push/transaction-and-advisory-lock",
+    "schemaVersion": 1,
+    "category": "operational-scaffolding",
+    "status": "UNRESOLVED",
     "owner": "ensureWebPushSchema",
     "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-24",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-25",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/web-push-schema.ts",
         "startLine": 10,
-        "endLine": 24,
+        "endLine": 25,
         "sqlOrCode": "export async function ensureWebPushSchema(schemaName = \"public\", poolOverride?: StartupDdlPool): Promise<void> {\n  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let locked = false;\n  try {\n    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound startup lock and schema work.\n    await runWebPushSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) await client.query(\"select pg_advisory_unlock(hashtext($1))\", [LOCK_KEY]).catch(() => {});\n    client.release();\n  }"
       }
     ],

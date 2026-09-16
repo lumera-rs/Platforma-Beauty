@@ -1144,7 +1144,7 @@ that historical transformations or runtime actions ran.
 ### `booking-command/transaction-and-advisory-lock`
 
 **Source and order:** exact executable scaffolding is
-`booking-command-schema.ts:9-12,34-38` (the crosswalk locator is
+`booking-command-schema.ts:9-12,34-39` (the crosswalk locator is
 `9-12,35-38`). Its owner is invoked unconditionally in 7th position. It connects, begins a
 transaction, calls the local-timeout helper, blocks on numeric advisory lock
 `0x42434d44`, then runs its DDL statements before commit. On any failure it
@@ -1172,7 +1172,7 @@ cleanup.
 ### `business-growth/advisory-lock-and-session-state`
 
 **Source and order:** `business-growth-schema.ts:5002-5010,5150-5160,
-5171-5197,5201-5204`; 1st owner. `ensureBusinessGrowthSchema` captures the
+5171-5198,5201-5205`; 1st owner. `ensureBusinessGrowthSchema` captures the
 pooled client's `search_path` and timeouts, applies session timeouts, calls the
 inner runner, then restores them and releases the client. The inner runner
 takes the shared lock, sets `search_path`, and in `finally` rolls back any
@@ -1371,7 +1371,7 @@ transaction requirements for moving both data work and DDL out of startup.
 
 ### `marketplace/advisory-lock-and-session-state`
 
-**Source and order:** `marketplace-performance-schema.ts:16-20,39-46`; 4th
+**Source and order:** `marketplace-performance-schema.ts:16-20,39-47`; 4th
 owner. It saves session timeouts, applies session timeouts, locks, creates four
 indexes `CONCURRENTLY` (21-37), then unlocks, restores saved timeouts, releases
 the client, and may throw a cleanup error only absent a startup error.
@@ -1457,7 +1457,7 @@ failure-recovery policy for the paired referral backfill.
 
 ### `shipping/duplicate-row-cleanup`
 
-**Source and order:** `shipping-config.ts:24-35,47-65`; 3rd owner. The
+**Source and order:** `shipping-config.ts:24-36,47-66`; 3rd owner. The
 transaction/lock wrapper calls `runShippingConfigSchemaDdl`, which sets a
 transaction-local search path, locks `shipping_rules` in `SHARE ROW EXCLUSIVE`
 mode, deletes every row except the ascending-lowest UUID, then creates the
@@ -1502,7 +1502,7 @@ delivery-retention consequences, and define approved migration/recovery logic.
 
 ### `web-push/transaction-and-advisory-lock`
 
-**Source and order:** `web-push-schema.ts:10-24`; 6th owner. It begins a
+**Source and order:** `web-push-schema.ts:10-25`; 6th owner. It begins a
 transaction, applies local timeouts, takes hash advisory lock
 `lumera:web-push-schema:v1`, calls the ordered inner DDL routine, commits, or
 rolls back on error; finally it conditionally unlocks and releases.
@@ -1532,17 +1532,17 @@ correction to authoritative crosswalk data.
 
 | ID | Authoritative `sourcePath` from crosswalk | Expanded `evidenceSourcePath` |
 |---|---|---|
-| `booking-command/transaction-and-advisory-lock` | `booking-command-schema.ts:9-12,35-38` | `booking-command-schema.ts:9-12,34-38` |
-| `business-growth/advisory-lock-and-session-state` | `business-growth-schema.ts:5002-5010,5153-5160,5190-5204` | `business-growth-schema.ts:5002-5010,5150-5160,5171-5197,5201-5204` |
+| `booking-command/transaction-and-advisory-lock` | `booking-command-schema.ts:9-12,35-38` | `booking-command-schema.ts:9-12,34-39` |
+| `business-growth/advisory-lock-and-session-state` | `business-growth-schema.ts:5002-5010,5153-5160,5190-5204` | `business-growth-schema.ts:5002-5010,5150-5160,5171-5198,5201-5205` |
 | `business-growth/cleanup-report-read` | `business-growth-schema.ts:5175-5178` | `business-growth-schema.ts:5175-5184` |
 | `business-growth/rollout-marker-read` | `business-growth-schema.ts:5036-5042` | `business-growth-schema.ts:5035-5043` |
 | `business-growth/rollout-marker-write` | `business-growth-schema.ts:5145-5148` | `business-growth-schema.ts:5139-5149` |
 | `education-bundle/transaction-and-advisory-lock` | `education-bundle-purchase-schema.ts:9-12,81-84` | `education-bundle-purchase-schema.ts:6-8,85` |
-| `marketplace/advisory-lock-and-session-state` | `marketplace-performance-schema.ts:18-20,39-44` | `marketplace-performance-schema.ts:16-20,39-46` |
+| `marketplace/advisory-lock-and-session-state` | `marketplace-performance-schema.ts:18-20,39-44` | `marketplace-performance-schema.ts:16-20,39-47` |
 | `referral/transaction-and-advisory-lock` | `referral-schema.ts:16-18,48-53` | `referral-schema.ts:12-15,49-55` |
-| `shipping/duplicate-row-cleanup` | `shipping-config.ts:24-35,54-65` | `shipping-config.ts:24-35,47-65` |
+| `shipping/duplicate-row-cleanup` | `shipping-config.ts:24-35,54-65` | `shipping-config.ts:24-36,47-66` |
 | `ensureWebPushSchema/source-discovered-82-dd7107a5f655438a` | `web-push-schema.ts:82:22` | `web-push-schema.ts:82` |
-| `web-push/transaction-and-advisory-lock` | `web-push-schema.ts:11-15,18-24` | `web-push-schema.ts:10-24` |
+| `web-push/transaction-and-advisory-lock` | `web-push-schema.ts:11-15,18-24` | `web-push-schema.ts:10-25` |
 
 The five remaining report records have no expanded locator because their
 authoritative crosswalk `sourcePath` already identifies the audited literal or
@@ -7007,7 +7007,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "id": "booking-command/transaction-and-advisory-lock",
     "owner": "ensureBookingCommandSchema",
     "sourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-38",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-39",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/booking-command-schema.ts",
@@ -7038,7 +7038,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "id": "business-growth/advisory-lock-and-session-state",
     "owner": "ensureBusinessGrowthSchema",
     "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5153-5160,5190-5204",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5197,5201-5204",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5198,5201-5205",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/business-growth-schema.ts",
@@ -7244,7 +7244,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "effects": "Operational transaction, timeout and advisory-lock scaffolding.",
     "repeatSafety": "UNKNOWN. The code proves conditional unlock/client release but swallows rollback/unlock failure and does not prove downstream actions repeat-safe.",
     "stateDependence": "Client/lock/transaction availability and preceding-owner success determine execution; production state uninspected.",
-    "canonicalComparison": "Canonical contains final bundle objects but no this transaction, timeout, advisory-lock, or pooled-client lifecycle. Runtime behavior is absent.",
+    "canonicalComparison": "Canonical contains final bundle objects, but the three precise whole-file searches documented in context.md return no top-level transaction command, advisory-lock call, or SET LOCAL timeout protocol. Runtime behavior is absent.",
     "evidenceAssessment": "UNRESOLVED — provisional only.",
     "uncertainties": [
       "Why must this share Business Growth lock?",
@@ -7255,7 +7255,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "id": "marketplace/advisory-lock-and-session-state",
     "owner": "ensureMarketplacePerformanceIndexes",
     "sourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:18-20,39-44",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-46",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-47",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts",
@@ -7368,7 +7368,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "id": "shipping/duplicate-row-cleanup",
     "owner": "ensureShippingConfigSchema",
     "sourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,54-65",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,47-65",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-36,47-66",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/shipping-config.ts",
@@ -7423,7 +7423,7 @@ The following is the exact 110-record normalized array written to [complete-evid
     "id": "web-push/transaction-and-advisory-lock",
     "owner": "ensureWebPushSchema",
     "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
-    "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-24",
+    "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-25",
     "sourceEvidence": [
       {
         "path": "artifacts/api-server/src/lib/web-push-schema.ts",

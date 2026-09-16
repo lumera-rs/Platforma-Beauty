@@ -35,6 +35,7 @@
     "startup-migration-crosswalk": "tsx ./src/startup-migration-crosswalk.ts",
     "startup-migration-crosswalk:json": "tsx ./src/startup-migration-crosswalk.ts --json",
     "test:startup-migration-crosswalk": "tsx --test ./src/startup-migration-crosswalk.test.ts",
+    "test:additional-operations-evidence": "tsx --test ./src/additional-operations-evidence.test.ts",
     "test:startup-ddl-safety": "tsx --test ../artifacts/api-server/src/lib/startup-ddl-safety.test.ts",
     "test:backend-standards:database": "tsx ./src/test-backend-standards.ts --database-only",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",

@@ -1,6 +1,6 @@
 # Additional startup-operation literal census
 
-**RECONCILIATION COMPLETE.** A direct TypeScript-AST scan (without importing or invoking the startup-inventory or crosswalk parser) found **103** literals: **70 DML + 33 `CREATE OR REPLACE FUNCTION`**. Every literal is linked in `census.json` to exactly one supplied additional-operation ID; there are no unmatched or multiply-linked literals and no exact duplicate raw-SQL checksums.
+**RECONCILIATION COMPLETE.** A direct TypeScript-AST scan found **103** literals: **70 DML + 33 `CREATE OR REPLACE FUNCTION`**. The reproducible repository command `pnpm --filter @workspace/scripts run test:additional-operations-evidence` checks the pinned census and its reconciliation against the crosswalk at source commit `6e7ac9411eb454b4aeddccd46444df1aa7e120bc`.
 
 ## Evidence boundary
 
@@ -11,7 +11,7 @@
 
 ## Machine-readable 103-row proof
 
-`census.json` is the complete compact census. Its `encoding.literalRow` defines every field. Each row contains the full source location (owner-code lookup plus exact start–end line:column), SHA-256 of the complete unnormalised literal text, and the complete linked additional-operation ID. `E` means the supplied crosswalk source-discovered record matched the AST owner/path/start position, byte-exact literal text, and SHA-256. `R` means the supplied curated ID has no stored literal text; its explicit source range contains the AST literal start, and the AST raw SHA-256 is retained in that row.
+The canonical `complete-evidence.json` records retain the full source locations, executable SQL/code, owner and operation IDs used by the audit. `census.json` pins the original complete 103-row census by repository commit and SHA-256 instead of copying or rewriting its literal evidence. The validator reads that pinned artifact and requires the 103/70/33 literal counts, all 110 IDs and their authoritative owner/category/status/source location, and the unchanged hashes of all eight owner modules.
 
 Owner literal cardinalities: Business Growth 96; Media 0; Shipping 1; Marketplace 0; Referral 1; Web Push 1; Booking Command 0; Education Bundle 4. The JSON also includes the baseline’s per-owner DDL cardinality, all nine crosswalk IDs that are intentionally outside this DML/function census, and source checksums for all eight owner modules.
 

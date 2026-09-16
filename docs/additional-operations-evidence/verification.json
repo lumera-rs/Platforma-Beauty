@@ -8,22 +8,23 @@
     "canonicalMigration": "lib/db/migrations/000001_canonical_schema/migration.sql",
     "canonicalSha256": "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60"
   },
+  "reviewWorkingHead": "0f2e39b75f3014edd8f92f83afaa651c8ddf1743",
   "scope": "Read-only final assembly of supplied source slices, context, census, and crosswalk. This PASS means evidence-artifact parity and source-evidence validation passed; it is not a production-safety or resolution decision.",
   "inputHashesSha256": {
     "bg-data.json": "c144af7eac62a020a2f5e7edc5e54d07abdac8df077c9c76878eb07ced31ada7",
-    "bg-functions.json": "b6db056c3b0a53da6c9b987c1341d0e8d1f301df77dc2d1f3e8bda7c371797fd",
-    "other-owners.json": "0c9ebca7633392b51880245a2cb00d8180814fe4cadd25b61ef592e379525367",
+    "bg-functions.json": "b1cb0e2453f24c8b8bcc2b09146db0f1767f3f396c16c2a9783031ccd17f976c",
+    "other-owners.json": "c0821e45ecebabbdaeafef6fdcb30b7de136b60b42c72edc7c3e3f2d7179d75e",
     "bg-data.md": "e2f3f86a8701c2c400689e3c5dd8770b9d74ffb82c96b7c6d3626d80b3880969",
     "bg-functions.md": "76c297cc5fdbb8e78186d700c4e2574deb3ec3d9dde32b7dd45176875bc414fe",
     "other-owners.md": "731bae9bcd2c8b3ce295598f30038dc556f255e12a386328ae1aef5291f71514",
-    "census.json": "a0ac773509603a7527c05b1740e855f4f1548d930440c050c8ea9b67b3f28c72",
-    "census.md": "6514df7484b2bc72c866aabae313d7aa673c8e578868e42b4d61ba0fd0d9d76c",
-    "context.md": "869a576619f2da42a244628f4b726a166aba3160e73dc6a6d7f6920ec4be9709"
+    "census.md": "b7a5079d046c9fc4ad5d3cf8e20a1ef629f8320cce6cf62ac373811a41b30b86",
+    "census.json": "485e0200ec8a8e620a35c0509c095abc13572966029f85c8ba3f9158cee0e5ed",
+    "context.md": "f34f4eae2227bdf7241ade5bdb424a093170906807d9a8d78c7070e9b7ad3928"
   },
   "assembledArtifactHashesSha256": {
-    "README.md": "a42b3c3451f85ee78aecf34e3f0c72333e2a9ea93b26a51708f2ec903325fc6e",
-    "complete-report.md": "de65bdbc9d310b3aac7b2cec87b1e7f41014e3cfdedf11b39a641f57a2203577",
-    "complete-evidence.json": "2dc7b061a33b4ae888bc213a452b0adaaed2f96066be001d00dacab77b7e4ebe"
+    "README.md": "371529d4965e12e4e2806cceddf817698a7f316e659aa2f9b8bcc714805bba03",
+    "complete-report.md": "fa77a4eec94e8701f0edaf622f6ee3e99c5f2dc22d35a2604b22d7f19fd85ead",
+    "complete-evidence.json": "866fb8e2516bbbd5696264d1e43a0ca10be2e80255df5366f9b8354553e606da"
   },
   "recordReconciliation": {
     "expectedCrosswalkRecords": 110,
@@ -80,7 +81,12 @@
       "cleanup-reporting": 1
     }
   },
-  "suppliedValidationNotRerun": {
+  "task2AValidation": {
+    "pnpm --filter @workspace/scripts run test:additional-operations-evidence": "PASS 6/6",
+    "pnpm --filter @workspace/scripts run typecheck": "PASS",
+    "pnpm --filter @workspace/scripts exec tsx --test ./src/startup-migration-crosswalk.test.ts ./src/production-startup-ddl-inventory.test.ts ../artifacts/api-server/src/lib/startup-ddl-safety.test.ts": "PASS 34/34"
+  },
+  "priorBroaderValidation": {
     "pnpm --filter @workspace/scripts run typecheck": "PASS",
     "pnpm --filter @workspace/scripts exec tsx --test ./src/startup-migration-crosswalk.test.ts ./src/production-startup-ddl-inventory.test.ts ../artifacts/api-server/src/lib/startup-ddl-safety.test.ts ./src/migrations/migrations.test.ts ./src/migrations/preflight.test.ts ./src/migration-contract/migration-contract.test.ts ./src/migration-contract/ci-migration-contract.test.ts": "PASS 110/110"
   },

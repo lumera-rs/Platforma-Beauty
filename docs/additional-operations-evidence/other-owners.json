@@ -4,7 +4,8 @@
     "recordCount": 16,
     "allRecordsProvisional": true,
     "productionDatabaseInspected": false,
-    "crosswalkPath": "/tmp/additional-evidence-crosswalk.json",
+    "crosswalkCommand": "pnpm --filter @workspace/scripts exec tsx ./src/startup-migration-crosswalk.ts --json",
+    "sourceCommit": "6e7ac9411eb454b4aeddccd46444df1aa7e120bc",
     "canonicalMigration": {
       "path": "lib/db/migrations/000001_canonical_schema/migration.sql",
       "sha256": "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60"
@@ -15,7 +16,7 @@
       "id": "booking-command/transaction-and-advisory-lock",
       "owner": "ensureBookingCommandSchema",
       "sourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
-      "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-38",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-39",
       "sourceEvidence": [
         {"path": "artifacts/api-server/src/lib/booking-command-schema.ts", "startLine": 9, "endLine": 12, "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let locked = false; try { await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client);\n    await client.query(\"SELECT pg_advisory_lock($1)\", [LOCK_KEY]); locked = true;\n    await client.query(`"},
         {"path": "artifacts/api-server/src/lib/booking-command-schema.ts", "startLine": 34, "endLine": 38, "sqlOrCode": "    await client.query(\"commit\"); } catch (error) { await client.query(\"rollback\").catch(() => {}); throw error; } finally {\n    try {\n      if (locked) await client.query(\"SELECT pg_advisory_unlock($1)\", [LOCK_KEY]).catch(() => {});\n    } finally {\n      client.release();\n    }"}
@@ -32,7 +33,7 @@
       "id": "business-growth/advisory-lock-and-session-state",
       "owner": "ensureBusinessGrowthSchema",
       "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5153-5160,5190-5204",
-      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5197,5201-5204",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5198,5201-5205",
       "sourceEvidence": [
         {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5002, "endLine": 5010, "sqlOrCode": "  await client.query(\n    \"SELECT pg_advisory_lock($1)\",\n    [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],\n  );\n  locked = true;\n  let rolloutError: unknown; try {\n    // Constrain unqualified name resolution inside DO blocks to the target schema.\n    await client.query(`SET search_path TO ${quoted}`);"},
         {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5150, "endLine": 5160, "sqlOrCode": "  } catch (error) { rolloutError = error; throw error; } finally {\n    // Custom GUCs are session scoped. Always close the narrowly-scoped\n    // migration bypass before this client can return to the pool.\n    await client.query(\"ROLLBACK\").catch(() => {});\n    let cleanupError: unknown; try { await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`); } catch (error) { cleanupError = error; }\n    if (locked) await client.query(\n      \"SELECT pg_advisory_unlock($1)\",\n      [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],\n    ).catch((error) => { cleanupError ??= error; });\n    if (cleanupError && !rolloutError) throw cleanupError;\n  }"},
@@ -153,7 +154,7 @@
       "effects": "Operational transaction, timeout and advisory-lock scaffolding.",
       "repeatSafety": "UNKNOWN. The code proves conditional unlock/client release but swallows rollback/unlock failure and does not prove downstream actions repeat-safe.",
       "stateDependence": "Client/lock/transaction availability and preceding-owner success determine execution; production state uninspected.",
-      "canonicalComparison": "Canonical contains final bundle objects but no this transaction, timeout, advisory-lock, or pooled-client lifecycle. Runtime behavior is absent.",
+      "canonicalComparison": "Canonical contains final bundle objects, but the three precise whole-file searches documented in context.md return no top-level transaction command, advisory-lock call, or SET LOCAL timeout protocol. Runtime behavior is absent.",
       "evidenceAssessment": "UNRESOLVED — provisional only.",
       "uncertainties": ["Why must this share Business Growth lock?", "Which migration transaction boundary safely pairs updates/constraints?"]
     },
@@ -161,7 +162,7 @@
       "id": "marketplace/advisory-lock-and-session-state",
       "owner": "ensureMarketplacePerformanceIndexes",
       "sourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:18-20,39-44",
-      "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-46",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-47",
       "sourceEvidence": [
         {"path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts", "startLine": 16, "endLine": 20, "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;\n  let locked = false; let startupError: unknown;\n  try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);\n    await client.query(\"select pg_advisory_lock($1)\", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);\n    locked = true;"},
         {"path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts", "startLine": 39, "endLine": 46, "sqlOrCode": "  } catch (error) { startupError = error; throw error; } finally {\n    let cleanupError: unknown;\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock($1)\", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });\n    }\n    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });\n    client.release();\n    if (cleanupError && !startupError) throw cleanupError;\n  }"}
@@ -226,7 +227,7 @@
       "id": "shipping/duplicate-row-cleanup",
       "owner": "ensureShippingConfigSchema",
       "sourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,54-65",
-      "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,47-65",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-36,47-66",
       "sourceEvidence": [
         {"path": "artifacts/api-server/src/lib/shipping-config.ts", "startLine": 24, "endLine": 35, "sqlOrCode": "    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound both advisory-lock and table-lock waits.\n    await runShippingConfigSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY])\n        .catch(() => {});\n    }"},
         {"path": "artifacts/api-server/src/lib/shipping-config.ts", "startLine": 47, "endLine": 65, "sqlOrCode": "export async function runShippingConfigSchemaDdl(\n  client: PoolClient,\n  schemaName: string,\n): Promise<void> {\n  const schema = quoteSchema(schemaName);\n  // Index names are scoped by the current schema in PostgreSQL; keep the\n  // table qualified while making the target schema local to this transaction.\n  await client.query(`set local search_path to ${schema}`);\n  await client.query(`lock table ${schema}.shipping_rules in share row exclusive mode`);\n  await client.query(`\n    delete from ${schema}.shipping_rules\n    where id <> (\n      select id from ${schema}.shipping_rules order by id asc limit 1\n    )\n  `);\n  await client.query(`\n    create unique index if not exists ${SHIPPING_RULES_INDEX_NAME}\n    on ${schema}.shipping_rules ((true))\n  `);\n}"}
@@ -259,7 +260,7 @@
       "id": "web-push/transaction-and-advisory-lock",
       "owner": "ensureWebPushSchema",
       "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
-      "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-24",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-25",
       "sourceEvidence": [
         {"path": "artifacts/api-server/src/lib/web-push-schema.ts", "startLine": 10, "endLine": 24, "sqlOrCode": "export async function ensureWebPushSchema(schemaName = \"public\", poolOverride?: StartupDdlPool): Promise<void> {\n  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let locked = false;\n  try {\n    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound startup lock and schema work.\n    await runWebPushSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) await client.query(\"select pg_advisory_unlock(hashtext($1))\", [LOCK_KEY]).catch(() => {});\n    client.release();\n  }"}
       ],

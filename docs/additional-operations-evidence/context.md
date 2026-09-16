@@ -2,7 +2,7 @@
 
 ## Evidence read
 
-* Current crosswalk: `/tmp/additional-evidence-crosswalk.json`.
+* Current crosswalk: `pnpm --filter @workspace/scripts exec tsx ./src/startup-migration-crosswalk.ts --json`, pinned to source commit `6e7ac9411eb454b4aeddccd46444df1aa7e120bc`.
 * Historical inventory: `scripts/src/production-startup-ddl-baseline.json`.
 * Immutable canonical baseline:
   `lib/db/migrations/000001_canonical_schema/migration.sql` (19,416 lines;
@@ -59,6 +59,28 @@ run `drizzle-kit push` and present this as additive rollout work.
 | Web Push | Begins transaction → local timeouts → `hashtext(LOCK_KEY)` lock → ordered inner routine → commits; catch rollback; finally unlock/releases (`web-push-schema.ts:10-24,30-88`). |
 | Booking Command | Begins transaction → local timeouts → numeric advisory lock → schema SQL → commits; catch rollback; finally unlock/releases (`booking-command-schema.ts:9-38`). |
 | Education Bundle | Begins transaction → local timeouts → **Business Growth's shared numeric advisory lock** → schema/data SQL → commits; catch rollback; finally unlock/releases (`education-bundle-purchase-schema.ts:6-85`). |
+
+Canonical absence checks for the two financial/attribution owners were
+performed against the canonical migration using precise protocol signatures,
+not a generic `BEGIN` search:
+
+Each check uses these executable whole-file commands, all of which return no
+matches: `rg -n -i '^(BEGIN|COMMIT|ROLLBACK);?$' lib/db/migrations/000001_canonical_schema/migration.sql`;
+`rg -n -F -e 'pg_advisory_lock(' -e 'pg_advisory_unlock(' lib/db/migrations/000001_canonical_schema/migration.sql`;
+and `rg -n -i '^[[:space:]]*SET[[:space:]]+LOCAL[[:space:]]+(lock_timeout|statement_timeout)' lib/db/migrations/000001_canonical_schema/migration.sql`.
+
+- Education Bundle: no `await client.query("begin")`/`"commit"` lifecycle,
+  no `SELECT pg_advisory_lock($1)` or matching unlock, and no
+  `set_config(..., 'statement_timeout'/'lock_timeout', true)` transaction-local
+  timeout sequence in `000001_canonical_schema/migration.sql`.
+- Referral: no `await client.query("begin")`/`"commit"` lifecycle, no
+  `SELECT pg_advisory_lock($1)` or matching unlock, and no
+  `SET LOCAL statement_timeout` / `SET LOCAL lock_timeout` sequence in the
+  canonical migration.
+
+These are exact absence searches for transaction, advisory-lock, and local
+timeout patterns; an unrelated SQL `BEGIN` token is not evidence of runtime
+protocol parity.
 
 The acquisition/release code is concrete evidence of ordering, but it is not
 evidence that every cleanup succeeds: several rollback/unlock/restore calls

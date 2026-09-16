@@ -1,0 +1,79 @@
+# PHASE 5B-4 — TASK 2A
+
+## Evidence normalization and DDL resolution methodology
+
+The independent Claude Code review APPROVED Phase 5B-4 Task 1 with four LOW documentation findings.
+
+Implement ONLY Task 2A. Do not automatically continue to Task 2B.
+
+### PART A — Correct the four documentation findings
+
+Work in docs/additional-operations-evidence/.
+
+1. Normalize all 110 JSON evidence records to one consistent schema. Preserve all existing evidence and uncertainty statements.
+
+2. Add explicit status and category fields to every record. Derive them from the authoritative crosswalk. All 110 statuses must remain UNRESOLVED.
+
+3. Add precise canonical migration references to the education-bundle and referral transaction/advisory-lock records. Where a claim concerns the absence of an operation, document a reproducible whole-file search rather than inventing a line citation.
+
+4. Replace the ephemeral /tmp/additional-evidence-crosswalk.json provenance reference with a reproducible repository command and the pinned source commit.
+
+Add automated checks that detect missing fields, incorrect categories, inconsistent statuses, broken source references and missing records.
+
+### PART B — Design the DDL resolution methodology
+
+Create a separate reviewable methodology document.
+
+Define exactly what evidence would be required before classifying any of the 1,435 DDL mappings as:
+
+* CANONICAL_BASELINE
+* FUTURE_MIGRATION_REQUIRED
+* RETIRED_HISTORICAL
+
+For each classification, specify:
+
+* Required source evidence.
+* Required canonical SQL evidence.
+* Required semantic comparison.
+* Existing-data and production-state dependencies.
+* Ordering and dependency requirements.
+* Required independent review.
+* Conditions that force the mapping to remain UNRESOLVED.
+
+Distinguish fresh-database equivalence from existing-production-database safety.
+
+Do not treat matching SQL text, matching object names, IF NOT EXISTS or successful tests as sufficient proof of production safety.
+
+Define a proposed review sequence that prioritizes dependencies and high-risk operations.
+
+### PART C — Verification
+
+Verify that:
+
+* All 110 additional operations remain UNRESOLVED.
+* All 1,435 DDL mappings remain UNRESOLVED.
+* The historical inventory remains 1,459 occurrences.
+* All eight startup owners and their source SHA-256 pins remain unchanged.
+* Canonical migration 000001 remains byte-identical.
+
+Run relevant tests, documentation validation and TypeScript typecheck.
+
+Report exact commands, results, changed files, HEAD and Git status.
+
+### STRICT BOUNDARIES
+
+Documentation and documentation-validation changes only.
+
+Do not modify startup execution, production code, crosswalk classification logic, migration runner, canonical baseline or deployment configuration.
+
+Do not resolve any mapping.
+
+Do not implement forward migrations.
+
+Do not access production or run database operations.
+
+Do not Publish, Deploy, push, merge, reset or rebase.
+
+Do not automatically update startup source checksum pins.
+
+Stop after Task 2A and provide the complete documentation and verification report for independent Claude Code review.

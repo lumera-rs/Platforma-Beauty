@@ -4,6 +4,10 @@
 
 This **read-only report assembly** is for declared baseline HEAD `6e7ac9411eb454b4aeddccd46444df1aa7e120bc` and canonical `lib/db/migrations/000001_canonical_schema/migration.sql` SHA-256 `643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60`. PASS means the final report evidence reconciles to the supplied crosswalk and validates against current source slices. It is not approval to execute, replay, move, retire, or compensate any operation; it validates report evidence, not production state.
 
+Task 2A was reviewed from working HEAD `0f2e39b75f3014edd8f92f83afaa651c8ddf1743`; this is distinct from the pinned evidence-source commit above. `pnpm --filter @workspace/scripts run test:additional-operations-evidence` passed 6/6, `pnpm --filter @workspace/scripts run typecheck` passed, and the targeted startup crosswalk/inventory/safety command passed 34/34. The working tree contains only Task 2A documentation/validation edits plus the supplied untracked instruction file; no commit, migration, runtime, database, or deployment operation was performed.
+
+The canonical normalized 110-record set is `complete-evidence.json`. The component JSON files (`bg-data.json`, `bg-functions.json`, and `other-owners.json`) are source workbooks used to assemble and inspect evidence; they are not alternate canonical record sets. The literal census is reproduced and checked by `pnpm --filter @workspace/scripts run test:additional-operations-evidence`.
+
 ## Completeness and reconciliation
 
 | Measure | Result |
@@ -35,10 +39,34 @@ Canonical `000001` is a fresh schema baseline, not proof that historic backfills
 5. **Locks/lifecycle:** establish lock coordination and error/pool/timeout/search-path/GUC/rollback behavior under partial autocommit and concurrent starts.
 6. **Production unknowns:** establish actual marker/ledger versions, schema/data state, deployment path, and operational ownership.
 
+## Reproducible provenance
+
+The authoritative crosswalk is regenerated from repository sources in a
+temporary archive of the pinned commit (the working tree is never used for
+execution) with:
+
+```sh
+set -eu
+archive="$(mktemp -d)"
+git archive --format=tar 6e7ac9411eb454b4aeddccd46444df1aa7e120bc |
+  tar -xf - -C "$archive"
+(
+  cd "$archive"
+  corepack pnpm install --frozen-lockfile
+  corepack pnpm --filter @workspace/scripts exec tsx \
+    ./src/startup-migration-crosswalk.ts --json
+)
+rm -rf "$archive"
+```
+
+The pinned source commit is `6e7ac9411eb454b4aeddccd46444df1aa7e120bc`.
+The normalized record contract is checked by
+`scripts/src/additional-operations-evidence.test.ts`.
+
 ## Artifacts and integrity
 
 - [complete-report.md](complete-report.md) concatenates the final three source markdown reports and full normalized SQL/code evidence.
-- [complete-evidence.json](complete-evidence.json) is the 110-record normalized array, retaining every rich source record verbatim.
+- [complete-evidence.json](complete-evidence.json) is the complete 110-record normalized array, retaining every rich source record verbatim and carrying the required top-level contract fields.
 - [verification.json](verification.json) contains PASS reconciliation, independent evidence/census counts, supplied command results, limitations, and SHA-256 hashes.
 
 The following results were supplied by the main agent and **not rerun** for this assembly:
