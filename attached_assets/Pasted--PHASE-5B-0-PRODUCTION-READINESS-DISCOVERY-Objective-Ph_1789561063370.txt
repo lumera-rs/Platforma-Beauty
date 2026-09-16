@@ -1,0 +1,137 @@
+# PHASE 5B-0 — PRODUCTION READINESS DISCOVERY
+
+## Objective
+
+Phase 5A has been independently approved.
+
+Prepare an evidence-based operational readiness report for Phase 5B.
+
+**THIS IS DISCOVERY ONLY. NO PRODUCTION DATABASE CONNECTION OR MUTATION IS AUTHORIZED.**
+
+### 1. Git verification
+
+Expected branch:
+
+`fix-production-demo-seed-boundary`
+
+Expected HEAD:
+
+`8c3d93ea5818e8a8c58f932e1e61253bfb04ead1`
+
+Verify actual HEAD, branch and working tree before proceeding.
+
+Do not perform Git history operations.
+
+### 2. Production database identity
+
+Using repository configuration and safe Replit deployment metadata only, determine:
+
+* How the production database is selected.
+* Whether production and development databases are isolated.
+* Whether an unambiguous production database identity can be established without exposing credentials.
+* Whether a dedicated read-only database role is available.
+
+Do not print, copy, reveal or connect using DATABASE_URL.
+
+If identity cannot be established safely, report UNKNOWN.
+
+### 3. PostgreSQL version
+
+Determine whether the production PostgreSQL version can be verified from safe provider metadata without connecting to the database.
+
+The approved baseline requires PostgreSQL 16.10.
+
+If it cannot be verified without a connection, report UNVERIFIED.
+
+Do not infer the production version from the development database.
+
+### 4. Backup and restore
+
+Investigate account-specific capabilities through safe, read-only Replit metadata, where available.
+
+Determine:
+
+* Whether production backups are enabled.
+* Actual retention period.
+* Available restore-point information.
+* Whether restoration creates an isolated database or replaces production.
+* Whether a restore test can be performed without touching production.
+
+Distinguish verified account-specific facts from general provider documentation.
+
+Do not initiate backup, restore, database export or snapshot creation.
+
+### 5. Autoscale and deployment
+
+Inspect safe deployment configuration and metadata.
+
+Determine:
+
+* Configured deployment type.
+* Actual production start command, if available.
+* Maximum concurrent instances, if available.
+* Whether revisions can overlap.
+* Whether all application instances can be reliably stopped during maintenance.
+* Whether Publish can implicitly modify production schema.
+
+Mark unverified facts UNKNOWN.
+
+Do not modify deployment settings or stop instances.
+
+### 6. Operational procedure
+
+Prepare a step-by-step plan for a future authorized operator to:
+
+1. Identify the correct production database.
+2. Confirm PostgreSQL version.
+3. Establish a verified restore point.
+4. Restore-test it in isolation.
+5. Establish exclusive schema control.
+6. Execute read-only production preflight.
+7. Independently review the evidence.
+
+Do not execute these steps.
+
+### 7. Safety boundaries
+
+Forbidden:
+
+* Production database connection.
+* Production SQL queries.
+* Migration apply or adoption.
+* Database schema changes.
+* Creating or restoring backups.
+* Stopping production instances.
+* Publish or Deploy.
+* Git push, merge, reset or rebase.
+* Changing application code or configuration.
+* Changing CI workflows.
+
+If a requested fact requires one of these actions, mark it BLOCKED and explain the required authorization.
+
+### 8. Final report
+
+Provide a table with:
+
+| Requirement | Status | Evidence | Remaining action |
+| ----------- | ------ | -------- | ---------------- |
+
+Use statuses:
+
+VERIFIED / UNVERIFIED / BLOCKED / NOT APPLICABLE
+
+Include an explicit list of unresolved Phase 5B prerequisites.
+
+At the end, independently verify actual Git HEAD and working-tree status.
+
+Final decision must be exactly one:
+
+**DISCOVERY COMPLETE — OPERATIONAL BLOCKERS REMAIN**
+
+or
+
+**DISCOVERY INCOMPLETE**
+
+Do not claim Phase 5B readiness merely because discovery is complete.
+
+STOP.
