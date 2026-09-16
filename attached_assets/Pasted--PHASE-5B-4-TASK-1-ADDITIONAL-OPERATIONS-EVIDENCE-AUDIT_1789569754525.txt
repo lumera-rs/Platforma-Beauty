@@ -1,0 +1,101 @@
+# PHASE 5B-4 — TASK 1: ADDITIONAL OPERATIONS EVIDENCE AUDIT
+
+You are working on the LUMERA platform.
+
+Phase 5B-3 and Phase 5B-3H have passed independent Claude Code reviews.
+
+Your task is to perform a READ-ONLY evidence audit of the 110 additional startup operations before any mapping resolution or startup-DDL removal.
+
+## 1. Establish the exact baseline
+
+Read the current crosswalk, historical DDL inventory, canonical migration 000001, migration runner, and all eight startup schema owners.
+
+Verify independently:
+
+* 8 startup owners.
+* 1,459 historical DDL occurrences.
+* 1,435 unique DDL mappings.
+* 110 additional operations.
+* All mappings and additional operations currently UNRESOLVED.
+* Canonical baseline SHA-256 remains unchanged.
+
+Do not modify the canonical baseline.
+
+## 2. Audit all 110 additional operations
+
+For every operation, document:
+
+* Stable operation ID and exact source location.
+* Full executable SQL or relevant source code.
+* Execution order and dependencies.
+* Whether it changes existing data, creates or replaces functions, changes session state, or performs another operational action.
+* Whether it runs on every startup or only conditionally.
+* Whether it is safe to repeat, with concrete evidence.
+* Whether it depends on the current production database state.
+* Whether its behavior is represented in canonical migration 000001.
+* Evidence supporting each conclusion.
+* Remaining uncertainties and required verification.
+
+Pay particular attention to data backfills, role changes, payment obligations, function replacements and transaction or advisory-lock behavior.
+
+Do not infer safety merely because an operation uses IF EXISTS, IF NOT EXISTS or ON CONFLICT.
+
+## 3. Compare against canonical migration
+
+Compare actual SQL semantics, not just object names or text similarity.
+
+Distinguish:
+
+* Schema definition.
+* Historical data transformation.
+* Current-data reconciliation.
+* Runtime operational behavior.
+* Unknown or unverified behavior.
+
+A schema object existing in migration 000001 is not proof that a data backfill is unnecessary.
+
+Do not mark an operation resolved without independently verifiable evidence.
+
+## 4. Produce an evidence report
+
+Create a separate, reviewable report covering all 110 operations.
+
+Include a summary grouped by startup owner and operation category, plus an individual evidence record for every operation.
+
+For each record, give a provisional evidence assessment and explain what remains necessary before a future resolution decision.
+
+Preserve UNRESOLVED status for every operation in the authoritative crosswalk.
+
+Do not implement a forward migration.
+
+Do not remove or disable startup operations.
+
+## 5. Verify completeness
+
+Independently reconcile the report against the current source and crosswalk.
+
+Fail if any operation is missing, duplicated or assigned to the wrong owner.
+
+Check that the 103 executable SQL literals, including 70 data mutations and 33 function replacements, remain represented.
+
+Run relevant static tests and typecheck.
+
+Report exact commands, results, changed files, HEAD and Git status.
+
+## STRICT SAFETY BOUNDARY
+
+Do not connect to production or inspect production data.
+
+Do not run migrations, adoption or schema reconciliation.
+
+Do not change startup execution, migration runner, deployment configuration or canonical migration 000001.
+
+Do not Publish, Deploy, push, merge, reset or rebase.
+
+Do not automatically update the eight startup-module SHA-256 pins.
+
+If evidence is insufficient, record UNKNOWN and explain the missing evidence.
+
+Stop after Task 1. Do not start DDL mapping resolution or Task 2 automatically.
+
+The final output must include the complete evidence report and a clear list of unresolved questions for independent Claude Code review.

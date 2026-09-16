@@ -1,0 +1,44 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "ug5_ouqTj27YiPTgCReNP"
+uri = "file://docs/additional-operations-evidence/complete-report.md"
+type = "text"
+title = "Kompletan evidence audit — svih 110 operacija"
+description = "Pojedinačni nalazi, izvorni SQL/kod, uslovi izvršavanja, canonical poređenja i otvorena pitanja. Sve ostaje UNRESOLVED."
+logical_id = "86196dcd-0623-4556-a87f-3058ff79eb07"
+content_hash = "sha256:de65bdbc9d310b3aac7b2cec87b1e7f41014e3cfdedf11b39a641f57a2203577"
+size = 869535
+mtime_ms = 1789571222141
+storage_uri = "gcs://replit-rams-assets-archer/rams/assets/repl:6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a/86196dcd-0623-4556-a87f-3058ff79eb07/af4543b2-0597-49f9-ac98-b7ed7620b151"
+storage_version_token = "1789571275391492"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "dKpSySnH9KBtRJXf_phQf"
+uri = "file://docs/additional-operations-evidence/complete-evidence.json"
+type = "unspecified"
+title = "Mašinski čitljivi dokazi — 110 zapisa"
+description = "Potpuni source-backed zapisi za nezavisni Claude Code review."
+logical_id = "44cd786c-375e-41bb-a4f9-108d3f4ff7a5"
+content_hash = "sha256:2dc7b061a33b4ae888bc213a452b0adaaed2f96066be001d00dacab77b7e4ebe"
+size = 569272
+mtime_ms = 1789571210569
+storage_uri = "gcs://replit-rams-assets-archer/rams/assets/repl:6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a/44cd786c-375e-41bb-a4f9-108d3f4ff7a5/16bd7093-e05d-4a24-97d4-6f7064869c81"
+storage_version_token = "1789571276167654"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "RnXrN8PTs4EWG8ZRzfUT3"
+uri = "file://docs/additional-operations-evidence/verification.json"
+type = "unspecified"
+title = "Provera potpunosti i integriteta"
+description = "Tačno poklapanje 110 zapisa, provera 122 izvorna dokaza i hash-evi izveštaja."
+logical_id = "a15f97b9-b67a-49c9-b5f4-f9b3ea66f715"
+content_hash = "sha256:c3b5bb8115ffdbd66b7c90d189f6144c8878573fc8f73e567094f4d91e1357da"
+size = 4641
+mtime_ms = 1789571235585
+storage_uri = "gcs://replit-rams-assets-archer/rams/assets/repl:6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a/a15f97b9-b67a-49c9-b5f4-f9b3ea66f715/d996bf9f-5ca6-4b89-9278-00289df7664d"
+storage_version_token = "1789571276937380"
+content_type = "application/octet-stream"
