@@ -1,0 +1,104 @@
+# PHASE 5B-1 — SAFE MAINTENANCE ALTERNATIVES
+
+## Objective
+
+Investigate alternatives for safely performing a future production baseline adoption without relying on undocumented Replit Pause behavior.
+
+**READ-ONLY INVESTIGATION ONLY. NO IMPLEMENTATION.**
+
+Phase 5A is approved. Phase 5B-0 discovery is complete.
+
+Known facts:
+
+* Replit Autoscale, maximum 3 machines.
+* Production is publicly accessible.
+* Pause exists, but exclusive schema control is unverified.
+* Production API still executes 8 startup-DDL owners.
+* Scheduled backups were enabled recently; no completed backup was confirmed.
+* Point-in-time recovery is enabled for 7 days.
+
+## 1. Investigate exclusive-control alternatives
+
+Evaluate these possible approaches:
+
+A. Replit Pause combined with verified instance shutdown and traffic blocking.
+
+B. Provider-supported deployment suspension or equivalent maintenance control.
+
+C. Temporary maintenance deployment or traffic-routing strategy.
+
+D. Database-level locking or restricted schema-write permissions.
+
+E. A separate operator-controlled maintenance environment.
+
+For each approach, determine:
+
+* What it guarantees.
+* What it does not guarantee.
+* Whether it requires code changes.
+* Whether it risks triggering startup DDL.
+* Whether it can prevent concurrent schema modifications.
+* What evidence would be needed before execution.
+
+Do not assume that an advisory lock blocks unrelated DDL.
+
+Do not assume Pause terminates every process.
+
+## 2. Backup and isolated restore
+
+Investigate how to establish a restorable backup without overwriting production.
+
+Determine whether a provider-supported clone, export or isolated restore procedure exists.
+
+Do not perform any backup, export, restore or database connection.
+
+## 3. Startup-DDL implications
+
+Trace how the existing eight startup-DDL owners interact with each proposed maintenance strategy.
+
+Identify which approaches could allow an old or new API instance to execute schema modifications during adoption.
+
+Do not modify or remove startup DDL.
+
+## 4. Recommend an operational design
+
+Provide a technically justified procedure that:
+
+* Prevents concurrent schema changes.
+* Prevents unexpected application startup.
+* Preserves production data.
+* Includes a tested rollback route.
+* Requires explicit authorization before execution.
+
+If no approach can be proven safe, report that clearly.
+
+## 5. Forbidden actions
+
+Do not:
+
+* Connect to production.
+* Execute production SQL.
+* Run preflight, adoption or migrations.
+* Pause or shut down the application.
+* Change deployment settings.
+* Modify code or configuration.
+* Publish or Deploy.
+* Perform Git history operations.
+
+## 6. Final report
+
+Provide a comparison of the alternatives, with verified evidence and unresolved assumptions.
+
+Distinguish documented guarantees from engineering proposals.
+
+End with exactly one decision:
+
+SAFE MAINTENANCE DESIGN IDENTIFIED — EXECUTION NOT AUTHORIZED
+
+or
+
+NO VERIFIED SAFE MAINTENANCE DESIGN
+
+Do not claim Phase 5B is ready merely because a design has been proposed.
+
+STOP.
