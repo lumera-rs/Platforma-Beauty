@@ -12,6 +12,8 @@ import {
   ownerCrosswalkReport,
   PINNED_ADDITIONAL_OPERATION_COVERAGE,
   PINNED_EXECUTABLE_STARTUP_SQL_LITERALS,
+  PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS,
+  startupExecutableSqlClassification,
   startupSqlLiteralCategory,
   validateStartupMigrationCrosswalk,
   type StartupMigrationCrosswalk,
@@ -133,6 +135,66 @@ test("pins every executable startup SQL literal, including the sixteen formerly 
   assert.equal(startupSqlLiteralCategory("UPDATE public.users u SET role = 'x'"), "data-backfill");
   assert.equal(startupSqlLiteralCategory("UPDATE public.users AS u SET role = 'x'"), "data-backfill");
   assert.equal(startupSqlLiteralCategory("CREATE OR REPLACE FUNCTION public.f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$"), "function-replacement");
+});
+
+test("fails closed for comment-prefixed, nested, and count-preserving unclassified startup SQL", () => {
+  const shippingPath = "artifacts/api-server/src/lib/shipping-config.ts";
+  const shippingSource = readFileSync(path.join(ROOT, shippingPath), "utf8");
+  const crosswalk = repositoryCrosswalk();
+  const bypasses = [
+    "/* outer /* nested */ comment */ TRUNCATE public.users",
+    "-- migration shortcut\nMERGE INTO public.users u USING public.staged s ON (u.id = s.id) WHEN MATCHED THEN UPDATE SET role = s.role",
+    "COPY public.users FROM '/tmp/users.csv'",
+    "GRANT SELECT ON public.users TO application",
+    "REVOKE SELECT ON public.users FROM application",
+    "CREATE VIEW public.active_users AS SELECT * FROM public.users",
+    "CREATE SEQUENCE public.order_number_seq",
+    "CREATE POLICY tenant_isolation ON public.users USING (true)",
+    "ALTER TABLE public.users ENABLE ROW LEVEL SECURITY",
+    "COMMENT ON TABLE public.users IS 'runtime change'",
+    "REFRESH MATERIALIZED VIEW public.user_rollup",
+    "CREATE PROCEDURE public.repair_users() LANGUAGE sql AS $$ UPDATE public.users SET role = 'x' $$",
+    "VACUUM public.users",
+  ];
+  for (const sql of bypasses) {
+    assert.equal(
+      startupExecutableSqlClassification(sql),
+      "unknown-executable-sql",
+      `expected fail-closed classification for ${sql}`,
+    );
+    assert.throws(
+      () => validateStartupMigrationCrosswalk(crosswalk, baseline, {
+        sourceOverrides: new Map([[
+          shippingPath,
+          `${shippingSource}\nvoid client.query(${JSON.stringify(sql)});`,
+        ]]),
+      }),
+      /Unclassified executable startup SQL/u,
+      `expected virtual-source rejection for ${sql}`,
+    );
+  }
+  assert.equal(
+    startupExecutableSqlClassification(
+      "CREATE OR REPLACE FUNCTION public.runtime_only() RETURNS void LANGUAGE plpgsql AS $$ BEGIN TRUNCATE public.users; END $$",
+    ),
+    "function-replacement",
+    "function-body SQL is not startup execution",
+  );
+
+  const countPreservingBypass = `${shippingSource
+    .replace("delete from ${schema}.shipping_rules", "TRUNCATE ${schema}.shipping_rules")}
+\nvoid client.query(\`UPDATE \${schema}.shipping_rules SET id = id\`);`;
+  assert.throws(
+    () => validateStartupMigrationCrosswalk(crosswalk, baseline, {
+      sourceOverrides: new Map([[shippingPath, countPreservingBypass]]),
+    }),
+    /Unclassified executable startup SQL/u,
+  );
+  assert.equal(
+    Object.keys(PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS).length,
+    8,
+    "every startup owner remains independently source-pinned",
+  );
 });
 
 test("derives trigger parents from executable source or marks them dynamic", () => {
@@ -333,31 +395,25 @@ test("rejects every unresolved-classification and canonical-evidence bypass", ()
     /Canonical evidence mismatch/u,
   );
 
-  assert.throws(
-    () => validateStartupMigrationCrosswalk({
-      ...crosswalk,
-      mappings: [{
-        ...first,
-        dependencies: [],
-        preconditions: [],
-        postconditions: [],
-        rollbackConsiderations: [],
-        resolutionReason: "",
-      }, ...crosswalk.mappings.slice(1)],
-    }, baseline),
-    /Incomplete mapping review fields/u,
-  );
-
-  assert.throws(
-    () => validateStartupMigrationCrosswalk({
-      ...crosswalk,
-      mappings: [{
-        ...first,
-        existingDataEffect: "read-only-observation",
-      }, ...crosswalk.mappings.slice(1)],
-    }, baseline),
-    /Existing-data effect mismatch/u,
-  );
+  for (const narrativeForgery of [
+    { existingDataEffect: "read-only-observation" as const },
+    { dependencies: [] as readonly string[] },
+    { preconditions: [] as readonly string[] },
+    { postconditions: [] as readonly string[] },
+    { rollbackConsiderations: [] as readonly string[] },
+    { resolutionReason: "fabricated narrative" },
+  ]) {
+    assert.throws(
+      () => validateStartupMigrationCrosswalk({
+        ...crosswalk,
+        mappings: [{
+          ...first,
+          ...narrativeForgery,
+        }, ...crosswalk.mappings.slice(1)],
+      }, baseline),
+      /Mapping narrative mismatch/u,
+    );
+  }
 });
 
 test("rejects reordered mappings, reordered occurrences, and fabricated source positions", () => {

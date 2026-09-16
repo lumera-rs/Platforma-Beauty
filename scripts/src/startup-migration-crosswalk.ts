@@ -146,6 +146,23 @@ export const PINNED_EXECUTABLE_STARTUP_SQL_LITERALS = Object.freeze({
   }),
 });
 
+/**
+ * The complete startup-owner sources are independently pinned as a last line
+ * of defence.  A new query cannot become invisible merely because its verb is
+ * not yet understood by the SQL classifier: it changes this reviewed source
+ * census and validation fails until the review pins are deliberately updated.
+ */
+export const PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS: Readonly<Record<string, string>> = Object.freeze({
+  "artifacts/api-server/src/lib/business-growth-schema.ts": "000e7e2b564e450c6a16808bab372871c721d5faf9cd50d702cd76c90e573b30",
+  "artifacts/api-server/src/lib/media-schema.ts": "313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0",
+  "artifacts/api-server/src/lib/shipping-config.ts": "65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b",
+  "artifacts/api-server/src/lib/marketplace-performance-schema.ts": "892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b",
+  "artifacts/api-server/src/lib/referral-schema.ts": "9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5",
+  "artifacts/api-server/src/lib/web-push-schema.ts": "5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051",
+  "artifacts/api-server/src/lib/booking-command-schema.ts": "c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b",
+  "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts": "53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017",
+});
+
 /** Exact executable-literal cardinality represented by each grouped curation. */
 const PINNED_CURATED_LITERAL_COUNTS: Readonly<Record<string, number>> = Object.freeze({
   "business-growth/bundle-payment-backfill": 2,
@@ -358,6 +375,46 @@ function dependenciesFor(identity: ObjectIdentity): string[] {
   const dependencies = [`schema:${identity.schema}`];
   if (identity.parent) dependencies.push(`table:${identity.schema}.${identity.parent}`);
   return dependencies;
+}
+
+/**
+ * Review narrative is derived only from the immutable inventory operation,
+ * executable-source identity, and canonical evidence.  Validators rebuild this
+ * object rather than trusting narrative prose carried by a candidate document.
+ */
+function mappingNarrative(
+  operation: Pick<DdlOperation, "kind">,
+  identity: ObjectIdentity,
+  evidence: CanonicalCandidateEvidence,
+): Pick<
+  StartupMigrationMapping,
+  "existingDataEffect"
+  | "dependencies"
+  | "preconditions"
+  | "postconditions"
+  | "rollbackConsiderations"
+  | "resolutionReason"
+> {
+  return {
+    existingDataEffect: existingDataEffect(operation.kind),
+    dependencies: dependenciesFor(identity),
+    preconditions: [
+      "All referenced parent objects and existing rows satisfy the reviewed operation semantics.",
+      "The operation has been compared with the immutable canonical migration or an approved future migration.",
+    ],
+    postconditions: [
+      `The reviewed ${identity.kind} identity ${identity.schema}.${identity.name} has the approved definition.`,
+      "Existing production data is preserved or changed only by an explicitly reviewed backfill.",
+    ],
+    rollbackConsiderations: [
+      operation.kind.startsWith("drop-")
+        ? "A DROP is not evidence that an object is retired; rollback requires explicit historical proof."
+        : "Application rollback must remain compatible with the resulting catalog and data state.",
+    ],
+    resolutionReason: evidence.evidenceType === "candidate-name-match"
+      ? "Canonical SQL contains the object name, but name presence does not prove definition or transition-semantic equivalence."
+      : "No exact object-name candidate was found in immutable 000001; no future migration or retirement is authorized by this task.",
+  };
 }
 
 function canonicalEvidence(
@@ -836,7 +893,169 @@ interface ExecutableStartupSqlLiteral {
   readonly executionOrder: number;
 }
 
+export type StartupExecutableSqlClassification =
+  | "inventory-ddl"
+  | "data-backfill"
+  | "function-replacement"
+  | "operational-scaffolding"
+  | "unknown-executable-sql";
+
+/**
+ * Return SQL keywords outside strings, dollar-quoted function bodies, quoted
+ * identifiers, and line/block comments.  Nested block comments are accepted
+ * because PostgreSQL accepts them.  Only top-level keywords are relevant:
+ * UPDATE inside CREATE FUNCTION ... AS $$ ... $$ is runtime function code,
+ * not a statement executed while startup runs.
+ */
+function topLevelSqlKeywords(text: string): readonly string[] {
+  const keywords: string[] = [];
+  let index = 0;
+  let depth = 0;
+  while (index < text.length) {
+    const current = text[index]!;
+    const next = text[index + 1];
+    if (/\s/u.test(current)) {
+      index += 1;
+    } else if (current === "-" && next === "-") {
+      index = text.indexOf("\n", index + 2);
+      if (index < 0) break;
+    } else if (current === "/" && next === "*") {
+      let commentDepth = 1;
+      index += 2;
+      while (index < text.length && commentDepth > 0) {
+        if (text[index] === "/" && text[index + 1] === "*") {
+          commentDepth += 1;
+          index += 2;
+        } else if (text[index] === "*" && text[index + 1] === "/") {
+          commentDepth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+    } else if (current === "'" || current === "\"") {
+      const quote = current;
+      index += 1;
+      while (index < text.length) {
+        if (text[index] === quote) {
+          index += text[index + 1] === quote ? 2 : 1;
+          if (text[index - 1] === quote && text[index] !== quote) break;
+        } else {
+          index += 1;
+        }
+      }
+    } else if (current === "$") {
+      const delimiter = text.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$/u)?.[0]
+        ?? (next === "$" ? "$$" : undefined);
+      if (delimiter) {
+        const end = text.indexOf(delimiter, index + delimiter.length);
+        index = end < 0 ? text.length : end + delimiter.length;
+      } else {
+        index += 1;
+      }
+    } else if (current === "(") {
+      depth += 1;
+      index += 1;
+    } else if (current === ")") {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+    } else if (/[A-Za-z_]/u.test(current)) {
+      const start = index;
+      index += 1;
+      while (index < text.length && /[A-Za-z0-9_$]/u.test(text[index]!)) index += 1;
+      if (depth === 0) keywords.push(text.slice(start, index).toUpperCase());
+    } else {
+      index += 1;
+    }
+  }
+  return keywords;
+}
+
+function hasKeywordSequence(keywords: readonly string[], ...sequence: readonly string[]): boolean {
+  return sequence.every((keyword, index) => keywords[index] === keyword);
+}
+
+function hasTopLevelKeyword(keywords: readonly string[], keyword: string): boolean {
+  return keywords.includes(keyword);
+}
+
+function hasKeywordSubsequence(keywords: readonly string[], ...sequence: readonly string[]): boolean {
+  return keywords.some((_keyword, start) => sequence.every((item, index) => keywords[start + index] === item));
+}
+
+/**
+ * Classifies complete SQL literals rather than searching arbitrary substrings.
+ * The explicit unknown result is intentionally fail-closed for executable
+ * schema/data verbs that are outside the 1,459-record DDL inventory.
+ */
+export function startupExecutableSqlClassification(
+  text: string,
+): StartupExecutableSqlClassification | undefined {
+  const keywords = topLevelSqlKeywords(text);
+  if (keywords.length === 0) return undefined;
+
+  if (hasKeywordSequence(keywords, "CREATE", "OR", "REPLACE", "FUNCTION")) {
+    return "function-replacement";
+  }
+  if (hasKeywordSequence(keywords, "ALTER", "TABLE")
+    && (hasTopLevelKeyword(keywords, "POLICY")
+      || hasKeywordSubsequence(keywords, "ROW", "LEVEL", "SECURITY"))) {
+    return "unknown-executable-sql";
+  }
+  if (hasKeywordSequence(keywords, "CREATE", "POLICY")
+    || hasKeywordSequence(keywords, "CREATE", "VIEW")
+    || hasKeywordSequence(keywords, "CREATE", "MATERIALIZED", "VIEW")
+    || hasKeywordSequence(keywords, "CREATE", "SEQUENCE")
+    || hasKeywordSequence(keywords, "CREATE", "PROCEDURE")
+    || hasKeywordSequence(keywords, "CREATE", "OR", "REPLACE", "PROCEDURE")
+    || hasKeywordSequence(keywords, "COMMENT", "ON")
+    || hasKeywordSequence(keywords, "REFRESH", "MATERIALIZED", "VIEW")
+    || ["TRUNCATE", "MERGE", "COPY", "GRANT", "REVOKE", "CALL"].includes(keywords[0]!)) {
+    return "unknown-executable-sql";
+  }
+  if (hasTopLevelKeyword(keywords, "INSERT")
+    || hasTopLevelKeyword(keywords, "DELETE")
+    || hasTopLevelKeyword(keywords, "UPDATE")) {
+    return "data-backfill";
+  }
+  if (INVENTORY_OPERATION_PATTERNS.some((pattern) => {
+    pattern.expression.lastIndex = 0;
+    return pattern.expression.test(text);
+  })) {
+    return "inventory-ddl";
+  }
+  if (["BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "SET", "SHOW", "SELECT", "DO", "LOCK"].includes(keywords[0]!)) {
+    return "operational-scaffolding";
+  }
+  return "unknown-executable-sql";
+}
+
+function looksLikeSqlLiteral(text: string): boolean {
+  const first = topLevelSqlKeywords(text)[0];
+  return first !== undefined && [
+    "ALTER", "ANALYZE", "BEGIN", "CALL", "CLUSTER", "COMMENT", "COMMIT", "COPY",
+    "CREATE", "DELETE", "DO", "DROP", "GRANT", "INSERT", "LOCK", "MERGE",
+    "REFRESH", "REINDEX", "RELEASE", "REVOKE", "ROLLBACK", "SAVEPOINT", "SELECT",
+    "SET", "SHOW", "TRUNCATE", "UPDATE", "VACUUM", "WITH",
+  ].includes(first);
+}
+
 export function startupSqlLiteralCategory(
+  text: string,
+): Extract<AdditionalOperationCategory, "data-backfill" | "function-replacement"> | undefined {
+  const classification = startupExecutableSqlClassification(text);
+  return classification === "data-backfill" || classification === "function-replacement"
+    ? classification
+    : undefined;
+}
+
+/**
+ * The reviewed additional-operation census predates top-level lexical
+ * classification and intentionally includes UPDATEs inside DO blocks (which
+ * execute during startup).  Keep that historical, pinned census stable while
+ * the lexer above governs fail-closed recognition of newly introduced verbs.
+ */
+function reviewedStartupSqlLiteralCategory(
   text: string,
 ): Extract<AdditionalOperationCategory, "data-backfill" | "function-replacement"> | undefined {
   const normalized = text.replace(/\s+/gu, " ").trim();
@@ -859,7 +1078,7 @@ function executableStartupSqlLiterals(sourceOverrides?: ReadonlyMap<string, stri
       const text = operationText(node);
       if (text) {
         const normalized = text.replace(/\s+/gu, " ").trim();
-        const category = startupSqlLiteralCategory(text);
+        const category = reviewedStartupSqlLiteralCategory(text);
         if (category) {
           const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
           executionOrder += 1;
@@ -958,6 +1177,37 @@ function assertPinnedExecutableSqlCoverage(
   return literals;
 }
 
+function assertNoUnknownExecutableStartupSql(sourceOverrides?: ReadonlyMap<string, string>): void {
+  for (const [, modulePath] of OWNER_MODULES) {
+    const source = crosswalkSource(modulePath, sourceOverrides);
+    const sourceFile = ts.createSourceFile(modulePath, source, ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node): void => {
+      const text = operationText(node);
+      if (text && looksLikeSqlLiteral(text)
+        && startupExecutableSqlClassification(text) === "unknown-executable-sql") {
+        const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        throw new Error(`Unclassified executable startup SQL at ${modulePath}:${position.line + 1}:${position.character + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+}
+
+function assertPinnedStartupOwnerSourceCoverage(sourceOverrides?: ReadonlyMap<string, string>): void {
+  const modulePaths = OWNER_MODULES.map(([, modulePath]) => modulePath).sort();
+  const pinnedPaths = Object.keys(PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS).sort();
+  if (JSON.stringify(modulePaths) !== JSON.stringify(pinnedPaths)) {
+    throw new Error("Pinned startup owner source coverage does not match owner inventory");
+  }
+  for (const modulePath of modulePaths) {
+    const checksum = createHash("sha256").update(crosswalkSource(modulePath, sourceOverrides)).digest("hex");
+    if (checksum !== PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS[modulePath]) {
+      throw new Error(`Pinned startup owner source checksum mismatch: ${modulePath}`);
+    }
+  }
+}
+
 function assertPinnedAdditionalOperationCoverage(
   operations: readonly AdditionalStartupOperation[],
   literals: readonly ExecutableStartupSqlLiteral[],
@@ -1048,26 +1298,9 @@ export function buildStartupMigrationCrosswalk(
         operationKind: operation.kind,
         summary: operation.summary,
         objectIdentity: identity,
-        existingDataEffect: existingDataEffect(operation.kind),
+        ...mappingNarrative(operation, identity, evidence),
         status: "UNRESOLVED" as const,
         evidence,
-        dependencies: dependenciesFor(identity),
-        preconditions: [
-          "All referenced parent objects and existing rows satisfy the reviewed operation semantics.",
-          "The operation has been compared with the immutable canonical migration or an approved future migration.",
-        ],
-        postconditions: [
-          `The reviewed ${identity.kind} identity ${identity.schema}.${identity.name} has the approved definition.`,
-          "Existing production data is preserved or changed only by an explicitly reviewed backfill.",
-        ],
-        rollbackConsiderations: [
-          operation.kind.startsWith("drop-")
-            ? "A DROP is not evidence that an object is retired; rollback requires explicit historical proof."
-            : "Application rollback must remain compatible with the resulting catalog and data state.",
-        ],
-        resolutionReason: evidence.evidenceType === "candidate-name-match"
-          ? "Canonical SQL contains the object name, but name presence does not prove definition or transition-semantic equivalence."
-          : "No exact object-name candidate was found in immutable 000001; no future migration or retirement is authorized by this task.",
         occurrences,
       } satisfies StartupMigrationMapping;
     })
@@ -1115,6 +1348,7 @@ export function validateStartupMigrationCrosswalk(
     throw new Error("Immutable canonical migration checksum drifted on disk");
   }
   const canonicalLines = canonicalSql.split(/\r?\n/u).map((text) => ({ text, lower: text.toLowerCase() }));
+  assertNoUnknownExecutableStartupSql(options.sourceOverrides);
   const sourcedOccurrenceMap = expectedOccurrences(baseline, options.sourceOverrides);
 
   const baselineOperations = new Map<string, {
@@ -1171,18 +1405,25 @@ export function validateStartupMigrationCrosswalk(
     if (!mapping.objectIdentity.kind || !mapping.objectIdentity.schema || !mapping.objectIdentity.name) {
       throw new Error(`Missing object identity: ${mapping.fingerprint}`);
     }
-    if (mapping.dependencies.length === 0 || mapping.preconditions.length === 0
-      || mapping.postconditions.length === 0 || mapping.rollbackConsiderations.length === 0
-      || !mapping.resolutionReason) {
-      throw new Error(`Incomplete mapping review fields: ${mapping.fingerprint}`);
-    }
-    if (mapping.existingDataEffect !== existingDataEffect(expected.kind)) {
-      throw new Error(`Existing-data effect mismatch: ${mapping.fingerprint}`);
+    const expectedEvidence = canonicalEvidence(expected.identity, canonicalLines, canonicalChecksum);
+    const expectedNarrative = mappingNarrative(
+      { kind: expected.kind },
+      expected.identity,
+      expectedEvidence,
+    );
+    if (JSON.stringify({
+      existingDataEffect: mapping.existingDataEffect,
+      dependencies: mapping.dependencies,
+      preconditions: mapping.preconditions,
+      postconditions: mapping.postconditions,
+      rollbackConsiderations: mapping.rollbackConsiderations,
+      resolutionReason: mapping.resolutionReason,
+    }) !== JSON.stringify(expectedNarrative)) {
+      throw new Error(`Mapping narrative mismatch: ${mapping.fingerprint}`);
     }
     if (mapping.status !== "UNRESOLVED") {
       throw new Error(`Unsupported mapping status: ${String(mapping.status)}`);
     }
-    const expectedEvidence = canonicalEvidence(expected.identity, canonicalLines, canonicalChecksum);
     if (JSON.stringify(mapping.evidence) !== JSON.stringify(expectedEvidence)) {
       throw new Error(`Canonical evidence mismatch: ${mapping.fingerprint}`);
     }
@@ -1238,6 +1479,7 @@ export function validateStartupMigrationCrosswalk(
   }
   const literals = assertPinnedExecutableSqlCoverage(options.sourceOverrides);
   assertPinnedAdditionalOperationCoverage(crosswalk.additionalOperations, literals, options.sourceOverrides);
+  assertPinnedStartupOwnerSourceCoverage(options.sourceOverrides);
 
   if (crosswalk.inventory.recordCount !== mappedOccurrences
     || crosswalk.inventory.uniqueFingerprintCount !== seen.size
