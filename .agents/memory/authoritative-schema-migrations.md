@@ -43,3 +43,17 @@ repository-owned authority. Do not restore adoption writes until P.2 defines
 verified database identity, least-privilege roles, immutable ledger semantics,
 backup evidence, migration frontier/convergence, and a bounded serialization
 strategy.
+
+Startup-to-migration coverage must be checked against independently reviewed
+source expectations, not against the discovery algorithm's own output. Curated
+annotations need exact source evidence; counts and prose alone are insufficient.
+Resolved classifications require repository-controlled proof, never document-
+supplied assertions of equivalence.
+
+**Why:** Independent review found omitted aliased UPDATE statements despite
+passing self-referential coverage tests, and forged resolution evidence passed
+the original validator. A matching object name cannot prove transition semantics.
+
+**How to apply:** Keep unknown classifications unresolved, pin separately reviewed
+SQL coverage and curated source evidence, and adversarially test count-preserving
+source drift, nested SQL, and fabricated evidence before trusting a crosswalk.

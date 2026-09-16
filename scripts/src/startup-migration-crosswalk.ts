@@ -37,6 +37,22 @@ export interface ObjectIdentity {
 export interface CrosswalkOccurrence {
   readonly owner: string;
   readonly sourcePath: string;
+  /** Exact position of the executable literal and operation in its owner source. */
+  readonly sourcePosition: {
+    readonly literalLine: number;
+    readonly literalColumn: number;
+    readonly operationLine: number;
+    readonly operationColumn: number;
+  };
+  /**
+   * The complete executable SQL literal, not the inventory's intentionally
+   * shortened operation summary.  This preserves e.g. ALTER TYPE RENAME VALUE
+   * semantics which are not represented by the historical inventory pattern.
+   */
+  readonly sourceSql: string;
+  readonly sourceSqlChecksum: string;
+  /** Source-order ordinal within this startup owner. */
+  readonly executionOrder: number;
   readonly callSite?: string;
   readonly phase?: "pre-listen" | "post-listen";
   readonly executionPath: readonly string[];
@@ -87,7 +103,81 @@ export interface AdditionalStartupOperation {
   readonly rollbackConsiderations: readonly string[];
   readonly status: "UNRESOLVED";
   readonly reason: string;
+  /** Present for automatically discovered executable SQL. */
+  readonly sourceSql?: string;
+  readonly sourceSqlChecksum?: string;
+  readonly sourcePosition?: {
+    readonly line: number;
+    readonly column: number;
+    readonly executionOrder: number;
+  };
 }
+
+/**
+ * Independently pinned coverage floor.  These values deliberately do not
+ * derive from the live discovery result; any source edit that changes the
+ * executable-SQL census must update this reviewed fixture explicitly.
+ */
+export const PINNED_ADDITIONAL_OPERATION_COVERAGE = Object.freeze({
+  total: 110,
+  byOwner: Object.freeze({
+    ensureBusinessGrowthSchema: 98,
+    ensureMediaSchema: 1,
+    ensureShippingConfigSchema: 1,
+    ensureMarketplacePerformanceIndexes: 1,
+    ensureReferralSchema: 2,
+    ensureWebPushSchema: 2,
+    ensureBookingCommandSchema: 1,
+    ensureEducationBundlePurchaseSchema: 4,
+  }),
+});
+
+/** Pinned independently of curated grouping; includes every executable literal. */
+export const PINNED_EXECUTABLE_STARTUP_SQL_LITERALS = Object.freeze({
+  total: 103,
+  functionReplacements: 33,
+  dataMutations: 70,
+  byOwner: Object.freeze({
+    ensureBusinessGrowthSchema: 96,
+    ensureShippingConfigSchema: 1,
+    ensureReferralSchema: 1,
+    ensureWebPushSchema: 1,
+    ensureEducationBundlePurchaseSchema: 4,
+  }),
+});
+
+/** Exact executable-literal cardinality represented by each grouped curation. */
+const PINNED_CURATED_LITERAL_COUNTS: Readonly<Record<string, number>> = Object.freeze({
+  "business-growth/bundle-payment-backfill": 2,
+  "education-bundle/payment-reference-backfill": 2,
+});
+
+/**
+ * Review-owned, byte-exact excerpts.  These are intentionally literals rather
+ * than hashes generated from the current source: a same-category rewrite must
+ * receive an explicit new review pin.
+ */
+const PINNED_CURATED_SOURCE_EXCERPT_CHECKSUMS: Readonly<Record<string, string>> = Object.freeze({
+  "business-growth/advisory-lock-and-session-state": "bb0a415fec787c41cf88dadf3c245e35f523ecf56cef15f140bcf37c8d5aae97",
+  "business-growth/rollout-marker-read": "77a447c9dd20e739ba60bbb32aa961f2652cb8dd02f0d38405f655581e49bea9",
+  "business-growth/gift-voucher-immutability-function": "3148807af8e544290d570c3e7041227c0bb6cb303e6c724ae69ad4f6ce43dbfd",
+  "business-growth/education-snapshot-backfills": "de4ebdab46d89308799cc736c6ede62865baff3ff368ae022ba3b5df3af89da3",
+  "business-growth/bundle-payment-backfill": "02cb84a8f8269817fbfab98cb466d06bed585b1b44abf3c3d782c0cd40b374c0",
+  "business-growth/bundle-payment-immutability-function": "bd31a406cfc27bb72c45544f1f8f1364b7f70e613c4648111afd867c63a45b5c",
+  "business-growth/rollout-marker-write": "312f1b509b906c829ff9d8e6cff85297792131765a6ffa75497268d423a56ca9",
+  "business-growth/cleanup-report-read": "9d55dfdeb76182415757ee29478faac261f00c7e6e63b7b6123347302d9f7b94",
+  "media/transaction-and-advisory-lock": "36acbbec3f646974cba125111693a5959dfad195c6d2b5cc0deea0f326887d87",
+  "shipping/duplicate-row-cleanup": "02be577da4b2795da77ac4e05a364ee5c13931b89e9cab5d3eabff4d8ec78574",
+  "marketplace/advisory-lock-and-session-state": "bfb38d48f8b6bf46e835786214b81885255c1eaba53e6c386620302da7600ac7",
+  "referral/tracking-start-backfill": "8b07319c47fbe3b86e9b3c105a3265f33e2b6d6a3934e3ccfda5d46f2522a41b",
+  "referral/transaction-and-advisory-lock": "81f17bf4c9fa6f1541e80711d0e37a8b8a4bded6b76d17f751b0bc10523d6ae7",
+  "web-push/transaction-and-advisory-lock": "61c82572405e91daf32adf7ca6f665ee6097d8edfbf6ea781653454f80090279",
+  "booking-command/transaction-and-advisory-lock": "7e0c51f4575a087b83b8beea946488c7f71ae38168ecf56ee5e65640ad85198e",
+  "education-bundle/payment-reference-backfill": "4f193122db5716f726732f88dcef740dd80897d2b2ff3c9e3f265bf21578ad0c",
+  "education-bundle/payment-reference-function": "60b41847a42a46d10ce261c80ab73f4488e04291a2cd695812d3cf7552fc6a1e",
+  "education-bundle/learner-id-backfill": "d4d0bd8102d4ec691968fd81cc5791039a4727b5b751aa7a2bd577a398fc8a1a",
+  "education-bundle/transaction-and-advisory-lock": "c555c08c8e3ee6bd5b5e5bea188f769a35ae0d94b6d446c1aeecdf7378714b9c",
+});
 
 export interface StartupMigrationCrosswalk {
   readonly version: typeof CROSSWALK_VERSION;
@@ -107,33 +197,85 @@ export interface StartupMigrationCrosswalk {
   readonly additionalOperations: readonly AdditionalStartupOperation[];
 }
 
+export interface CrosswalkValidationOptions {
+  /**
+   * Test-only virtual owner sources.  They permit source-proof adversarial
+   * tests without writing to the production owner files.
+   */
+  readonly sourceOverrides?: ReadonlyMap<string, string>;
+}
+
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
+function crosswalkSource(modulePath: string, sourceOverrides?: ReadonlyMap<string, string>): string {
+  return sourceOverrides?.get(modulePath) ?? readFileSync(path.join(REPOSITORY_ROOT, modulePath), "utf8");
+}
+
 function normalizedIdentifier(value: string): string {
-  return value.replaceAll("\"", "").replace(/[,;()]+$/gu, "");
+  return value.replaceAll("\"", "").replace(/['",;()]+$/gu, "");
 }
 
 function relationIdentity(value: string): { schema: string; name: string } {
-  const raw = normalizedIdentifier(value);
-  const clean = raw.replace(/^\$\{(?:s|schema|quoted)\}\./u, "public.");
-  if (clean.includes("${") || clean.includes("%I")) {
-    return { schema: "<dynamic>", name: clean };
+  const tableExpression = value.match(/^\$\{table\(\s*["']([^"']+)["']\s*\)\}$/u);
+  if (tableExpression) {
+    return { schema: "<dynamic>", name: tableExpression[1]! };
   }
-  const parts = clean.split(".");
+  const raw = normalizedIdentifier(value);
+  if (raw.includes("${") || raw.includes("%I")) {
+    const dynamicQualified = raw.match(/^(?:\$\{[^}]+\}|%I)\.([A-Za-z_][A-Za-z0-9_$]*)$/u);
+    return {
+      schema: "<dynamic>",
+      name: dynamicQualified?.[1] ?? raw,
+    };
+  }
+  const parts = raw.split(".");
   if (parts.length > 1) {
     return { schema: parts.at(-2)!, name: parts.at(-1)! };
   }
-  return { schema: "public", name: clean };
+  return { schema: "public", name: raw };
+}
+
+function relationTokenAfter(summary: string, prefix: RegExp): string | undefined {
+  const match = prefix.exec(summary);
+  if (!match || match.index === undefined) return undefined;
+  const source = summary.slice(match.index + match[0].length).trimStart();
+  if (source.startsWith("${")) {
+    let depth = 0;
+    for (let index = 0; index < source.length; index += 1) {
+      if (source[index] === "{") depth += 1;
+      if (source[index] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          const suffix = source.slice(index + 1);
+          const qualifiedName = suffix.match(/^\.([A-Za-z_][A-Za-z0-9_$]*)/u)?.[0];
+          if (qualifiedName) return source.slice(0, index + 1 + qualifiedName.length);
+          if (suffix.startsWith(".${")) {
+            let suffixDepth = 0;
+            for (let suffixIndex = 1; suffixIndex < suffix.length; suffixIndex += 1) {
+              if (suffix[suffixIndex] === "{") suffixDepth += 1;
+              if (suffix[suffixIndex] === "}") {
+                suffixDepth -= 1;
+                if (suffixDepth === 0) return source.slice(0, index + 1 + suffixIndex + 1);
+              }
+            }
+          }
+          return source.slice(0, index + 1);
+        }
+      }
+    }
+    return source;
+  }
+  return source.match(/^[^\s(;,]+/u)?.[0];
 }
 
 function extractObjectIdentity(operation: DdlOperation): ObjectIdentity {
   const summary = operation.summary.replace(/\s+/gu, " ").trim();
-  const tableMatch = summary.match(/\b(?:ALTER|CREATE)\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([^\s(;]+)/iu);
-  const onRelationMatch = summary.match(/\bON\s+([^\s(;]+)/iu);
-  const parent = tableMatch
-    ? relationIdentity(tableMatch[1]!)
-    : onRelationMatch
-      ? relationIdentity(onRelationMatch[1]!)
+  const tableToken = relationTokenAfter(summary, /\b(?:ALTER|CREATE)\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+/iu);
+  const onRelationToken = relationTokenAfter(summary, /\bON\s+/iu);
+  const parent = tableToken
+    ? relationIdentity(tableToken)
+    : onRelationToken
+      ? relationIdentity(onRelationToken)
       : undefined;
 
   const constraint = summary.match(/\b(?:ADD|DROP|VALIDATE)\s+CONSTRAINT(?:\s+IF\s+EXISTS)?\s+([^\s(;]+)/iu);
@@ -162,25 +304,30 @@ function extractObjectIdentity(operation: DdlOperation): ObjectIdentity {
     };
   }
 
-  const index = summary.match(/\b(?:CREATE|DROP)\s+(?:UNIQUE\s+)?INDEX(?:\s+CONCURRENTLY)?(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+([^\s(;]+)/iu);
-  if (index) {
-    const identity = relationIdentity(index[1]!);
+  const indexToken = relationTokenAfter(summary, /\b(?:CREATE|DROP)\s+(?:UNIQUE\s+)?INDEX(?:\s+CONCURRENTLY)?(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+/iu);
+  if (indexToken) {
+    const identity = relationIdentity(indexToken);
+    const schema = parent?.schema ?? identity.schema;
     return {
       kind: "index",
-      schema: identity.schema,
+      schema,
       name: identity.name,
       ...(parent ? { parent: parent.name } : {}),
-      ...(identity.schema === "<dynamic>" ? { dynamicExpression: normalizedIdentifier(index[1]!) } : {}),
+      ...(schema === "<dynamic>"
+        ? { dynamicExpression: parent?.schema === "<dynamic>"
+          ? `${normalizedIdentifier(indexToken)} ON ${normalizedIdentifier(onRelationToken ?? "")}`
+          : normalizedIdentifier(indexToken) }
+        : {}),
     };
   }
 
-  const type = summary.match(/\b(?:CREATE|ALTER)\s+TYPE(?:\s+IF\s+NOT\s+EXISTS)?\s+([^\s(;]+)/iu);
-  if (type) {
-    const identity = relationIdentity(type[1]!);
+  const typeToken = relationTokenAfter(summary, /\b(?:CREATE|ALTER)\s+TYPE(?:\s+IF\s+NOT\s+EXISTS)?\s+/iu);
+  if (typeToken) {
+    const identity = relationIdentity(typeToken);
     return {
       kind: "type",
       ...identity,
-      ...(identity.schema === "<dynamic>" ? { dynamicExpression: normalizedIdentifier(type[1]!) } : {}),
+      ...(identity.schema === "<dynamic>" ? { dynamicExpression: normalizedIdentifier(typeToken) } : {}),
     };
   }
 
@@ -193,17 +340,18 @@ function extractObjectIdentity(operation: DdlOperation): ObjectIdentity {
     return {
       kind: "table",
       ...parent,
-      ...(parent.schema === "<dynamic>" ? { dynamicExpression: normalizedIdentifier(tableMatch?.[1] ?? onRelationMatch?.[1] ?? "") } : {}),
+      ...(parent.schema === "<dynamic>" ? { dynamicExpression: normalizedIdentifier(tableToken ?? onRelationToken ?? "") } : {}),
     };
   }
   throw new Error(`Could not extract object identity for ${operation.fingerprint}: ${operation.summary}`);
 }
 
 function existingDataEffect(kind: string): ExistingDataEffect {
-  if (kind.startsWith("alter-") || kind.startsWith("drop-") || kind === "validate-constraint") {
-    return "existing-schema-reconciliation";
-  }
-  return "fresh-and-existing-idempotent";
+  // The historical inventory records syntactic DDL, not proof that populated
+  // production relations satisfy its invariant.  Treat every catalog change
+  // conservatively until a reviewed migration establishes otherwise.
+  void kind;
+  return "existing-schema-reconciliation";
 }
 
 function dependenciesFor(identity: ObjectIdentity): string[] {
@@ -214,7 +362,7 @@ function dependenciesFor(identity: ObjectIdentity): string[] {
 
 function canonicalEvidence(
   identity: ObjectIdentity,
-  canonicalLines: readonly string[],
+  canonicalLines: readonly { readonly text: string; readonly lower: string }[],
   canonicalChecksum: string,
 ): CanonicalCandidateEvidence {
   if (identity.dynamicExpression) {
@@ -227,12 +375,14 @@ function canonicalEvidence(
     };
   }
   const token = identity.name.toLowerCase();
+  const exactToken = new RegExp(`(?:^|[^A-Za-z0-9_$])${token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?:$|[^A-Za-z0-9_$])`, "u");
   const matches: string[] = [];
-  canonicalLines.forEach((line, index) => {
-    if (matches.length < 5 && line.toLowerCase().includes(token)) {
+  for (const [index, line] of canonicalLines.entries()) {
+    if (exactToken.test(line.lower)) {
       matches.push(`lib/db/migrations/000001_canonical_schema/migration.sql:${index + 1}`);
+      if (matches.length === 5) break;
     }
-  });
+  }
   return {
     migrationId: CANONICAL_MIGRATION_ID,
     migrationChecksum: canonicalChecksum,
@@ -242,14 +392,122 @@ function canonicalEvidence(
   };
 }
 
-function occurrence(owner: StartupDdlBaseline["owners"][number], operation: DdlOperation): CrosswalkOccurrence {
-  return {
-    owner: owner.ensureName,
-    sourcePath: operation.module,
-    ...(operation.callSite ? { callSite: operation.callSite } : {}),
-    ...(operation.phase ? { phase: operation.phase } : {}),
-    executionPath: operation.path ?? owner.path ?? [owner.ownerModule],
+const INVENTORY_OPERATION_PATTERNS: readonly { readonly kind: string; readonly expression: RegExp }[] = [
+  { kind: "create-table", expression: /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "drop-table", expression: /\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "create-index", expression: /\bCREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+CONCURRENTLY)?\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s(;,]+(?:\s+ON\s+[^\s(;,]+)/giu },
+  { kind: "drop-index", expression: /\bDROP\s+INDEX(?:\s+CONCURRENTLY)?\s+(?:IF\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "create-trigger", expression: /\bCREATE\s+TRIGGER\s+[^\s(;,]+/giu },
+  { kind: "drop-trigger", expression: /\bDROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "create-type", expression: /\bCREATE\s+TYPE\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "drop-type", expression: /\bDROP\s+TYPE\s+(?:IF\s+EXISTS\s+)?[^\s(;,]+/giu },
+  { kind: "alter-type", expression: /\bALTER\s+TYPE\s+[^\s;,]+(?:\s+ADD\s+VALUE(?:\s+IF\s+NOT\s+EXISTS)?\s+[^;]+)?/giu },
+  { kind: "create-extension", expression: /\bCREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s;,]+/giu },
+  { kind: "add-constraint", expression: /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s;,]+\s+ADD\s+CONSTRAINT\s+[^\s;,]+/giu },
+  { kind: "drop-constraint", expression: /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s;,]+\s+DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?[^\s;,]+/giu },
+  { kind: "validate-constraint", expression: /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s;,]+\s+VALIDATE\s+CONSTRAINT\s+[^\s;,]+/giu },
+  { kind: "alter-table", expression: /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s;,]+\s+(?!(?:ADD|DROP|VALIDATE)\s+CONSTRAINT\b)[^;]+/giu },
+];
+
+function normalizedSql(value: string): string {
+  return value
+    .replace(/\$\{([^}]*)\}/gu, (_match, expression: string) => `\${${expression.trim()}}`)
+    .replace(/--[^\n]*/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function inventoryFingerprint(kind: string, statement: string, literal: string): string {
+  return createHash("sha256")
+    .update(`${kind}\0${normalizedSql(statement)}\0${normalizedSql(literal)}`)
+    .digest("hex");
+}
+
+interface SourcedOperation {
+  readonly fingerprint: string;
+  readonly sourcePath: string;
+  readonly sourcePosition: CrosswalkOccurrence["sourcePosition"];
+  readonly sourceSql: string;
+  readonly sourceSqlChecksum: string;
+}
+
+function sourcedOperations(modulePath: string, sourceOverrides?: ReadonlyMap<string, string>): SourcedOperation[] {
+  const source = crosswalkSource(modulePath, sourceOverrides);
+  const sourceFile = ts.createSourceFile(modulePath, source, ts.ScriptTarget.Latest, true);
+  const result: SourcedOperation[] = [];
+  const visit = (node: ts.Node): void => {
+    const literal = operationText(node);
+    if (literal !== undefined) {
+      const literalStart = node.getStart(sourceFile);
+      for (const pattern of INVENTORY_OPERATION_PATTERNS) {
+        pattern.expression.lastIndex = 0;
+        for (const match of literal.matchAll(pattern.expression)) {
+          const position = sourceFile.getLineAndCharacterOfPosition(literalStart + (match.index ?? 0) + 1);
+          const literalPosition = sourceFile.getLineAndCharacterOfPosition(literalStart);
+          result.push({
+            fingerprint: inventoryFingerprint(pattern.kind, match[0]!, literal),
+            sourcePath: `${modulePath}:${position.line + 1}:${position.character + 1}`,
+            sourcePosition: {
+              literalLine: literalPosition.line + 1,
+              literalColumn: literalPosition.character + 1,
+              operationLine: position.line + 1,
+              operationColumn: position.character + 1,
+            },
+            sourceSql: literal,
+            sourceSqlChecksum: createHash("sha256").update(literal).digest("hex"),
+          });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
   };
+  visit(sourceFile);
+  return result.sort((left, right) =>
+    left.sourcePosition.operationLine - right.sourcePosition.operationLine
+    || left.sourcePosition.operationColumn - right.sourcePosition.operationColumn
+    || left.fingerprint.localeCompare(right.fingerprint));
+}
+
+function expectedOccurrences(
+  baseline: StartupDdlBaseline,
+  sourceOverrides?: ReadonlyMap<string, string>,
+): Map<string, CrosswalkOccurrence[]> {
+  const sourceByModule = new Map<string, SourcedOperation[]>();
+  const cursors = new Map<string, number>();
+  const result = new Map<string, CrosswalkOccurrence[]>();
+  for (const owner of baseline.owners) {
+    for (const operation of owner.operations) {
+      let sourced = sourceByModule.get(operation.module);
+      if (!sourced) {
+        sourced = sourcedOperations(operation.module, sourceOverrides);
+        sourceByModule.set(operation.module, sourced);
+      }
+      const sourceKey = `${operation.module}\0${operation.fingerprint}`;
+      const candidateIndex = cursors.get(sourceKey) ?? 0;
+      const candidates = sourced.filter((item) => item.fingerprint === operation.fingerprint);
+      const sourceOperation = candidates[candidateIndex];
+      if (!sourceOperation) {
+        throw new Error(`Could not independently locate inventory operation ${operation.fingerprint} in ${operation.module}`);
+      }
+      cursors.set(sourceKey, candidateIndex + 1);
+      const executionOrder = sourced.indexOf(sourceOperation) + 1;
+      const item: CrosswalkOccurrence = {
+        owner: owner.ensureName,
+        sourcePath: sourceOperation.sourcePath,
+        sourcePosition: sourceOperation.sourcePosition,
+        sourceSql: sourceOperation.sourceSql,
+        sourceSqlChecksum: sourceOperation.sourceSqlChecksum,
+        executionOrder,
+        ...(operation.callSite ? { callSite: operation.callSite } : {}),
+        ...(operation.phase ? { phase: operation.phase } : {}),
+        executionPath: operation.path ?? owner.path ?? [owner.ownerModule],
+      };
+      const current = result.get(operation.fingerprint) ?? [];
+      current.push(item);
+      result.set(operation.fingerprint, current);
+    }
+  }
+  return result;
 }
 
 const SHARED_SCAFFOLDING = {
@@ -304,13 +562,13 @@ const REVIEWED_ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperatio
   {
     id: "business-growth/education-snapshot-backfills",
     owner: "ensureBusinessGrowthSchema",
-    sourcePath: "artifacts/api-server/src/lib/business-growth-schema.ts:217-231,5079",
+    sourcePath: "artifacts/api-server/src/lib/business-growth-schema.ts:229-238",
     category: "data-backfill",
-    summary: "Backfill education installment and course-enrollment payment-instruction snapshots.",
+    summary: "Backfill course-enrollment payment-instruction snapshots.",
     existingDataEffect: "existing-data-mutation",
-    dependencies: ["education installments", "course enrollments", "stable payment instruction source rows"],
+    dependencies: ["course enrollments", "stable payment instruction source rows"],
     preconditions: ["target snapshot columns exist", "source identities are unambiguous"],
-    postconditions: ["eligible historical rows contain immutable payment-instruction snapshots"],
+    postconditions: ["eligible historical course-enrollment rows contain immutable payment-instruction snapshots"],
     rollbackConsiderations: ["Autocommitted historical row updates require restore or a reviewed compensating migration."],
     status: "UNRESOLVED",
     reason: "Generated UPDATE statements are not represented by the DDL fingerprint inventory.",
@@ -424,7 +682,7 @@ const REVIEWED_ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperatio
   {
     id: "referral/transaction-and-advisory-lock",
     owner: "ensureReferralSchema",
-    sourcePath: "artifacts/api-server/src/lib/referral-schema.ts:14-54",
+    sourcePath: "artifacts/api-server/src/lib/referral-schema.ts:16-18,48-53",
     category: "operational-scaffolding",
     summary: "Transaction, timeout, and advisory lock lifecycle for referral reconciliation.",
     ...SHARED_SCAFFOLDING,
@@ -432,7 +690,7 @@ const REVIEWED_ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperatio
   {
     id: "web-push/transaction-and-advisory-lock",
     owner: "ensureWebPushSchema",
-    sourcePath: "artifacts/api-server/src/lib/web-push-schema.ts",
+    sourcePath: "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
     category: "operational-scaffolding",
     summary: "Transaction, timeout, and advisory lock lifecycle for Web Push schema rollout.",
     ...SHARED_SCAFFOLDING,
@@ -440,7 +698,7 @@ const REVIEWED_ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperatio
   {
     id: "booking-command/transaction-and-advisory-lock",
     owner: "ensureBookingCommandSchema",
-    sourcePath: "artifacts/api-server/src/lib/booking-command-schema.ts",
+    sourcePath: "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
     category: "operational-scaffolding",
     summary: "Transaction, timeout, and advisory lock lifecycle for booking command schema rollout.",
     ...SHARED_SCAFFOLDING,
@@ -493,7 +751,7 @@ const REVIEWED_ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperatio
   {
     id: "education-bundle/transaction-and-advisory-lock",
     owner: "ensureEducationBundlePurchaseSchema",
-    sourcePath: "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:4-85",
+    sourcePath: "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:9-12,81-84",
     category: "operational-scaffolding",
     summary: "Transaction, timeout, and shared business-growth advisory lock lifecycle.",
     ...SHARED_SCAFFOLDING,
@@ -536,7 +794,9 @@ function triggerParentIndex(): ReadonlyMap<string, { schema: string; name: strin
   }
   return new Map(
     [...candidates]
-      .filter(([, relations]) => relations.length === 1 && relations[0]!.schema !== "<dynamic>")
+      // Schema parameters are runtime values, but the relation name remains a
+      // useful exact parent identity when every source occurrence agrees.
+      .filter(([, relations]) => new Set(relations.map((relation) => relation.name)).size === 1)
       .map(([name, relations]) => [name, relations[0]!]),
   );
 }
@@ -565,56 +825,109 @@ function operationText(node: ts.Node): string | undefined {
   return undefined;
 }
 
-function discoveredAdditionalOperations(): AdditionalStartupOperation[] {
-  const discovered: AdditionalStartupOperation[] = [];
+interface ExecutableStartupSqlLiteral {
+  readonly owner: string;
+  readonly modulePath: string;
+  readonly text: string;
+  readonly normalized: string;
+  readonly category: Extract<AdditionalOperationCategory, "data-backfill" | "function-replacement">;
+  readonly line: number;
+  readonly column: number;
+  readonly executionOrder: number;
+}
+
+export function startupSqlLiteralCategory(
+  text: string,
+): Extract<AdditionalOperationCategory, "data-backfill" | "function-replacement"> | undefined {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (/\bCREATE\s+OR\s+REPLACE\s+FUNCTION\b/iu.test(normalized)) return "function-replacement";
+  if (
+    /\bINSERT\s+INTO\s+[A-Za-z_$"{%]/iu.test(normalized)
+    || /\bDELETE\s+FROM\s+[A-Za-z_$"{%]/iu.test(normalized)
+    || /\bUPDATE\s+(?:ONLY\s+)?[A-Za-z_$"{%][^\s,;()]*\s+(?:(?:AS\s+)?[A-Za-z_][A-Za-z0-9_]*\s+)?SET\b/iu.test(normalized)
+  ) return "data-backfill";
+  return undefined;
+}
+
+function executableStartupSqlLiterals(sourceOverrides?: ReadonlyMap<string, string>): ExecutableStartupSqlLiteral[] {
+  const literals: ExecutableStartupSqlLiteral[] = [];
   for (const [owner, modulePath] of OWNER_MODULES) {
-    const source = readFileSync(path.join(REPOSITORY_ROOT, modulePath), "utf8");
+    const source = crosswalkSource(modulePath, sourceOverrides);
     const sourceFile = ts.createSourceFile(modulePath, source, ts.ScriptTarget.Latest, true);
+    let executionOrder = 0;
     const visit = (node: ts.Node): void => {
       const text = operationText(node);
       if (text) {
         const normalized = text.replace(/\s+/gu, " ").trim();
-        const functionReplacement = /\bCREATE\s+OR\s+REPLACE\s+FUNCTION\b/iu.test(normalized);
-        const dataMutation = !functionReplacement && (
-          /\bINSERT\s+INTO\s+[A-Za-z_$"{%]/iu.test(normalized)
-          || /\bDELETE\s+FROM\s+[A-Za-z_$"{%]/iu.test(normalized)
-          || /\bUPDATE\s+[A-Za-z_$"{%][^\s,;()]*\s+(?:AS\s+[A-Za-z_][A-Za-z0-9_]*\s+)?SET\b/iu.test(normalized)
-        );
-        if (functionReplacement || dataMutation) {
-          const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-          const alreadyReviewed = REVIEWED_ADDITIONAL_STARTUP_OPERATIONS.some((item) =>
-            sourceRangeCovers(item.sourcePath, modulePath, line));
-          if (!alreadyReviewed) {
-            const digest = createHash("sha256")
-              .update(`${modulePath}\0${line}\0${normalized}`)
-              .digest("hex")
-              .slice(0, 16);
-            discovered.push({
-              id: `${owner}/source-discovered-${line}-${digest}`,
-              owner,
-              sourcePath: `${modulePath}:${line}`,
-              category: functionReplacement ? "function-replacement" : "data-backfill",
-              summary: normalized,
-              existingDataEffect: functionReplacement
-                ? "existing-schema-reconciliation"
-                : "existing-data-mutation",
-              dependencies: ["Exact source query dependencies require semantic review."],
-              preconditions: ["Referenced objects exist and affected existing rows have been reviewed."],
-              postconditions: ["The source operation's schema or data invariant is preserved by an explicit migration decision."],
-              rollbackConsiderations: [
-                dataMutation
-                  ? "Committed data changes require a reviewed compensating migration or tested restore."
-                  : "Function body changes can alter write acceptance immediately.",
-              ],
-              status: "UNRESOLVED",
-              reason: "Source-derived executable SQL is outside the classified 1,459-record DDL inventory and has no approved migration mapping.",
-            });
-          }
+        const category = startupSqlLiteralCategory(text);
+        if (category) {
+          const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          executionOrder += 1;
+          literals.push({
+            owner,
+            modulePath,
+            text,
+            normalized,
+            category,
+            line: position.line + 1,
+            column: position.character + 1,
+            executionOrder,
+          });
         }
       }
       ts.forEachChild(node, visit);
     };
     visit(sourceFile);
+  }
+  return literals;
+}
+
+function discoveredAdditionalOperations(): AdditionalStartupOperation[] {
+  const discovered: AdditionalStartupOperation[] = [];
+  const literals = executableStartupSqlLiterals();
+  for (const literal of literals) {
+    const alreadyReviewed = REVIEWED_ADDITIONAL_STARTUP_OPERATIONS.some((item) => {
+      if (!sourceRangeCovers(item.sourcePath, literal.modulePath, literal.line)) return false;
+      // The reviewed grouping has a pinned source cardinality.  An added
+      // literal in its range is emitted rather than silently swallowed.
+      const count = literals.filter((candidate) =>
+        candidate.modulePath === literal.modulePath
+        && sourceRangeCovers(item.sourcePath, candidate.modulePath, candidate.line)).length;
+      return count === (PINNED_CURATED_LITERAL_COUNTS[item.id] ?? 1);
+    });
+    if (!alreadyReviewed) {
+      const digest = createHash("sha256")
+        .update(`${literal.modulePath}\0${literal.line}\0${literal.normalized}`)
+        .digest("hex")
+        .slice(0, 16);
+      discovered.push({
+        id: `${literal.owner}/source-discovered-${literal.line}-${digest}`,
+        owner: literal.owner,
+        sourcePath: `${literal.modulePath}:${literal.line}:${literal.column}`,
+        category: literal.category,
+        summary: literal.normalized,
+        existingDataEffect: literal.category === "function-replacement"
+          ? "existing-schema-reconciliation"
+          : "existing-data-mutation",
+        dependencies: ["Exact source query dependencies require semantic review."],
+        preconditions: ["Referenced objects exist and affected existing rows have been reviewed."],
+        postconditions: ["The source operation's schema or data invariant is preserved by an explicit migration decision."],
+        rollbackConsiderations: [
+          literal.category === "data-backfill"
+            ? "Committed data changes require a reviewed compensating migration or tested restore."
+            : "Function body changes can alter write acceptance immediately.",
+        ],
+        status: "UNRESOLVED",
+        reason: "Source-derived executable SQL is outside the classified 1,459-record DDL inventory and has no approved migration mapping.",
+        sourceSql: literal.text,
+        sourceSqlChecksum: createHash("sha256").update(literal.text).digest("hex"),
+        sourcePosition: {
+          line: literal.line,
+          column: literal.column,
+          executionOrder: literal.executionOrder,
+        },
+      });
+    }
   }
   return discovered;
 }
@@ -623,6 +936,66 @@ export const ADDITIONAL_STARTUP_OPERATIONS: readonly AdditionalStartupOperation[
   ...REVIEWED_ADDITIONAL_STARTUP_OPERATIONS,
   ...discoveredAdditionalOperations(),
 ].sort((left, right) => left.id.localeCompare(right.id)));
+
+function assertPinnedExecutableSqlCoverage(
+  sourceOverrides?: ReadonlyMap<string, string>,
+): readonly ExecutableStartupSqlLiteral[] {
+  const literals = executableStartupSqlLiterals(sourceOverrides);
+  const functionReplacements = literals.filter((item) => item.category === "function-replacement").length;
+  const dataMutations = literals.filter((item) => item.category === "data-backfill").length;
+  if (literals.length !== PINNED_EXECUTABLE_STARTUP_SQL_LITERALS.total
+    || functionReplacements !== PINNED_EXECUTABLE_STARTUP_SQL_LITERALS.functionReplacements
+    || dataMutations !== PINNED_EXECUTABLE_STARTUP_SQL_LITERALS.dataMutations) {
+    throw new Error("Pinned executable startup SQL literal coverage does not match source");
+  }
+  const expectedOwners = PINNED_EXECUTABLE_STARTUP_SQL_LITERALS.byOwner;
+  const actualOwners = new Map<string, number>();
+  for (const literal of literals) actualOwners.set(literal.owner, (actualOwners.get(literal.owner) ?? 0) + 1);
+  if (JSON.stringify(Object.fromEntries([...actualOwners].sort()))
+    !== JSON.stringify(Object.fromEntries(Object.entries(expectedOwners).sort()))) {
+    throw new Error("Pinned executable startup SQL owner coverage does not match source");
+  }
+  return literals;
+}
+
+function assertPinnedAdditionalOperationCoverage(
+  operations: readonly AdditionalStartupOperation[],
+  literals: readonly ExecutableStartupSqlLiteral[],
+  sourceOverrides?: ReadonlyMap<string, string>,
+): void {
+  if (operations.length !== PINNED_ADDITIONAL_OPERATION_COVERAGE.total) {
+    throw new Error("Pinned additional-operation total does not match source-derived inventory");
+  }
+  const actualOwners = new Map<string, number>();
+  for (const operation of operations) actualOwners.set(operation.owner, (actualOwners.get(operation.owner) ?? 0) + 1);
+  if (JSON.stringify(Object.fromEntries([...actualOwners].sort()))
+    !== JSON.stringify(Object.fromEntries(Object.entries(PINNED_ADDITIONAL_OPERATION_COVERAGE.byOwner).sort()))) {
+    throw new Error("Pinned additional-operation owner coverage does not match source-derived inventory");
+  }
+  const curated = operations.filter((operation) => !operation.id.includes("/source-discovered-"));
+  const pinnedCuratedIds = Object.keys(PINNED_CURATED_SOURCE_EXCERPT_CHECKSUMS).sort();
+  if (curated.length !== pinnedCuratedIds.length
+    || JSON.stringify(curated.map((operation) => operation.id).sort()) !== JSON.stringify(pinnedCuratedIds)) {
+    throw new Error("Pinned curated additional-operation source coverage does not match inventory");
+  }
+
+  for (const operation of operations) {
+    if (!operation.id.includes("/source-discovered-")) continue;
+    if (!operation.sourcePosition || !operation.sourceSql || !operation.sourceSqlChecksum) {
+      throw new Error(`Discovered additional operation lacks exact source proof: ${operation.id}`);
+    }
+    const source = literals.find((literal) =>
+      literal.owner === operation.owner
+      && literal.modulePath === operation.sourcePath.split(":")[0]
+      && literal.line === operation.sourcePosition!.line
+      && literal.column === operation.sourcePosition!.column
+      && literal.text === operation.sourceSql);
+    if (!source || createHash("sha256").update(operation.sourceSql).digest("hex") !== operation.sourceSqlChecksum
+      || source.executionOrder !== operation.sourcePosition.executionOrder) {
+      throw new Error(`Discovered additional operation source proof mismatch: ${operation.id}`);
+    }
+  }
+}
 
 export function buildStartupMigrationCrosswalk(
   baseline: StartupDdlBaseline,
@@ -635,6 +1008,7 @@ export function buildStartupMigrationCrosswalk(
     throw new Error(`Canonical migration checksum mismatch: expected ${canonicalChecksum}, received ${actualChecksum}`);
   }
 
+  const sourcedOccurrences = expectedOccurrences(baseline);
   const grouped = new Map<string, {
     owner: StartupDdlBaseline["owners"][number];
     operation: DdlOperation;
@@ -644,22 +1018,27 @@ export function buildStartupMigrationCrosswalk(
   for (const owner of baseline.owners) {
     for (const operation of owner.operations) {
       const current = grouped.get(operation.fingerprint);
+      const allOccurrences = sourcedOccurrences.get(operation.fingerprint);
+      const sourcedOccurrence = allOccurrences?.[current?.occurrences.length ?? 0];
+      if (!sourcedOccurrence || sourcedOccurrence.owner !== owner.ensureName) {
+        throw new Error(`Could not reconcile sourced occurrence for ${operation.fingerprint}`);
+      }
       if (current) {
         if (current.operation.kind !== operation.kind || current.operation.summary !== operation.summary) {
           throw new Error(`Fingerprint ${operation.fingerprint} identifies inconsistent operations`);
         }
-        current.occurrences.push(occurrence(owner, operation));
+        current.occurrences.push(sourcedOccurrence);
       } else {
         grouped.set(operation.fingerprint, {
           owner,
           operation,
-          occurrences: [occurrence(owner, operation)],
+          occurrences: [sourcedOccurrence],
         });
       }
     }
   }
 
-  const canonicalLines = canonicalSql.split(/\r?\n/u);
+  const canonicalLines = canonicalSql.split(/\r?\n/u).map((text) => ({ text, lower: text.toLowerCase() }));
   const mappings = [...grouped.values()]
     .map(({ operation, occurrences }) => {
       const identity = extractObjectIdentity(operation);
@@ -689,10 +1068,7 @@ export function buildStartupMigrationCrosswalk(
         resolutionReason: evidence.evidenceType === "candidate-name-match"
           ? "Canonical SQL contains the object name, but name presence does not prove definition or transition-semantic equivalence."
           : "No exact object-name candidate was found in immutable 000001; no future migration or retirement is authorized by this task.",
-        occurrences: occurrences.sort((left, right) =>
-          `${left.owner}\0${left.sourcePath}\0${left.callSite ?? ""}`.localeCompare(
-            `${right.owner}\0${right.sourcePath}\0${right.callSite ?? ""}`,
-          )),
+        occurrences,
       } satisfies StartupMigrationMapping;
     })
     .sort((left, right) => left.fingerprint.localeCompare(right.fingerprint));
@@ -722,36 +1098,52 @@ export function buildStartupMigrationCrosswalk(
 export function validateStartupMigrationCrosswalk(
   crosswalk: StartupMigrationCrosswalk,
   baseline: StartupDdlBaseline,
+  options: CrosswalkValidationOptions = {},
 ): void {
   if (crosswalk.version !== CROSSWALK_VERSION) throw new Error("Unsupported crosswalk version");
-  if (crosswalk.canonicalBaseline.checksum !== CANONICAL_MIGRATION_CHECKSUM) {
+  if (crosswalk.canonicalBaseline.migrationId !== CANONICAL_MIGRATION_ID
+    || crosswalk.canonicalBaseline.source !== "lib/db/migrations/000001_canonical_schema/migration.sql"
+    || crosswalk.canonicalBaseline.checksum !== CANONICAL_MIGRATION_CHECKSUM) {
     throw new Error("Crosswalk does not reference the immutable canonical migration checksum");
   }
+  const canonicalSql = readFileSync(
+    path.join(REPOSITORY_ROOT, "lib/db/migrations/000001_canonical_schema/migration.sql"),
+    "utf8",
+  );
+  const canonicalChecksum = createHash("sha256").update(canonicalSql).digest("hex");
+  if (canonicalChecksum !== CANONICAL_MIGRATION_CHECKSUM) {
+    throw new Error("Immutable canonical migration checksum drifted on disk");
+  }
+  const canonicalLines = canonicalSql.split(/\r?\n/u).map((text) => ({ text, lower: text.toLowerCase() }));
+  const sourcedOccurrenceMap = expectedOccurrences(baseline, options.sourceOverrides);
 
   const baselineOperations = new Map<string, {
     kind: string;
     summary: string;
     identity: ObjectIdentity;
-    occurrences: string[];
+    occurrences: CrosswalkOccurrence[];
   }>();
   for (const owner of baseline.owners) {
     for (const operation of owner.operations) {
       if (!/^[a-f0-9]{64}$/u.test(operation.fingerprint)) {
         throw new Error(`Invalid inventory fingerprint: ${operation.fingerprint}`);
       }
-      const occurrenceKey = JSON.stringify(occurrence(owner, operation));
       const current = baselineOperations.get(operation.fingerprint);
+      const expectedOccurrence = sourcedOccurrenceMap.get(operation.fingerprint)?.[current?.occurrences.length ?? 0];
+      if (!expectedOccurrence || expectedOccurrence.owner !== owner.ensureName) {
+        throw new Error(`Could not reconcile baseline source occurrence: ${operation.fingerprint}`);
+      }
       if (current) {
         if (current.kind !== operation.kind || current.summary !== operation.summary) {
           throw new Error(`Inconsistent baseline operation: ${operation.fingerprint}`);
         }
-        current.occurrences.push(occurrenceKey);
+        current.occurrences.push(expectedOccurrence);
       } else {
         baselineOperations.set(operation.fingerprint, {
           kind: operation.kind,
           summary: operation.summary,
           identity: extractObjectIdentity(operation),
-          occurrences: [occurrenceKey],
+          occurrences: [expectedOccurrence],
         });
       }
     }
@@ -759,9 +1151,13 @@ export function validateStartupMigrationCrosswalk(
 
   const seen = new Set<string>();
   let mappedOccurrences = 0;
-  for (const mapping of crosswalk.mappings) {
+  const expectedFingerprintOrder = [...baselineOperations.keys()].sort((left, right) => left.localeCompare(right));
+  for (const [mappingIndex, mapping] of crosswalk.mappings.entries()) {
     if (seen.has(mapping.fingerprint)) throw new Error(`Duplicate crosswalk mapping: ${mapping.fingerprint}`);
     seen.add(mapping.fingerprint);
+    if (mapping.fingerprint !== expectedFingerprintOrder[mappingIndex]) {
+      throw new Error(`Crosswalk mapping order mismatch at ${mappingIndex}`);
+    }
     const expected = baselineOperations.get(mapping.fingerprint);
     if (!expected) {
       throw new Error(`Unsupported crosswalk fingerprint: ${mapping.fingerprint}`);
@@ -775,19 +1171,22 @@ export function validateStartupMigrationCrosswalk(
     if (!mapping.objectIdentity.kind || !mapping.objectIdentity.schema || !mapping.objectIdentity.name) {
       throw new Error(`Missing object identity: ${mapping.fingerprint}`);
     }
-    if (!["CANONICAL_BASELINE", "FUTURE_MIGRATION_REQUIRED", "RETIRED_HISTORICAL", "UNRESOLVED"].includes(mapping.status)) {
+    if (mapping.dependencies.length === 0 || mapping.preconditions.length === 0
+      || mapping.postconditions.length === 0 || mapping.rollbackConsiderations.length === 0
+      || !mapping.resolutionReason) {
+      throw new Error(`Incomplete mapping review fields: ${mapping.fingerprint}`);
+    }
+    if (mapping.existingDataEffect !== existingDataEffect(expected.kind)) {
+      throw new Error(`Existing-data effect mismatch: ${mapping.fingerprint}`);
+    }
+    if (mapping.status !== "UNRESOLVED") {
       throw new Error(`Unsupported mapping status: ${String(mapping.status)}`);
     }
-    if (mapping.status === "CANONICAL_BASELINE") {
-      if (!mapping.evidence.semanticsVerified || mapping.evidence.evidenceType !== "candidate-name-match"
-        || mapping.evidence.lineReferences.length === 0
-        || mapping.evidence.migrationChecksum !== CANONICAL_MIGRATION_CHECKSUM) {
-        throw new Error(`Unproven canonical equivalence: ${mapping.fingerprint}`);
-      }
+    const expectedEvidence = canonicalEvidence(expected.identity, canonicalLines, canonicalChecksum);
+    if (JSON.stringify(mapping.evidence) !== JSON.stringify(expectedEvidence)) {
+      throw new Error(`Canonical evidence mismatch: ${mapping.fingerprint}`);
     }
-    const actualOccurrenceKeys = mapping.occurrences.map((item) => JSON.stringify(item)).sort();
-    const expectedOccurrenceKeys = [...expected.occurrences].sort();
-    if (JSON.stringify(actualOccurrenceKeys) !== JSON.stringify(expectedOccurrenceKeys)) {
+    if (JSON.stringify(mapping.occurrences) !== JSON.stringify(expected.occurrences)) {
       throw new Error(`Occurrence mismatch for ${mapping.fingerprint}`);
     }
     mappedOccurrences += mapping.occurrences.length;
@@ -807,12 +1206,27 @@ export function validateStartupMigrationCrosswalk(
     additionalIds.add(operation.id);
     if (!owners.has(operation.owner)) throw new Error(`Unknown additional-operation owner: ${operation.owner}`);
     if (operation.status !== "UNRESOLVED") throw new Error(`Unsupported additional-operation status: ${operation.id}`);
-    if (!operation.sourcePath || !operation.summary || !operation.reason) {
+    if (!operation.sourcePath || !operation.summary || !operation.reason
+      || operation.dependencies.length === 0 || operation.preconditions.length === 0
+      || operation.postconditions.length === 0 || operation.rollbackConsiderations.length === 0) {
       throw new Error(`Incomplete additional operation: ${operation.id}`);
     }
     const [modulePath] = operation.sourcePath.split(":");
-    if (!modulePath || !readFileSync(path.join(REPOSITORY_ROOT, modulePath), "utf8")) {
+    if (!modulePath || !crosswalkSource(modulePath, options.sourceOverrides)) {
       throw new Error(`Missing additional-operation source: ${operation.id}`);
+    }
+    if (!operation.id.includes("/source-discovered-")) {
+      const ranges = [...operation.sourcePath.slice(modulePath.length + 1).matchAll(/(\d+)(?:-(\d+))?/gu)];
+      if (ranges.length === 0 || ranges.some((match) => Number(match[2] ?? match[1]) - Number(match[1]) > 25)) {
+        throw new Error(`Curated additional operation lacks narrow source positions: ${operation.id}`);
+      }
+      const sourceLines = crosswalkSource(modulePath, options.sourceOverrides).split(/\r?\n/u);
+      const excerpt = ranges.flatMap((match) => sourceLines.slice(Number(match[1]) - 1, Number(match[2] ?? match[1])));
+      const expectedChecksum = PINNED_CURATED_SOURCE_EXCERPT_CHECKSUMS[operation.id];
+      const actualChecksum = createHash("sha256").update(excerpt.join("\n")).digest("hex");
+      if (!expectedChecksum || actualChecksum !== expectedChecksum) {
+        throw new Error(`Curated additional operation source excerpt checksum mismatch: ${operation.id}`);
+      }
     }
   }
   const expectedAdditional = [...ADDITIONAL_STARTUP_OPERATIONS]
@@ -822,6 +1236,8 @@ export function validateStartupMigrationCrosswalk(
   if (JSON.stringify(actualAdditional) !== JSON.stringify(expectedAdditional)) {
     throw new Error("Additional startup operations do not match the reviewed source-derived inventory");
   }
+  const literals = assertPinnedExecutableSqlCoverage(options.sourceOverrides);
+  assertPinnedAdditionalOperationCoverage(crosswalk.additionalOperations, literals, options.sourceOverrides);
 
   if (crosswalk.inventory.recordCount !== mappedOccurrences
     || crosswalk.inventory.uniqueFingerprintCount !== seen.size

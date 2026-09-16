@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +10,9 @@ import {
   buildStartupMigrationCrosswalk,
   CANONICAL_MIGRATION_CHECKSUM,
   ownerCrosswalkReport,
+  PINNED_ADDITIONAL_OPERATION_COVERAGE,
+  PINNED_EXECUTABLE_STARTUP_SQL_LITERALS,
+  startupSqlLiteralCategory,
   validateStartupMigrationCrosswalk,
   type StartupMigrationCrosswalk,
 } from "./startup-migration-crosswalk";
@@ -72,6 +76,8 @@ test("extracts an exact object identity and review evidence for every mapping", 
 
 test("records additional non-DDL operations for every owner", () => {
   const crosswalk = repositoryCrosswalk();
+  assert.equal(crosswalk.additionalOperations.length, 110);
+  assert.equal(crosswalk.additionalOperations.length, PINNED_ADDITIONAL_OPERATION_COVERAGE.total);
   assert.equal(crosswalk.additionalOperations.length, ADDITIONAL_STARTUP_OPERATIONS.length);
   assert.deepEqual(
     new Set(crosswalk.additionalOperations.map((operation) => operation.owner)),
@@ -103,6 +109,32 @@ test("records additional non-DDL operations for every owner", () => {
   }
 });
 
+test("pins every executable startup SQL literal, including the sixteen formerly missed aliases", () => {
+  const crosswalk = repositoryCrosswalk();
+  assert.deepEqual(PINNED_EXECUTABLE_STARTUP_SQL_LITERALS, {
+    total: 103,
+    functionReplacements: 33,
+    dataMutations: 70,
+    byOwner: {
+      ensureBusinessGrowthSchema: 96,
+      ensureShippingConfigSchema: 1,
+      ensureReferralSchema: 1,
+      ensureWebPushSchema: 1,
+      ensureEducationBundlePurchaseSchema: 4,
+    },
+  });
+  for (const line of [239, 1888, 1955, 1993, 2695, 2936, 2968, 3986, 3997, 4612, 4617, 4620, 4644, 4801, 4881, 4894]) {
+    assert.ok(crosswalk.additionalOperations.some((operation) =>
+      operation.id.includes("source-discovered")
+      && operation.sourcePath.includes(`business-growth-schema.ts:${line}:`)),
+    `missing previously-undiscovered startup mutation at line ${line}`);
+  }
+  assert.equal(startupSqlLiteralCategory("WITH ranked AS (SELECT 1) UPDATE ONLY public.users u SET role = 'x'"), "data-backfill");
+  assert.equal(startupSqlLiteralCategory("UPDATE public.users u SET role = 'x'"), "data-backfill");
+  assert.equal(startupSqlLiteralCategory("UPDATE public.users AS u SET role = 'x'"), "data-backfill");
+  assert.equal(startupSqlLiteralCategory("CREATE OR REPLACE FUNCTION public.f() RETURNS void LANGUAGE sql AS $$ SELECT 1 $$"), "function-replacement");
+});
+
 test("derives trigger parents from executable source or marks them dynamic", () => {
   const crosswalk = repositoryCrosswalk();
   const triggers = crosswalk.mappings.filter((mapping) => mapping.objectIdentity.kind === "trigger");
@@ -112,6 +144,55 @@ test("derives trigger parents from executable source or marks them dynamic", () 
   const giftVoucher = triggers.find((mapping) =>
     mapping.objectIdentity.name === "education_gift_vouchers_snapshot_immutable");
   assert.equal(giftVoucher?.objectIdentity.parent, "education_gift_vouchers");
+});
+
+test("preserves exact source positions, source order, full SQL, and dynamic identity semantics", () => {
+  const crosswalk = repositoryCrosswalk();
+  for (const mapping of crosswalk.mappings) {
+    for (const item of mapping.occurrences) {
+      assert.match(item.sourcePath, /\.ts:\d+:\d+$/u);
+      assert.ok(item.sourcePosition.literalLine > 0);
+      assert.ok(item.sourcePosition.operationLine > 0);
+      assert.ok(item.executionOrder > 0);
+      assert.ok(item.sourceSql.length > 0);
+      assert.equal(
+        item.sourceSqlChecksum,
+        createHash("sha256").update(item.sourceSql).digest("hex"),
+      );
+    }
+  }
+  for (const owner of baseline.owners) {
+    const ordered = crosswalk.mappings
+      .flatMap((mapping) => mapping.occurrences)
+      .filter((item) => item.owner === owner.ensureName)
+      .sort((left, right) => left.executionOrder - right.executionOrder);
+    for (let index = 1; index < ordered.length; index += 1) {
+      const previous = ordered[index - 1]!;
+      const current = ordered[index]!;
+      assert.ok(
+        current.sourcePosition.operationLine > previous.sourcePosition.operationLine
+          || (current.sourcePosition.operationLine === previous.sourcePosition.operationLine
+            && current.sourcePosition.operationColumn >= previous.sourcePosition.operationColumn),
+        `${owner.ensureName} source order regressed at ${current.sourcePath}`,
+      );
+    }
+  }
+  const rename = crosswalk.mappings.find((mapping) => mapping.summary.includes("ALTER TYPE ${s}.user_role"));
+  assert.ok(rename?.occurrences.some((item) => item.sourceSql.includes("RENAME VALUE 'EDUCATION_CENTER_OWNER' TO 'EDUKATIVNI_CENTAR'")));
+  const dynamicTable = crosswalk.mappings.find((mapping) =>
+    mapping.objectIdentity.name === "salons" && mapping.objectIdentity.dynamicExpression?.includes("table"));
+  assert.equal(dynamicTable?.objectIdentity.schema, "<dynamic>");
+  const dynamicParentIndexes = crosswalk.mappings.filter((mapping) =>
+    mapping.objectIdentity.kind === "index"
+    && mapping.occurrences.some((item) => /\bON\s+\$\{/u.test(item.sourceSql)));
+  assert.equal(dynamicParentIndexes.length, 531);
+  assert.ok(dynamicParentIndexes.every((mapping) => mapping.objectIdentity.schema === "<dynamic>"));
+  const doubleDynamicTables = crosswalk.mappings.filter((mapping) =>
+    mapping.summary.includes("${s}.${table}"));
+  assert.equal(doubleDynamicTables.length, 15);
+  assert.ok(doubleDynamicTables.every((mapping) =>
+    mapping.objectIdentity.name === "${s}.${table}"
+      && mapping.objectIdentity.dynamicExpression === "${s}.${table}"));
 });
 
 test("owner report reconciles resolved and unresolved counts", () => {
@@ -134,7 +215,7 @@ test("rejects missing, duplicate, unsupported, and inconsistent mappings", () =>
       ...crosswalk,
       mappings: crosswalk.mappings.slice(1),
     }, baseline),
-    /Missing crosswalk mapping/u,
+    /Crosswalk mapping order mismatch|Missing crosswalk mapping/u,
   );
 
   assert.throws(
@@ -153,7 +234,7 @@ test("rejects missing, duplicate, unsupported, and inconsistent mappings", () =>
         fingerprint: "f".repeat(64),
       }, ...crosswalk.mappings.slice(1)],
     }, baseline),
-    /Unsupported crosswalk fingerprint/u,
+    /Crosswalk mapping order mismatch|Unsupported crosswalk fingerprint/u,
   );
 
   assert.throws(
@@ -201,7 +282,7 @@ test("rejects missing, duplicate, unsupported, and inconsistent mappings", () =>
   );
 });
 
-test("rejects unsupported status and unproven canonical claims", () => {
+test("rejects every unresolved-classification and canonical-evidence bypass", () => {
   const crosswalk = repositoryCrosswalk();
   const first = crosswalk.mappings[0]!;
 
@@ -224,7 +305,115 @@ test("rejects unsupported status and unproven canonical claims", () => {
         status: "CANONICAL_BASELINE",
       }, ...crosswalk.mappings.slice(1)],
     }, baseline),
-    /Unproven canonical equivalence/u,
+    /Unsupported mapping status/u,
+  );
+
+  for (const status of ["FUTURE_MIGRATION_REQUIRED", "RETIRED_HISTORICAL"] as const) {
+    assert.throws(
+      () => validateStartupMigrationCrosswalk({
+        ...crosswalk,
+        mappings: crosswalk.mappings.map((mapping) => ({ ...mapping, status })),
+      }, baseline),
+      /Unsupported mapping status/u,
+    );
+  }
+
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      mappings: [{
+        ...first,
+        evidence: {
+          ...first.evidence,
+          lineReferences: ["lib/db/migrations/000001_canonical_schema/migration.sql:1"],
+          semanticsVerified: true,
+        },
+      }, ...crosswalk.mappings.slice(1)],
+    }, baseline),
+    /Canonical evidence mismatch/u,
+  );
+
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      mappings: [{
+        ...first,
+        dependencies: [],
+        preconditions: [],
+        postconditions: [],
+        rollbackConsiderations: [],
+        resolutionReason: "",
+      }, ...crosswalk.mappings.slice(1)],
+    }, baseline),
+    /Incomplete mapping review fields/u,
+  );
+
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      mappings: [{
+        ...first,
+        existingDataEffect: "read-only-observation",
+      }, ...crosswalk.mappings.slice(1)],
+    }, baseline),
+    /Existing-data effect mismatch/u,
+  );
+});
+
+test("rejects reordered mappings, reordered occurrences, and fabricated source positions", () => {
+  const crosswalk = repositoryCrosswalk();
+  const repeated = crosswalk.mappings.find((mapping) => mapping.occurrences.length > 1)!;
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({ ...crosswalk, mappings: [...crosswalk.mappings].reverse() }, baseline),
+    /Crosswalk mapping order mismatch/u,
+  );
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      mappings: crosswalk.mappings.map((mapping) => mapping === repeated
+        ? { ...mapping, occurrences: [...mapping.occurrences].reverse() }
+        : mapping),
+    }, baseline),
+    /Occurrence mismatch/u,
+  );
+  const first = crosswalk.mappings[0]!;
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      mappings: [{
+        ...first,
+        occurrences: first.occurrences.map((item) => ({
+          ...item,
+          sourcePosition: { ...item.sourcePosition, operationLine: item.sourcePosition.operationLine + 1 },
+        })),
+      }, ...crosswalk.mappings.slice(1)],
+    }, baseline),
+    /Occurrence mismatch/u,
+  );
+});
+
+test("rejects fabricated crosswalk metadata and canonical baseline identifiers", () => {
+  const crosswalk = repositoryCrosswalk();
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      inventory: { ...crosswalk.inventory, recordCount: crosswalk.inventory.recordCount + 1 },
+    }, baseline),
+    /Crosswalk metadata does not reconcile/u,
+  );
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      canonicalBaseline: { ...crosswalk.canonicalBaseline, checksum: "0".repeat(64) },
+    }, baseline),
+    /immutable canonical migration checksum/u,
+  );
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      canonicalBaseline: { ...crosswalk.canonicalBaseline, source: "fabricated.sql" as never },
+    }, baseline),
+    /immutable canonical migration checksum/u,
   );
 });
 
@@ -246,6 +435,44 @@ test("rejects removal or fabrication of additional operations", () => {
       }, ...crosswalk.additionalOperations.slice(1)],
     }, baseline),
     /Additional startup operations do not match/u,
+  );
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      additionalOperations: crosswalk.additionalOperations.map((operation, index) => index === 0
+        ? { ...operation, dependencies: [] }
+        : operation),
+    }, baseline),
+    /Incomplete additional operation/u,
+  );
+  const curated = crosswalk.additionalOperations.find((operation) => !operation.id.includes("/source-discovered-"))!;
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      additionalOperations: crosswalk.additionalOperations.map((operation) => operation === curated
+        ? { ...operation, sourcePath: "artifacts/api-server/src/lib/referral-schema.ts:1-56" }
+        : operation),
+    }, baseline),
+    /Curated additional operation lacks narrow source positions/u,
+  );
+  assert.throws(
+    () => validateStartupMigrationCrosswalk({
+      ...crosswalk,
+      additionalOperations: crosswalk.additionalOperations.map((operation) =>
+        operation.id === "shipping/duplicate-row-cleanup"
+          ? { ...operation, sourcePath: "artifacts/api-server/src/lib/shipping-config.ts:56-61" }
+          : operation),
+    }, baseline),
+    /Curated additional operation source excerpt checksum mismatch/u,
+  );
+  const shippingPath = "artifacts/api-server/src/lib/shipping-config.ts";
+  const driftedShippingSource = readFileSync(path.join(ROOT, shippingPath), "utf8")
+    .replace("delete from ${schema}.shipping_rules", "DELETE FROM ${schema}.shipping_rules");
+  assert.throws(
+    () => validateStartupMigrationCrosswalk(crosswalk, baseline, {
+      sourceOverrides: new Map([[shippingPath, driftedShippingSource]]),
+    }),
+    /Curated additional operation source excerpt checksum mismatch/u,
   );
 });
 

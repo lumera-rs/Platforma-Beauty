@@ -1,0 +1,239 @@
+PHASE 5B-3 — INDEPENDENT CODE REVIEW
+
+Read-only. No files modified, nothing staged, committed, pushed, merged, reset or rebased.
+
+---
+
+7. Commands run, results, environmental limitations
+
+Command (cwd scripts/): npx tsx --test ./src/startup-migration-crosswalk.test.ts
+Result: 11 pass / 0 fail, 26.8 s
+────────────────────────────────────────
+Command (cwd scripts/): npx tsc -p tsconfig.json --noEmit
+Result: exit 0, 3.8 s; --listFiles confirms both crosswalk files are in the program (118
+files under scripts/src)
+────────────────────────────────────────
+Command (cwd scripts/): npx tsx --test ./src/production-startup-ddl-inventory.test.ts
+Result: 6 pass / 0 fail
+────────────────────────────────────────
+Command (cwd scripts/): npx tsx --test
+../artifacts/api-server/src/lib/startup-ddl-safety.test.ts
+Result: 12 pass / 0 fail
+────────────────────────────────────────
+Command (cwd scripts/): npx tsx ./src/startup-migration-crosswalk.ts
+Result: exit 0, 7.0 s, owner report
+────────────────────────────────────────
+Command (cwd scripts/): npx tsx ./src/startup-migration-crosswalk.ts --json
+Result: exit 0, 3.7 s, 3,769,936 bytes, peak RSS 96 MB
+
+Limitations: no database was contacted (none needed — the tool is purely static). /usr/bin/time is unavailable; peak RSS was sampled from /proc/<pid>/status at 50 ms. Everything below was derived by my own scripts in the scratchpad, not from the implementation's validator.
+
+---
+
+1. 1,459 occurrences / 1,435 fingerprints — correct
+
+Independently recomputed from production-startup-ddl-baseline.json: 8 owners, 1,459 records, 1,435 unique fingerprints, 20 fingerprints repeated (24 surplus occurrences). Generated JSON: 1,435 mappings, occurrence sum 1,459. Per-owner uniqueFingerprints sums to exactly 1,435 (no fingerprint spans owners).
+
+Grouping does not conceal different SQL semantics. production-startup-ddl-inventory.ts:318 computes the fingerprint as sha256(kind ∥ normalized(matched statement) ∥ normalized(entire enclosing literal)). Identical fingerprint therefore implies identical statement text and identical enclosing literal. I verified 0 fingerprints map to differing (kind, summary) pairs.
+
+It does, however, conceal location: see MEDIUM-4.
+
+2. The 94 additional operations — NOT complete (see BLOCKER-1)
+
+Count reconciles arithmetically (19 curated + 75 source-discovered = 94; per-owner 82+1+1+1+2+2+1+4). Curated line ranges I spot-checked (5036-5042, 5051-5066, 5145-5148, 5175-5178, shipping-config.ts:54-65, education-bundle-purchase-schema.ts:24-31/39-47) are accurate. Exotic verbs the discovery ignores (TRUNCATE, MERGE, COPY, GRANT/REVOKE, VIEW, SEQUENCE, POLICY, RLS, COMMENT ON, REFRESH MATVIEW, procedures) are genuinely absent from all eight modules, so that narrowness is currently latent, not active.
+
+But the UPDATE detector is defeated by bare table aliases, and that is not latent.
+
+3. Every mapping is genuinely UNRESOLVED — true of the builder, not enforced by the validator
+
+All 1,435 mappings are UNRESOLVED; all 1,435 carry semanticsVerified: false; 1,386 have candidate-name-match and 49 no-candidate-name-match. canonicalEvidence (:215) can never emit semanticsVerified: true, and resolutionReason states explicitly that name presence does not prove equivalence. Candidate matches cannot be mistaken for proven equivalence in generated output. The validator does not hold that line — see HIGH-1/HIGH-2.
+
+4. Attempts to defeat the validator — 10 of 15 succeeded
+
+I built the real crosswalk, mutated the object, and re-validated:
+
+┌───────────────────────────────────────────────────────────────────────┬───────────┐
+│                                Attack                                 │  Result   │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ All 1,435 → RETIRED_HISTORICAL, no evidence                           │ ACCEPTED  │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ All 1,435 → FUTURE_MIGRATION_REQUIRED, no evidence                    │ ACCEPTED  │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ All → CANONICAL_BASELINE with self-asserted semanticsVerified:true +  │ ACCEPTED  │
+│ one fake line ref                                                     │           │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Empty dependencies/preconditions/postconditions/rollbackConsideration │ ACCEPTED  │
+│ s/resolutionReason                                                    │           │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ existingDataEffect → read-only-observation on every destructive op    │ ACCEPTED  │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Fabricated lineReferences                                             │ ACCEPTED  │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Reversed occurrence order / reversed mapping order                    │ ACCEPTED  │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Inventory counts inflated                                             │ blocked   │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ canonicalBaseline.checksum replaced                                   │ blocked   │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Dropped/duplicated mapping, wrong summary, wrong identity, wrong      │ blocked   │
+│ owner, dropped occurrence                                             │           │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Additional op removed / fabricated / emptied field                    │ blocked   │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│ Build with additionalOperations: []                                   │ blocked   │
+├───────────────────────────────────────────────────────────────────────┼───────────┤
+│                                                                       │ blocked   │
+│ Canonical SQL altered (buildStartupMigrationCrosswalk)                │ (sha256   │
+│                                                                       │ recompute │
+│                                                                       │ d)        │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+
+5. Determinism, performance, memory — all good
+
+Two runs byte-identical (cmp clean). A third run from /tmp is also byte-identical — REPOSITORY_ROOT derives from import.meta.url (:110), so output is cwd-independent. 3.7 s, 96 MB peak, 3.77 MB JSON; main() is correctly guarded (:893). Full JSON generates reliably.
+
+6. Nothing else changed — confirmed
+
+git status clean. ea35d882 touches exactly three files: scripts/package.json (+3 lines, three new script entries, no existing entry modified), and the two new crosswalk files. git diff ea35d882^ HEAD over the inventory, the baseline JSON, the inventory test, lib/db/migrations/, artifacts/api-server/src/index.ts and all eight owner modules is empty. The canonical migration hashes to 643a649989c3…02fc60, matching CANONICAL_MIGRATION_CHECKSUM (:12). Production startup behavior is untouched — the crosswalk is not imported by any runtime module.
+
+---
+
+Findings
+
+BLOCKER-1 — 16 startup data-mutating statements are absent from both the 1,435 mappings and the 94 additional operations
+
+scripts/src/startup-migration-crosswalk.ts:581
+
+|| /\bUPDATE\s+[A-Za-z_$"{%][^\s,;()]*\s+(?:AS\s+[A-Za-z_][A-Za-z0-9_]*\s+)?SET\b/iu.test(normalized)
+
+The alias group requires the optional AS keyword. PostgreSQL's bare alias form — UPDATE t alias SET … — is not matched. Neither is UPDATE ONLY t SET ….
+
+I re-scanned all eight owner modules with an alias-aware detector and cross-checked every hit against the generated JSON. Sixteen literals containing executed, data-mutating SQL appear nowhere in the artifact — not in the 1,435 DDL mappings, not in the 94 additional operations, and not inside any curated line range:
+
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 2695
+Statement: UPDATE ${s}.users u SET role = 'JOBSEEKER' WHERE u.role = 'CUSTOMER' … —
+startup-time mass reassignment of user authorization roles
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 2936
+Statement: WITH ranked … UPDATE ${s}.retail_product_reviews review SET moderation_status
+= 'REMOVED', removed_at = …
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 4881 / 4894
+Statement: WITH ranked … UPDATE ${s}.education_payment_obligations target SET status =
+'cancelled', cancelled_at = now() — financial obligation cancellation
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 4612 / 4617 / 4620 / 4644
+Statement: subscription plan reassignment, audience rewrite, tier renumber,
+price/course-limit snapshot backfill
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 239
+Statement: UPDATE ${s}.education_installments installment SET
+payment_instructions_snapshot = …
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 1888 / 1955 / 1993
+Statement: package quota backfills; package_redemptions service backfill inside a DO
+block
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 2968
+Statement: UPDATE ${s}.products product SET average_rating …, review_count …
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 3986 / 3997
+Statement: placement dedupe; education_placements duration snapshot backfill
+────────────────────────────────────────
+Line in artifacts/api-server/src/lib/business-growth-schema.ts: 4801
+Statement: UPDATE ${s}.course_enrollments enrollment SET access_days_snapshot …,
+course_price_snapshot …
+
+Two further bare-alias UPDATEs (referral-schema.ts:27, education-bundle-purchase-schema.ts:54) are equally undetected and survive in the artifact only because a human wrote curated entries for them — the algorithm found neither. That is the proof the discovery is manual-luck, not systematic: the same predicate that missed those two missed sixteen more where no human happened to look.
+
+This directly falsifies the artifact's own claim (:606) that a mapped operation is "outside the classified 1,459-record DDL inventory" — these sixteen are outside both inventories and are represented nowhere.
+
+Fix direction: make the alias optional independently of AS ((?:\s+(?:AS\s+)?[A-Za-z_][A-Za-z0-9_]*)?), handle UPDATE ONLY, and pin an explicit expected count so a regression is visible.
+
+HIGH-1 — The validator accepts fabricated RETIRED_HISTORICAL and FUTURE_MIGRATION_REQUIRED with zero evidence
+
+scripts/src/startup-migration-crosswalk.ts:778-788
+
+Only CANONICAL_BASELINE is guarded. I re-validated a crosswalk with all 1,435 mappings relabelled RETIRED_HISTORICAL — accepted. The test at startup-migration-crosswalk.test.ts:43 is named "fails closed instead of inventing canonical, future, or retired equivalence" but only inspects builder output; it never asserts that the validator rejects those two statuses. A hand-edited or downstream-produced crosswalk can claim every startup operation is retired history and pass the gate.
+
+HIGH-2 — The CANONICAL_BASELINE guard is self-asserted and trivially forged
+
+scripts/src/startup-migration-crosswalk.ts:781-786
+
+The guard checks fields the document supplies about itself (semanticsVerified, evidenceType, lineReferences.length). It never re-derives evidence from migration.sql. Setting semanticsVerified: true plus one fabricated line reference on all 1,435 mappings was accepted. lineReferences are never checked for existence or for actually containing the object name.
+
+HIGH-3 — No pinned expectation for the 94; the additional-operation check is self-referential
+
+scripts/src/startup-migration-crosswalk.ts:818-822, startup-migration-crosswalk.test.ts:75
+
+validateStartupMigrationCrosswalk compares crosswalk.additionalOperations against the module-level ADDITIONAL_STARTUP_OPERATIONS, which is recomputed at import from live source (:622). The test asserts crosswalk.additionalOperations.length === ADDITIONAL_STARTUP_OPERATIONS.length — tautologically true. The number 94 appears nowhere in the code or the tests. If a source edit causes discovery to find 60, every test still passes. Worse, the 19 curated entries' content is never verified against source — validation only checks that the module file is readable (:814), so their summaries, line ranges and rollback claims can silently drift from the code they describe.
+
+MEDIUM-1 — Curated blanket line ranges can silently swallow future operations
+
+scripts/src/startup-migration-crosswalk.ts:546-556, 585-586
+
+education-bundle/transaction-and-advisory-lock declares education-bundle-purchase-schema.ts:4-85 and referral/transaction-and-advisory-lock declares referral-schema.ts:14-54 — ranges spanning the entire owner function. discoveredAdditionalOperations suppresses any discovered operation whose line falls in any curated range (.some(...)). Today the more specific entries win by array order and nothing extra is lost (I verified all 9 suppressed literals are genuinely described by their suppressing entry). But any mutation added inside those spans in future is suppressed with no signal.
+
+MEDIUM-2 — existingDataEffect is derived from a kind-name prefix and mislabels the riskiest operations
+
+scripts/src/startup-migration-crosswalk.ts:202-207
+
+The classifier returns fresh-and-existing-idempotent for anything not prefixed alter-/drop-/validate-. Result in the generated artifact:
+
+- 85 add-constraint → fresh-and-existing-idempotent
+- 551 create-index, of which 101 are CREATE UNIQUE INDEX → fresh-and-existing-idempotent
+- 186 create-table, 29 create-trigger → same
+
+A CREATE UNIQUE INDEX against existing production rows is precisely the non-idempotent case — it is the reason shipping/duplicate-row-cleanup exists as a curated entry in this same file. Design point 5B-2 §2 asks whether each operation is required for existing data or only fresh init; a prefix test cannot answer that, and the field currently understates risk on 858 of 1,435 mappings.
+
+MEDIUM-3 — Destructive ALTER TYPE … RENAME VALUE semantics are erased from the mapping summary
+
+business-growth-schema.ts:1612 executes ALTER TYPE ${s}.user_role RENAME VALUE 'EDUCATION_CENTER_OWNER' TO 'EDUKATIVNI_CENTAR'. The crosswalk surfaces it as summary ALTER TYPE ${s}.user_role — the rename is gone. The root cause is the inventory's alter-type pattern (production-startup-ddl-inventory.ts:341), whose optional tail matches only ADD VALUE, but the crosswalk republishes the truncated text as the authoritative record a reviewer will act on.
+
+MEDIUM-4 — Occurrence records carry no position, so 1,459 occurrences collapse to 26 distinguishable keys
+
+scripts/src/startup-migration-crosswalk.ts:242-251
+
+occurrence() records sourcePath: operation.module (file, no line) plus callSite/phase/executionPath, which are near-constant per owner. Measured distinct occurrence keys: ensureBusinessGrowthSchema 26 for 1,377 records; ensureMediaSchema 1 for 26. For 19 of the 20 duplicated fingerprints the two occurrence entries are byte-identical. The occurrence array preserves the count but cannot tell a reviewer where any of the 1,459 operations is, nor in what order they execute — which is what 5B-2 §3 ("execution ordering") asks for.
+
+MEDIUM-5 — Statically-resolvable identities are degraded to <dynamic>, and ${s} is silently asserted to be public
+
+scripts/src/startup-migration-crosswalk.ts:118, :131-198
+
+- ALTER TABLE ${table("salons")} … yields {schema:"<dynamic>", name:"${table", dynamicExpression:"${table"} — the regex [^\s(;]+ truncates at (, discarding the statically known table name. Affects at least salons, beauty_job_listings, products, courses.
+- DROP INDEX %I.%I' yields name: "%I.%I'" — normalizedIdentifier strips " and trailing [,;()] but not '.
+- Line 118 rewrites ${s}. / ${schema}. / ${quoted}. to public., so 1,319 of 1,435 mappings assert schema: "public" for statements whose schema is a runtime parameter (ensureReferralSchema(schemaName = "public") is called with tenant schemas in tests).
+
+All of these fail closed (UNRESOLVED, no line references), so nothing unsafe is claimed — but the identity fields are less accurate than they read.
+
+LOW-1 — canonicalEvidence scans all 19,417 canonical lines per mapping
+
+scripts/src/startup-migration-crosswalk.ts:230-236. The matches.length < 5 cap is inside the forEach callback, so there is no early exit: ~27.9 M line comparisons with line.toLowerCase() recomputed 1,435× per line. Not a problem at current scale (3.7 s total); pre-lowercasing canonicalLines once would remove most of it.
+
+LOW-2 — Substring matching inflates candidate-name-match
+
+scripts/src/startup-migration-crosswalk.ts:232 uses includes(token), so a short object name matches unrelated identifiers that contain it. 1,386 of 1,435 mappings report candidate-name-match. Harmless because semanticsVerified stays false and resolutionReason says so explicitly, but the signal is weak.
+
+LOW-3 — validateStartupMigrationCrosswalk alone does not re-read migration.sql
+
+scripts/src/startup-migration-crosswalk.ts:727-729 compares against the hardcoded constant. Only buildStartupMigrationCrosswalk (:632) hashes the file. Calling the exported validator standalone on an already-built document would not notice canonical-migration drift.
+
+LOW-4 — Pre-existing, not introduced here
+
+scripts/package.json contains duplicate keys (test:internal-request-control-outputs, test:admin-navigation-regression, test:admin-bounded-pagination) — present before ea35d882, listed only so it is not mistaken for new damage. startup-migration-crosswalk.ts has no trailing newline at EOF.
+
+---
+
+Assessment
+
+The scaffolding is genuinely sound: counts reconcile against the real baseline, the canonical checksum is enforced at build, output is byte-deterministic and cwd-independent, memory and runtime are unremarkable, nothing outside the three intended files moved, and the builder never invents equivalence. Fourteen of the fifteen structural tamper attempts I ran against mapping identity were correctly rejected.
+
+But two claims the phase rests on do not hold. The 94 additional operations are not complete — sixteen executed startup data mutations, including a mass rewrite of user roles and the cancellation of financial payment obligations, are represented nowhere in the artifact, and the validator cannot detect this because it compares discovery output to itself. And "every mapping is UNRESOLVED" is a property of the builder that the validator does not enforce: relabelling all 1,435 mappings as retired history, or forging canonical equivalence, both pass.
+
+A crosswalk whose purpose is to be the evidence base for removing startup DDL cannot ship while it omits startup writes to users.role and education_payment_obligations.status.
+
+REJECT PHASE 5B-3 — FIXES REQUIRED
+
+Blocking: BLOCKER-1, HIGH-1, HIGH-2, HIGH-3. MEDIUM-1 through MEDIUM-5 should be addressed in the same pass since they affect the same records. This verdict concerns the crosswalk infrastructure only; it approves no mapping, no forward migration, no startup-DDL removal and no production change.
+
+Want me to put this in a shareable page for the phase gate record? One line and it's published.
