@@ -1,0 +1,52 @@
+# PHASE 5B-2 — STARTUP DDL REMOVAL DESIGN
+
+READ-ONLY REPOSITORY ANALYSIS. NO IMPLEMENTATION.
+
+Objective: Design a safe transition from application startup schema modifications to the existing controlled migration system.
+
+Analyze all eight startup-DDL owners and the complete Phase 2 inventory of 1,459 operations.
+
+For each owner:
+
+1. Identify every startup call path and SQL operation.
+2. Determine whether the operation is required for existing production data or only for fresh database initialization.
+3. Identify dependencies, execution ordering and assumptions.
+4. Map each operation to the canonical baseline or a future versioned migration.
+5. Identify operations that cannot safely be removed without additional changes.
+6. Determine how development, test, fresh installations and production must behave after removal.
+7. Identify rollback and compatibility risks.
+
+Design the target architecture:
+
+* Production API startup must not execute schema-changing SQL.
+* Schema changes must occur only through explicitly authorized migration commands.
+* Existing production data must be preserved.
+* Fresh database initialization must remain supported.
+* Development and test behavior must remain functional.
+* No automatic baseline adoption.
+* No implicit migrations during Publish, startup or HTTP requests.
+
+Specify regression tests that prove zero startup DDL and verify that the booking system, authentication, background jobs and tenant isolation still function.
+
+Produce an implementation plan divided into small, independently testable tasks, with exact file ownership and recommended execution order.
+
+IMPORTANT:
+
+Do not modify files.
+Do not connect to production.
+Do not run migrations or adoption.
+Do not alter database privileges.
+Do not Pause, Publish or Deploy.
+Do not push or merge Git changes.
+
+Report blockers and unresolved assumptions explicitly.
+
+End with:
+
+STARTUP DDL REMOVAL PLAN READY — IMPLEMENTATION NOT AUTHORIZED
+
+or
+
+STARTUP DDL REMOVAL PLAN BLOCKED
+
+STOP.
