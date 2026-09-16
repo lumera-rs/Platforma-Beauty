@@ -1,0 +1,69 @@
+# PHASE 5B-3 — FIX INDEPENDENT REVIEW FINDINGS
+
+Implement the corrections identified by the independent Claude Code review.
+
+Read the complete Phase 5B-3 independent review before making changes.
+
+Scope: crosswalk infrastructure and its tests only.
+
+## Mandatory fixes
+
+1. BLOCKER-1: Correct SQL discovery to detect UPDATE statements with bare aliases, UPDATE ONLY and nested statements. Account for all 16 missing data mutations identified by Claude. Independently verify complete coverage across all eight startup owners.
+
+2. HIGH-1: Reject unsupported RETIRED_HISTORICAL and FUTURE_MIGRATION_REQUIRED classifications. Require independently verifiable evidence. Until evidence exists, mappings must remain UNRESOLVED.
+
+3. HIGH-2: Reject fabricated CANONICAL_BASELINE evidence. Never trust self-asserted semanticsVerified values or unverified line references. Validate evidence against the actual immutable migration SQL.
+
+4. HIGH-3: Introduce independent, pinned coverage expectations and source-backed validation for additional operations. Do not merely compare discovery output against itself.
+
+5. Address MEDIUM-1 through MEDIUM-5 from the review:
+
+   * Eliminate broad curated ranges that hide future operations.
+   * Correct misleading existing-data-effect classifications.
+   * Preserve destructive ALTER TYPE RENAME VALUE semantics.
+   * Record precise source positions and execution ordering for occurrences.
+   * Preserve accurate dynamic schema and object identities.
+
+6. Add adversarial regression tests reproducing every confirmed bypass from the review.
+
+7. Preserve deterministic output and reasonable performance.
+
+## Safety constraints
+
+Do not change:
+
+* Historical startup-DDL inventory.
+* Immutable migration 000001.
+* Any startup owner or production startup execution.
+* Migration runner or production database.
+* Deployment configuration.
+
+Do not generate or execute forward migrations.
+
+Do not Pause, Publish or Deploy.
+
+Do not push, merge, reset, rebase or otherwise modify Git history.
+
+## Required verification
+
+Run:
+
+* Crosswalk tests.
+* Scripts typecheck.
+* Historical inventory tests.
+* Startup-DDL safety tests.
+* Migration contract tests.
+
+Report exact commands and results.
+
+Provide:
+
+* Files changed.
+* Corrected inventory and additional-operation counts.
+* Remaining unresolved mappings.
+* Evidence that all review findings were addressed.
+* Git status and HEAD.
+
+Stop after implementation. Leave the changes for another independent Claude Code review.
+
+Do not claim Phase 5B-3 is approved.
