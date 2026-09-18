@@ -1,0 +1,1896 @@
+
+> workspace@0.0.0 test:appointment-regressions /home/runner/workspace
+> export NODE_ENV=test && pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/booking-admission.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/availability-engine.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-lifecycle.test.ts && pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/appointment-customer-events.test.ts ../artifacts/api-server/src/lib/booking-settings-contract.test.ts ../artifacts/api-server/src/lib/widget-appointment-contract.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/booking-p1-regressions.test.ts && pnpm run test:appointment-concurrency && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/widget-rate-limit.test.ts
+
+✔ booking admission rejects excess work before the route handler runs (1.70998ms)
+✔ booking admission is a pass-through when production admission is disabled (1.314524ms)
+✔ every allocation-capable HTTP route uses the shared admission boundary (60.40062ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 506.893761
+✔ appointment lifecycle enforces the canonical transition matrix (1.93617ms)
+✔ late-policy end instants use the salon timezone across DST (17.402366ms)
+✔ caller timestamps are restricted to a narrow server-time correction window (0.26092ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30.737595
+✔ group confirmation schedule lists every treatment in canonical order (9.266075ms)
+✔ reminder grouping deduplicates treatments per booking day (0.203385ms)
+✔ ungrouped appointments retain independent reminder groups (0.093433ms)
+✔ review invitation catch-up is bounded even with unsafe caller limits (0.134432ms)
+✔ reminder channels independently control delivery (0.276788ms)
+✔ a reminder window is emitted once when any selected channel attempts delivery (0.22841ms)
+✔ booking settings accept every supported cancellation, reminder, and channel choice (3.391506ms)
+✔ booking settings reject unsupported cancellation and reminder values (0.549582ms)
+✔ booking settings accept closed holidays and custom holiday hours (0.235734ms)
+✔ booking horizon is nullable, inclusive, and capped at 3650 days (0.669772ms)
+▶ documented booking POST idempotency headers match runtime validation
+  ✔ createBookingGroup (4.969881ms)
+  ✔ createSalonBookingGroup (0.766239ms)
+  ✔ createEmployeeBookingGroup (0.480763ms)
+  ✔ createAppointment (0.411908ms)
+  ✔ createSalonAppointment (0.271735ms)
+  ✔ createSalonPackageAppointments (0.492487ms)
+  ✔ createSalonAppointmentSeries (0.261929ms)
+  ✔ createEmployeeAppointmentSeries (0.417181ms)
+  ✔ createEmployeeAppointments (0.356153ms)
+  ✔ createWidgetAppointment (0.451227ms)
+  ✔ createWidgetBookingGroup (0.565555ms)
+✔ documented booking POST idempotency headers match runtime validation (12.730121ms)
+✔ booking request without Idempotency-Key returns the documented error (0.165042ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2396.368117
+[10:38:45.474] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "method": "POST",
+      "url": "/api/salon/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 152
+[10:38:45.494] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "method": "PATCH",
+      "url": "/api/appointments/6ce79024-9e79-4490-abb0-e2e1b3196d4b"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 11
+[10:38:45.526] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "method": "POST",
+      "url": "/api/appointments/6ce79024-9e79-4490-abb0-e2e1b3196d4b/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 27
+[10:38:45.590] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "method": "POST",
+      "url": "/api/employee/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 62
+[10:38:45.648] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "method": "POST",
+      "url": "/api/booking-groups/35d0084e-619b-4291-b434-c18bea81a9f5/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 56
+[10:38:45.709] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "method": "POST",
+      "url": "/api/salon/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 59
+[10:38:45.726] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "method": "POST",
+      "url": "/api/salon/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 74
+[10:38:45.760] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "method": "POST",
+      "url": "/api/booking-groups/58249ef8-14ec-4a8e-9968-9ab8fea5877d/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 8
+[10:38:45.781] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 18
+[10:38:45.798] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 10,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 15
+[10:38:45.935] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 11,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 135
+[10:38:45.959] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 12,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 20
+[10:38:45.961] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 13,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 1
+[10:38:45.985] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 14,
+      "method": "POST",
+      "url": "/api/employee/appointment-series/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 23
+[10:38:45.995] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 15,
+      "method": "PATCH",
+      "url": "/api/booking-groups/7340bac2-e1cb-4883-92f5-e5c1ab0a04df/reschedule"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 9
+[10:38:46.033] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 16,
+      "method": "PATCH",
+      "url": "/api/booking-groups/7340bac2-e1cb-4883-92f5-e5c1ab0a04df/reschedule"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 26
+[10:38:46.063] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 17,
+      "method": "PATCH",
+      "url": "/api/booking-groups/7340bac2-e1cb-4883-92f5-e5c1ab0a04df/reschedule"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 29
+[10:38:46.081] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 18,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12
+[10:38:46.199] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 19,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 117
+[10:38:46.218] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 20,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 17
+[10:38:46.236] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 21,
+      "method": "POST",
+      "url": "/api/employee/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 17
+[10:38:46.252] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 22,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 14
+[10:38:46.279] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 23,
+      "method": "POST",
+      "url": "/api/salons/6eb76a5a-9829-42fe-bf21-9d35f694baad/grouped-availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:38:46.309] [32mINFO[39m (30438): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 24,
+      "method": "POST",
+      "url": "/api/booking-groups/7340bac2-e1cb-4883-92f5-e5c1ab0a04df/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 28
+Booking P1 regressions passed.
+
+> workspace@0.0.0 test:appointment-concurrency /home/runner/workspace
+> export NODE_ENV=test && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts
+
+Appointment concurrency regression passed.
+Resource capacity concurrency tests passed.
+[10:39:14.721] [32mINFO[39m (31516): [36mEducation registration salon cleanup report[39m
+    [35mversion[39m: 99
+    [35mcandidates[39m: 0
+    [35mdetached_users[39m: 0
+    [35mdeleted_salons[39m: 0
+    [35mretired_salons[39m: 0
+[10:39:14.723] [32mINFO[39m (31516): [36mBusiness Growth database schema is ready[39m
+    [35mversion[39m: 126
+    [35mschema[39m: "public"
+[10:39:18.246] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "method": "GET",
+      "url": "/api/employee/locations"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 26
+[10:39:18.293] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "method": "PATCH",
+      "url": "/api/employee/active-location"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 30
+[10:39:18.309] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "method": "GET",
+      "url": "/api/employee/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 13
+[10:39:18.317] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "method": "PATCH",
+      "url": "/api/employee/active-location"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.326] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "method": "PATCH",
+      "url": "/api/employee/active-location"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:39:18.377] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "method": "GET",
+      "url": "/api/salons/http-appointment-salon-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 42
+[10:39:18.402] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "method": "GET",
+      "url": "/api/salons/foreign-http-appointment-salon-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 23
+[10:39:18.421] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:39:18.424] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "method": "GET",
+      "url": "/api/appointments/569d291e-3a68-45ea-a865-daaa8cbcfb90/salon-contact"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 1
+[10:39:18.429] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 10,
+      "method": "GET",
+      "url": "/api/appointments/569d291e-3a68-45ea-a865-daaa8cbcfb90/salon-contact"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.434] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 11,
+      "method": "GET",
+      "url": "/api/appointments/00171b1b-ce55-4331-b90e-13be68fce55b/salon-contact"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 3
+[10:39:18.440] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 12,
+      "method": "GET",
+      "url": "/api/appointments/381f3ed7-3400-4273-aec3-2127ca9eef1c/salon-contact"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.445] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 13,
+      "method": "GET",
+      "url": "/api/appointments/569d291e-3a68-45ea-a865-daaa8cbcfb90/salon-contact"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.465] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 14,
+      "method": "POST",
+      "url": "/api/salon/services"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 19
+[10:39:18.482] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 15,
+      "method": "POST",
+      "url": "/api/salon/services"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 15
+[10:39:18.494] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 16,
+      "method": "GET",
+      "url": "/api/salon/services"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11
+[10:39:18.511] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 17,
+      "method": "DELETE",
+      "url": "/api/salon/services/16f66b60-a9da-4834-b3b3-9cebc4904497"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 14
+[10:39:18.521] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 18,
+      "method": "GET",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.539] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 19,
+      "method": "PATCH",
+      "url": "/api/salon/services/69170310-a99c-40bf-83b5-3b105005b62f"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 15
+[10:39:18.542] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 20,
+      "method": "GET",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2
+[10:39:18.555] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 21,
+      "method": "PATCH",
+      "url": "/api/salon/services/260e3acf-4636-4c9d-8321-aedd59f600b9"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12
+[10:39:18.560] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 22,
+      "method": "GET",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.574] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 23,
+      "method": "PATCH",
+      "url": "/api/salon/services/260e3acf-4636-4c9d-8321-aedd59f600b9"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:39:18.578] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 24,
+      "method": "GET",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3
+[10:39:18.583] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 25,
+      "method": "PATCH",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.587] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 26,
+      "method": "GET",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3
+[10:39:18.597] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 27,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 9
+[10:39:18.610] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 28,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.659] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 29,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 45
+[10:39:18.682] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 30,
+      "method": "GET",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 21
+[10:39:18.701] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 31,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 18
+[10:39:18.714] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 32,
+      "method": "GET",
+      "url": "/api/employee/portal"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12
+[10:39:18.732] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 33,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:39:18.742] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 34,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:39:18.751] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 35,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:18.758] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 36,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+[10:39:18.764] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 37,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.773] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 38,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:18.778] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 39,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.783] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 40,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.788] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 41,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.798] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 42,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:39:18.805] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 43,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+[10:39:18.810] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 44,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:18.816] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 45,
+      "method": "GET",
+      "url": "/api/salons"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:39:18.825] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 46,
+      "method": "GET",
+      "url": "/api/salons/6c062dd6-8301-4010-8e7c-5c2c1b07a72d/availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:18.854] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 47,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 28
+[10:39:18.866] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 48,
+      "method": "POST",
+      "url": "/api/appointments/b64b6c42-d364-42de-bf7f-ff766cf00f51/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 9
+[10:39:18.913] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 49,
+      "method": "POST",
+      "url": "/api/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 45
+[10:39:18.943] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 50,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 27
+[10:39:18.950] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 51,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 33
+[10:39:18.958] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 52,
+      "method": "GET",
+      "url": "/api/salons/6c062dd6-8301-4010-8e7c-5c2c1b07a72d/availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:39:18.989] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 53,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 30
+[10:39:19.022] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 54,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 26
+[10:39:19.040] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 55,
+      "method": "PATCH",
+      "url": "/api/admin/salons/e582b527-624e-4faa-a946-b08844ce8e1f"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 16
+[10:39:19.052] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 56,
+      "method": "PATCH",
+      "url": "/api/admin/salons/e582b527-624e-4faa-a946-b08844ce8e1f"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11
+[10:39:19.062] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 57,
+      "method": "PATCH",
+      "url": "/api/admin/salons/e582b527-624e-4faa-a946-b08844ce8e1f"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:19.072] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 58,
+      "method": "PATCH",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:39:19.080] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 59,
+      "method": "PATCH",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:19.089] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 60,
+      "method": "PATCH",
+      "url": "/api/salon/profile"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:19.096] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 61,
+      "method": "GET",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+[10:39:19.101] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 62,
+      "method": "POST",
+      "url": "/api/education/courses"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+[10:39:19.138] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 63,
+      "method": "PATCH",
+      "url": "/api/appointments/b64b6c42-d364-42de-bf7f-ff766cf00f51"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 36
+[10:39:19.168] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 64,
+      "method": "POST",
+      "url": "/api/appointments/b64b6c42-d364-42de-bf7f-ff766cf00f51/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 29
+[10:39:19.205] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 65,
+      "method": "POST",
+      "url": "/api/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 29
+[10:39:19.224] [31mERROR[39m (31516): [36mUnhandled API request error[39m
+    [35mreq[39m: {
+      "id": 66,
+      "method": "POST",
+      "url": "/api/appointments/413ee7f4-1ae9-4fda-8557-57d21c2d9679/cancel"
+    }
+    err: {
+      "type": "DrizzleQueryError",
+      "message": "Failed query: insert into \"email_deliveries\" (\"id\", \"event_key\", \"email_type\", \"salon_id\", \"appointment_id\", \"recipient_email\", \"recipient_name\", \"subject\", \"html_content\", \"status\", \"provider_message_id\", \"error_message\", \"scheduled_at\", \"sent_at\", \"retry_count\", \"retryable_failure\", \"next_retry_at\", \"processing_token\", \"metadata\", \"created_at\") values (default, $1, $2, $3, $4, $5, $6, $7, $8, default, default, default, $9, default, default, default, $10, default, $11, default), (default, $12, $13, $14, $15, $16, $17, $18, $19, default, default, default, $20, default, default, default, $21, default, $22, default) on conflict do nothing returning \"id\", \"event_key\", \"email_type\", \"salon_id\", \"appointment_id\", \"recipient_email\", \"recipient_name\", \"subject\", \"html_content\", \"status\", \"provider_message_id\", \"error_message\", \"scheduled_at\", \"sent_at\", \"retry_count\", \"retryable_failure\", \"next_retry_at\", \"processing_token\", \"metadata\", \"created_at\"\nparams: appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:customer:cancelled,appointment_cancelled,,,customer-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test,Kupac HTTP test,LUMERA — Termin je otkazan,<!doctype html><html lang=\"sr\"><body style=\"margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b\">\n  <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td align=\"center\" style=\"padding:32px 16px\">\n  <table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden\">\n  <tr><td style=\"background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px\">LUMERA</td></tr>\n  <tr><td style=\"padding:34px\"><h1 style=\"font-size:25px;margin:0 0 18px;color:#302a23\">Termin je otkazan</h1><p>Vaš termin je otkazan: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>\n  <p style=\"margin-top:30px;color:#766e65;font-size:13px\">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>\n  </table></td></tr></table></body></html>,,2026-09-17T10:39:19.220Z,{\"appointmentId\":\"413ee7f4-1ae9-4fda-8557-57d21c2d9679\",\"salonId\":\"6c062dd6-8301-4010-8e7c-5c2c1b07a72d\"},appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:salon:cancelled,salon_appointment_cancelled,,,owner-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test,Vlasnik HTTP test,LUMERA Biznis — Termin je otkazan,<!doctype html><html lang=\"sr\"><body style=\"margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b\">\n  <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td align=\"center\" style=\"padding:32px 16px\">\n  <table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden\">\n  <tr><td style=\"background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px\">LUMERA</td></tr>\n  <tr><td style=\"padding:34px\"><h1 style=\"font-size:25px;margin:0 0 18px;color:#302a23\">Termin je otkazan</h1><p>Kupac HTTP test je otkazao/la termin: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>\n  <p style=\"margin-top:30px;color:#766e65;font-size:13px\">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>\n  </table></td></tr></table></body></html>,,2026-09-17T10:39:19.220Z,{\"appointmentId\":\"413ee7f4-1ae9-4fda-8557-57d21c2d9679\",\"salonId\":\"6c062dd6-8301-4010-8e7c-5c2c1b07a72d\"}: injected cancellation email enqueue failure",
+      "stack":
+          Error: Failed query: insert into "email_deliveries" ("id", "event_key", "email_type", "salon_id", "appointment_id", "recipient_email", "recipient_name", "subject", "html_content", "status", "provider_message_id", "error_message", "scheduled_at", "sent_at", "retry_count", "retryable_failure", "next_retry_at", "processing_token", "metadata", "created_at") values (default, $1, $2, $3, $4, $5, $6, $7, $8, default, default, default, $9, default, default, default, $10, default, $11, default), (default, $12, $13, $14, $15, $16, $17, $18, $19, default, default, default, $20, default, default, default, $21, default, $22, default) on conflict do nothing returning "id", "event_key", "email_type", "salon_id", "appointment_id", "recipient_email", "recipient_name", "subject", "html_content", "status", "provider_message_id", "error_message", "scheduled_at", "sent_at", "retry_count", "retryable_failure", "next_retry_at", "processing_token", "metadata", "created_at"
+          params: appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:customer:cancelled,appointment_cancelled,,,customer-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test,Kupac HTTP test,LUMERA — Termin je otkazan,<!doctype html><html lang="sr"><body style="margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden">
+            <tr><td style="background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px">LUMERA</td></tr>
+            <tr><td style="padding:34px"><h1 style="font-size:25px;margin:0 0 18px;color:#302a23">Termin je otkazan</h1><p>Vaš termin je otkazan: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>
+            <p style="margin-top:30px;color:#766e65;font-size:13px">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>
+            </table></td></tr></table></body></html>,,2026-09-17T10:39:19.220Z,{"appointmentId":"413ee7f4-1ae9-4fda-8557-57d21c2d9679","salonId":"6c062dd6-8301-4010-8e7c-5c2c1b07a72d"},appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:salon:cancelled,salon_appointment_cancelled,,,owner-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test,Vlasnik HTTP test,LUMERA Biznis — Termin je otkazan,<!doctype html><html lang="sr"><body style="margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden">
+            <tr><td style="background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px">LUMERA</td></tr>
+            <tr><td style="padding:34px"><h1 style="font-size:25px;margin:0 0 18px;color:#302a23">Termin je otkazan</h1><p>Kupac HTTP test je otkazao/la termin: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>
+            <p style="margin-top:30px;color:#766e65;font-size:13px">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>
+            </table></td></tr></table></body></html>,,2026-09-17T10:39:19.220Z,{"appointmentId":"413ee7f4-1ae9-4fda-8557-57d21c2d9679","salonId":"6c062dd6-8301-4010-8e7c-5c2c1b07a72d"}
+              at NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/pg-core/session.ts:73:11)
+              at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+              at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/node-postgres/session.ts:154:19)
+              at async sendAppointmentEmails (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:1298:3)
+              at async cancelAppointmentInTx (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:8934:7)
+              at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:9189:23)
+              at async NodePgSession.transaction (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/node-postgres/session.ts:259:19)
+              at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:9177:18)
+          caused by: error: injected cancellation email enqueue failure
+              at /home/runner/workspace/node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/client.js:694:17
+              at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+              at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/node-postgres/session.ts:161:13)
+              at async NodePgPreparedQuery.queryWithCache (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/pg-core/session.ts:71:12)
+              at async <anonymous> (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/node-postgres/session.ts:154:19)
+              at async sendAppointmentEmails (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:1298:3)
+              at async cancelAppointmentInTx (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:8934:7)
+              at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:9189:23)
+              at async NodePgSession.transaction (/home/runner/workspace/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.23.0/node_modules/src/node-postgres/session.ts:259:19)
+              at async <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/marketplace.ts:9177:18)
+      "query": "insert into \"email_deliveries\" (\"id\", \"event_key\", \"email_type\", \"salon_id\", \"appointment_id\", \"recipient_email\", \"recipient_name\", \"subject\", \"html_content\", \"status\", \"provider_message_id\", \"error_message\", \"scheduled_at\", \"sent_at\", \"retry_count\", \"retryable_failure\", \"next_retry_at\", \"processing_token\", \"metadata\", \"created_at\") values (default, $1, $2, $3, $4, $5, $6, $7, $8, default, default, default, $9, default, default, default, $10, default, $11, default), (default, $12, $13, $14, $15, $16, $17, $18, $19, default, default, default, $20, default, default, default, $21, default, $22, default) on conflict do nothing returning \"id\", \"event_key\", \"email_type\", \"salon_id\", \"appointment_id\", \"recipient_email\", \"recipient_name\", \"subject\", \"html_content\", \"status\", \"provider_message_id\", \"error_message\", \"scheduled_at\", \"sent_at\", \"retry_count\", \"retryable_failure\", \"next_retry_at\", \"processing_token\", \"metadata\", \"created_at\"",
+      "params": [
+        "appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:customer:cancelled",
+        "appointment_cancelled",
+        null,
+        null,
+        "customer-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test",
+        "Kupac HTTP test",
+        "LUMERA — Termin je otkazan",
+        "<!doctype html><html lang=\"sr\"><body style=\"margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b\">\n  <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td align=\"center\" style=\"padding:32px 16px\">\n  <table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden\">\n  <tr><td style=\"background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px\">LUMERA</td></tr>\n  <tr><td style=\"padding:34px\"><h1 style=\"font-size:25px;margin:0 0 18px;color:#302a23\">Termin je otkazan</h1><p>Vaš termin je otkazan: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>\n  <p style=\"margin-top:30px;color:#766e65;font-size:13px\">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>\n  </table></td></tr></table></body></html>",
+        null,
+        "2026-09-17T10:39:19.220Z",
+        "{\"appointmentId\":\"413ee7f4-1ae9-4fda-8557-57d21c2d9679\",\"salonId\":\"6c062dd6-8301-4010-8e7c-5c2c1b07a72d\"}",
+        "appointment:413ee7f4-1ae9-4fda-8557-57d21c2d9679:salon:cancelled",
+        "salon_appointment_cancelled",
+        null,
+        null,
+        "owner-a2da89e3-f3e9-4f15-8f57-1bf91dc62b39@example.test",
+        "Vlasnik HTTP test",
+        "LUMERA Biznis — Termin je otkazan",
+        "<!doctype html><html lang=\"sr\"><body style=\"margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b\">\n  <table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\"><tr><td align=\"center\" style=\"padding:32px 16px\">\n  <table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden\">\n  <tr><td style=\"background:#302a23;padding:26px 34px;color:#e1bd6b;font-size:24px;font-weight:700;letter-spacing:1px\">LUMERA</td></tr>\n  <tr><td style=\"padding:34px\"><h1 style=\"font-size:25px;margin:0 0 18px;color:#302a23\">Termin je otkazan</h1><p>Kupac HTTP test je otkazao/la termin: HTTP zaključavanje termina u salonu HTTP termin salon a2da89e3-f3e9-4f15-8f57-1bf91dc62b39, 2099-12-08 u 12:00.</p>\n  <p style=\"margin-top:30px;color:#766e65;font-size:13px\">LUMERA — lepota, wellness i edukacija na jednom mestu.</p></td></tr>\n  </table></td></tr></table></body></html>",
+        null,
+        "2026-09-17T10:39:19.220Z",
+        "{\"appointmentId\":\"413ee7f4-1ae9-4fda-8557-57d21c2d9679\",\"salonId\":\"6c062dd6-8301-4010-8e7c-5c2c1b07a72d\"}"
+      ]
+    }
+[10:39:19.291] [32mINFO[39m (31516): [36mrequest errored[39m
+    [35mreq[39m: {
+      "id": 66,
+      "method": "POST",
+      "url": "/api/appointments/413ee7f4-1ae9-4fda-8557-57d21c2d9679/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 500
+    }
+    [35mresponseTime[39m: 85
+    err: {
+      "type": "Error",
+      "message": "failed with status code 500",
+      "stack":
+          Error: failed with status code 500
+              at onResFinished (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:115:39)
+              at ServerResponse.onResponseComplete (/home/runner/workspace/node_modules/.pnpm/pino-http@10.5.0/node_modules/pino-http/logger.js:178:14)
+              at ServerResponse.emit (node:events:520:35)
+              at onFinish (node:_http_outgoing:1026:10)
+              at callback (node:internal/streams/writable:764:21)
+              at afterWrite (node:internal/streams/writable:708:5)
+              at afterWriteTick (node:internal/streams/writable:694:10)
+              at process.processTicksAndRejections (node:internal/process/task_queues:88:21)
+    }
+[10:39:19.316] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 67,
+      "method": "POST",
+      "url": "/api/appointments/8a2bf0fb-3261-471b-8e4f-995034b63bdf/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 9
+[10:39:19.336] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 68,
+      "method": "POST",
+      "url": "/api/booking-groups/2a7c63cd-078f-4c80-bab7-6369517da99d/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 5
+[10:39:19.387] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 69,
+      "method": "POST",
+      "url": "/api/booking-groups/c7dcb66c-9cd5-4643-801f-e24f1586e038/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 43
+[10:39:19.420] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 70,
+      "method": "POST",
+      "url": "/api/appointments/0e1571e4-756b-4aea-971d-00ae024a6848/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 25
+[10:39:19.439] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 71,
+      "method": "DELETE",
+      "url": "/api/salon/appointment-series/31aad352-5ff6-4d06-9c35-7867521a8437"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 9
+[10:39:19.483] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 72,
+      "method": "DELETE",
+      "url": "/api/salon/appointment-series/0486ec92-ea0f-4944-a2a1-ca74cc472484"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 30
+[10:39:19.525] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 73,
+      "method": "PATCH",
+      "url": "/api/salon/leave-requests/da46bc7c-2878-4927-bec7-3a69eab830af"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 31
+[10:39:19.539] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 74,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 6
+[10:39:19.566] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 75,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 25
+[10:39:19.571] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 76,
+      "method": "PATCH",
+      "url": "/api/salon/appointments/84c8c82b-41c8-48b5-8ff6-dabe94018d97"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 2
+[10:39:19.594] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 77,
+      "method": "PATCH",
+      "url": "/api/salon/appointments/84c8c82b-41c8-48b5-8ff6-dabe94018d97"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 22
+[10:39:19.619] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 78,
+      "method": "POST",
+      "url": "/api/salon/appointment-series/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 25
+[10:39:19.660] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 79,
+      "method": "POST",
+      "url": "/api/salon/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 40
+[10:39:19.674] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 80,
+      "method": "POST",
+      "url": "/api/salon/appointment-series/7ad55efa-c467-4fc9-bb63-642d1bcd15cc/move/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12
+[10:39:20.004] [32mINFO[39m (31516): [36mRescheduled appointment confirmation retry batch finished[39m
+    [35memail[39m: {
+      "considered": 38,
+      "retried": 38
+    }
+[10:39:20.011] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 81,
+      "method": "POST",
+      "url": "/api/salon/appointment-series/7ad55efa-c467-4fc9-bb63-642d1bcd15cc/move"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 336
+[10:39:20.056] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 82,
+      "method": "POST",
+      "url": "/api/employee/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 43
+[10:39:20.073] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 83,
+      "method": "POST",
+      "url": "/api/employee/appointment-series/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:39:20.117] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 84,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 42
+[10:39:20.125] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 85,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 48
+[10:39:20.155] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 86,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 27
+[10:39:20.159] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 87,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 3
+[10:39:20.163] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 88,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 3
+[10:39:20.211] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 90,
+      "method": "POST",
+      "url": "/api/appointments/569d291e-3a68-45ea-a865-daaa8cbcfb90/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 46
+[10:39:20.212] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 89,
+      "method": "POST",
+      "url": "/api/salon/appointment-series/1b881593-e635-4754-9921-0c1925153fea/move"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 48
+[10:39:20.218] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 91,
+      "method": "PATCH",
+      "url": "/api/employee/appointments/13a3e1cf-0281-49a3-ac12-4e9c8e04e93b"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.238] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 92,
+      "method": "POST",
+      "url": "/api/appointments/13a3e1cf-0281-49a3-ac12-4e9c8e04e93b/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 23
+[10:39:20.244] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 93,
+      "method": "PATCH",
+      "url": "/api/salon/appointments/00171b1b-ce55-4331-b90e-13be68fce55b"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.253] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 94,
+      "method": "POST",
+      "url": "/api/salon/resources"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 7
+[10:39:20.257] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 95,
+      "method": "GET",
+      "url": "/api/salon/resources"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.266] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 96,
+      "method": "PATCH",
+      "url": "/api/salon/resources/a6972b72-01e0-4ca6-a41b-c8313a77c07a"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:20.278] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 97,
+      "method": "PATCH",
+      "url": "/api/salon/services/16f66b60-a9da-4834-b3b3-9cebc4904497"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11
+[10:39:20.283] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 98,
+      "method": "PATCH",
+      "url": "/api/salon/services/16f66b60-a9da-4834-b3b3-9cebc4904497"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.289] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 99,
+      "method": "PATCH",
+      "url": "/api/salon/services/16f66b60-a9da-4834-b3b3-9cebc4904497"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 5
+[10:39:20.298] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 100,
+      "method": "PATCH",
+      "url": "/api/salon/services/16f66b60-a9da-4834-b3b3-9cebc4904497"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 5
+[10:39:20.315] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 101,
+      "method": "PATCH",
+      "url": "/api/salon/resources/a6972b72-01e0-4ca6-a41b-c8313a77c07a"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:20.364] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 102,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 35
+[10:39:20.376] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 103,
+      "method": "GET",
+      "url": "/api/employee/portal"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11
+[10:39:20.399] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 104,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 21
+[10:39:20.427] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 105,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 26
+[10:39:20.436] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 106,
+      "method": "GET",
+      "url": "/api/salons/6c062dd6-8301-4010-8e7c-5c2c1b07a72d/availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:39:20.460] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 107,
+      "method": "POST",
+      "url": "/api/appointments/e0978e31-a510-4999-9acb-7c7af2420507/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 23
+[10:39:20.491] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 108,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 29
+[10:39:20.494] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 109,
+      "method": "PATCH",
+      "url": "/api/salon/appointments/e0978e31-a510-4999-9acb-7c7af2420507"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 2
+[10:39:20.502] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 110,
+      "method": "PATCH",
+      "url": "/api/salon/resources/a6972b72-01e0-4ca6-a41b-c8313a77c07a"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:39:20.526] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 111,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 23
+[10:39:20.535] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 112,
+      "method": "PATCH",
+      "url": "/api/salon/resources/a6972b72-01e0-4ca6-a41b-c8313a77c07a"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 8
+[10:39:20.565] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 113,
+      "method": "DELETE",
+      "url": "/api/salon/resources/a6972b72-01e0-4ca6-a41b-c8313a77c07a"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 16
+[10:39:20.573] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 114,
+      "method": "POST",
+      "url": "/api/salon/resources"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 7
+[10:39:20.583] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 115,
+      "method": "DELETE",
+      "url": "/api/salon/resources/8a427502-03fa-47bd-8955-675e91d007a6"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 9
+[10:39:20.597] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 116,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:39:20.609] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 117,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+[10:39:20.615] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 118,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.620] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 119,
+      "method": "POST",
+      "url": "/api/salon/time-blocks"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.630] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 120,
+      "method": "POST",
+      "url": "/api/salon/time-blocks"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 9
+[10:39:20.634] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 121,
+      "method": "GET",
+      "url": "/api/salon/time-blocks"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:39:20.643] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 122,
+      "method": "GET",
+      "url": "/api/salons/6c062dd6-8301-4010-8e7c-5c2c1b07a72d/availability"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:39:20.655] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 123,
+      "method": "GET",
+      "url": "/api/salon/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+[10:39:20.673] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 124,
+      "method": "GET",
+      "url": "/api/employee/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 17
+[10:39:20.680] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 125,
+      "method": "DELETE",
+      "url": "/api/salon/time-blocks/011ebeab-caaa-47c9-b523-770deac27769"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 6
+[10:39:20.691] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 126,
+      "method": "POST",
+      "url": "/api/salon/time-blocks"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 5
+[10:39:20.701] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 127,
+      "method": "GET",
+      "url": "/api/salon/calendar-day"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:39:20.705] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 128,
+      "method": "DELETE",
+      "url": "/api/salon/time-blocks/abed3a65-5acc-4def-8346-7235295931c4"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 3
+[10:39:20.759] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 129,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 31
+[10:39:20.777] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 130,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 16
+[10:39:20.795] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 131,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 17
+[10:39:20.827] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 132,
+      "method": "POST",
+      "url": "/api/salon/appointment-series/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 17
+[10:39:20.875] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 133,
+      "method": "POST",
+      "url": "/api/salon/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 47
+[10:39:20.935] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 134,
+      "method": "POST",
+      "url": "/api/salon/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 44
+[10:39:20.961] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 135,
+      "method": "POST",
+      "url": "/api/salon/package-appointments/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 13
+[10:39:21.019] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 136,
+      "method": "POST",
+      "url": "/api/salon/package-appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 57
+[10:39:21.031] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 137,
+      "method": "POST",
+      "url": "/api/salon/package-appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 10
+[10:39:21.067] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 138,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 23
+[10:39:21.078] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 139,
+      "method": "POST",
+      "url": "/api/salon/package-appointments/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+Resource CRUD and booking capacity tests passed.
+Appointment HTTP route regression passed.
+[10:39:21.247] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 141,
+      "method": "POST",
+      "url": "/api/growth/redemptions/e61f5f43-335e-4b40-aa9f-0fcb5846b965/reverse"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 14
+[10:39:21.254] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 140,
+      "method": "POST",
+      "url": "/api/salon/package-appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 174
+[10:39:21.276] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 142,
+      "method": "POST",
+      "url": "/api/salon/time-blocks"
+    }
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 9
+[10:39:21.296] [32mINFO[39m (31516): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 143,
+      "method": "POST",
+      "url": "/api/salon/package-appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 409
+    }
+    [35mresponseTime[39m: 17
+Widget rate-limit spoofing regression passed.
+[10:39:24.536] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 26
+[10:39:24.546] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 1
+[10:39:24.550] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 1
+[10:39:24.552] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 1
+[10:39:24.555] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 1
+[10:39:24.557] [32mINFO[39m (32300): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "method": "POST",
+      "url": "/api/widget/salons/rate-limit-c72cdf24-8b51-4864-a1ee-2780f4ed7887/booking-groups"
+    }
+    [35mres[39m: {
+      "statusCode": 429
+    }
+    [35mresponseTime[39m: 0
+exit=0

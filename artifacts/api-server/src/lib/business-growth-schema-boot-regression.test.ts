@@ -1,165 +1,154 @@
 /**
- * Task #11A: production-like API boot regression for the #11-F1 fix.
+ * Regression proof for the removed startup repair path.
  *
- * The original impact was API *boot* failure: artifacts/api-server/src/
- * index.ts -- the real production entrypoint -- awaits
- * ensureBusinessGrowthSchema() before app.listen(), so a database in the
- * broken state (rollout tracker already current, education_salon_
- * cleanup_reports missing) crashed the whole process before it ever
- * started serving traffic. Proving the helper function alone no longer
- * throws (business-growth-schema-cleanup-reports.test.ts) is not the same
- * claim as proving the real production boot path recovers -- this file
- * spawns index.ts itself (not test-server.ts, which never calls any
- * ensure*Schema() function and so cannot exercise this path at all)
- * against a disposable database deliberately left in the exact broken
- * state, and proves the process reaches a healthy, listening state.
+ * The old test expected index.ts to repair a deliberately incomplete catalog.
+ * The supported path now refuses that state before listen/reconciliation. This
+ * keeps the real entrypoint in the proof while asserting that the disposable
+ * fixture remains unchanged after refusal.
  *
- * Run:
- * NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts
+ * Run with an explicit disposable administrator URL:
+ * NODE_ENV=test pnpm --filter @workspace/api-server exec tsx \
+ *   src/lib/business-growth-schema-boot-regression.test.ts \
+ *   --admin-url=postgres://owner@127.0.0.1:39523/postgres
  */
 import assert from "node:assert/strict";
-import test from "node:test";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { BUSINESS_GROWTH_SCHEMA_VERSION } from "./business-growth-schema";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
+import test from "node:test";
 
-import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
-
-assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema boot regression tests");
-
-const execFileAsync = promisify(execFile);
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
-const workspaceRoot = path.resolve(thisDir, "..", "..", "..", "..");
-const tsxBin = path.resolve(workspaceRoot, "scripts", "node_modules", ".bin", "tsx");
-const indexEntrypoint = path.resolve(workspaceRoot, "artifacts", "api-server", "src", "index.ts");
+const workspaceRoot = path.resolve(thisDir, "../../../../");
+const apiEntrypoint = path.resolve(workspaceRoot, "artifacts/api-server/src/index.ts");
+const tsxBin = path.resolve(workspaceRoot, "scripts/node_modules/.bin/tsx");
+const fixtures = await import(pathToFileURL(
+  path.resolve(workspaceRoot, "scripts/src/startup-equivalence/fixtures.ts"),
+).href);
+const migrationRunner = await import(pathToFileURL(
+  path.resolve(workspaceRoot, "scripts/src/migrations/runner.ts"),
+).href);
+const migrationFiles = await import(pathToFileURL(
+  path.resolve(workspaceRoot, "scripts/src/migrations/files.ts"),
+).href);
+const adminUrl = fixtures.explicitAdminUrlFromArgs();
 
-const baseDatabaseUrl = process.env.DATABASE_URL;
-assert.ok(baseDatabaseUrl, "DATABASE_URL is required to provision the disposable regression database.");
+function requireAdminUrl(): string {
+  assert.ok(adminUrl, "An explicit --admin-url is required for this disposable regression.");
+  return adminUrl;
+}
 
-async function findAvailablePort(): Promise<number> {
+async function availablePort(): Promise<number> {
   const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-  if (!address || typeof address === "string") throw new Error("Could not reserve a local TCP port.");
-  return address.port;
+  assert.ok(port > 0);
+  return port;
 }
 
-async function waitForHealthz(apiBaseUrl: string, deadlineMs: number): Promise<void> {
-  const deadline = Date.now() + deadlineMs;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/healthz`);
-      if (response.ok) return;
-      lastError = new Error(`received ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`API server did not become ready within ${deadlineMs}ms${lastError ? ` (${lastError instanceof Error ? lastError.message : String(lastError)})` : ""}.`);
-}
-
-async function stopProcess(child: ChildProcess | undefined): Promise<void> {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+async function stopChild(child: ChildProcess | undefined): Promise<void> {
+  if (!child || child.exitCode !== null) return;
   child.kill("SIGTERM");
   await Promise.race([
     new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+    sleep(5_000),
   ]);
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  if (child.exitCode === null) child.kill("SIGKILL");
 }
 
-void test("real production boot path (index.ts) recovers from the broken current-version/missing-table state", async () => {
-  const databaseName = `lumera_boot_regression_${process.pid}_${randomUUID().replaceAll("-", "")}`.slice(0, 63);
-  const databaseUrl = (() => {
-    const url = new URL(baseDatabaseUrl!);
-    url.pathname = `/${databaseName}`;
-    return url.toString();
-  })();
-  await execFileAsync("createdb", ["--maintenance-db", baseDatabaseUrl!, databaseName]);
-  let databaseExists = true;
-  let child: ChildProcess | undefined;
+async function expectReadonlyRefusal(
+  databaseUrl: string,
+): Promise<{ stderr: string; reachedHealth: boolean }> {
+  const port = await availablePort();
+  const stderr: string[] = [];
+  const child = spawn(tsxBin, [apiEntrypoint], {
+    cwd: workspaceRoot,
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "/tmp",
+      NODE_ENV: "test",
+      DATABASE_URL: databaseUrl,
+      PORT: String(port),
+      BASE_PATH: "/api",
+      SESSION_SECRET: "lumera-disposable-regression-session-secret",
+      DOTENV_CONFIG_PATH: path.join("/tmp", `lumera-no-dotenv-${randomUUID()}`),
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk.toString("utf8")));
+  let reachedHealth = false;
   try {
-    await execFileAsync(
-      "pnpm", ["--filter", "@workspace/db", "run", "push-force"],
-      { cwd: workspaceRoot, env: { ...process.env, DATABASE_URL: databaseUrl } },
-    );
-
-    // Deliberately construct the broken state directly via psql -- never
-    // via ensureBusinessGrowthSchema() itself, so this test does not
-    // accidentally depend on the very function under test to set itself up.
-    await execFileAsync("psql", [databaseUrl, "-c",
-      `ALTER TABLE salons DROP COLUMN IF EXISTS cover_image_description;
-       ALTER TABLE products DROP COLUMN IF EXISTS cover_image_description;
-       ALTER TABLE courses DROP COLUMN IF EXISTS cover_image_description;
-       ALTER TABLE beauty_job_listings DROP COLUMN IF EXISTS cover_image_description;
-       INSERT INTO business_growth_schema_rollout (singleton, version, completed_at)
-       VALUES (true, ${BUSINESS_GROWTH_SCHEMA_VERSION}, now())
-       ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version, completed_at = EXCLUDED.completed_at`]);
-    const { stdout: descriptionsBeforeExist } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
-      `SELECT count(*) FROM information_schema.columns
-       WHERE table_schema='public' AND column_name='cover_image_description'
-         AND table_name IN ('salons', 'products', 'courses', 'beauty_job_listings')`]);
-    assert.equal(descriptionsBeforeExist.trim(), "0", "test precondition: cover descriptions must be absent before boot");
-    const { stdout: beforeExists } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
-      "SELECT to_regclass('public.education_salon_cleanup_reports') IS NOT NULL"]);
-    assert.equal(beforeExists.trim(), "f", "test precondition: cleanup-reports table must not exist before boot");
-
-    const port = await findAvailablePort();
-    const apiBaseUrl = `http://127.0.0.1:${port}`;
-    child = spawn(tsxBin, [indexEntrypoint], {
-      cwd: workspaceRoot,
-      env: {
-        ...process.env,
-        DATABASE_URL: databaseUrl,
-        PORT: String(port),
-        NODE_ENV: "test",
-        SESSION_SECRET: process.env.SESSION_SECRET ?? "lumera-boot-regression-test-secret",
-        AI_INTEGRATIONS_ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
-        AI_INTEGRATIONS_ANTHROPIC_API_KEY: "unused-in-this-regression-test",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
-    const startupError = new Promise<never>((_, reject) => {
-      child!.once("error", (error) => reject(new Error(`API process could not start: ${error.message}`)));
-      child!.once("exit", (code, signal) => {
-        if (code !== 0 || signal) {
-          reject(new Error(`API process exited early during boot (code=${code ?? "null"}, signal=${signal ?? "null"}).\nstderr:\n${stderr}`));
-        }
-      });
-    });
-
-    // The real production boot path runs eight sequential ensure*Schema()
-    // rollouts plus scheduler/worker setup before listen() -- allow more
-    // headroom than the plain-helper tests.
-    await Promise.race([waitForHealthz(apiBaseUrl, 45_000), startupError]);
-
-    const { stdout: afterExists } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
-      "SELECT to_regclass('public.education_salon_cleanup_reports') IS NOT NULL"]);
-    assert.equal(afterExists.trim(), "t", "cleanup-reports table must exist after a real boot from the broken state");
-    const { stdout: descriptionsAfterExist } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
-      `SELECT count(*) FROM information_schema.columns
-       WHERE table_schema='public' AND column_name='cover_image_description'
-         AND table_name IN ('salons', 'products', 'courses', 'beauty_job_listings')`]);
-    assert.equal(descriptionsAfterExist.trim(), "4", "cover descriptions must be repaired before the API starts");
-
-    const { stdout: versionAfter } = await execFileAsync("psql", [databaseUrl, "-At", "-c",
-      "SELECT version FROM business_growth_schema_rollout WHERE singleton = true"]);
-    assert.equal(Number(versionAfter.trim()), BUSINESS_GROWTH_SCHEMA_VERSION);
-  } finally {
-    await stopProcess(child);
-    if (databaseExists) {
-      databaseExists = false;
-      await execFileAsync("dropdb", ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]);
+    const started = Date.now();
+    while (Date.now() - started < 10_000) {
+      if (child.exitCode !== null) break;
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/healthz`);
+        reachedHealth = response.ok;
+        if (reachedHealth) break;
+      } catch {
+        // Readiness refusal is expected before listen.
+      }
+      await sleep(250);
     }
+    assert.equal(reachedHealth, false, "Broken catalog unexpectedly reached API health.");
+    return { stderr: stderr.join(""), reachedHealth };
+  } finally {
+    await stopChild(child);
   }
+}
+
+type QueryPool = {
+  query: (sql: string, values?: unknown[]) => Promise<{ rows: any[] }>;
+};
+
+async function fixtureState(pool: QueryPool): Promise<{
+  cleanupReports: string | null;
+  coverColumns: number;
+  ledger: unknown[];
+}> {
+  const cleanupReports = await pool.query("SELECT to_regclass('public.education_salon_cleanup_reports') AS name");
+  const coverColumns = await pool.query(`
+    SELECT count(*)::int AS count
+    FROM information_schema.columns
+    WHERE table_schema='public' AND column_name='cover_image_description'
+      AND table_name IN ('salons','products','courses','beauty_job_listings')
+  `);
+  const ledger = await pool.query(`
+    SELECT migration_id, checksum, mode, state, error, started_at, finished_at
+    FROM public.lumera_migration_ledger ORDER BY migration_id
+  `);
+  return {
+    cleanupReports: cleanupReports.rows[0]?.name ?? null,
+    coverColumns: coverColumns.rows[0]?.count ?? 0,
+    ledger: ledger.rows,
+  };
+}
+
+test("actual entrypoint refuses the old business-growth broken state without repair", async () => {
+  await fixtures.withOwnedDisposableDatabase(requireAdminUrl(), async ({
+    pool,
+    connectionString,
+  }: { pool: { query: (sql: string, values?: unknown[]) => Promise<{ rows: any[] }> }; connectionString: string }) => {
+    const migrations = await migrationFiles.loadMigrations();
+    await migrationRunner.applyMigrations(pool, { migrations });
+    await pool.query(`
+      ALTER TABLE public.salons DROP COLUMN IF EXISTS cover_image_description;
+      ALTER TABLE public.products DROP COLUMN IF EXISTS cover_image_description;
+      ALTER TABLE public.courses DROP COLUMN IF EXISTS cover_image_description;
+      ALTER TABLE public.beauty_job_listings DROP COLUMN IF EXISTS cover_image_description;
+      DROP TABLE IF EXISTS public.education_salon_cleanup_reports;
+    `);
+    const before = await fixtureState(pool);
+    assert.equal(before.cleanupReports, null);
+    assert.equal(before.coverColumns, 0);
+
+    const refusal = await expectReadonlyRefusal(connectionString);
+    assert.match(refusal.stderr, /migration|catalog|unsupported|readiness/i);
+    assert.deepEqual(await fixtureState(pool), before, "Readonly refusal mutated the broken fixture.");
+  });
 });

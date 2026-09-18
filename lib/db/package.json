@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
     "./destructive-test-runtime": "./src/destructive-test-runtime.ts",
-    "./query-observation": "./src/query-observation.ts"
+    "./query-observation": "./src/query-observation.ts",
+    "./migration-runtime": "./src/migration-runtime/index.ts"
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",

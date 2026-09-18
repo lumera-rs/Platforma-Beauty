@@ -1,0 +1,8 @@
+Command:
+env -u DATABASE_URL -u REPLIT_DEPLOYMENT -u REPLIT_DEPLOYMENT_ID -u REPLIT_ENVIRONMENT NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts --admin-url=postgres://path_proof_owner@127.0.0.1:39523/postgres
+
+✔ actual entrypoint refuses the old business-growth broken state without repair (14554.614166ms)
+ℹ tests 1
+ℹ pass 1
+ℹ fail 0
+ℹ skipped 0

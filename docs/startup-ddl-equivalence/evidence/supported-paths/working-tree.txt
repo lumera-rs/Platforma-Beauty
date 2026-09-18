@@ -1,0 +1,71 @@
+remove-startup-ddl-preparation
+77a3a9ae639c4ace13aa44ea539d7e2b8d49b4bc
+ M .agents/memory/MEMORY.md
+ M .agents/memory/authoritative-schema-migrations.md
+ M .github/workflows/ci.yml
+ M artifacts/api-server/src/index.ts
+ M artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts
+ M docs/startup-ddl-equivalence/README.md
+ M docs/startup-ddl-equivalence/phase-gate-status.md
+ M docs/startup-ddl-equivalence/supported-state-coverage.md
+ M docs/startup-ddl-equivalence/supported-state-results.md
+ M lib/db/package.json
+ M package.json
+ M scripts/package.json
+ M scripts/post-merge.sh
+ M scripts/src/ensure-development-schema.ts
+ M scripts/src/migrations/preflight.test.ts
+ M scripts/src/migrations/runner.ts
+ M scripts/src/schema-drift/catalog.ts
+ M scripts/src/schema-drift/eligibility-cli.test.ts
+ M scripts/src/schema-drift/fingerprint-transaction.ts
+ M scripts/src/schema-drift/fingerprint.ts
+ M scripts/src/schema-drift/model.ts
+ M scripts/src/schema-drift/ownership.ts
+ M scripts/src/schema-drift/read-only-query.ts
+?? attached_assets/Pasted--LUMERA-Close-migration-equivalence-gaps-and-determine-_1789640124415.txt
+?? docs/startup-ddl-equivalence/evidence/historical-operation-matrix.json
+?? docs/startup-ddl-equivalence/evidence/supported-paths-actual-proof.json
+?? docs/startup-ddl-equivalence/evidence/supported-paths/actual-boot-command.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/actual-boot.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/adoption-boundary-first-attempt.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/adoption-boundary.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/changed-files.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/final-verification.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/fingerprint-tests.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/legacy-boot-refusal.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/temporary-server-stopped.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/unit-tests.txt
+?? docs/startup-ddl-equivalence/evidence/supported-paths/working-tree.txt
+?? docs/startup-ddl-equivalence/evidence/supported-runtime-regressions/appointment-regressions.txt
+?? docs/startup-ddl-equivalence/evidence/supported-runtime-regressions/booking-development-schema.txt
+?? docs/startup-ddl-equivalence/evidence/supported-runtime-regressions/cleanup.txt
+?? docs/startup-ddl-equivalence/evidence/supported-runtime-regressions/post-suite-row-counts.txt
+?? docs/startup-ddl-equivalence/evidence/supported-runtime-regressions/tenant-isolation.txt
+?? docs/startup-ddl-equivalence/historical-operation-matrix.md
+?? docs/startup-ddl-equivalence/supported-path-results.md
+?? lib/db/src/migration-runtime/catalog.ts
+?? lib/db/src/migration-runtime/contract.test.ts
+?? lib/db/src/migration-runtime/database-client.ts
+?? lib/db/src/migration-runtime/fingerprint-transaction.ts
+?? lib/db/src/migration-runtime/fingerprint.ts
+?? lib/db/src/migration-runtime/index.ts
+?? lib/db/src/migration-runtime/model.ts
+?? lib/db/src/migration-runtime/namespaces.test.ts
+?? lib/db/src/migration-runtime/namespaces.ts
+?? lib/db/src/migration-runtime/ownership.ts
+?? lib/db/src/migration-runtime/read-only-query.ts
+?? lib/db/src/migration-runtime/readiness.ts
+?? scripts/src/migrations/adoption-boundary.integration.test.ts
+?? scripts/src/migrations/deployment-eligibility-cli.ts
+?? scripts/src/migrations/deployment-eligibility.test.ts
+?? scripts/src/migrations/deployment-eligibility.ts
+?? scripts/src/migrations/historical-operation-matrix.test.ts
+?? scripts/src/migrations/historical-operation-matrix.ts
+?? scripts/src/migrations/migration-runtime-parity.test.ts
+?? scripts/src/migrations/namespace-boundary.integration.test.ts
+?? scripts/src/migrations/prepare-development.test.ts
+?? scripts/src/migrations/prepare-development.ts
+?? scripts/src/migrations/supported-path-boot.integration.test.ts
+?? scripts/src/startup-ddl-removal-gate.test.ts
+?? scripts/src/startup-ddl-removal-gate.ts

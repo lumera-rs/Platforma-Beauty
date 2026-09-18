@@ -1,0 +1,23 @@
+✔ manifest exposes exactly the supported numbered state migration (35.833187ms)
+✔ fresh default pipeline applies 000001 and 000002, then repeats without data drift (6413.199303ms)
+✔ existing canonical baseline admits supported data and preserves preexisting salon plan (5299.59773ms)
+✔ existing canonical schema without ledger rejects before creating ledger (4432.512232ms)
+✔ unsupported user rows fail before any ledger or reference write (5054.836824ms)
+✔ category conflicts are rejected without overwriting the existing category (4865.262456ms)
+✔ fallback payload and historical plan relationships are fail-closed (5031.068239ms)
+✔ both empty and populated education snapshots with a live relationship reject unchanged (9516.079649ms)
+✔ adoption creates only the 000001 baseline row; it never adopts 000002 (4675.540191ms)
+✔ concurrent default applies produce one supported migration and no duplicate fallback rows (5895.193548ms)
+✔ a preexisting ADOPTED 000002 row is rejected rather than treated as data evidence (4655.985825ms)
+✔ paired original explicit data steps and 000002 agree on admitted reference/fallback rows (10145.490237ms)
+✔ legitimate existing reference/configuration rows are preserved byte-for-byte by both oracles (10395.465648ms)
+✔ the converged voucher trigger still rejects mutation of immutable snapshot fields (5734.331145ms)
+✔ backend termination after the outer transaction starts leaves no partial 000002 and retry applies it (6399.618643ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 88559.271661

@@ -1,0 +1,65 @@
+PASS C: unknown rollout history refuses explicit adoption before ledger or data mutation
+PASS B1: empty canonical explicit adoption followed by 000002
+PASS B2: completed frontier adoption is idempotent
+CLEANUP: owned child database absent
+error: syntax error at or near "$1"
+    at /home/runner/workspace/node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/client.js:694:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async main ([eval]:53:5) {
+  length: 91,
+  severity: 'ERROR',
+  code: '42601',
+  detail: undefined,
+  hint: undefined,
+  position: '75',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'scan.l',
+  line: '1248',
+  routine: 'scanner_yyerror'
+}
+undefined
+/home/runner/workspace/scripts:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: tsx -e
+import assert from "node:assert/strict";
+import { Client } from "pg";
+import { loadMigrations } from "./src/migrations/files";
+import { applyMigrations, adoptBaseline } from "./src/migrations/runner";
+const main=async()=>{
+ const base="postgres://path_proof_owner@127.0.0.1:39523/postgres";
+ const name=`lumera_adoption_proof_${Date.now()}`;
+ const admin=new Client({connectionString:base}); await admin.connect();
+ let client: Client|undefined;
+ try {
+  await admin.query(`CREATE DATABASE "${name}"`);
+  const url=new URL(base);url.pathname=`/${name}`;
+  client=new Client({connectionString:url.toString()});await client.connect();
+  const migrations=await loadMigrations();await client.query(migrations[0]!.body);
+  await client.query("INSERT INTO public.business_growth_schema_rollout(version) VALUES(99999)");
+  const before=(await client.query("SELECT to_jsonb(r) AS row FROM public.business_growth_schema_rollout r")).rows;
+  await assert.rejects(()=>adoptBaseline(client!));
+  assert.equal((await client.query("SELECT to_regclass($1) AS ledger",["public.lumera_migration_ledger"])).rows[0].ledger,null);
+  assert.deepEqual((await client.query("SELECT to_jsonb(r) AS row FROM public.business_growth_schema_rollout r")).rows,before);
+  console.log("PASS C: unknown rollout history refuses explicit adoption before ledger or data mutation");
+  await client.query("DELETE FROM public.business_growth_schema_rollout WHERE version=99999");
+  assert.deepEqual((await adoptBaseline(client)).adopted,["000001"]);
+  assert.deepEqual((await applyMigrations(client)).applied,["000002"]);
+  console.log("PASS B1: empty canonical explicit adoption followed by 000002");
+  assert.deepEqual((await adoptBaseline(client)).adopted,[]);
+  console.log("PASS B2: completed frontier adoption is idempotent");
+  await client.query("UPDATE public.lumera_migration_ledger SET finished_at=started_at-interval $1 WHERE migration_id=$2",["1 second","000002"]);
+  await assert.rejects(()=>applyMigrations(client!));
+  console.log("PASS C: reversed receipt timestamps refuse replay");
+ } finally {
+  if(client)await client.end();
+  await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+  assert.equal((await admin.query("SELECT 1 FROM pg_database WHERE datname=$1",[name])).rowCount,0);
+  await admin.end();console.log("CLEANUP: owned child database absent");
+ }
+};main().catch(error=>{console.error(error);process.exitCode=1});

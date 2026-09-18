@@ -1,0 +1,1838 @@
+{
+  "columns": [
+    {
+      "table_name": "aftercare_settings",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "version",
+      "position": 2,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "is_current",
+      "position": 3,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "first_timing",
+      "position": 4,
+      "type": "aftercare_first_timing",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'IMMEDIATE_AFTER_COMPLETION'::aftercare_first_timing"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "cooldown_days",
+      "position": 5,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "30"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "second_reminder_delay_days",
+      "position": 6,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "6"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "post_treatment_discount_enabled",
+      "position": 7,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "false"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "post_treatment_discount_percent",
+      "position": 8,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "0"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "post_treatment_discount_validity_days",
+      "position": 9,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "30"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "personalized_bundle_discount_percent",
+      "position": 10,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "10"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "combination_window_days",
+      "position": 11,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "30"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "created_by_user_id",
+      "position": 12,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "created_at",
+      "position": 13,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "default_sort",
+      "position": 2,
+      "type": "b2c_product_sort",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'RECOMMENDED'::b2c_product_sort"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "enabled_sort_options",
+      "position": 3,
+      "type": "jsonb",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'[\"RECOMMENDED\", \"PRICE_ASC\", \"PRICE_DESC\", \"NEWEST\", \"BEST_RATED\", \"MOST_POPULAR\"]'::jsonb"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "page_size",
+      "position": 4,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "24"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "show_out_of_stock",
+      "position": 5,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "recently_viewed_enabled",
+      "position": 6,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "recently_viewed_max",
+      "position": 7,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "12"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "version",
+      "position": 8,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "1"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "updated_by_user_id",
+      "position": 9,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "created_at",
+      "position": 10,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "updated_at",
+      "position": 11,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "slug",
+      "position": 2,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "name",
+      "position": 3,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "subtype_labels",
+      "position": 4,
+      "type": "jsonb",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'[]'::jsonb"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "enabled",
+      "position": 5,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "feature_flag",
+      "position": 6,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "created_at",
+      "position": 7,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "updated_at",
+      "position": 8,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "listing_expiry_days",
+      "position": 2,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "30"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "hourly_posting_limit",
+      "position": 3,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "5"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "updated_by_user_id",
+      "position": 4,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "updated_at",
+      "position": 5,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "id",
+      "position": 1,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "version",
+      "position": 2,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "1"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "updated_by_user_id",
+      "position": 3,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "updated_at",
+      "position": 4,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "center_id",
+      "position": 2,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "plan_id",
+      "position": 3,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "status",
+      "position": 4,
+      "type": "subscription_status",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'trial'::subscription_status"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "due_amount",
+      "position": 5,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "0"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "payment_method",
+      "position": 6,
+      "type": "payment_method",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'BANK_TRANSFER'::payment_method"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "billing_cycle",
+      "position": 7,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'monthly'::text"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "payment_reference",
+      "position": 8,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "paid_at",
+      "position": 9,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "current_period_start",
+      "position": 10,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "current_period_end",
+      "position": 11,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "trial_started_at",
+      "position": 12,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "trial_ends_at",
+      "position": 13,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "grace_ends_at",
+      "position": 14,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "deactivated_at",
+      "position": 15,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "auto_renew",
+      "position": 16,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "contract_kind",
+      "position": 17,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'standard'::text"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "contract_ends_at",
+      "position": 18,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "course_limit_override",
+      "position": 19,
+      "type": "integer",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "current_price_snapshot",
+      "position": 20,
+      "type": "integer",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "current_course_limit_snapshot",
+      "position": 21,
+      "type": "integer",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "pending_plan_id",
+      "position": 22,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "pending_billing_cycle",
+      "position": 23,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "pending_plan_effective_at",
+      "position": 24,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "pending_keep_course_ids",
+      "position": 25,
+      "type": "jsonb",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "grace_extension_note",
+      "position": 26,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "created_at",
+      "position": 27,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "updated_at",
+      "position": 28,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "kind",
+      "position": 2,
+      "type": "education_placement_kind",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "scope",
+      "position": 3,
+      "type": "education_placement_scope",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "price",
+      "position": 4,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "slot_count",
+      "position": 5,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "duration_days",
+      "position": 6,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "updated_by_user_id",
+      "position": 7,
+      "type": "uuid",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "created_at",
+      "position": 8,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "updated_at",
+      "position": 9,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "show_loyalty_points",
+      "position": 2,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "points_per_100_rsd",
+      "position": 3,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "1"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "low_stock_threshold",
+      "position": 4,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "5"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "default_delivery_business_days",
+      "position": 5,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "3"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_company_name",
+      "position": 6,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_tax_id",
+      "position": 7,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_registration_number",
+      "position": 8,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_address",
+      "position": 9,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_city",
+      "position": 10,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_postal_code",
+      "position": 11,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_bank_account",
+      "position": 12,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_contact_email",
+      "position": 13,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "seller_contact_phone",
+      "position": 14,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "retail_cart_reminder_enabled",
+      "position": 15,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "false"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "retail_cart_reminder_delay_hours",
+      "position": 16,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "24"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "retail_cart_reminder_brevo_template_id",
+      "position": 17,
+      "type": "integer",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "quote_validity_days",
+      "position": 18,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "7"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "review_rewards_enabled",
+      "position": 19,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "false"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "review_invitation_delay_days",
+      "position": 20,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "7"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "review_reward_percent",
+      "position": 21,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "5"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "review_reward_validity_days",
+      "position": 22,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "30"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "version",
+      "position": 23,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "1"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "updated_at",
+      "position": 24,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "name",
+      "position": 2,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "price",
+      "position": 3,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "trial_days",
+      "position": 4,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "0"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "features",
+      "position": 5,
+      "type": "jsonb",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'[]'::jsonb"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "limits",
+      "position": 6,
+      "type": "jsonb",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'{}'::jsonb"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "audience",
+      "position": 7,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'salon'::text"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "course_limit",
+      "position": 8,
+      "type": "integer",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "vat_included",
+      "position": 9,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "false"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "price_copy",
+      "position": 10,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "active",
+      "position": 11,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "salon_id",
+      "position": 2,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "plan_id",
+      "position": 3,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "status",
+      "position": 4,
+      "type": "subscription_status",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'trial'::subscription_status"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "due_amount",
+      "position": 5,
+      "type": "integer",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "payment_method",
+      "position": 6,
+      "type": "payment_method",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'BANK_TRANSFER'::payment_method"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "current_period_end",
+      "position": 7,
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "suppliers",
+      "name": "id",
+      "position": 1,
+      "type": "uuid",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "gen_random_uuid()"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "name",
+      "position": 2,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "suppliers",
+      "name": "slug",
+      "position": 3,
+      "type": "text",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "suppliers",
+      "name": "scope",
+      "position": 4,
+      "type": "supplier_scope",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "'BOTH'::supplier_scope"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "logo_url",
+      "position": 5,
+      "type": "text",
+      "not_null": false,
+      "identity": "",
+      "generated": "",
+      "default_value": null
+    },
+    {
+      "table_name": "suppliers",
+      "name": "active",
+      "position": 6,
+      "type": "boolean",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "true"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "created_at",
+      "position": 7,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "updated_at",
+      "position": 8,
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "identity": "",
+      "generated": "",
+      "default_value": "now()"
+    }
+  ],
+  "constraints": [
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_created_by_user_id_users_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_discount_enabled_check",
+      "validated": true,
+      "definition": "CHECK (NOT post_treatment_discount_enabled OR post_treatment_discount_percent > 0)"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_percent_check",
+      "validated": true,
+      "definition": "CHECK (post_treatment_discount_percent >= 0 AND post_treatment_discount_percent <= 100 AND personalized_bundle_discount_percent >= 1 AND personalized_bundle_discount_percent <= 100)"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_positive_days_check",
+      "validated": true,
+      "definition": "CHECK (cooldown_days > 0 AND second_reminder_delay_days > 0 AND post_treatment_discount_validity_days > 0 AND combination_window_days > 0)"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_updated_by_user_id_users_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_values_check",
+      "validated": true,
+      "definition": "CHECK (page_size >= 1 AND page_size <= 100 AND recently_viewed_max >= 1 AND recently_viewed_max <= 100 AND version >= 1 AND jsonb_typeof(enabled_sort_options) = 'array'::text)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_name_key",
+      "validated": true,
+      "definition": "UNIQUE (name)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_slug_key",
+      "validated": true,
+      "definition": "UNIQUE (slug)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_expiry_positive",
+      "validated": true,
+      "definition": "CHECK (listing_expiry_days > 0)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_limit_positive",
+      "validated": true,
+      "definition": "CHECK (hourly_posting_limit > 0)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_updated_by_user_id_users_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "education_b2b_discount_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "education_b2b_discount_settings_updated_by_user_id_users_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_billing_cycle_check",
+      "validated": true,
+      "definition": "CHECK (billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text]))"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_center_id_education_centers_id_f",
+      "validated": true,
+      "definition": "FOREIGN KEY (center_id) REFERENCES education_centers(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_center_id_unique",
+      "validated": true,
+      "definition": "UNIQUE (center_id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_contract_kind_check",
+      "validated": true,
+      "definition": "CHECK (contract_kind = ANY (ARRAY['standard'::text, 'custom'::text]))"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_course_limit_override_check",
+      "validated": true,
+      "definition": "CHECK (course_limit_override IS NULL OR course_limit_override >= 0)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_current_course_limit_check",
+      "validated": true,
+      "definition": "CHECK (current_course_limit_snapshot IS NULL OR current_course_limit_snapshot >= 0)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_payment_reference_unique",
+      "validated": true,
+      "definition": "UNIQUE (payment_reference)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_pending_billing_cycle_check",
+      "validated": true,
+      "definition": "CHECK (pending_billing_cycle IS NULL OR (pending_billing_cycle = ANY (ARRAY['monthly'::text, 'yearly'::text])))"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_pending_plan_id_subscription_pla",
+      "validated": true,
+      "definition": "FOREIGN KEY (pending_plan_id) REFERENCES subscription_plans(id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_plan_id_subscription_plans_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_duration_days_check",
+      "validated": true,
+      "definition": "CHECK (duration_days > 0)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_price_check",
+      "validated": true,
+      "definition": "CHECK (price >= 0)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_slot_count_check",
+      "validated": true,
+      "definition": "CHECK (slot_count > 0)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_updated_by_user_id_users_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_retail_cart_reminder_delay_check",
+      "validated": true,
+      "definition": "CHECK (retail_cart_reminder_delay_hours >= 1 AND retail_cart_reminder_delay_hours <= 720)"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_retail_cart_reminder_template_check",
+      "validated": true,
+      "definition": "CHECK (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0)"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_values_check",
+      "validated": true,
+      "definition": "CHECK (points_per_100_rsd >= 0 AND low_stock_threshold >= 1 AND default_delivery_business_days >= 1 AND default_delivery_business_days <= 365 AND retail_cart_reminder_delay_hours >= 1 AND retail_cart_reminder_delay_hours <= 720 AND (retail_cart_reminder_brevo_template_id IS NULL OR retail_cart_reminder_brevo_template_id > 0) AND quote_validity_days >= 1 AND quote_validity_days <= 90 AND review_invitation_delay_days >= 7 AND review_invitation_delay_days <= 10 AND review_reward_percent >= 1 AND review_reward_percent <= 100 AND review_reward_validity_days >= 1 AND review_reward_validity_days <= 365 AND version >= 1)"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_audience_check",
+      "validated": true,
+      "definition": "CHECK (audience = ANY (ARRAY['salon'::text, 'education'::text]))"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_course_limit_check",
+      "validated": true,
+      "definition": "CHECK (course_limit IS NULL OR course_limit > 0)"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_name_unique",
+      "validated": true,
+      "definition": "UNIQUE (name)"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_plan_id_subscription_plans_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_salon_id_salons_id_fk",
+      "validated": true,
+      "definition": "FOREIGN KEY (salon_id) REFERENCES salons(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "suppliers_pkey",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "suppliers_slug_unique",
+      "validated": true,
+      "definition": "UNIQUE (slug)"
+    }
+  ],
+  "indexes": [
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_created_by_user_idx",
+      "valid": true,
+      "definition": "CREATE INDEX aftercare_settings_created_by_user_idx ON public.aftercare_settings USING btree (created_by_user_id)"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_current_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX aftercare_settings_current_unique ON public.aftercare_settings USING btree (is_current) WHERE is_current"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX aftercare_settings_pkey ON public.aftercare_settings USING btree (id)"
+    },
+    {
+      "table_name": "aftercare_settings",
+      "name": "aftercare_settings_version_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX aftercare_settings_version_unique ON public.aftercare_settings USING btree (version)"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX b2c_display_settings_pkey ON public.b2c_display_settings USING btree (id)"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_singleton_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX b2c_display_settings_singleton_unique ON public.b2c_display_settings USING btree ((true))"
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "name": "b2c_display_settings_updated_by_idx",
+      "valid": true,
+      "definition": "CREATE INDEX b2c_display_settings_updated_by_idx ON public.b2c_display_settings USING btree (updated_by_user_id)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_name_key",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX beauty_job_categories_name_key ON public.beauty_job_categories USING btree (name)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX beauty_job_categories_pkey ON public.beauty_job_categories USING btree (id)"
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "name": "beauty_job_categories_slug_key",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX beauty_job_categories_slug_key ON public.beauty_job_categories USING btree (slug)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX beauty_job_platform_settings_pkey ON public.beauty_job_platform_settings USING btree (id)"
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "name": "beauty_job_platform_settings_updated_by_idx",
+      "valid": true,
+      "definition": "CREATE INDEX beauty_job_platform_settings_updated_by_idx ON public.beauty_job_platform_settings USING btree (updated_by_user_id)"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "education_b2b_discount_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_b2b_discount_settings_pkey ON public.education_b2b_discount_settings USING btree (id)"
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "name": "education_b2b_discount_settings_updated_by_idx",
+      "valid": true,
+      "definition": "CREATE INDEX education_b2b_discount_settings_updated_by_idx ON public.education_b2b_discount_settings USING btree (updated_by_user_id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_center_id_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_center_subscriptions_center_id_unique ON public.education_center_subscriptions USING btree (center_id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_grace_idx",
+      "valid": true,
+      "definition": "CREATE INDEX education_center_subscriptions_grace_idx ON public.education_center_subscriptions USING btree (status, grace_ends_at)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_payment_reference_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_center_subscriptions_payment_reference_unique ON public.education_center_subscriptions USING btree (payment_reference)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_pending_plan_idx",
+      "valid": true,
+      "definition": "CREATE INDEX education_center_subscriptions_pending_plan_idx ON public.education_center_subscriptions USING btree (pending_plan_id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_center_subscriptions_pkey ON public.education_center_subscriptions USING btree (id)"
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "name": "education_center_subscriptions_plan_idx",
+      "valid": true,
+      "definition": "CREATE INDEX education_center_subscriptions_plan_idx ON public.education_center_subscriptions USING btree (plan_id)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_kind_scope_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_placement_settings_kind_scope_unique ON public.education_placement_settings USING btree (kind, scope)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX education_placement_settings_pkey ON public.education_placement_settings USING btree (id)"
+    },
+    {
+      "table_name": "education_placement_settings",
+      "name": "education_placement_settings_updated_by_idx",
+      "valid": true,
+      "definition": "CREATE INDEX education_placement_settings_updated_by_idx ON public.education_placement_settings USING btree (updated_by_user_id)"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX shop_settings_pkey ON public.shop_settings USING btree (id)"
+    },
+    {
+      "table_name": "shop_settings",
+      "name": "shop_settings_singleton_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX shop_settings_singleton_unique ON public.shop_settings USING btree ((true))"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_audience_active_price_idx",
+      "valid": true,
+      "definition": "CREATE INDEX subscription_plans_audience_active_price_idx ON public.subscription_plans USING btree (audience, active, price)"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_name_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX subscription_plans_name_unique ON public.subscription_plans USING btree (name)"
+    },
+    {
+      "table_name": "subscription_plans",
+      "name": "subscription_plans_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX subscription_plans_pkey ON public.subscription_plans USING btree (id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX subscriptions_pkey ON public.subscriptions USING btree (id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_plan_idx",
+      "valid": true,
+      "definition": "CREATE INDEX subscriptions_plan_idx ON public.subscriptions USING btree (plan_id)"
+    },
+    {
+      "table_name": "subscriptions",
+      "name": "subscriptions_salon_idx",
+      "valid": true,
+      "definition": "CREATE INDEX subscriptions_salon_idx ON public.subscriptions USING btree (salon_id)"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "suppliers_active_name_idx",
+      "valid": true,
+      "definition": "CREATE INDEX suppliers_active_name_idx ON public.suppliers USING btree (active, name)"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "suppliers_pkey",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX suppliers_pkey ON public.suppliers USING btree (id)"
+    },
+    {
+      "table_name": "suppliers",
+      "name": "suppliers_slug_unique",
+      "valid": true,
+      "definition": "CREATE UNIQUE INDEX suppliers_slug_unique ON public.suppliers USING btree (slug)"
+    }
+  ],
+  "triggers": [],
+  "relations": [
+    {
+      "table_name": "aftercare_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "b2c_display_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "beauty_job_categories",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "beauty_job_platform_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "education_b2b_discount_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "education_center_subscriptions",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "education_placement_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "shop_settings",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "subscription_plans",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "subscriptions",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    },
+    {
+      "table_name": "suppliers",
+      "kind": "r",
+      "row_security": false,
+      "force_row_security": false
+    }
+  ],
+  "rules": []
+}

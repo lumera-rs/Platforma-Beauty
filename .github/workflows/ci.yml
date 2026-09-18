@@ -57,6 +57,8 @@ jobs:
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migration-contract
       - name: Validate migration contract
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:migration-contract
+      - name: Validate startup DDL removal gate
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:startup-ddl-removal-gate
 
   release-chain:
     name: Release chain (database-free)
@@ -418,6 +420,11 @@ jobs:
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
         run: pnpm run validate:ci:database
+      - name: Run Phase 4 migration integration suite
+        env:
+          LUMERA_PHASE4_DISPOSABLE_DATABASE_URL: postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+          LUMERA_PHASE4_DISPOSABLE_DB: "1"
+        run: pnpm run test:migrations:integration
       - name: Upload database timing history
         if: ${{ always() }}
         continue-on-error: true
@@ -438,6 +445,51 @@ jobs:
             ${{ runner.temp }}/lumera-ci-timing-fallback/build-summary.md
           if-no-files-found: warn
           retention-days: 90
+
+  phase5-migration-integration:
+    name: Phase 5 migration integration (owned PostgreSQL 16)
+    needs: migration-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      NODE_ENV: test
+      DATABASE_URL: ""
+      LUMERA_MIGRATION_DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # D-1 uses the checked-in, checksum-pinned historical source fixture.
+          # No historical Git objects or archival refs are required.
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run Phase 5 database-free migration inventory
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migrations:phase5:unit
+      - name: Install PostgreSQL 16 binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-16
+          test -x /usr/lib/postgresql/16/bin/initdb
+          test -x /usr/lib/postgresql/16/bin/postgres
+      - name: Run owned PostgreSQL 16 Phase 5 proofs
+        env:
+          LUMERA_POSTGRES_16_BIN: /usr/lib/postgresql/16/bin
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migrations:phase5:integration -- --output-dir="${RUNNER_TEMP}/lumera-phase5-integration"
+      - name: Upload Phase 5 migration integration output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-migration-integration-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lumera-phase5-integration/
+          if-no-files-found: error
+          retention-days: 14
 
   browser:
     name: Browser user journeys

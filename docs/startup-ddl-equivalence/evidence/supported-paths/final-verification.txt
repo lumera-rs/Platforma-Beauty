@@ -1,0 +1,508 @@
+Final verification: disposable-only development work
+$ pnpm run typecheck
+
+> workspace@0.0.0 typecheck /home/runner/workspace
+> pnpm run typecheck:libs && pnpm -r --filter "./artifacts/**" --filter "./scripts" --if-present run typecheck
+
+
+> workspace@0.0.0 typecheck:libs /home/runner/workspace
+> tsc --build --force
+
+Scope: 4 of 10 workspace projects
+artifacts/api-server typecheck$ tsc --build --force ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit
+artifacts/beauty-marketplace pretypecheck$ pnpm -w exec tsc --build --force lib/api-client-react lib/api-zod
+artifacts/mockup-sandbox typecheck$ tsc -p tsconfig.json --noEmit
+scripts typecheck$ tsc -p tsconfig.json --noEmit
+scripts typecheck: Done
+artifacts/mockup-sandbox typecheck: Done
+artifacts/beauty-marketplace pretypecheck: Done
+artifacts/beauty-marketplace typecheck$ tsc -p tsconfig.json --noEmit
+artifacts/api-server typecheck: Done
+artifacts/beauty-marketplace typecheck: Done
+$ pnpm run validate:ci:startup-ddl-removal-gate
+
+> workspace@0.0.0 validate:ci:startup-ddl-removal-gate /home/runner/workspace
+> pnpm --filter @workspace/scripts run validate:ci:startup-ddl-removal-gate
+
+
+> @workspace/scripts@0.0.0 validate:ci:startup-ddl-removal-gate /home/runner/workspace/scripts
+> tsx ./src/startup-ddl-removal-gate.ts
+
+PASS startup DDL removal gate (artifacts/api-server/src/index.ts; 148 modules scanned)
+$ pnpm --filter @workspace/scripts run test:backend-standards:static
+
+> @workspace/scripts@0.0.0 test:backend-standards:static /home/runner/workspace/scripts
+> pnpm run validate:ci:startup-ddl-removal-gate && pnpm run test:production-startup-ddl-inventory:fixtures && pnpm run test:startup-migration-crosswalk && pnpm run test:startup-ddl-safety && tsx ./src/test-backend-standards.ts --static-only
+
+
+> @workspace/scripts@0.0.0 validate:ci:startup-ddl-removal-gate /home/runner/workspace/scripts
+> tsx ./src/startup-ddl-removal-gate.ts
+
+PASS startup DDL removal gate (artifacts/api-server/src/index.ts; 148 modules scanned)
+
+> @workspace/scripts@0.0.0 test:production-startup-ddl-inventory:fixtures /home/runner/workspace/scripts
+> tsx --test --test-name-pattern='mutation tests|module evaluation' ./src/production-startup-ddl-inventory.test.ts
+
+✔ mutation tests reject direct, transitive, barrel, literal dynamic, and nonliteral DDL edges (55.84323ms)
+✔ mutation tests reject a new ensure-style call and missing or changed known owners (20.997933ms)
+✔ mutation tests reject callback, constructor, and object-method DDL wrappers (15.441849ms)
+✔ module evaluation follows indirect executable DDL without classifying dead functions (34.468307ms)
+✔ module evaluation keeps nested SQL sink traversal without double counting (6.35622ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1265.77583
+
+> @workspace/scripts@0.0.0 test:startup-migration-crosswalk /home/runner/workspace/scripts
+> tsx --test ./src/startup-migration-crosswalk.test.ts
+
+✔ accounts for all 1,459 records with one mapping per fingerprint (1374.657789ms)
+✔ fails closed instead of inventing canonical, future, or retired equivalence (1121.603034ms)
+✔ extracts an exact object identity and review evidence for every mapping (1096.340057ms)
+✔ records additional non-DDL operations for every owner (1069.574173ms)
+✔ pins every executable startup SQL literal, including the sixteen formerly missed aliases (1014.496959ms)
+✔ fails closed for comment-prefixed, nested, and count-preserving unclassified startup SQL (1641.51631ms)
+✔ derives trigger parents from executable source or marks them dynamic (1041.213278ms)
+✔ preserves exact source positions, source order, full SQL, and dynamic identity semantics (1079.471164ms)
+✔ owner report reconciles resolved and unresolved counts (1059.020746ms)
+✔ rejects missing, duplicate, unsupported, and inconsistent mappings (2236.296501ms)
+✔ rejects every unresolved-classification and canonical-evidence bypass (2399.745065ms)
+✔ rejects reordered mappings, reordered occurrences, and fabricated source positions (1509.018587ms)
+✔ rejects fabricated crosswalk metadata and canonical baseline identifiers (1788.396006ms)
+✔ rejects removal or fabrication of additional operations (4855.912756ms)
+✔ rejects canonical migration checksum drift (2.123756ms)
+✔ JSON and owner report generation are deterministic (2215.126887ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 26596.435921
+
+> @workspace/scripts@0.0.0 test:startup-ddl-safety /home/runner/workspace/scripts
+> tsx --test ../artifacts/api-server/src/lib/startup-ddl-safety.test.ts
+
+✔ shipping rolls back a timeout-setup failure before releasing the client (1.57889ms)
+✔ web push rolls back an advisory-lock failure before releasing the client (0.395293ms)
+✔ marketplace preserves an index failure when timeout restoration also fails (0.779458ms)
+✔ marketplace surfaces timeout restoration failure after successful indexes (1.032972ms)
+✔ marketplace restores both previous timeout values after success (1.008157ms)
+✔ marketplace restores both previous timeout values after startup failure (0.502407ms)
+✔ media executes all 26 operations on one client and commits after them (1.224489ms)
+✔ media rolls back an injected mid-rollout failure without committing (0.452752ms)
+✔ education bundle rolls back replacement failure without committing (0.569233ms)
+✔ booking command rolls back index failure without committing (0.501617ms)
+✔ business growth restores previous timeouts after success (1.099498ms)
+✔ business growth restores previous timeouts after startup failure (0.582641ms)
+[11:02:36.689] [32mINFO[39m (43805): [36mMarketplace performance indexes are ready[39m
+[11:02:36.690] [32mINFO[39m (43805): [36mMarketplace performance indexes are ready[39m
+[11:02:36.692] [32mINFO[39m (43805): [36mMedia database schema is ready[39m
+[11:02:36.695] [32mINFO[39m (43805): [36mBusiness Growth database schema is ready[39m
+    [35mversion[39m: 126
+    [35mschema[39m: "public"
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1203.903203
+
+────────────────────────────────────────────────────────────────────
+  BACKEND STANDARDS — Task 131
+────────────────────────────────────────────────────────────────────
+  [32m✓[0m  Static: database child processes use safe output handling
+  [32m✓[0m  Static: catalog cache TTL is bounded to 5–15 minutes
+  [32m✓[0m  Static: catalog cache coalesces concurrent misses
+  [32m✓[0m  Static: catalog cache has a bounded entry count
+  [32m✓[0m  Static: catalog invalidation uses PostgreSQL broadcast with reconnect
+  [32m✓[0m  Static: catalog routes use shared cache and post-write invalidation
+  [32m✓[0m  Static: availability is live and only concurrent reads coalesce
+  [32m✓[0m  Static: archive: sets published=false
+  [32m✓[0m  Static: publish: sets archived=false
+  [32m✓[0m  Static: admin salon PATCH publishes the salons catalog tag after success
+  [32m✓[0m  Static: GET /cities serves cached catalog tagged with both cities and salons
+  [32m✓[0m  Static: no await-db-call inside loop in list assembler regions
+  [32m✓[0m  Static: no unbounded selects in critical paginated routes
+────────────────────────────────────────────────────────────────────
+  [32mAll 13 checks passed.[0m
+
+$ final combined migration / readiness / fingerprint / source-audit units
+✔ migration readiness exposes immutable repository pins (2.210384ms)
+✔ readiness returns a safe failure and does not create a ledger (1.013857ms)
+✔ readiness leases one dedicated pool client and releases it (0.525186ms)
+✔ public and PostgreSQL namespaces are accepted (1.430453ms)
+✔ an application namespace is rejected without exposing its name (0.637964ms)
+✔ fresh eligibility is read-only and reports the initial transition (68.387046ms)
+✔ an existing schema without a ledger is unsupported before any write (19.041287ms)
+✔ standalone inspection owns a read-only repeatable-read transaction (26.430862ms)
+✔ CLI requires an explicit development target and never uses an ambient URL (0.728314ms)
+✔ ledger inspection rejects an incomplete APPLYING row before the runner can write (14.822136ms)
+✔ ledger inspection rejects checksum, mode, error, and timestamp drift (13.422589ms)
+✔ ledger inspection rejects a finite but reversed completion interval (44.432722ms)
+✔ supported runner rejects invalid ledger metadata before BEGIN or ledger DDL (41.886544ms)
+✔ admission-contract adoption refuses deployment runtime before touching the client (36.559852ms)
+✔ historical matrix is source-pinned and contains exactly 67 records (117.258643ms)
+✔ shared readonly readiness pins match the loaded immutable migration manifest (49.750534ms)
+✔ the manifest preserves the canonical baseline and pins the guarded data transition (83.844335ms)
+✔ status does not create a missing ledger (0.906341ms)
+✔ migration modules do not require a database URL on import (0.169355ms)
+✔ nontransactional statement splitting preserves quoted semicolons (0.772948ms)
+✔ B3-A preserves the migration error when markFailed succeeds (3.162597ms)
+✔ B3-B preserves the migration error when markFailed fails (0.688861ms)
+✔ B3-C preserves the migration error when advisory unlock fails (0.975282ms)
+✔ B3-D surfaces advisory unlock failure after a successful migration (0.75109ms)
+✔ B3-E preserves the migration error when rollback fails (1.065226ms)
+✔ B4 handles standard strings, identifiers, escape strings, dollar quotes, comments, and DO blocks (1.050322ms)
+✔ B5 refuses mutating commands that rely on ambient DATABASE_URL (0.67159ms)
+✔ B5 requires confirmation and accepts an explicit target without contacting a database (0.293386ms)
+✔ B5 redacts database URLs and passwords from CLI errors (0.853745ms)
+✔ preflight requires one explicit target and confirmation without ambient fallback (1.676243ms)
+✔ preflight errors redact PostgreSQL URLs (0.354012ms)
+✔ preflight runtime has no migration mutation imports or calls (15.106215ms)
+✔ development preparation refuses deployment runtimes before querying (1.106092ms)
+✔ unsupported eligibility is an explicit error contract (0.303145ms)
+✔ development entrypoint gates before importing the configured database (0.486255ms)
+✔ eligibility CLI accepts no operator-controlled arguments (1.252898ms)
+✔ eligibility CLI authority is the fixed repository manifest (6.642174ms)
+✖ eligibility CLI runtime dependency graph is explicitly read-only (23.289574ms)
+✔ runtime dependency audit rejects writes introduced into the resolved package export (2.371102ms)
+✔ runtime dependency audit still rejects unrecognized package imports (0.728282ms)
+✔ runtime dependency audit rejects an indirect write path without executing it (0.733689ms)
+✔ only an exact known legacy fingerprint is eligible for metadata adoption (6.039797ms)
+✔ fresh, partial, and wrong databases have distinct fail-closed results (4.799502ms)
+✔ fresh database requires every application-owned identity collection to be empty (1.084046ms)
+✔ catalogs containing only ownership-excluded objects are explicit and fail closed (1.194277ms)
+✔ an empty approved manifest never manufactures known legacy authority (0.392981ms)
+✔ unknown P0/P1 drift is reported and never eligible (1.093428ms)
+✔ physical-only unknown drift remains fail-closed (2.538189ms)
+✔ exact ownership exclusions are harmless but unknown extras prevent adoption (0.815865ms)
+✔ malformed and version-incompatible manifest entries fail closed (0.801361ms)
+✔ conflicting CURRENT and LEGACY assignments fail closed in either order (0.667689ms)
+✔ manifest digests must describe the reviewed physical snapshot (0.469235ms)
+✔ identical, reordered, and repeated snapshots have byte-stable fingerprints (15.141271ms)
+✔ standalone routines are represented and every identity/behavior field fingerprints (11.18196ms)
+✔ PostgreSQL 16 golden catalog fixture locks all deparser-sensitive output (1.186676ms)
+✔ harmless PostgreSQL 16 deparser rendering changes normalize without hiding schema drift (1.868012ms)
+✔ PostgreSQL patch metadata is visible while the reviewed deparser family controls hashes (1.805455ms)
+✔ unsupported PostgreSQL versions and unreviewed deparser formats fail closed (0.711ms)
+✔ column order changes both fingerprints (1.786578ms)
+✔ column type changes both fingerprints (1.279381ms)
+✔ nullability changes both fingerprints (1.275642ms)
+✔ default changes both fingerprints (1.603646ms)
+✔ generated expression changes both fingerprints (1.924948ms)
+✔ generated mode changes both fingerprints (1.236004ms)
+✔ identity mode changes both fingerprints (1.219662ms)
+✔ column collation changes both fingerprints (1.299753ms)
+✔ primary key order changes both fingerprints (1.714947ms)
+✔ unique columns changes both fingerprints (1.256673ms)
+✔ unique NULLS NOT DISTINCT changes both fingerprints (1.281773ms)
+✔ unique deferrability changes both fingerprints (1.162378ms)
+✔ unique initially deferred state changes both fingerprints (1.100541ms)
+✔ unique validation state changes both fingerprints (1.89654ms)
+✔ unique backing index option changes both fingerprints (1.338238ms)
+✔ unique backing index INCLUDE attribute changes both fingerprints (1.113317ms)
+✔ unique backing index collation changes both fingerprints (1.143315ms)
+✔ unique backing index opclass changes both fingerprints (1.429564ms)
+✔ unique backing index validity changes both fingerprints (1.141374ms)
+✔ check expression changes both fingerprints (1.153969ms)
+✔ check validation state changes both fingerprints (1.061253ms)
+✔ check NO INHERIT state changes both fingerprints (1.382624ms)
+✔ exclusion definition changes both fingerprints (1.684422ms)
+✔ exclusion deferrability changes both fingerprints (1.209904ms)
+✔ exclusion initially deferred state changes both fingerprints (1.02344ms)
+✔ exclusion validation state changes both fingerprints (1.250987ms)
+✔ exclusion backing index option changes both fingerprints (1.499896ms)
+✔ exclusion backing index INCLUDE attribute changes both fingerprints (1.074389ms)
+✔ FK local columns changes both fingerprints (1.076597ms)
+✔ FK referenced columns changes both fingerprints (1.274909ms)
+✔ FK delete action changes both fingerprints (1.046635ms)
+✔ FK update action changes both fingerprints (1.628659ms)
+✔ FK match type changes both fingerprints (1.166668ms)
+✔ FK deferrability changes both fingerprints (1.125311ms)
+✔ FK initially deferred state changes both fingerprints (1.217947ms)
+✔ FK validation state changes both fingerprints (1.179802ms)
+✔ FK deletion-target columns changes both fingerprints (1.741403ms)
+✔ index expression order changes both fingerprints (1.109931ms)
+✔ index include expressions changes both fingerprints (1.114844ms)
+✔ index key ordering and opclass changes both fingerprints (1.114249ms)
+✔ index predicate changes both fingerprints (1.207485ms)
+✔ index uniqueness changes both fingerprints (1.613012ms)
+✔ index NULLS NOT DISTINCT changes both fingerprints (1.171757ms)
+✔ index method changes both fingerprints (0.969473ms)
+✔ index validity changes both fingerprints (1.016456ms)
+✔ index readiness changes both fingerprints (1.113163ms)
+✔ index key option changes both fingerprints (1.553988ms)
+✔ index collation changes both fingerprints (1.189477ms)
+✔ index opclass changes both fingerprints (1.096142ms)
+✔ physical constraint and index renames affect only the physical fingerprint (1.161685ms)
+✔ known normalization-equivalent SQL produces the same fingerprints (1.045932ms)
+✔ preserves literal case, arithmetic grouping, casts, and function schema identity (4.904552ms)
+✔ preserves double quotes inside literals and table-named function schemas (1.955833ms)
+✔ preserves function-call parentheses and NOT grouping (2.475713ms)
+✔ preserves quoted type identity (1.231633ms)
+✔ preserves escaped quotes in complete quoted identifiers (1.618469ms)
+✔ distinguishes a quoted keyword column from the SQL boolean constant (1.534541ms)
+✔ preserves apostrophes inside complete quoted identifiers (1.961203ms)
+✔ dropped-column ordinal gaps normalize to contiguous logical positions (1.650116ms)
+✔ fails closed for malformed or duplicate catalog identity (0.640391ms)
+✔ ownership exceptions are exact, explicit, sorted, and excluded (1.626078ms)
+✔ absent ownership registry entries are not reported as applied (0.600211ms)
+✔ enum labels and order, trigger behavior/body, and unmodelled census affect both hashes (9.783992ms)
+✔ trigger names affect both domains because they control firing order and TG_NAME (1.445908ms)
+✔ empty enums and empty enum labels remain fingerprinted (2.734876ms)
+✔ empty schemas remain domain-separated (0.145836ms)
+✔ detects missing and extra columns (6.738998ms)
+✔ detects wrong type (0.767841ms)
+✔ detects wrong nullability (0.723269ms)
+✔ detects wrong default (0.711197ms)
+✔ detects changed generated expression/status (0.792532ms)
+✔ detects missing FK and wrong FK delete action (1.123135ms)
+✔ detects missing and changed checks (1.383705ms)
+✔ detects missing and changed index expressions/columns (1.06374ms)
+✔ detects wrong index uniqueness and predicate (1.075156ms)
+✔ compares PK and unique constraints semantically rather than only by name (1.471143ms)
+✔ normalizeSql preserves semantics while normalizing PostgreSQL renderings (1.162646ms)
+✔ legacy audit strips catalog casts without weakening fingerprint normalization (20.404093ms)
+✔ legacy audit removes only precedence-redundant expression parentheses (1.506858ms)
+✔ legacy audit ignores only insignificant whitespace in typed JSON defaults (1.028976ms)
+✔ catalog rows extract enums, public application triggers, and deterministic census (1.444832ms)
+✔ catalog rows extract deterministic application routines independently of triggers (0.422825ms)
+✔ trigger catalog parsing ignores WHEN text in arguments and models constraint triggers (0.284132ms)
+✔ trigger WHEN extraction preserves OLD and NEW with nested and quoted syntax (0.182816ms)
+✔ canonical extraction covers keys, actions, checks, generated columns, and indexes (1.997197ms)
+✔ catalog extraction excludes all constraint backing indexes and preserves catalog detail (0.618832ms)
+✔ catalog-extracted index vectors and quoted types affect fingerprints (3.911073ms)
+✔ catalog-extracted UNIQUE backing-index INCLUDE changes both fingerprints (1.376907ms)
+✔ catalog-extracted FK SET targets and CHECK inheritance affect fingerprints (1.746447ms)
+✔ catalog extraction fails when a child row has no table snapshot (0.610526ms)
+✔ catalog extraction fails closed on unknown FK action or match codes (0.29042ms)
+✔ read-only query layer rejects a mutating CTE before touching its client (0.589533ms)
+✔ reconciles nullable partial uniqueness and reports PK representation safely (1.689978ms)
+✔ severity follows category and enforcement direction (1.247525ms)
+✔ classifies an exact ownership exception as non-actionable (0.984399ms)
+✔ normalizes SQL formatting and produces deterministic sorted JSON (1.520487ms)
+✔ legacy audit JSON does not expose fingerprint-only catalog fields (1.110834ms)
+✔ never removes boolean grouping that changes AND/OR precedence (0.786102ms)
+ℹ tests 156
+ℹ suites 0
+ℹ pass 155
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1373.275228
+
+✖ failing tests:
+
+test at src/schema-drift/eligibility-cli.test.ts:1:5838
+✖ eligibility CLI runtime dependency graph is explicitly read-only (23.289574ms)
+  AssertionError [ERR_ASSERTION]: unreviewed runtime dependency: /home/runner/workspace/lib/db/src/migration-runtime/namespaces.ts
+
+  false !== true
+
+      at auditRuntimeGraph (/home/runner/workspace/scripts/src/schema-drift/eligibility-cli.test.ts:191:12)
+      at async TestContext.<anonymous> (/home/runner/workspace/scripts/src/schema-drift/eligibility-cli.test.ts:219:19)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+undefined
+/home/runner/workspace/scripts:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: tsx --test src/migrations/migrations.test.ts src/migrations/preflight.test.ts src/migrations/deployment-eligibility.test.ts src/migrations/prepare-development.test.ts src/migrations/historical-operation-matrix.test.ts src/migrations/migration-runtime-parity.test.ts ../lib/db/src/migration-runtime/contract.test.ts ../lib/db/src/migration-runtime/namespaces.test.ts src/schema-drift/fingerprint.test.ts src/schema-drift/schema-drift.test.ts src/schema-drift/eligibility.test.ts src/schema-drift/eligibility-cli.test.ts
+\nCorrection: reviewed namespace module added to the exact read-only source graph; no runtime mutation exception added.
+$ final combined units (re-run after source-audit correction)
+✔ migration readiness exposes immutable repository pins (2.421702ms)
+✔ readiness returns a safe failure and does not create a ledger (1.442036ms)
+✔ readiness leases one dedicated pool client and releases it (0.783576ms)
+✔ public and PostgreSQL namespaces are accepted (1.277004ms)
+✔ an application namespace is rejected without exposing its name (0.582451ms)
+✔ fresh eligibility is read-only and reports the initial transition (49.736815ms)
+✔ an existing schema without a ledger is unsupported before any write (14.492539ms)
+✔ standalone inspection owns a read-only repeatable-read transaction (13.546033ms)
+✔ CLI requires an explicit development target and never uses an ambient URL (0.84287ms)
+✔ ledger inspection rejects an incomplete APPLYING row before the runner can write (16.259521ms)
+✔ ledger inspection rejects checksum, mode, error, and timestamp drift (19.770486ms)
+✔ ledger inspection rejects a finite but reversed completion interval (24.722735ms)
+✔ supported runner rejects invalid ledger metadata before BEGIN or ledger DDL (14.446138ms)
+✔ admission-contract adoption refuses deployment runtime before touching the client (13.533516ms)
+✔ historical matrix is source-pinned and contains exactly 67 records (87.78864ms)
+✔ shared readonly readiness pins match the loaded immutable migration manifest (59.937501ms)
+✔ the manifest preserves the canonical baseline and pins the guarded data transition (68.690101ms)
+✔ status does not create a missing ledger (0.725933ms)
+✔ migration modules do not require a database URL on import (0.178836ms)
+✔ nontransactional statement splitting preserves quoted semicolons (0.644184ms)
+✔ B3-A preserves the migration error when markFailed succeeds (2.504718ms)
+✔ B3-B preserves the migration error when markFailed fails (0.757806ms)
+✔ B3-C preserves the migration error when advisory unlock fails (0.905993ms)
+✔ B3-D surfaces advisory unlock failure after a successful migration (0.77883ms)
+✔ B3-E preserves the migration error when rollback fails (0.747017ms)
+✔ B4 handles standard strings, identifiers, escape strings, dollar quotes, comments, and DO blocks (0.932152ms)
+✔ B5 refuses mutating commands that rely on ambient DATABASE_URL (0.543513ms)
+✔ B5 requires confirmation and accepts an explicit target without contacting a database (0.176752ms)
+✔ B5 redacts database URLs and passwords from CLI errors (0.745462ms)
+✔ preflight requires one explicit target and confirmation without ambient fallback (2.543547ms)
+✔ preflight errors redact PostgreSQL URLs (0.547393ms)
+✔ preflight runtime has no migration mutation imports or calls (13.750336ms)
+✔ development preparation refuses deployment runtimes before querying (1.113249ms)
+✔ unsupported eligibility is an explicit error contract (0.308392ms)
+✔ development entrypoint gates before importing the configured database (0.411145ms)
+✔ eligibility CLI accepts no operator-controlled arguments (1.048913ms)
+✔ eligibility CLI authority is the fixed repository manifest (6.653343ms)
+✔ eligibility CLI runtime dependency graph is explicitly read-only (124.983542ms)
+✔ runtime dependency audit rejects writes introduced into the resolved package export (5.291284ms)
+✔ runtime dependency audit still rejects unrecognized package imports (0.581985ms)
+✔ runtime dependency audit rejects an indirect write path without executing it (0.440806ms)
+✔ only an exact known legacy fingerprint is eligible for metadata adoption (5.257527ms)
+✔ fresh, partial, and wrong databases have distinct fail-closed results (4.347065ms)
+✔ fresh database requires every application-owned identity collection to be empty (1.147598ms)
+✔ catalogs containing only ownership-excluded objects are explicit and fail closed (0.359878ms)
+✔ an empty approved manifest never manufactures known legacy authority (1.283037ms)
+✔ unknown P0/P1 drift is reported and never eligible (1.01168ms)
+✔ physical-only unknown drift remains fail-closed (2.304434ms)
+✔ exact ownership exclusions are harmless but unknown extras prevent adoption (0.70398ms)
+✔ malformed and version-incompatible manifest entries fail closed (1.260079ms)
+✔ conflicting CURRENT and LEGACY assignments fail closed in either order (0.766972ms)
+✔ manifest digests must describe the reviewed physical snapshot (0.468516ms)
+✔ identical, reordered, and repeated snapshots have byte-stable fingerprints (13.676229ms)
+✔ standalone routines are represented and every identity/behavior field fingerprints (11.346573ms)
+✔ PostgreSQL 16 golden catalog fixture locks all deparser-sensitive output (1.155793ms)
+✔ harmless PostgreSQL 16 deparser rendering changes normalize without hiding schema drift (1.91495ms)
+✔ PostgreSQL patch metadata is visible while the reviewed deparser family controls hashes (1.624425ms)
+✔ unsupported PostgreSQL versions and unreviewed deparser formats fail closed (0.706256ms)
+✔ column order changes both fingerprints (1.650707ms)
+✔ column type changes both fingerprints (1.574959ms)
+✔ nullability changes both fingerprints (1.23168ms)
+✔ default changes both fingerprints (1.408733ms)
+✔ generated expression changes both fingerprints (1.983369ms)
+✔ generated mode changes both fingerprints (1.325781ms)
+✔ identity mode changes both fingerprints (1.258549ms)
+✔ column collation changes both fingerprints (1.234432ms)
+✔ primary key order changes both fingerprints (1.711947ms)
+✔ unique columns changes both fingerprints (1.525312ms)
+✔ unique NULLS NOT DISTINCT changes both fingerprints (1.202215ms)
+✔ unique deferrability changes both fingerprints (1.361385ms)
+✔ unique initially deferred state changes both fingerprints (1.129353ms)
+✔ unique validation state changes both fingerprints (1.866874ms)
+✔ unique backing index option changes both fingerprints (1.397827ms)
+✔ unique backing index INCLUDE attribute changes both fingerprints (1.113706ms)
+✔ unique backing index collation changes both fingerprints (1.383135ms)
+✔ unique backing index opclass changes both fingerprints (1.511295ms)
+✔ unique backing index validity changes both fingerprints (1.144199ms)
+✔ check expression changes both fingerprints (1.102255ms)
+✔ check validation state changes both fingerprints (1.149868ms)
+✔ check NO INHERIT state changes both fingerprints (1.072137ms)
+✔ exclusion definition changes both fingerprints (1.760651ms)
+✔ exclusion deferrability changes both fingerprints (1.186476ms)
+✔ exclusion initially deferred state changes both fingerprints (1.092915ms)
+✔ exclusion validation state changes both fingerprints (1.119227ms)
+✔ exclusion backing index option changes both fingerprints (1.20073ms)
+✔ exclusion backing index INCLUDE attribute changes both fingerprints (1.737666ms)
+✔ FK local columns changes both fingerprints (1.093774ms)
+✔ FK referenced columns changes both fingerprints (1.227589ms)
+✔ FK delete action changes both fingerprints (1.116739ms)
+✔ FK update action changes both fingerprints (1.615256ms)
+✔ FK match type changes both fingerprints (1.413984ms)
+✔ FK deferrability changes both fingerprints (1.142983ms)
+✔ FK initially deferred state changes both fingerprints (1.305745ms)
+✔ FK validation state changes both fingerprints (1.125908ms)
+✔ FK deletion-target columns changes both fingerprints (1.507083ms)
+✔ index expression order changes both fingerprints (1.024446ms)
+✔ index include expressions changes both fingerprints (1.075102ms)
+✔ index key ordering and opclass changes both fingerprints (1.203544ms)
+✔ index predicate changes both fingerprints (1.011436ms)
+✔ index uniqueness changes both fingerprints (0.979558ms)
+✔ index NULLS NOT DISTINCT changes both fingerprints (1.663564ms)
+✔ index method changes both fingerprints (1.096358ms)
+✔ index validity changes both fingerprints (1.039572ms)
+✔ index readiness changes both fingerprints (1.033128ms)
+✔ index key option changes both fingerprints (1.04189ms)
+✔ index collation changes both fingerprints (1.688822ms)
+✔ index opclass changes both fingerprints (1.156273ms)
+✔ physical constraint and index renames affect only the physical fingerprint (1.244448ms)
+✔ known normalization-equivalent SQL produces the same fingerprints (1.076052ms)
+✔ preserves literal case, arithmetic grouping, casts, and function schema identity (4.933557ms)
+✔ preserves double quotes inside literals and table-named function schemas (2.113696ms)
+✔ preserves function-call parentheses and NOT grouping (2.526726ms)
+✔ preserves quoted type identity (1.289472ms)
+✔ preserves escaped quotes in complete quoted identifiers (1.615361ms)
+✔ distinguishes a quoted keyword column from the SQL boolean constant (1.485241ms)
+✔ preserves apostrophes inside complete quoted identifiers (1.621595ms)
+✔ dropped-column ordinal gaps normalize to contiguous logical positions (1.974207ms)
+✔ fails closed for malformed or duplicate catalog identity (0.71601ms)
+✔ ownership exceptions are exact, explicit, sorted, and excluded (1.666482ms)
+✔ absent ownership registry entries are not reported as applied (0.59294ms)
+✔ enum labels and order, trigger behavior/body, and unmodelled census affect both hashes (11.146163ms)
+✔ trigger names affect both domains because they control firing order and TG_NAME (1.573542ms)
+✔ empty enums and empty enum labels remain fingerprinted (2.722749ms)
+✔ empty schemas remain domain-separated (0.154944ms)
+✔ detects missing and extra columns (7.201131ms)
+✔ detects wrong type (0.761329ms)
+✔ detects wrong nullability (0.769786ms)
+✔ detects wrong default (0.897857ms)
+✔ detects changed generated expression/status (0.707776ms)
+✔ detects missing FK and wrong FK delete action (1.104143ms)
+✔ detects missing and changed checks (1.655173ms)
+✔ detects missing and changed index expressions/columns (1.013546ms)
+✔ detects wrong index uniqueness and predicate (1.017489ms)
+✔ compares PK and unique constraints semantically rather than only by name (1.588277ms)
+✔ normalizeSql preserves semantics while normalizing PostgreSQL renderings (1.274671ms)
+✔ legacy audit strips catalog casts without weakening fingerprint normalization (23.056071ms)
+✔ legacy audit removes only precedence-redundant expression parentheses (1.49253ms)
+✔ legacy audit ignores only insignificant whitespace in typed JSON defaults (1.421518ms)
+✔ catalog rows extract enums, public application triggers, and deterministic census (2.073092ms)
+✔ catalog rows extract deterministic application routines independently of triggers (0.417071ms)
+✔ trigger catalog parsing ignores WHEN text in arguments and models constraint triggers (0.321713ms)
+✔ trigger WHEN extraction preserves OLD and NEW with nested and quoted syntax (0.178201ms)
+✔ canonical extraction covers keys, actions, checks, generated columns, and indexes (2.096795ms)
+✔ catalog extraction excludes all constraint backing indexes and preserves catalog detail (0.481664ms)
+✔ catalog-extracted index vectors and quoted types affect fingerprints (4.124652ms)
+✔ catalog-extracted UNIQUE backing-index INCLUDE changes both fingerprints (1.28246ms)
+✔ catalog-extracted FK SET targets and CHECK inheritance affect fingerprints (1.622034ms)
+✔ catalog extraction fails when a child row has no table snapshot (0.523321ms)
+✔ catalog extraction fails closed on unknown FK action or match codes (0.272379ms)
+✔ read-only query layer rejects a mutating CTE before touching its client (0.541619ms)
+✔ reconciles nullable partial uniqueness and reports PK representation safely (1.737615ms)
+✔ severity follows category and enforcement direction (1.407785ms)
+✔ classifies an exact ownership exception as non-actionable (1.015612ms)
+✔ normalizes SQL formatting and produces deterministic sorted JSON (1.540836ms)
+✔ legacy audit JSON does not expose fingerprint-only catalog fields (1.275293ms)
+✔ never removes boolean grouping that changes AND/OR precedence (0.8056ms)
+ℹ tests 156
+ℹ suites 0
+ℹ pass 156
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1464.311345
+$ namespace-boundary.integration.test.ts --admin-url=<owned loopback cluster>
+✔ unsupported namespaces are rejected before ledger creation and at runtime (6447.255239ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6452.621634
+$ immutable migration hashes
+643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60  lib/db/migrations/000001_canonical_schema/migration.sql
+a8c910eb9bd60281aa80e343b4b1d6e02a45222293b123ab198fab4315d48e62  lib/db/migrations/000002_supported_startup_state/migration.sql
+$ git diff --check
+$ disposable cluster child-database census
+0
+pg_ctl: no server running
+PASS: owned temporary PostgreSQL stopped; pg_ctl status exit=3

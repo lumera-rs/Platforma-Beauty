@@ -1,0 +1,847 @@
+✓ A.1 appointments list excludes B and adversarial cross-links
+[10:38:23.505] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 29
+✓ A.2 CRM aggregates and relations remain salon-scoped under adversarial links
+[10:38:23.537] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "method": "GET",
+      "url": "/api/salon/customers"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 19
+✓ A.2b CRM mutation aggregate remains salon-scoped
+[10:38:23.574] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "method": "PATCH",
+      "url": "/api/salon/customers/6ae9c78f-ed12-4ad8-a346-eb18efa8f3d9"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 31
+✓ A.3 employees and assigned service IDs exclude B
+[10:38:23.586] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "method": "GET",
+      "url": "/api/salon/employees"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+✓ A.3b employee preview count remains salon-scoped
+[10:38:23.593] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "method": "GET",
+      "url": "/api/salon/employees/3b66dcee-a113-4391-9375-bba94c7a4b23/deactivation-preview"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+✓ A.4 leave-requests list excludes B
+[10:38:23.600] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "method": "GET",
+      "url": "/api/salon/leave-requests"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+✓ A.5 services list excludes B
+[10:38:23.608] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "method": "GET",
+      "url": "/api/salon/services"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+✓ A.6 resources list excludes B
+[10:38:23.615] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "method": "GET",
+      "url": "/api/salon/resources"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+✓ A.7 shop orders list excludes B
+✓ A.8 shop notifications list excludes B
+[10:38:23.625] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "method": "GET",
+      "url": "/api/shop/orders"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+[10:38:23.632] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 10,
+      "method": "GET",
+      "url": "/api/shop/notifications"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:38:23.641] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 11,
+      "method": "PUT",
+      "url": "/api/salon/active-salon"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:38:23.646] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 12,
+      "method": "GET",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.652] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 13,
+      "method": "GET",
+      "url": "/api/salon/customers"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.658] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 14,
+      "method": "GET",
+      "url": "/api/salon/employees"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5
+[10:38:23.663] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 15,
+      "method": "GET",
+      "url": "/api/salon/leave-requests"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.670] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 16,
+      "method": "GET",
+      "url": "/api/salon/services"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+[10:38:23.674] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 17,
+      "method": "GET",
+      "url": "/api/salon/resources"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3
+[10:38:23.679] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 18,
+      "method": "GET",
+      "url": "/api/shop/orders"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.684] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 19,
+      "method": "GET",
+      "url": "/api/shop/notifications"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.692] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 20,
+      "method": "POST",
+      "url": "/api/appointments/6f1f4442-28f9-4442-91fb-ecfb68745a43/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 6
+✓ A.9 operational APIs follow active salon for a multi-location owner
+[10:38:23.701] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 21,
+      "method": "PUT",
+      "url": "/api/salon/active-salon"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+✓ B.1 owner A cannot patch appointment B
+[10:38:23.707] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 22,
+      "method": "POST",
+      "url": "/api/appointments/f4719515-640e-4fec-8c7c-1da4133f72ef/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.714] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 23,
+      "method": "DELETE",
+      "url": "/api/salon/appointment-series/893ea14b-f1e1-444f-bff3-50710d882e3e"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 5
+✓ B.2 owner A cannot delete series B
+✓ B.3 owner A cannot create appt with B service ID
+[10:38:23.729] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 24,
+      "method": "POST",
+      "url": "/api/salon/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 7
+✓ B.4 owner A cannot create series with B contact ID
+[10:38:23.740] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 25,
+      "method": "POST",
+      "url": "/api/salon/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 9
+✓ B.5 owner A cannot patch CRM contact B
+[10:38:23.745] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 26,
+      "method": "PATCH",
+      "url": "/api/salon/customers/bd74411b-2227-40e8-99bc-8b58114bf9a2"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 3
+[10:38:23.751] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 27,
+      "method": "PATCH",
+      "url": "/api/salon/leave-requests/ad0482dc-99ad-499b-8202-c166de7b4f9b"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+✓ B.6 owner A cannot approve leave B
+✓ B.7 owner A cannot patch service B
+[10:38:23.759] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 28,
+      "method": "PATCH",
+      "url": "/api/salon/services/e7b110e1-c22d-4abb-b014-2d676f7a8be8"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 6
+✓ B.8 owner A cannot delete service B
+[10:38:23.764] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 29,
+      "method": "DELETE",
+      "url": "/api/salon/services/e7b110e1-c22d-4abb-b014-2d676f7a8be8"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+[10:38:23.771] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 30,
+      "method": "PATCH",
+      "url": "/api/salon/resources/0c869bcb-fd50-4e1b-8c77-de066e571e1a"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+✓ B.9 owner A cannot patch resource B
+✓ B.10 owner A cannot delete resource B
+[10:38:23.776] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 31,
+      "method": "DELETE",
+      "url": "/api/salon/resources/0c869bcb-fd50-4e1b-8c77-de066e571e1a"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+✓ B.11 owner A cannot mark notification B as read
+[10:38:23.783] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 32,
+      "method": "PATCH",
+      "url": "/api/shop/notifications/f3179155-88d0-4c68-b7a8-87f9c63a717e/read"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 5
+✓ C.1 employee A portal excludes adversarial cross-location relations
+✓ C.2 employee A cannot patch appointment B
+[10:38:23.794] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 33,
+      "method": "GET",
+      "url": "/api/employee/portal"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+[10:38:23.801] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 34,
+      "method": "POST",
+      "url": "/api/appointments/f4719515-640e-4fec-8c7c-1da4133f72ef/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 6
+✓ C.3 employee A cannot patch another employee's appointment
+[10:38:23.808] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 35,
+      "method": "POST",
+      "url": "/api/appointments/cabbf2d6-5e2e-4254-9a7a-bc69cab237ae/lifecycle"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 5
+✓ C.4 employee B portal excludes A records
+✓ C.5 employee A cannot preview another employee's series
+[10:38:23.819] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 36,
+      "method": "GET",
+      "url": "/api/employee/portal"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[10:38:23.825] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 37,
+      "method": "POST",
+      "url": "/api/employee/appointment-series/preview"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+✓ C.6 employee A cannot create an appointment with salon B relations
+[10:38:23.836] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 38,
+      "method": "POST",
+      "url": "/api/employee/appointments"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 9
+✓ C.7 employee A cannot create another employee's series
+[10:38:23.850] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 39,
+      "method": "POST",
+      "url": "/api/employee/appointment-series"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 10
+[10:38:23.872] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 40,
+      "method": "GET",
+      "url": "/api/employee/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 20
+[10:38:23.879] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 41,
+      "method": "GET",
+      "url": "/api/employee/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+✓ C.8 employee availability enforces active-location and own-service isolation
+[10:38:23.883] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 42,
+      "method": "GET",
+      "url": "/api/employee/availability/search"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 4
+✓ D.1 center A courses(mine) excludes B
+✓ D.2 center A cannot access B's unpublished course
+[10:38:23.905] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 43,
+      "method": "GET",
+      "url": "/api/education/courses"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 21
+[10:38:23.916] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 44,
+      "method": "GET",
+      "url": "/api/education/courses/1d701ea4-b225-4144-92f2-a76d8982a11f"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 9
+✓ D.3 center B cannot patch course A
+[10:38:23.923] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 45,
+      "method": "PATCH",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 6
+[10:38:23.933] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 46,
+      "method": "DELETE",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 8
+✓ D.4 center B cannot archive/delete course A
+✓ D.5 center B cannot patch instructor A
+[10:38:23.940] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 47,
+      "method": "PATCH",
+      "url": "/api/education/instructors/7e4c3ae7-f680-495b-943e-8fdd1c3d58f8"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 5
+[10:38:23.948] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 48,
+      "method": "DELETE",
+      "url": "/api/education/instructors/7e4c3ae7-f680-495b-943e-8fdd1c3d58f8"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 7
+✓ D.6 center B cannot delete instructor A
+[10:38:23.955] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 49,
+      "method": "PATCH",
+      "url": "/api/education/modules/315f569b-ef8c-4cea-8dd4-9a5fa9eefee3"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+✓ D.7 center B cannot patch module A
+✓ D.8 center B cannot delete module A
+[10:38:23.967] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 50,
+      "method": "DELETE",
+      "url": "/api/education/modules/315f569b-ef8c-4cea-8dd4-9a5fa9eefee3"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 6
+✓ D.9 center B cannot patch lesson A
+[10:38:23.977] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 51,
+      "method": "PATCH",
+      "url": "/api/education/lessons/245f64d1-ae10-4331-90dd-20b37608b577"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 8
+✓ D.10 center B cannot delete lesson A
+[10:38:23.984] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 52,
+      "method": "DELETE",
+      "url": "/api/education/lessons/245f64d1-ae10-4331-90dd-20b37608b577"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+✓ D.11 center B cannot access enrollment A LMS
+[10:38:23.993] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 53,
+      "method": "GET",
+      "url": "/api/education/enrollments/33744c57-4cd5-453b-8fd2-578a7feb6f78/lms"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 7
+[10:38:24.001] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 54,
+      "method": "POST",
+      "url": "/api/education/enrollments/33744c57-4cd5-453b-8fd2-578a7feb6f78/lessons/245f64d1-ae10-4331-90dd-20b37608b577/complete"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 6
+✓ D.12 center B cannot mutate enrollment A lesson progress
+✓ D.13 center B cannot read enrollment A messages
+[10:38:24.015] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 55,
+      "method": "GET",
+      "url": "/api/education/purchases/33744c57-4cd5-453b-8fd2-578a7feb6f78/messages"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 6
+✓ D.14 center B cannot send message in enrollment A
+[10:38:24.026] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 56,
+      "method": "POST",
+      "url": "/api/education/purchases/33744c57-4cd5-453b-8fd2-578a7feb6f78/messages"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 7
+[10:38:24.033] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 57,
+      "method": "POST",
+      "url": "/api/education/purchases/33744c57-4cd5-453b-8fd2-578a7feb6f78/disputes"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 5
+✓ D.15 center B cannot open dispute for enrollment A
+✓ D.16 center A mine list excludes B unpublished course
+[10:38:24.047] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 58,
+      "method": "GET",
+      "url": "/api/education/courses"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 10
+[10:38:24.054] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 59,
+      "method": "GET",
+      "url": "/api/education/instructors"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+✓ D.17 center B instructor list excludes A instructor
+✓ D.18 center B dispute list excludes A dispute
+[10:38:24.061] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 60,
+      "method": "GET",
+      "url": "/api/education/disputes"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6
+✓ D.19 enrollment and financial views exclude foreign center records
+[10:38:24.071] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 62,
+      "method": "GET",
+      "url": "/api/education/enrollments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:38:24.073] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 61,
+      "method": "GET",
+      "url": "/api/education/enrollments"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 11
+✓ D.20 session location is visible only to the owning center
+[10:38:24.082] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 64,
+      "method": "GET",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242/sessions"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 7
+[10:38:24.082] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 63,
+      "method": "GET",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242/sessions"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+✓ D.21 center B cannot patch session A
+[10:38:24.088] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 65,
+      "method": "PATCH",
+      "url": "/api/education/sessions/e9aa2e80-eee6-4521-ac9d-4ccdb0e9fd83"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+✓ D.22 center B cannot delete session A
+[10:38:24.094] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 66,
+      "method": "DELETE",
+      "url": "/api/education/sessions/e9aa2e80-eee6-4521-ac9d-4ccdb0e9fd83"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+✓ D.23 foreign session cancellation leaves financial state unchanged
+✓ D.24 foreign enrollment cancellation leaves finance state unchanged
+[10:38:24.104] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 67,
+      "method": "POST",
+      "url": "/api/education/sessions/e9aa2e80-eee6-4521-ac9d-4ccdb0e9fd83/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 7
+[10:38:24.111] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 68,
+      "method": "POST",
+      "url": "/api/education/enrollments/33744c57-4cd5-453b-8fd2-578a7feb6f78/cancel"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 4
+✓ D.25 center status excludes foreign centers
+[10:38:24.122] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 69,
+      "method": "GET",
+      "url": "/api/education/center/status"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+✓ D.26 private education media is center-scoped
+[10:38:24.129] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 70,
+      "method": "GET",
+      "url": "/api/education/media/48ac5b65-6a96-4e10-be52-51f5f775e664"
+    }
+    [35mres[39m: {
+      "statusCode": 403
+    }
+    [35mresponseTime[39m: 6
+✓ E.1 public listing includes A, excludes unpublished B
+[10:38:24.155] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 71,
+      "method": "GET",
+      "url": "/api/education/public/courses"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 25
+✓ E.2 public course metadata accessible with location redacted
+✓ E.3 lesson content absent for non-owner non-enrolled user
+[10:38:24.204] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 72,
+      "method": "GET",
+      "url": "/api/education/public/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 37
+[10:38:24.214] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 73,
+      "method": "GET",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242/modules"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 8
+✓ E.4 enrolled user retains LMS and session-location access
+[10:38:24.240] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 74,
+      "method": "GET",
+      "url": "/api/education/enrollments/33744c57-4cd5-453b-8fd2-578a7feb6f78/lms"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 26
+✓ E.5 center A owner retains course A access
+[10:38:24.257] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 75,
+      "method": "GET",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 15
+✓ E.6 enrolled user retains message access
+[10:38:24.267] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 76,
+      "method": "GET",
+      "url": "/api/education/purchases/33744c57-4cd5-453b-8fd2-578a7feb6f78/messages"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+✓ E.7 center A owner sees own course in list
+[10:38:24.280] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 77,
+      "method": "GET",
+      "url": "/api/education/courses"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 12
+✓ E.8 private media refs not exposed to center B
+
+✓ All tenant-isolation assertions passed.
+[10:38:24.295] [32mINFO[39m (29780): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 78,
+      "method": "GET",
+      "url": "/api/education/courses/f4c642e1-c4fe-4db8-9ead-ce41d4bb8242"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 14
+exit=0

@@ -1,0 +1,1334 @@
+{
+  "schemaMigration": "000002",
+  "archiveSha256": "174ebf6e31fd8f7c53ea5e1112518a2afd2d56e72c3762e796e139a8a43b90a3",
+  "inventoryRepeated": false,
+  "originalOperationCount": 1569,
+  "additionalOperationCount": 110,
+  "historicalOperationCount": 67,
+  "overallEquivalence": "BLOCKED",
+  "eligibilityImplementation": "scripts/src/migrations/supported-state.ts",
+  "executableProofSuite": "scripts/src/migrations/supported-state.integration.test.ts",
+  "warning": "This annotation records scope only. Test results are reported separately. Empty inputs do not prove populated historical transitions.",
+  "operations": [
+    {
+      "id": "additional/booking-command/transaction-and-advisory-lock",
+      "owner": "ensureBookingCommandSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
+        "line": 9,
+        "checksum": "7e0c51f4575a087b83b8beea946488c7f71ae38168ecf56ee5e65640ad85198e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-239-3c7d7a0db051017c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:239:5",
+        "line": 239,
+        "checksum": "5afb5c45b0a7089bf32da7832c78e0a63ed6d7652829128f10520b956836deed"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-515-8dbd4712bbb5dcb2",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:515:5",
+        "line": 515,
+        "checksum": "aef933ddda65c68e0107ddff17816519bb567a9e149ab956dfae8dba6bebbf4f"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-550-f22c72e35ddc73eb",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:550:5",
+        "line": 550,
+        "checksum": "af30b4d2025c7b8e0ef8136076e4fa798663e4b5c3ffdf3e9dd9813767f388a7"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-552-338d4a1040e1d84d",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:552:5",
+        "line": 552,
+        "checksum": "442e6c2f86eed519de16ce46ffed2623c09c7b76ff03cd5c41ff121f1cca4f7d"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-642-75642b872948bafa",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:642:5",
+        "line": 642,
+        "checksum": "6206a7fb32668e122cddca4f777a88f32eff0aa5737163689799fa56aaf3c88c"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-646-85bc0eb2701b10cf",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:646:5",
+        "line": 646,
+        "checksum": "3b98c63f0174365a0a072171d2ad40db11e85f2708459ea78d251e206ac17997"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-714-c3afd57975f260f8",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:714:5",
+        "line": 714,
+        "checksum": "87214a9c54dab425b9599a14783503a45714f793dc906c70172f8b9e05514504"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-747-eb2ed4eed4debb49",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:747:5",
+        "line": 747,
+        "checksum": "251384c395f9cb00345ecb6832210b6fd1eab7c0d5cf3c9aef4415aa59dbda31"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-795-ccea7319f2053e67",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:795:5",
+        "line": 795,
+        "checksum": "9bda9c7ed75733415874a5532c9c24dd58b91da5822121a5bef3271499df596e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-834-3074db9313c774db",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:834:5",
+        "line": 834,
+        "checksum": "915a56aeea40154acbf916c1a6197a6c568d24240006c56d0e26d96ea9f37607"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-841-b832bbaa7343d506",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:841:5",
+        "line": 841,
+        "checksum": "517e45965bdfb99d97bff6380e2ff2eb36fb31d8b01269f67569f343f22db48f"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-949-43751b9dc71e8688",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:949:5",
+        "line": 949,
+        "checksum": "7bdb724dc435e4fa67ce6f87ea5cb5f1376428255ac1d0dff3d6e8719924fe52"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-961-843af46de48ee47e",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:961:5",
+        "line": 961,
+        "checksum": "ea32e36600e3bbf1b12e88332da8ad01cca69c39add0b559fed011210997ba54"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-977-05799e55766b423f",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:977:5",
+        "line": 977,
+        "checksum": "afd6294d39ab1059fce4896b2a93854623174c6d86bf5cc25b7026f12e169d13"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1013-2873cfc7bde28e7c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1013:5",
+        "line": 1013,
+        "checksum": "50e3bf5968fd48e4e811690228a9f1e8c4c02d9530db984808fd4e41fdf36d1d"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1024-b6bf3966fbd7c255",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1024:5",
+        "line": 1024,
+        "checksum": "315f041e22fa9eee51f78efcf76e14356cd649328ad053029fc1a7155f17ce8a"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1066-5602134427af494b",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1066:5",
+        "line": 1066,
+        "checksum": "30e55b9bce16c3603661f0145ac10eafe926a7de5676eeedfa750c5e3e06382b"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1101-d98ce7dad1bf3273",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1101:5",
+        "line": 1101,
+        "checksum": "3767fc9e26e720de66a1e2a381e2c644de65b58fe9177f4778996ed13ec805c4"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1110-a554a73f2cc12f0d",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1110:5",
+        "line": 1110,
+        "checksum": "f3bf5b32da602eb7c71e5a3e9792bdebeb7d60f4ff5469821c481faef6318bb4"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1127-82d60245f86ef653",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1127:5",
+        "line": 1127,
+        "checksum": "7649bb87e6cf357ab76ac3dfa05fb198eafd531b34d1f69b7c56dded5561a1f1"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1137-78d662770c04a367",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1137:5",
+        "line": 1137,
+        "checksum": "bdba7dbb9a65269290aff8dbc388e807206c0158a79eef1be59f2d9b8d94d4b9"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1155-097a5b1129d827b2",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1155:5",
+        "line": 1155,
+        "checksum": "04189d1a4028bcfe7a7931d1f92f063be62f5ef8b05042c9f68a551fb3aecfa0"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1203-314a9adb25ea1a7a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1203:5",
+        "line": 1203,
+        "checksum": "1a278a980c1cb0ec8265721b7aa3834b03aceefc07412c0022f76fb32e80f458"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1234-1d61851271544400",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1234:5",
+        "line": 1234,
+        "checksum": "53a06a7730ead942011faf556e1bd110e6dc9d8de2e16cea27d28b759769b3dc"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1236-2d62e2481fe32512",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1236:5",
+        "line": 1236,
+        "checksum": "21365439ce2c616de7e39b74b8e78529602b1a6ea4a337ecc57b0a54f7f7c04c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1293-e4681f51bbe828b9",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1293:5",
+        "line": 1293,
+        "checksum": "08e64b8d8fad5e2bc46a12405dd9933708bcd1cc6cd6b2653c8857e95f241f61"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1342-41322590b0facfaf",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1342:5",
+        "line": 1342,
+        "checksum": "6cb3c257ee8694b65e4edbdd64d0628a9b0034b012828f9a9f59a939dc718d80"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1377-7a16f65e6e343d67",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1377:5",
+        "line": 1377,
+        "checksum": "9394452c19917c1145f40f9433b5b92d421c8f4b61b9166ecda34c55b46122b8"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1415-e4229e6071e9a67a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1415:5",
+        "line": 1415,
+        "checksum": "e85ab6d6f36c43eadb199fce42a4ebd3108b9c97888663bd016b30f4b73799de"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1427-c335b6f63de49bb8",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1427:5",
+        "line": 1427,
+        "checksum": "83033cec0bbbef345f0d8969c0ae7bd144aed663d8fe9258a96e97d0bdd103a2"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1594-f6fc741bbccc403d",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1594:5",
+        "line": 1594,
+        "checksum": "e573adfb340b71070a2ef451b593a626b39afe0a0fd2791da096072d87cecbff"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1888-578a52d56c8c901a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1888:5",
+        "line": 1888,
+        "checksum": "17b8c81b3ba6f13a3976180cc9a14724e72bd77b30906edc6bfe4ba03765e6be"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1955-d8aebdcf413ec207",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1955:5",
+        "line": 1955,
+        "checksum": "d06c5de2e621c87e467abdab1b2f4e84aedc39000ef2af1628c0584aafbada16"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-1993-78f264bf1242ad45",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:1993:5",
+        "line": 1993,
+        "checksum": "d58e663ebcae3cb04013ce3ed3cb9c66249b66e33bd3d850b7f4c99796ce9feb"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2182-1dcabc3abb504aa4",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2182:5",
+        "line": 2182,
+        "checksum": "7aa216e7d4502ac040e0b3ea15f9e31401c54262034a4669226880348222af45"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2359-05cc08a5872f1ce2",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2359:5",
+        "line": 2359,
+        "checksum": "0ffb72cd090b0b99ee482167aab1f6de18f975916b139b477e2349da610b3afe"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2422-7a8726353abf6169",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2422:5",
+        "line": 2422,
+        "checksum": "dbe74e688e6d2ad67bbe573789f0a22f7245ce5393ef3b72e2f60ca84d350cca"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2500-b465c4834db0bf01",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2500:5",
+        "line": 2500,
+        "checksum": "e22f4391d30160fd74e5ef9d81fb1eed687ef5ab6505080bd632249e4a38f143"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2606-f73073563692a53c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2606:5",
+        "line": 2606,
+        "checksum": "9c2933d167825b9b2fbd8e1e9f463596b85698835d24bd6b4d589d7b6d5b9d9f"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2625-8d5de63e198cd17a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2625:5",
+        "line": 2625,
+        "checksum": "7ab49a42dcd24ad22dc661b53182fe34048104e2aa0cb4ce585fcc9aac6b417e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2646-f754b207b4953c65",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2646:5",
+        "line": 2646,
+        "checksum": "032f8c8da9bdca31f9c04e1d5acfcbd8b346233c7bf89fcf4bd74a86f18ca50c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2683-5485f544de16d7bb",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2683:5",
+        "line": 2683,
+        "checksum": "517eaa08663ef93c8bed3b48fc2e158370c19e07336f9ebb90a044e9ff55cdc8"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2695-39cdb0336fc9d71c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2695:5",
+        "line": 2695,
+        "checksum": "da953a75de2cf5ba80f8a28cea77ba47f296f4e9fe9850d19d602a5099ccab4c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2832-30aedb47b317e08d",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2832:5",
+        "line": 2832,
+        "checksum": "7022f9c0942d835c74958c51efef99c2b227ea8fb9b014a28ea9a3304f68bb65"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2845-4ff564bcb8cbfe1b",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2845:5",
+        "line": 2845,
+        "checksum": "360cca23acd028a6d98540112dec800a4678c6967f9d8e09484ae5ac8898262a"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2881-fac76aef0bba8911",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2881:5",
+        "line": 2881,
+        "checksum": "f0ff9e778b59972e83dab0be478cfd1b3a495e9eb070e4514dac15dcc9c7360b"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2919-6b25b308a9585583",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2919:5",
+        "line": 2919,
+        "checksum": "6a17383c679a7e0629c6e183b5013e85ad93b5eb134aa1ee78acf5419bd87003"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2936-d3851b0242da2b62",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2936:5",
+        "line": 2936,
+        "checksum": "efa9a5bdc85ffebf9c54c9118e9e4bd402e1599059e5e0006474e37b3f5eda25"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2968-494603558aae3266",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2968:5",
+        "line": 2968,
+        "checksum": "53833042af7d76688258d75d357598f77e33686a5edd91f2fef7531a95e6f615"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-2976-412e8f0768e1bc53",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:2976:5",
+        "line": 2976,
+        "checksum": "6cf7bf5c7f24acf7a3a3e3c346aa7321e23ea66e66aac7840db6f92e0249182c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3100-5160af5bfa71def3",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3100:5",
+        "line": 3100,
+        "checksum": "98a580a80e59b1d8462ce430eccfdfa122065f7a9bd3aa7914020c0b30dd4dbc"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3132-bf601a52b45412ad",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3132:5",
+        "line": 3132,
+        "checksum": "5a587e789704a77b6b83d863596f7fd409c1ad9584dc0cfd2339c96bd97f391b"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3331-f96678a064f57e85",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3331:5",
+        "line": 3331,
+        "checksum": "c682d306d6808e84a54e3724b746d0b6903c84df240fdf885d49c5c5f27aa61f"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3428-ea1abf46bda6e98c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3428:5",
+        "line": 3428,
+        "checksum": "724a68297790399f4062381f8942455c330357b9c2448efce63ac2342d3c686b"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3438-1b685f86e49f086f",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3438:5",
+        "line": 3438,
+        "checksum": "63eb68bf7e6af98bae3dac7180df069eb9a3842d3aadb7f0e5c2daddc08dd5ac"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3453-5f85daadd826e97e",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3453:5",
+        "line": 3453,
+        "checksum": "f082a750d2f6055f7263651a03aefee3712178f379622f074e9308edd6240016"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3494-e2e6198fa61aa689",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3494:5",
+        "line": 3494,
+        "checksum": "18e5069ef39908f9d72108ffb9b9ec4170629402b96ba6bc7dc6b3f73f15e4dc"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3572-250192559736fe3b",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3572:5",
+        "line": 3572,
+        "checksum": "2f322b2ad3eacb24d18b131f795593f68bb796816727259aef5373ad3a4ece0e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3596-db0912b7323d3d0c",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3596:5",
+        "line": 3596,
+        "checksum": "1d52d577f003577a7088000fd8bbd12380d3ddcdcbe2707244ed49c174c0017e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3654-b0ba64dd10e18464",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3654:5",
+        "line": 3654,
+        "checksum": "cced0ad4b4c06b4386a4dc92eeb417dc03b415396f6ce7f83bebb4acbfd46d1c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3711-e115085ae3a4eea5",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3711:5",
+        "line": 3711,
+        "checksum": "b63c05a85ede8cb4d59882acefb157f76fc3bf8df6670228b305dd1a0f5b9fab"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3730-d7b68a70ac97f701",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3730:5",
+        "line": 3730,
+        "checksum": "13a5629af23ad8fb1003e7fef020d626631c20dd0c5097bfa39dccf5ff436a4a"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3755-614961c1b7f1f97a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3755:5",
+        "line": 3755,
+        "checksum": "c19deb4d858597b758d2702e920e59cc31510df2ab046421b796002285dbde37"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3986-3bf6cb92731753e4",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3986:5",
+        "line": 3986,
+        "checksum": "d5dcaac385c304ab2b738787d94bc0347aeb00aaa036037723350313c21c63eb"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-3997-5176a2b88baf0779",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:3997:5",
+        "line": 3997,
+        "checksum": "02b4c091ff85ccc21afa074811ba6c7cce815530f125c5bdd6e4e53a71824792"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4045-8ed7a084462e9112",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4045:5",
+        "line": 4045,
+        "checksum": "56a8908ae69d4d2add233f1af46a871e5f490dc7001515ca89f35f82e73070e8"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4048-10e4a54f14166cb6",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4048:5",
+        "line": 4048,
+        "checksum": "fe7f9ba332cd2fb74f706680614e0af7c3b109bb39c2a37ce095b5cd8697b783"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4140-168dce238fe4d30f",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4140:5",
+        "line": 4140,
+        "checksum": "48ed361bd27c048b0ff3cab65f1177ed4f3f1fd43187baeddb6377dd1b46a43a"
+      },
+      "scope": "TWO_PINNED_CATALOG_VARIANTS_CONVERGE",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4168-0ef0ddc715fef765",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4168:5",
+        "line": 4168,
+        "checksum": "93eac2b8697435ab5e939a3cd2d60ecff28cc96d5293b7adac84f5ea3d9b268d"
+      },
+      "scope": "TWO_PINNED_CATALOG_VARIANTS_CONVERGE",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4384-e015e2034c777257",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4384:5",
+        "line": 4384,
+        "checksum": "f76f6d25ab30fb8aa2095f40466c4e1a24875256b05944ec2540949dff6a4fd6"
+      },
+      "scope": "PROVEN_EMPTY_CLEANUP_CANDIDATES_ONLY",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4440-3b021060842ebb73",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4440:5",
+        "line": 4440,
+        "checksum": "f884713fd23b38c9b1d7122609cbd7a430c72afbf295ad78315f7030deaaef88"
+      },
+      "scope": "GUARDED_REFERENCE_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4549-fee2c22731f4db15",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4549:5",
+        "line": 4549,
+        "checksum": "7707f3719ae9227aed68755798b9ff485f0ac505a4653ecc969aa0b6a009e7d5"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4550-6ad13fc9e1caeb85",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4550:5",
+        "line": 4550,
+        "checksum": "8aa8d56e12c7924f7b957b7ce4e52609fd0e2466f30d2a9fc5ae3954decac35f"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4551-946da234d73bf7e2",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4551:5",
+        "line": 4551,
+        "checksum": "bebd2cd0cafb53ebea6965fcba709fb34d41500f18c0a64985947e587aa2b794"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4605-bca8bd2f500d308e",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4605:5",
+        "line": 4605,
+        "checksum": "356a23ae27cfa2073471d64bc0836f224e4834621ccfd5eec21c639b919f7244"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4612-65b1d33770d816b1",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4612:5",
+        "line": 4612,
+        "checksum": "3af9f8521b568bf0d05d9e1959b723ae437cb8543b889bb2ad9376da4bc0f0d7"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4617-2b63853ba688a383",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4617:5",
+        "line": 4617,
+        "checksum": "254803bb9714f116336c86f47e92be908d418d2ae0d4e529719bc93d85e34485"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4620-20518488727fd1ea",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4620:5",
+        "line": 4620,
+        "checksum": "caa0f8afbdd7e9307cd0eee5c48f174010b6a3a52c57e37cd504fb195c87d05d"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4628-9cb6b5d7843e9b57",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4628:5",
+        "line": 4628,
+        "checksum": "81ffd5ad68f9ac87c067af3d93515dc5a568f8cfa0f7896381f32cab2102c166"
+      },
+      "scope": "EXACT_UNREFERENCED_FALLBACK_SUBSET",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4633-646139d3dc75e519",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4633:5",
+        "line": 4633,
+        "checksum": "c6a422ad9a00f1d8de79dd03dd7e3d8fbc5cb2a506c5fbdb2768d4bffc555bb2"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4637-02f9ac5d3b3e194f",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4637:5",
+        "line": 4637,
+        "checksum": "1296a5b9d045523cf9225ce9c8356c72ff9ecdab88051f6f301e71fb3e4b9a1c"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4638-413cfe6b52f96aea",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4638:5",
+        "line": 4638,
+        "checksum": "ec6535985ff59f05a992a360a443393c8f1f501e9cb172ec5f7449ab82b7e2bf"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4644-20d1b40e2d83dc7f",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4644:5",
+        "line": 4644,
+        "checksum": "d294bb361612523f020e637a8aae5a02e196d030aa309b6a7b79d1ea0946f75c"
+      },
+      "scope": "HISTORICAL_RELATIONSHIPS_REFUSED",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4750-a8631b053767de30",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4750:6",
+        "line": 4750,
+        "checksum": "8bbaf3f709c8537378759bf5e8e18e89c17635b94642d2a188a12f9236190992"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4801-3cae2900c669c65a",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4801:5",
+        "line": 4801,
+        "checksum": "0a91edeb3d627f7376cee2273b0117a99a3a296c28b03c62e4797d501631d662"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4881-71c900be3d31c484",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4881:5",
+        "line": 4881,
+        "checksum": "ff62231defc143c8507115dd1eedc06980034bc41366c231adaa34585e941eda"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4894-2fb599a7e242329d",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4894:5",
+        "line": 4894,
+        "checksum": "e19b30aa17cbff64eddcb73496f2da913b3d4204706faf9744d99501e9d237c7"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4923-c22773f2337b6668",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4923:5",
+        "line": 4923,
+        "checksum": "c33ca23c6d1721ce44130a367405031f4ffd88b00f0ca3342c697fcba6545f7b"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4928-501a649d7423c9cf",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4928:5",
+        "line": 4928,
+        "checksum": "4124b3382984be99d44d3ac77cd58bee92966cf1705980089b2f0835065b4cd0"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureBusinessGrowthSchema/source-discovered-4939-216de9e834eb57cb",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:4939:5",
+        "line": 4939,
+        "checksum": "3af0d7ede907870793169705e0239fcc6cbf3d0609b1b710f96e45e079ffb9bc"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/education-snapshot-backfills",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:229-238",
+        "line": 229,
+        "checksum": "de4ebdab46d89308799cc736c6ede62865baff3ff368ae022ba3b5df3af89da3"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/advisory-lock-and-session-state",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5153-5160,5190-5204",
+        "line": 5002,
+        "checksum": "bb0a415fec787c41cf88dadf3c245e35f523ecf56cef15f140bcf37c8d5aae97"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/rollout-marker-read",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "runtime-data-operation",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5036-5042",
+        "line": 5036,
+        "checksum": "77a447c9dd20e739ba60bbb32aa961f2652cb8dd02f0d38405f655581e49bea9"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/gift-voucher-immutability-function",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5051-5066",
+        "line": 5051,
+        "checksum": "3148807af8e544290d570c3e7041227c0bb6cb303e6c724ae69ad4f6ce43dbfd"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/bundle-payment-backfill",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5087-5108",
+        "line": 5087,
+        "checksum": "02cb84a8f8269817fbfab98cb466d06bed585b1b44abf3c3d782c0cd40b374c0"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/bundle-payment-immutability-function",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5112-5120",
+        "line": 5112,
+        "checksum": "bd31a406cfc27bb72c45544f1f8f1364b7f70e613c4648111afd867c63a45b5c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/rollout-marker-write",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "runtime-data-operation",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5145-5148",
+        "line": 5145,
+        "checksum": "312f1b509b906c829ff9d8e6cff85297792131765a6ffa75497268d423a56ca9"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/business-growth/cleanup-report-read",
+      "owner": "ensureBusinessGrowthSchema",
+      "classification": "runtime-data-operation",
+      "source": {
+        "path": "artifacts/api-server/src/lib/business-growth-schema.ts:5175-5178",
+        "line": 5175,
+        "checksum": "9d55dfdeb76182415757ee29478faac261f00c7e6e63b7b6123347302d9f7b94"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/education-bundle/payment-reference-backfill",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:24-31",
+        "line": 24,
+        "checksum": "4f193122db5716f726732f88dcef740dd80897d2b2ff3c9e3f265bf21578ad0c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/education-bundle/payment-reference-function",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "classification": "function-trigger-replacement",
+      "source": {
+        "path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:39-47",
+        "line": 39,
+        "checksum": "60b41847a42a46d10ce261c80ab73f4488e04291a2cd695812d3cf7552fc6a1e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/education-bundle/learner-id-backfill",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:54-58",
+        "line": 54,
+        "checksum": "d4d0bd8102d4ec691968fd81cc5791039a4727b5b751aa7a2bd577a398fc8a1a"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/education-bundle/transaction-and-advisory-lock",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:9-12,81-84",
+        "line": 9,
+        "checksum": "c555c08c8e3ee6bd5b5e5bea188f769a35ae0d94b6d446c1aeecdf7378714b9c"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/marketplace/advisory-lock-and-session-state",
+      "owner": "ensureMarketplacePerformanceIndexes",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:18-20,39-44",
+        "line": 18,
+        "checksum": "bfb38d48f8b6bf46e835786214b81885255c1eaba53e6c386620302da7600ac7"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/media/transaction-and-advisory-lock",
+      "owner": "ensureMediaSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/media-schema.ts:105-109",
+        "line": 105,
+        "checksum": "36acbbec3f646974cba125111693a5959dfad195c6d2b5cc0deea0f326887d87"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/referral/transaction-and-advisory-lock",
+      "owner": "ensureReferralSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/referral-schema.ts:16-18,48-53",
+        "line": 16,
+        "checksum": "81f17bf4c9fa6f1541e80711d0e37a8b8a4bded6b76d17f751b0bc10523d6ae7"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/referral/tracking-start-backfill",
+      "owner": "ensureReferralSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/referral-schema.ts:27-41",
+        "line": 27,
+        "checksum": "8b07319c47fbe3b86e9b3c105a3265f33e2b6d6a3934e3ccfda5d46f2522a41b"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/shipping/duplicate-row-cleanup",
+      "owner": "ensureShippingConfigSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/shipping-config.ts:24-35,54-65",
+        "line": 24,
+        "checksum": "02be577da4b2795da77ac4e05a364ee5c13931b89e9cab5d3eabff4d8ec78574"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/ensureWebPushSchema/source-discovered-82-dd7107a5f655438a",
+      "owner": "ensureWebPushSchema",
+      "classification": "historical-backfill",
+      "source": {
+        "path": "artifacts/api-server/src/lib/web-push-schema.ts:82:22",
+        "line": 82,
+        "checksum": "c62b84b1357f36fcb82b8668000b8579a802440e93034a41d4439059a5d63d1e"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    },
+    {
+      "id": "additional/web-push/transaction-and-advisory-lock",
+      "owner": "ensureWebPushSchema",
+      "classification": "operational-scaffolding",
+      "source": {
+        "path": "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
+        "line": 11,
+        "checksum": "61c82572405e91daf32adf7ca6f665ee6097d8edfbf6ea781653454f80090279"
+      },
+      "scope": "UNRESOLVED_NO_EQUIVALENCE_CLAIM",
+      "equivalence": "NOT_GLOBALLY_PROVEN"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+✔ disposable admin URL validation is explicit and fail-closed (4.452163ms)
+✔ ambient database URLs are never selected (0.173601ms)
+✔ operation-level crosswalk reports unresolved historical work without inventing coverage (1362.175811ms)
+[09:02:16.226] [32mINFO[39m (15809): [36mEducation registration salon cleanup report[39m
+    [35mversion[39m: 99
+    [35mcandidates[39m: 0
+    [35mdetached_users[39m: 0
+    [35mdeleted_salons[39m: 0
+    [35mretired_salons[39m: 0
+[09:02:16.227] [32mINFO[39m (15809): [36mBusiness Growth database schema is ready[39m
+    [35mversion[39m: 126
+    [35mschema[39m: "public"
+[09:02:16.890] [32mINFO[39m (15809): [36mMedia database schema is ready[39m
+[09:02:18.181] [32mINFO[39m (15809): [36mMarketplace performance indexes are ready[39m
+[09:02:21.538] [32mINFO[39m (15809): [36mEducation registration salon cleanup report[39m
+    [35mversion[39m: 99
+    [35mcandidates[39m: 0
+    [35mdetached_users[39m: 0
+    [35mdeleted_salons[39m: 0
+    [35mretired_salons[39m: 0
+[09:02:21.538] [32mINFO[39m (15809): [36mBusiness Growth database schema is ready[39m
+    [35mversion[39m: 126
+    [35mschema[39m: "public"
+[09:02:22.200] [32mINFO[39m (15809): [36mMedia database schema is ready[39m
+[09:02:23.495] [32mINFO[39m (15809): [36mMarketplace performance indexes are ready[39m
+✔ disposable equivalence characterization requires an explicit child-database admin target (39764.194049ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41137.520929

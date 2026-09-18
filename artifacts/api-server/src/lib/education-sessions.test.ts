@@ -45,7 +45,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 import {
   VALID_TEST_IPS_SETTINGS,
   buildValidOnlineEducationCourse,
@@ -103,7 +103,7 @@ async function login(baseUrl: string, email: string): Promise<string> {
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const settingsLockClient = await pool.connect();
   await settingsLockClient.query("select pg_advisory_lock(hashtext($1))", [SETTINGS_LOCK]);
 

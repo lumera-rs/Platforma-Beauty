@@ -1,0 +1,1293 @@
+{
+  "generatedAt": "2026-09-17",
+  "branch": "remove-startup-ddl-preparation",
+  "head": "d210643b0c9845b56821567f40b57ebf3ccc225d",
+  "scope": "DISPOSABLE LOCAL POSTGRESQL 16.10 ONLY; NOT PRODUCTION EVIDENCE",
+  "readiness": "BLOCKED",
+  "provenance": {
+    "baselinePath": "lib/db/migrations/000001_canonical_schema/migration.sql",
+    "baselineIntroducedAt": "b05dbf8384ef695a61bc4132a938e3ef4c1c172f",
+    "baselineSha256": "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60",
+    "crosswalkSha256": "174ebf6e31fd8f7c53ea5e1112518a2afd2d56e72c3762e796e139a8a43b90a3"
+  },
+  "crosswalk": {
+    "ownerCount": 8,
+    "operationCount": 1569,
+    "ddlOperationCount": 1459,
+    "additionalOperationCount": 110,
+    "unresolvedCount": 1569,
+    "conditionalOperationCount": 80,
+    "uniqueDdlMappingGroups": 1435,
+    "classifications": {
+      "schema-ddl": 1459,
+      "operational-scaffolding": 7,
+      "historical-backfill": 67,
+      "function-trigger-replacement": 33,
+      "runtime-data-operation": 3
+    },
+    "additionalCategories": {
+      "operational-scaffolding": 7,
+      "data-backfill": 67,
+      "function-replacement": 33,
+      "cleanup-reporting": 1,
+      "rollout-marker": 2
+    },
+    "owners": [
+      {
+        "owner": "ensureBusinessGrowthSchema",
+        "ownerSource": "artifacts/api-server/src/lib/business-growth-schema.ts",
+        "ownerSourceChecksum": "000e7e2b564e450c6a16808bab372871c721d5faf9cd50d702cd76c90e573b30",
+        "callSite": "artifacts/api-server/src/index.ts:84:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/business-growth-schema.ts::ensureBusinessGrowthSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/business-growth-schema.ts"
+        ],
+        "operationCount": 1475
+      },
+      {
+        "owner": "ensureMediaSchema",
+        "ownerSource": "artifacts/api-server/src/lib/media-schema.ts",
+        "ownerSourceChecksum": "313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0",
+        "callSite": "artifacts/api-server/src/index.ts:85:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/media-schema.ts::ensureMediaSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/media-schema.ts"
+        ],
+        "operationCount": 27
+      },
+      {
+        "owner": "ensureShippingConfigSchema",
+        "ownerSource": "artifacts/api-server/src/lib/shipping-config.ts",
+        "ownerSourceChecksum": "65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b",
+        "callSite": "artifacts/api-server/src/index.ts:86:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/shipping-config.ts::ensureShippingConfigSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/shipping-config.ts"
+        ],
+        "operationCount": 2
+      },
+      {
+        "owner": "ensureMarketplacePerformanceIndexes",
+        "ownerSource": "artifacts/api-server/src/lib/marketplace-performance-schema.ts",
+        "ownerSourceChecksum": "892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b",
+        "callSite": "artifacts/api-server/src/index.ts:87:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/marketplace-performance-schema.ts::ensureMarketplacePerformanceIndexes"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/marketplace-performance-schema.ts"
+        ],
+        "operationCount": 5
+      },
+      {
+        "owner": "ensureReferralSchema",
+        "ownerSource": "artifacts/api-server/src/lib/referral-schema.ts",
+        "ownerSourceChecksum": "9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5",
+        "callSite": "artifacts/api-server/src/index.ts:88:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/referral-schema.ts::ensureReferralSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/referral-schema.ts"
+        ],
+        "operationCount": 11
+      },
+      {
+        "owner": "ensureWebPushSchema",
+        "ownerSource": "artifacts/api-server/src/lib/web-push-schema.ts",
+        "ownerSourceChecksum": "5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051",
+        "callSite": "artifacts/api-server/src/index.ts:89:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/web-push-schema.ts::ensureWebPushSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/web-push-schema.ts"
+        ],
+        "operationCount": 15
+      },
+      {
+        "owner": "ensureBookingCommandSchema",
+        "ownerSource": "artifacts/api-server/src/lib/booking-command-schema.ts",
+        "ownerSourceChecksum": "c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b",
+        "callSite": "artifacts/api-server/src/index.ts:90:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/booking-command-schema.ts::ensureBookingCommandSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/booking-command-schema.ts"
+        ],
+        "operationCount": 4
+      },
+      {
+        "owner": "ensureEducationBundlePurchaseSchema",
+        "ownerSource": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts",
+        "ownerSourceChecksum": "53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017",
+        "callSite": "artifacts/api-server/src/index.ts:91:7",
+        "phase": "pre-listen",
+        "executionPath": [
+          "artifacts/api-server/src/index.ts",
+          "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts::ensureEducationBundlePurchaseSchema"
+        ],
+        "transitiveSourceModules": [
+          "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts"
+        ],
+        "operationCount": 30
+      }
+    ],
+    "sourcePins": {
+      "inventory": "scripts/src/production-startup-ddl-baseline.json",
+      "canonicalMigration": "lib/db/migrations/000001_canonical_schema/migration.sql",
+      "ownerSourceChecksums": {
+        "artifacts/api-server/src/lib/business-growth-schema.ts": "000e7e2b564e450c6a16808bab372871c721d5faf9cd50d702cd76c90e573b30",
+        "artifacts/api-server/src/lib/media-schema.ts": "313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0",
+        "artifacts/api-server/src/lib/shipping-config.ts": "65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b",
+        "artifacts/api-server/src/lib/marketplace-performance-schema.ts": "892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b",
+        "artifacts/api-server/src/lib/referral-schema.ts": "9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5",
+        "artifacts/api-server/src/lib/web-push-schema.ts": "5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051",
+        "artifacts/api-server/src/lib/booking-command-schema.ts": "c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b",
+        "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts": "53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017"
+      }
+    }
+  },
+  "canonicalMigration": {
+    "id": "000001",
+    "freshApply": "{\"applied\":[\"000001\"],\"skipped\":[]}",
+    "freshApplyRepeat": "{\"applied\":[],\"skipped\":[\"000001\"]}",
+    "freshFingerprint": {
+      "structuralFingerprint": "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad",
+      "physicalFingerprint": "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f",
+      "normalizedObjectCount": 5060,
+      "enumCount": 103,
+      "triggerCount": 24,
+      "functionCount": 21,
+      "postgresVersionNum": 160010
+    },
+    "reconstructedFingerprint": {
+      "structuralFingerprint": "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad",
+      "physicalFingerprint": "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f",
+      "normalizedObjectCount": 5060,
+      "enumCount": 103,
+      "triggerCount": 24,
+      "functionCount": 21,
+      "postgresVersionNum": 160010
+    },
+    "adoptedFingerprint": {
+      "structuralFingerprint": "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad",
+      "physicalFingerprint": "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f",
+      "normalizedObjectCount": 5060,
+      "enumCount": 103,
+      "triggerCount": 24,
+      "functionCount": 21,
+      "postgresVersionNum": 160010
+    },
+    "reconstructedPreflight": {
+      "readiness": "READY",
+      "blockers": [],
+      "migrationId": "000001",
+      "baselineChecksum": "MATCH",
+      "postgresVersionNum": 160010,
+      "postgresMajor": 16,
+      "fingerprintVersion": 4,
+      "formatVersion": 2,
+      "structuralFingerprint": "MATCH",
+      "physicalFingerprint": "MATCH",
+      "normalizedObjectCount": 5060,
+      "enumCount": 103,
+      "triggerCount": 24,
+      "functionCount": 21,
+      "requiredExtensions": {
+        "btree_gist": "PRESENT",
+        "pg_trgm": "PRESENT"
+      },
+      "ledger": {
+        "existence": "MISSING",
+        "state": "UNINITIALIZED",
+        "rows": []
+      }
+    },
+    "reconstructedAdoption": "{\"adopted\":[\"000001\"]}",
+    "reconstructedAdoptionRepeat": "{\"adopted\":[\"000001\"]}",
+    "freshAndReconstructedFingerprintsEqual": true
+  },
+  "driftRejection": {
+    "readiness": "NOT_READY",
+    "blockers": [
+      "OBJECT_COUNT_MISMATCH",
+      "PHYSICAL_MISMATCH",
+      "STRUCTURAL_MISMATCH"
+    ]
+  },
+  "partialSchemaRejection": {
+    "readiness": "NOT_READY",
+    "blockers": [
+      "FUNCTION_COUNT_MISMATCH",
+      "OBJECT_COUNT_MISMATCH",
+      "PHYSICAL_MISMATCH",
+      "STRUCTURAL_MISMATCH"
+    ]
+  },
+  "firstStartupFinalFingerprint": {
+    "formatVersion": 2,
+    "algorithm": "sha256",
+    "fingerprintVersion": 4,
+    "schemaFormatVersion": 1,
+    "postgresCompatibility": {
+      "serverVersionNum": 160010,
+      "serverMajorVersion": 16,
+      "deparserFormat": "postgresql-16-deparser-v1"
+    },
+    "structuralFingerprint": "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad",
+    "physicalFingerprint": "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f",
+    "normalizedObjectCount": 5060,
+    "enumCount": 103,
+    "triggerCount": 24,
+    "functionCount": 21,
+    "unmodelledObjectCensus": {
+      "views": [],
+      "materializedViews": [],
+      "foreignTables": [],
+      "sequences": [],
+      "applicationSchemas": [],
+      "rlsTables": [],
+      "policies": [],
+      "extensions": [
+        {
+          "name": "btree_gist",
+          "schema": "public",
+          "version": "1.7"
+        },
+        {
+          "name": "pg_trgm",
+          "schema": "public",
+          "version": "1.6"
+        },
+        {
+          "name": "plpgsql",
+          "schema": "pg_catalog",
+          "version": "1.0"
+        }
+      ]
+    },
+    "ownershipExceptions": [
+      {
+        "objectType": "TABLE",
+        "schema": "public",
+        "name": "education_salon_cleanup_reports",
+        "owner": "startup Business Growth bootstrap",
+        "mechanism": "ensureBusinessGrowthSchema cleanup-report DDL",
+        "reason": "Transition cleanup evidence is currently bootstrap-owned and has no Drizzle declaration.",
+        "temporary": true,
+        "handling": "EXCLUDED"
+      },
+      {
+        "objectType": "TABLE",
+        "schema": "public",
+        "name": "lumera_migration_ledger",
+        "owner": "Phase 4 migration runner",
+        "mechanism": "scripts/src/migrations/ledger.ts ledger bookkeeping",
+        "reason": "Migration execution history is runner metadata, not application schema.",
+        "temporary": false,
+        "handling": "EXCLUDED"
+      }
+    ]
+  },
+  "repeatStartupFinalFingerprint": {
+    "formatVersion": 2,
+    "algorithm": "sha256",
+    "fingerprintVersion": 4,
+    "schemaFormatVersion": 1,
+    "postgresCompatibility": {
+      "serverVersionNum": 160010,
+      "serverMajorVersion": 16,
+      "deparserFormat": "postgresql-16-deparser-v1"
+    },
+    "structuralFingerprint": "b8b39c5dfdc9c19dec105cfecef8f6688a4a00982dd25b47847cc3d92a5c8a29",
+    "physicalFingerprint": "25bedc22380e260a6d84f802f8b1c4a948159ac1d1f9266f171cd27d7fb4a048",
+    "normalizedObjectCount": 5060,
+    "enumCount": 103,
+    "triggerCount": 24,
+    "functionCount": 21,
+    "unmodelledObjectCensus": {
+      "views": [],
+      "materializedViews": [],
+      "foreignTables": [],
+      "sequences": [],
+      "applicationSchemas": [],
+      "rlsTables": [],
+      "policies": [],
+      "extensions": [
+        {
+          "name": "btree_gist",
+          "schema": "public",
+          "version": "1.7"
+        },
+        {
+          "name": "pg_trgm",
+          "schema": "public",
+          "version": "1.6"
+        },
+        {
+          "name": "plpgsql",
+          "schema": "pg_catalog",
+          "version": "1.0"
+        }
+      ]
+    },
+    "ownershipExceptions": [
+      {
+        "objectType": "TABLE",
+        "schema": "public",
+        "name": "education_salon_cleanup_reports",
+        "owner": "startup Business Growth bootstrap",
+        "mechanism": "ensureBusinessGrowthSchema cleanup-report DDL",
+        "reason": "Transition cleanup evidence is currently bootstrap-owned and has no Drizzle declaration.",
+        "temporary": true,
+        "handling": "EXCLUDED"
+      },
+      {
+        "objectType": "TABLE",
+        "schema": "public",
+        "name": "lumera_migration_ledger",
+        "owner": "Phase 4 migration runner",
+        "mechanism": "scripts/src/migrations/ledger.ts ledger bookkeeping",
+        "reason": "Migration execution history is runner metadata, not application schema.",
+        "temporary": false,
+        "handling": "EXCLUDED"
+      }
+    ]
+  },
+  "finalStartupDifference": {
+    "structuralFingerprintChanged": false,
+    "physicalFingerprintChanged": false,
+    "changedRowCounts": {
+      "public.aftercare_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.b2c_display_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.beauty_job_categories": {
+        "before": 0,
+        "after": 17
+      },
+      "public.beauty_job_platform_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.business_growth_schema_rollout": {
+        "before": 0,
+        "after": 1
+      },
+      "public.education_b2b_discount_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.education_placement_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.education_salon_cleanup_reports": {
+        "before": 0,
+        "after": 1
+      },
+      "public.shop_settings": {
+        "before": 0,
+        "after": 1
+      },
+      "public.subscription_plans": {
+        "before": 0,
+        "after": 3
+      },
+      "public.suppliers": {
+        "before": 0,
+        "after": 1
+      }
+    },
+    "catalogChanges": []
+  },
+  "startupRepeatDifference": {
+    "structuralFingerprintChanged": true,
+    "physicalFingerprintChanged": true,
+    "changedRowCounts": {},
+    "catalogChanges": [
+      {
+        "kind": "functions",
+        "identity": "public.prevent_education_gift_voucher_snapshot_update.",
+        "before": {
+          "schema": "public",
+          "name": "prevent_education_gift_voucher_snapshot_update",
+          "kind": "function",
+          "identityArguments": "",
+          "arguments": "",
+          "returnType": "\"trigger\"",
+          "returnSet": false,
+          "language": "plpgsql",
+          "volatility": "volatile",
+          "parallel": "unsafe",
+          "strict": false,
+          "leakproof": false,
+          "securityDefiner": false,
+          "cost": 100,
+          "rows": 0,
+          "configuration": [],
+          "definition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n           OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n         END IF;\n         RETURN NEW;\n       END $function$"
+        },
+        "after": {
+          "schema": "public",
+          "name": "prevent_education_gift_voucher_snapshot_update",
+          "kind": "function",
+          "identityArguments": "",
+          "arguments": "",
+          "returnType": "\"trigger\"",
+          "returnSet": false,
+          "language": "plpgsql",
+          "volatility": "volatile",
+          "parallel": "unsafe",
+          "strict": false,
+          "leakproof": false,
+          "securityDefiner": false,
+          "cost": 100,
+          "rows": 0,
+          "configuration": [],
+          "definition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n          BEGIN\n            IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n              OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n              OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n              OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n              OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n              OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n              OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n              OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n              OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n              RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n            END IF;\n            RETURN NEW;\n          END $function$"
+        }
+      },
+      {
+        "kind": "triggers",
+        "identity": "public.education_gift_vouchers.education_gift_vouchers_snapshot_immutable",
+        "before": {
+          "tableSchema": "public",
+          "tableName": "education_gift_vouchers",
+          "name": "education_gift_vouchers_snapshot_immutable",
+          "enabled": "origin",
+          "timing": "before",
+          "events": [
+            "update"
+          ],
+          "updateColumns": [],
+          "level": "row",
+          "when": null,
+          "constraint": false,
+          "deferrable": false,
+          "initiallyDeferred": false,
+          "oldTransitionTable": null,
+          "newTransitionTable": null,
+          "functionSchema": "public",
+          "functionName": "prevent_education_gift_voucher_snapshot_update",
+          "argumentsBase64": "",
+          "definition": "create trigger \"education_gift_vouchers_snapshot_immutable\" before update on \"public\".\"education_gift_vouchers\" for each row execute function \"public\".\"prevent_education_gift_voucher_snapshot_update\"()",
+          "functionDefinition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n           OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n         END IF;\n         RETURN NEW;\n       END $function$"
+        },
+        "after": {
+          "tableSchema": "public",
+          "tableName": "education_gift_vouchers",
+          "name": "education_gift_vouchers_snapshot_immutable",
+          "enabled": "origin",
+          "timing": "before",
+          "events": [
+            "update"
+          ],
+          "updateColumns": [],
+          "level": "row",
+          "when": null,
+          "constraint": false,
+          "deferrable": false,
+          "initiallyDeferred": false,
+          "oldTransitionTable": null,
+          "newTransitionTable": null,
+          "functionSchema": "public",
+          "functionName": "prevent_education_gift_voucher_snapshot_update",
+          "argumentsBase64": "",
+          "definition": "create trigger \"education_gift_vouchers_snapshot_immutable\" before update on \"public\".\"education_gift_vouchers\" for each row execute function \"public\".\"prevent_education_gift_voucher_snapshot_update\"()",
+          "functionDefinition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n          BEGIN\n            IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n              OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n              OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n              OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n              OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n              OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n              OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n              OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n              OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n              RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n            END IF;\n            RETURN NEW;\n          END $function$"
+        }
+      }
+    ]
+  },
+  "repeatedStartupPreflight": {
+    "readiness": "NOT_READY",
+    "blockers": [
+      "PHYSICAL_MISMATCH",
+      "STRUCTURAL_MISMATCH"
+    ],
+    "migrationId": "000001",
+    "baselineChecksum": "MATCH",
+    "postgresVersionNum": 160010,
+    "postgresMajor": 16,
+    "fingerprintVersion": 4,
+    "formatVersion": 2,
+    "structuralFingerprint": "MISMATCH",
+    "physicalFingerprint": "MISMATCH",
+    "normalizedObjectCount": 5060,
+    "enumCount": 103,
+    "triggerCount": 24,
+    "functionCount": 21,
+    "requiredExtensions": {
+      "btree_gist": "PRESENT",
+      "pg_trgm": "PRESENT"
+    },
+    "ledger": {
+      "existence": "PRESENT",
+      "state": "VALID",
+      "rows": [
+        {
+          "id": "000001",
+          "state": "ADOPTED",
+          "checksum": "MATCH"
+        }
+      ]
+    }
+  },
+  "passes": [
+    [
+      {
+        "name": "ensureBusinessGrowthSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": true,
+          "physicalFingerprintChanged": true,
+          "changedRowCounts": {
+            "public.aftercare_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.b2c_display_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.beauty_job_categories": {
+              "before": 0,
+              "after": 17
+            },
+            "public.beauty_job_platform_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.business_growth_schema_rollout": {
+              "before": 0,
+              "after": 1
+            },
+            "public.education_b2b_discount_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.education_placement_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.education_salon_cleanup_reports": {
+              "before": 0,
+              "after": 1
+            },
+            "public.shop_settings": {
+              "before": 0,
+              "after": 1
+            },
+            "public.subscription_plans": {
+              "before": 0,
+              "after": 3
+            },
+            "public.suppliers": {
+              "before": 0,
+              "after": 1
+            }
+          },
+          "catalogChanges": [
+            {
+              "kind": "functions",
+              "identity": "public.reject_bundle_payment_reference_change.",
+              "before": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              },
+              "after": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n           OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n           RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n         END IF;\n         RETURN NEW;\n       END\n     $function$"
+              }
+            },
+            {
+              "kind": "triggers",
+              "identity": "public.education_bundle_purchases.education_bundle_purchases_payment_reference_immutable",
+              "before": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              },
+              "after": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n           OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n           RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n         END IF;\n         RETURN NEW;\n       END\n     $function$"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "ensureMediaSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureShippingConfigSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureMarketplacePerformanceIndexes",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureReferralSchema",
+        "executed": true,
+        "injectedPool": false,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureWebPushSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureBookingCommandSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureEducationBundlePurchaseSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": true,
+          "physicalFingerprintChanged": true,
+          "changedRowCounts": {},
+          "catalogChanges": [
+            {
+              "kind": "functions",
+              "identity": "public.reject_bundle_payment_reference_change.",
+              "before": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n           OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n           RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n         END IF;\n         RETURN NEW;\n       END\n     $function$"
+              },
+              "after": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              }
+            },
+            {
+              "kind": "triggers",
+              "identity": "public.education_bundle_purchases.education_bundle_purchases_payment_reference_immutable",
+              "before": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n           OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n           RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n         END IF;\n         RETURN NEW;\n       END\n     $function$"
+              },
+              "after": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    [
+      {
+        "name": "ensureBusinessGrowthSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": true,
+          "physicalFingerprintChanged": true,
+          "changedRowCounts": {},
+          "catalogChanges": [
+            {
+              "kind": "functions",
+              "identity": "public.prevent_education_gift_voucher_snapshot_update.",
+              "before": {
+                "schema": "public",
+                "name": "prevent_education_gift_voucher_snapshot_update",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n           OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n         END IF;\n         RETURN NEW;\n       END $function$"
+              },
+              "after": {
+                "schema": "public",
+                "name": "prevent_education_gift_voucher_snapshot_update",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n          BEGIN\n            IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n              OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n              OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n              OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n              OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n              OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n              OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n              OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n              OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n              RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n            END IF;\n            RETURN NEW;\n          END $function$"
+              }
+            },
+            {
+              "kind": "functions",
+              "identity": "public.reject_bundle_payment_reference_change.",
+              "before": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              },
+              "after": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n            BEGIN\n              IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n                OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n                RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n              END IF;\n              RETURN NEW;\n            END\n          $function$"
+              }
+            },
+            {
+              "kind": "triggers",
+              "identity": "public.education_bundle_purchases.education_bundle_purchases_payment_reference_immutable",
+              "before": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              },
+              "after": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n            BEGIN\n              IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n                OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n                RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n              END IF;\n              RETURN NEW;\n            END\n          $function$"
+              }
+            },
+            {
+              "kind": "triggers",
+              "identity": "public.education_gift_vouchers.education_gift_vouchers_snapshot_immutable",
+              "before": {
+                "tableSchema": "public",
+                "tableName": "education_gift_vouchers",
+                "name": "education_gift_vouchers_snapshot_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "prevent_education_gift_voucher_snapshot_update",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_gift_vouchers_snapshot_immutable\" before update on \"public\".\"education_gift_vouchers\" for each row execute function \"public\".\"prevent_education_gift_voucher_snapshot_update\"()",
+                "functionDefinition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n       BEGIN\n         IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n           OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n           OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n           OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n           OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n           OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n           OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n           OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n           OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n           RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n         END IF;\n         RETURN NEW;\n       END $function$"
+              },
+              "after": {
+                "tableSchema": "public",
+                "tableName": "education_gift_vouchers",
+                "name": "education_gift_vouchers_snapshot_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "prevent_education_gift_voucher_snapshot_update",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_gift_vouchers_snapshot_immutable\" before update on \"public\".\"education_gift_vouchers\" for each row execute function \"public\".\"prevent_education_gift_voucher_snapshot_update\"()",
+                "functionDefinition": "create or replace function \"public\".\"prevent_education_gift_voucher_snapshot_update\"() returns \"trigger\" language \"plpgsql\" as $function$\n          BEGIN\n            IF NEW.course_id IS DISTINCT FROM OLD.course_id OR NEW.center_id IS DISTINCT FROM OLD.center_id\n              OR NEW.purchaser_id IS DISTINCT FROM OLD.purchaser_id OR NEW.recipient_user_id IS DISTINCT FROM OLD.recipient_user_id\n              OR NEW.recipient_email IS DISTINCT FROM OLD.recipient_email OR NEW.recipient_name_snapshot IS DISTINCT FROM OLD.recipient_name_snapshot\n              OR NEW.gift_message_snapshot IS DISTINCT FROM OLD.gift_message_snapshot\n              OR NEW.course_title_snapshot IS DISTINCT FROM OLD.course_title_snapshot\n              OR NEW.course_image_url_snapshot IS DISTINCT FROM OLD.course_image_url_snapshot\n              OR NEW.amount_snapshot IS DISTINCT FROM OLD.amount_snapshot OR NEW.currency_snapshot IS DISTINCT FROM OLD.currency_snapshot\n              OR NEW.code_hash IS DISTINCT FROM OLD.code_hash OR NEW.code_last4 IS DISTINCT FROM OLD.code_last4\n              OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference THEN\n              RAISE EXCEPTION 'Education gift voucher purchase snapshot is immutable';\n            END IF;\n            RETURN NEW;\n          END $function$"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "ensureMediaSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureShippingConfigSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureMarketplacePerformanceIndexes",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureReferralSchema",
+        "executed": true,
+        "injectedPool": false,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureWebPushSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureBookingCommandSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": false,
+          "physicalFingerprintChanged": false,
+          "changedRowCounts": {},
+          "catalogChanges": []
+        }
+      },
+      {
+        "name": "ensureEducationBundlePurchaseSchema",
+        "executed": true,
+        "injectedPool": true,
+        "difference": {
+          "structuralFingerprintChanged": true,
+          "physicalFingerprintChanged": true,
+          "changedRowCounts": {},
+          "catalogChanges": [
+            {
+              "kind": "functions",
+              "identity": "public.reject_bundle_payment_reference_change.",
+              "before": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n            BEGIN\n              IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n                OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n                RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n              END IF;\n              RETURN NEW;\n            END\n          $function$"
+              },
+              "after": {
+                "schema": "public",
+                "name": "reject_bundle_payment_reference_change",
+                "kind": "function",
+                "identityArguments": "",
+                "arguments": "",
+                "returnType": "\"trigger\"",
+                "returnSet": false,
+                "language": "plpgsql",
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": false,
+                "leakproof": false,
+                "securityDefiner": false,
+                "cost": 100,
+                "rows": 0,
+                "configuration": [],
+                "definition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              }
+            },
+            {
+              "kind": "triggers",
+              "identity": "public.education_bundle_purchases.education_bundle_purchases_payment_reference_immutable",
+              "before": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n            BEGIN\n              IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n                OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n                RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n              END IF;\n              RETURN NEW;\n            END\n          $function$"
+              },
+              "after": {
+                "tableSchema": "public",
+                "tableName": "education_bundle_purchases",
+                "name": "education_bundle_purchases_payment_reference_immutable",
+                "enabled": "origin",
+                "timing": "before",
+                "events": [
+                  "update"
+                ],
+                "updateColumns": [
+                  "payment_reference",
+                  "payment_instructions"
+                ],
+                "level": "row",
+                "when": null,
+                "constraint": false,
+                "deferrable": false,
+                "initiallyDeferred": false,
+                "oldTransitionTable": null,
+                "newTransitionTable": null,
+                "functionSchema": "public",
+                "functionName": "reject_bundle_payment_reference_change",
+                "argumentsBase64": "",
+                "definition": "create trigger \"education_bundle_purchases_payment_reference_immutable\" before update of \"payment_reference\",\"payment_instructions\" on \"public\".\"education_bundle_purchases\" for each row execute function \"public\".\"reject_bundle_payment_reference_change\"()",
+                "functionDefinition": "create or replace function \"public\".\"reject_bundle_payment_reference_change\"() returns \"trigger\" language \"plpgsql\" as $function$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $function$"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  ],
+  "dataLimitations": "ROW_COUNTS_DO_NOT_PROVE_ROW_CONTENT",
+  "blockers": [
+    "STARTUP_SEED_OR_RECONCILIATION_DATA_MISSING_FROM_MIGRATIONS",
+    "STARTUP_REPEAT_CATALOG_DRIFT",
+    "RECONSTRUCTED_STARTUP_STATE_REJECTED_BY_PREFLIGHT",
+    "UNRESOLVED_STARTUP_OPERATIONS_REMAIN"
+  ],
+  "notProven": [
+    "Historical populated pre-baseline transitions",
+    "Tenant isolation and row-content preservation",
+    "Full application HTTP boot without startup DDL",
+    "Semantic equivalence of every mapping",
+    "Independent Claude Code review",
+    "Production identity, fingerprint, backup/restore and execution authorization"
+  ]
+}

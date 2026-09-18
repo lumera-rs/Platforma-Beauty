@@ -13,10 +13,10 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 async function run() {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   app.set("trust proxy", true);
   const suffix = randomUUID();
   const password = `Reset-before-${suffix}`;

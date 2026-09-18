@@ -27,7 +27,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData, ensureSeedEducationEscrowSnapshot } from "./seed";
+import { initializeDevelopmentTestFixtures, ensureSeedEducationEscrowSnapshot } from "./seed";
 import {
   buildValidOnlineEducationCourse,
   buildValidOnlineEducationEnrollmentRequest,
@@ -114,7 +114,7 @@ async function waitForAdvisoryLockWaiters(lockKey: string, expectedWaiters: numb
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
 
   let server: ReturnType<typeof app.listen> | undefined;
   let centerId: string | undefined;

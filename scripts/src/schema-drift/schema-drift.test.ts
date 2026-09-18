@@ -414,6 +414,47 @@ test("catalog rows extract enums, public application triggers, and deterministic
   assert.match(queries[6]!, /pg_catalog\.pg_policy/);
 });
 
+test("catalog rows extract deterministic application routines independently of triggers", async () => {
+  const results = [
+    { rows: [{ schema_name: "public", table_name: "fixture" }] },
+    { rows: [] }, { rows: [] }, { rows: [] }, { rows: [] }, { rows: [] },
+    { rows: [{}] },
+    { rows: [{
+      schema_name: "public", function_name: "standalone", function_kind: "function",
+      identity_arguments: "value integer", function_arguments: "value integer",
+      return_type: "integer", return_set: false, language: "sql",
+      volatility: "immutable", parallel: "safe", strict: true, leakproof: false,
+      security_definer: true, cost: 1, rows: 1, configuration: [],
+      function_definition: "CREATE OR REPLACE FUNCTION public.standalone(value integer) RETURNS integer LANGUAGE sql AS $$ SELECT value $$",
+    }] },
+  ];
+  let index = 0;
+  const queries: string[] = [];
+  const extracted = await readPostgresSnapshot({
+    async query(sql: string) {
+      queries.push(sql);
+      return results[index++]!;
+    },
+  });
+  assert.deepEqual(extracted.functions, [{
+    schema: "public", name: "standalone", kind: "function",
+    identityArguments: "value integer", arguments: "value integer",
+    returnType: "integer", returnSet: false, language: "sql",
+    volatility: "immutable", parallel: "safe", strict: true,
+    leakproof: false, securityDefiner: true, cost: 1, rows: 1,
+    configuration: [], definition:
+      "CREATE OR REPLACE FUNCTION public.standalone(value integer) RETURNS integer LANGUAGE sql AS $$ SELECT value $$",
+  }]);
+  assert.match(queries[7]!, /pg_catalog\.pg_proc/);
+  assert.match(queries[7]!, /pg_catalog\.pg_namespace/);
+  assert.match(queries[7]!, /pg_catalog\.pg_depend/);
+  assert.match(queries[7]!, /pg_catalog\.pg_extension/);
+  assert.match(queries[7]!, /p\.prokind IN \('f','p','w'\)/);
+  assert.match(queries[7]!, /pg_get_function_identity_arguments/);
+  assert.match(queries[7]!, /pg_get_functiondef/);
+  assert.match(queries[7]!, /n\.nspname NOT IN \('pg_catalog','information_schema'\)/);
+});
+
 test("trigger catalog parsing ignores WHEN text in arguments and models constraint triggers", async () => {
   const results = [
     { rows: [{ schema_name: "public", table_name: "fixture" }] },

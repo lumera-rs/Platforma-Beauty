@@ -1,0 +1,46 @@
+✔ fresh apply and rerun are a no-op (5381.408979ms)
+✔ exact adoption and second adoption are idempotent (5953.87996ms)
+✔ baseline adoption refuses when its standalone routine is missing (6003.389033ms)
+✔ baseline adoption refuses an added standalone routine (5665.550873ms)
+✔ baseline adoption refuses a mutated baseline standalone routine (6548.591013ms)
+✔ adoption mismatch leaves zero adopted state (181.294147ms)
+✔ manifest tamper is rejected before any SQL is sent (5.826058ms)
+✔ ledger checksum mismatch and unknown future migration fail closed (134.718055ms)
+✔ concurrent runners serialize without double application (369.675316ms)
+✔ transactional rollback leaves no partial object or APPLIED state (130.504766ms)
+✔ preexisting nontransactional APPLYING halts without rerun (139.421167ms)
+✔ fresh and adopted databases have equivalent structural and physical fingerprints (11680.776041ms)
+✔ status is read-only (142.982123ms)
+✔ Phase 5A preflight is READY for exact baseline and creates no object or ledger (6102.643441ms)
+✔ Phase 5A preflight recognizes the real canonical ADOPTED ledger (4796.041646ms)
+✔ Phase 5A preflight classifies an empty real ledger as inconsistent (4893.990054ms)
+✔ Phase 5A ledger exclusion preserves only the exact canonical identity (26105.511166ms)
+✔ Phase 5A transaction is PostgreSQL-enforced repeatable-read read-only (135.500017ms)
+✔ Phase 5A preflight blocks routine and trigger drift (5391.919274ms)
+✔ Phase 5A preflight blocks unknown migration without repair (4899.611985ms)
+✔ Phase 5A preflight blocks failed migration without repair (5319.461697ms)
+✔ Phase 5A preflight blocks applying migration without repair (5524.476142ms)
+✔ Phase 5A preflight blocks checksum mismatch without repair (5850.259039ms)
+▶ Phase 5A preflight rejects every malformed ledger shape
+  ✔ extra column (5672.937126ms)
+  ✔ missing column (5328.379003ms)
+  ✔ wrong data type (4764.099875ms)
+  ✔ wrong nullability (4714.366057ms)
+  ✔ wrong default (4746.655616ms)
+  ✔ missing primary key (4802.156773ms)
+  ✔ wrong primary key (4795.200886ms)
+  ✔ weakened mode check (4690.823802ms)
+  ✔ weakened state check (4660.696133ms)
+  ✔ extra allowed state (4666.565309ms)
+  ✔ view (4734.543194ms)
+✔ Phase 5A preflight rejects every malformed ledger shape (53580.42375ms)
+✔ Phase 5A preflight blocks unsupported version contract and missing extension (5162.868984ms)
+✔ production startup cannot reach migration runner (2829.268227ms)
+ℹ tests 37
+ℹ suites 0
+ℹ pass 37
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 174024.169797

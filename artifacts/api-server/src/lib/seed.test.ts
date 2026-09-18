@@ -14,7 +14,9 @@ import {
   servicesTable,
   usersTable,
 } from "@workspace/db";
-import { backfillSalonCustomers, ensureDemoData, restoreDemoEducationOwnerRole, seedEducationContent } from "./seed";
+import { initializeDevelopmentTestFixtures, restoreDemoEducationOwnerRole, seedEducationContent } from "./seed";
+import { backfillSalonCustomers } from "./seed-maintenance";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { repairProductionMarketplaceDemoIdentity } from "./production-marketplace-demo-seed";
 
 const suffix = randomUUID();
@@ -24,7 +26,16 @@ const fixtureServiceIds: string[] = [];
 const fixtureAppointmentIds: string[] = [];
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  assertDestructiveTestRuntimeAllowed(process.env, "Explicit fixtures and CRM maintenance");
+  assert.equal(process.env.NODE_ENV, "test", "Use the isolated CRM test runner.");
+  assert.ok(process.env.LUMERA_TEST_DATABASE_URL, "Disposable database authorization is required.");
+  assert.equal(process.env.DATABASE_URL, process.env.LUMERA_TEST_DATABASE_URL);
+  assert.match(
+    new URL(process.env.LUMERA_TEST_DATABASE_URL).pathname,
+    /^\/lumera_crm_backfill_\d+_[a-f0-9]{32}$/,
+    "Refusing to run fixture maintenance against a persistent database.",
+  );
+  await initializeDevelopmentTestFixtures();
 
   const [educationOwner] = await db.select({
     id: usersTable.id,

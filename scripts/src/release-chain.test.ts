@@ -38,12 +38,16 @@ type WorkflowJob = {
     uses?: string;
     name?: string;
     run?: string;
+    if?: string;
+    env?: Record<string, unknown>;
+    "continue-on-error"?: boolean;
     with?: Record<string, unknown>;
   }>;
 };
 
 type GitHubWorkflow = {
   on?: Record<string, unknown>;
+  env?: Record<string, unknown>;
   jobs?: Record<string, WorkflowJob>;
 };
 
@@ -54,15 +58,27 @@ function parseWorkflow(source: string): GitHubWorkflow {
 async function writeRulesetAuditFixture(
   fixtureDir: string,
   requiredContexts: string[],
+  graphqlRepository: unknown = {
+    data: {
+      repository: {
+        nameWithOwner: "lumera-rs/Platforma-Beauty",
+        viewerPermission: "ADMIN",
+        deleteBranchOnMerge: true,
+      },
+    },
+  },
 ): Promise<void> {
   await Promise.all([
     writeFile(
       path.join(fixtureDir, "repository.json"),
       JSON.stringify({
-        delete_branch_on_merge: true,
         owner: { type: "Organization" },
         visibility: "public",
       }),
+    ),
+    writeFile(
+      path.join(fixtureDir, "graphql-repository.json"),
+      JSON.stringify(graphqlRepository),
     ),
     writeFile(
       path.join(fixtureDir, "rulesets.json"),
@@ -920,8 +936,33 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   );
   assert.match(
     auditScript,
+    /\.data\.repository\.deleteBranchOnMerge == true/,
+    "The audit must require authoritative GraphQL confirmation of automatic merged-branch deletion.",
+  );
+  assert.match(
+    auditScript,
+    /\.data\.repository\.viewerPermission == "ADMIN"/,
+    "The GraphQL setting must be accepted only for an administrator.",
+  );
+  assert.match(
+    auditScript,
+    /\.data\.repository\.nameWithOwner == \$expected/,
+    "The GraphQL response must match the pinned repository identity.",
+  );
+  assert.doesNotMatch(
+    auditScript,
     /\.delete_branch_on_merge == true/,
-    "The audit must fail unless automatic merged-branch deletion is enabled.",
+    "The audit must not treat the optional REST field as authoritative.",
+  );
+  assert.match(
+    auditScript,
+    /query RepositoryMergedBranchDeletion/,
+    "The repository setting must be read through a GraphQL query.",
+  );
+  assert.doesNotMatch(
+    auditScript,
+    /\bmutation\b/,
+    "The GraphQL operation must remain read-only.",
   );
   assert.doesNotMatch(
     auditScript,
@@ -950,6 +991,11 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   );
   assert.match(
     auditScript,
+    /phase5_migration_context=.*[\s\S]*Phase 5 migration integration \(owned PostgreSQL 16\)/,
+    "The audit must derive and verify the Phase 5 integration job's exact check name.",
+  );
+  assert.match(
+    auditScript,
     /all\(\$contexts\[\];/,
     "The same strict status-check rule must contain every required context.",
   );
@@ -968,6 +1014,7 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   const requiredContexts = [
     "GitHub Actions syntax and expressions",
     "Migration contract (database-free)",
+    "Phase 5 migration integration (owned PostgreSQL 16)",
   ];
   try {
     await writeRulesetAuditFixture(fixtureDir, requiredContexts);
@@ -1008,6 +1055,87 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
       /fixture mode is forbidden in native GitHub Actions context/i,
     );
 
+    const invalidGraphqlFixtures: Array<{
+      name: string;
+      response: unknown;
+      error: RegExp;
+    }> = [
+      {
+        name: "explicit false",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "ADMIN",
+              deleteBranchOnMerge: false,
+            },
+          },
+        },
+        error: /automatic deletion of merged branches is disabled/i,
+      },
+      {
+        name: "missing field",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "ADMIN",
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "null repository",
+        response: { data: { repository: null } },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "GraphQL errors",
+        response: {
+          data: { repository: null },
+          errors: [{ message: "Repository lookup failed" }],
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "wrong repository",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Other-Repository",
+              viewerPermission: "ADMIN",
+              deleteBranchOnMerge: true,
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "insufficient permission",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "WRITE",
+              deleteBranchOnMerge: true,
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+    ];
+    for (const fixture of invalidGraphqlFixtures) {
+      await writeRulesetAuditFixture(fixtureDir, requiredContexts, fixture.response);
+      const result = await runCommand(
+        "bash",
+        [rulesetAuditScriptPath],
+        fixtureEnv,
+      );
+      assert.equal(result.code, 1, `${fixture.name} must fail closed.`);
+      assert.match(result.stderr, fixture.error, fixture.name);
+    }
+
     await writeRulesetAuditFixture(fixtureDir, [requiredContexts[0]]);
     const missingMigrationContextResult = await runCommand(
       "bash",
@@ -1021,6 +1149,22 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
     );
     assert.match(
       missingMigrationContextResult.stderr,
+      /ruleset is missing or invalid/,
+    );
+
+    await writeRulesetAuditFixture(fixtureDir, requiredContexts.slice(0, 2));
+    const missingPhase5ContextResult = await runCommand(
+      "bash",
+      [rulesetAuditScriptPath],
+      fixtureEnv,
+    );
+    assert.equal(
+      missingPhase5ContextResult.code,
+      1,
+      "Removing Phase 5 migration integration from an offline fixture must fail closed.",
+    );
+    assert.match(
+      missingPhase5ContextResult.stderr,
       /ruleset is missing or invalid/,
     );
   } finally {
@@ -1268,6 +1412,7 @@ test("branch CI isolates database checks and orders browser journeys after every
     "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
     "pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation",
     "pnpm run validate:ci:database",
+    "pnpm run test:migrations:integration",
   ];
   let previousDatabasePreparationIndex = -1;
   for (const command of databasePreparationCommands) {
@@ -1302,6 +1447,39 @@ test("branch CI isolates database checks and orders browser journeys after every
     1,
     "The database backend-standard audit must run exactly once.",
   );
+  const migrationIntegrationSteps = databaseSteps.filter(
+    (step) => step.run?.trim() === "pnpm run test:migrations:integration",
+  );
+  assert.equal(
+    migrationIntegrationSteps.length,
+    1,
+    "The real Phase 4 migration integration suite must run exactly once.",
+  );
+  const migrationIntegrationStep = migrationIntegrationSteps[0]!;
+  const databaseChecksStepIndex = findDatabaseStep("pnpm run validate:ci:database");
+  const migrationIntegrationStepIndex = findDatabaseStep("pnpm run test:migrations:integration");
+  assert.equal(
+    migrationIntegrationStepIndex,
+    databaseChecksStepIndex + 1,
+    "The Phase 4 migration integration suite must run immediately after existing database checks.",
+  );
+  assert.equal(
+    migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL,
+    "postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database",
+  );
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DB, "1");
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DB, undefined);
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(parsedWorkflow.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(migrationIntegrationStep["continue-on-error"], undefined);
+  assert.equal(migrationIntegrationStep.if, undefined);
+  const serializedMigrationIntegrationStep = JSON.stringify(migrationIntegrationStep);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(workflow, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\$\{\{\s*secrets\./u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\b(?:publish|deploy)\b/iu);
   assert.doesNotMatch(
     databaseStepRuns.join("\n"),
     /ensure(?::|-)?development-schema/,

@@ -1,5 +1,5 @@
-import { pool } from "@workspace/db";
-import { logger } from "./logger";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
+import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, readStartupDdlSessionTimeouts, restoreStartupDdlSessionTimeouts, type StartupDdlSessionTimeouts } from "./startup-ddl-safety";
 
 /**
  * Production deployments do not run drizzle-kit push. Keep indexes required by
@@ -12,10 +12,10 @@ import { logger } from "./logger";
  */
 const MARKETPLACE_PERFORMANCE_INDEX_LOCK = 0x4d500001;
 
-export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
-  const client = await pool.connect();
-  let locked = false;
-  try {
+export async function ensureMarketplacePerformanceIndexes(poolOverride?: StartupDdlPool): Promise<void> {
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;
+  let locked = false; let startupError: unknown;
+  try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);
     await client.query("select pg_advisory_lock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
     locked = true;
     await client.query(
@@ -36,10 +36,13 @@ export async function ensureMarketplacePerformanceIndexes(): Promise<void> {
       "create index concurrently if not exists products_category_active_idx on products (category_id, active)",
     );
     logger.info("Marketplace performance indexes are ready");
-  } finally {
+  } catch (error) { startupError = error; throw error; } finally {
+    let cleanupError: unknown;
     if (locked) {
-      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);
+      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });
     }
+    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });
     client.release();
+    if (cleanupError && !startupError) throw cleanupError;
   }
 }

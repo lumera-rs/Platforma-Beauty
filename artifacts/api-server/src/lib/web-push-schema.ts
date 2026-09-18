@@ -1,4 +1,4 @@
-import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db";
+import type { DatabasePoolClient as PoolClient } from "@workspace/db"; import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 const LOCK_KEY = "lumera:web-push-schema:v1";
 
@@ -7,25 +7,25 @@ function quotedSchema(value: string) {
   return `"${value}"`;
 }
 
-export async function ensureWebPushSchema(schemaName = "public"): Promise<void> {
-  const client = await pool.connect();
+export async function ensureWebPushSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
+  const client = await (await resolveStartupDdlPool(poolOverride)).connect();
   let locked = false;
   try {
-    await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
+    await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
     locked = true;
-    await client.query("begin");
-    try {
-      await runWebPushSchemaDdl(client, schemaName);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback").catch(() => {});
-      throw error;
-    }
+    // Transaction-local timeouts bound startup lock and schema work.
+    await runWebPushSchemaDdl(client, schemaName);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
   } finally {
     if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [LOCK_KEY]).catch(() => {});
     client.release();
   }
 }
+
+
 
 export async function runWebPushSchemaDdl(client: PoolClient, schemaName: string): Promise<void> {
   const schema = quotedSchema(schemaName);

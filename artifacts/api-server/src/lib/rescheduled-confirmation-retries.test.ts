@@ -22,7 +22,7 @@ import {
   type TransactionalEmailTransport,
 } from "./brevo";
 import { runScheduledRescheduledConfirmationRetries } from "./rescheduled-confirmation-retries";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID();
 const eventKeys: string[] = [];
@@ -143,7 +143,7 @@ async function testScheduledWorkerFailureDoesNotReject() {
 }
 
 async function createSeriesFixture() {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [owner] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (!owner) throw new Error("Rescheduled confirmation test requires a seeded owner.");
 

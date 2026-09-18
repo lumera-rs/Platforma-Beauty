@@ -1,0 +1,276 @@
+{
+  "reportScope": {
+    "description": "All non-ensureBusinessGrowthSchema additionalOperations plus that owner's cleanup-reporting, operational-scaffolding, and rollout-marker records.",
+    "recordCount": 16,
+    "allRecordsProvisional": true,
+    "productionDatabaseInspected": false,
+    "crosswalkCommand": "pnpm --filter @workspace/scripts exec tsx ./src/startup-migration-crosswalk.ts --json",
+    "sourceCommit": "6e7ac9411eb454b4aeddccd46444df1aa7e120bc",
+    "canonicalMigration": {
+      "path": "lib/db/migrations/000001_canonical_schema/migration.sql",
+      "sha256": "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60"
+    }
+  },
+  "records": [
+    {
+      "id": "booking-command/transaction-and-advisory-lock",
+      "owner": "ensureBookingCommandSchema",
+      "sourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,35-38",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/booking-command-schema.ts:9-12,34-39",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/booking-command-schema.ts", "startLine": 9, "endLine": 12, "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let locked = false; try { await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client);\n    await client.query(\"SELECT pg_advisory_lock($1)\", [LOCK_KEY]); locked = true;\n    await client.query(`"},
+        {"path": "artifacts/api-server/src/lib/booking-command-schema.ts", "startLine": 34, "endLine": 38, "sqlOrCode": "    await client.query(\"commit\"); } catch (error) { await client.query(\"rollback\").catch(() => {}); throw error; } finally {\n    try {\n      if (locked) await client.query(\"SELECT pg_advisory_unlock($1)\", [LOCK_KEY]).catch(() => {});\n    } finally {\n      client.release();\n    }"}
+      ],
+      "execution": "The owner invocation is an unconditional 7th top-level await in artifacts/api-server/src/index.ts:90, after Business Growth, Media, Shipping, Marketplace, Referral, and Web Push. On a reached invocation it begins transaction, sets local timeouts, takes LOCK_KEY, then DDL; commits or catches/attempts rollback; finally conditionally unlocks/releases. Individual downstream operations remain conditional on preceding success and database state.",
+      "effects": "Runtime operational scaffolding: transaction state, local timeout policy, session advisory lock, client release. No direct data mutation in this fragment.",
+      "repeatSafety": "UNKNOWN for the lifecycle. Code proves unlock is gated by locked and release is in finally; rollback/unlock failures are swallowed, and downstream DDL/database state is not proven repeat-safe by this fragment.",
+      "stateDependence": "Depends on a connectable pooled client, advisory-lock availability, transaction state, timeout helper behavior, and the later DDL's existing catalog state; production state was not inspected.",
+      "canonicalComparison": "Canonical defines booking_command_receipts and final indexes (000001:2600-2614,7193-7197,10343-10353), which is schema definition. It contains no matching advisory lock, timeout helper, transaction lifecycle, or client cleanup; runtime operational behavior is not represented.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["What migration/deployment serialization replaces this lock?", "Do rollback/unlock failures leave a retry-safe pooled session?", "Which later DDL actions need a transaction?"]
+    },
+    {
+      "id": "business-growth/advisory-lock-and-session-state",
+      "owner": "ensureBusinessGrowthSchema",
+      "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5153-5160,5190-5204",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5002-5010,5150-5160,5171-5198,5201-5205",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5002, "endLine": 5010, "sqlOrCode": "  await client.query(\n    \"SELECT pg_advisory_lock($1)\",\n    [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],\n  );\n  locked = true;\n  let rolloutError: unknown; try {\n    // Constrain unqualified name resolution inside DO blocks to the target schema.\n    await client.query(`SET search_path TO ${quoted}`);"},
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5150, "endLine": 5160, "sqlOrCode": "  } catch (error) { rolloutError = error; throw error; } finally {\n    // Custom GUCs are session scoped. Always close the narrowly-scoped\n    // migration bypass before this client can return to the pool.\n    await client.query(\"ROLLBACK\").catch(() => {});\n    let cleanupError: unknown; try { await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`); } catch (error) { cleanupError = error; }\n    if (locked) await client.query(\n      \"SELECT pg_advisory_unlock($1)\",\n      [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],\n    ).catch((error) => { cleanupError ??= error; });\n    if (cleanupError && !rolloutError) throw cleanupError;\n  }"},
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5171, "endLine": 5197, "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let previousSearchPath: string | undefined; let previousTimeouts: StartupDdlSessionTimeouts | undefined; let startupError: unknown;\n  try { previousSearchPath = await currentSearchPath(client); previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);\n    await runBusinessGrowthSchemaDdl(client, schemaName);\n    const cleanup = await client.query<{\n      candidates: number; detached_users: number; deleted_salons: number; retired_salons: number;\n    }>(`SELECT candidates, detached_users, deleted_salons, retired_salons\n         FROM ${quoteSchema(schemaName)}.education_salon_cleanup_reports WHERE version = 99`);\n    if (cleanup.rows[0]) {\n      logger.info(\n        { version: 99, ...cleanup.rows[0] },\n        \"Education registration salon cleanup report\",\n      );\n    }\n    logger.info(\n      { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },\n      \"Business Growth database schema is ready\",\n    );\n  } catch (error) { startupError = error; throw error; } finally { let cleanupError: unknown; if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError = error; });\n    // Restore search_path on the pooled client so it does not leak to reuse.\n    try {\n      if (previousSearchPath) await client.query(`SET search_path TO ${previousSearchPath}`);\n    } catch (error) {\n      cleanupError ??= error;\n    }\n    client.release();\n    if (cleanupError && !startupError) throw cleanupError;\n  }"},
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5201, "endLine": 5204, "sqlOrCode": "async function currentSearchPath(client: PoolClient): Promise<string> {\n  const result = await client.query<{ search_path: string }>(\"SHOW search_path\");\n  const value = result.rows[0]?.search_path;\n  return value && value.trim().length ? value : '\"$user\", public';\n}"}
+      ],
+      "execution": "The owner invocation is an unconditional 1st top-level await (index.ts:84). The wrapper captures existing search_path/timeouts, applies timeouts, runs an autocommit inner rollout under a shared advisory lock, then attempts rollback/GUC-off/unlock and outer timeout/search_path restoration. The protected rollout is branch-dependent: static roles (2695), payment work (4881/4894), and interim functions are missing/behind-marker only; current-marker repairs return at 5039-5125.",
+      "effects": "Runtime operational and session-state behavior: advisory lock, search_path, timeout settings, rollback attempt, custom session GUC, pooled-client cleanup.",
+      "repeatSafety": "UNKNOWN. Same lock can be reacquired, but every step depends on current pooled-session state; cleanup errors may be suppressed if rollout already failed.",
+      "stateDependence": "Depends on client prior search_path/timeouts, lock availability, any open transaction, and custom GUC state. No production session/catalog inspection occurred.",
+      "canonicalComparison": "000001 line 21 has dump setup pg_catalog.set_config('search_path', '', false), not this protocol. No canonical pg_advisory_lock or lumera.snapshot_backfill behavior was found. This is operational behavior, not schema definition.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Who owns lock/GUC/session cleanup after startup DDL retirement?", "Are all failure paths safe to return to the pool?", "Which autocommit operations require this exact ordering?"]
+    },
+    {
+      "id": "business-growth/cleanup-report-read",
+      "owner": "ensureBusinessGrowthSchema",
+      "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5175-5178",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5175-5184",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5175, "endLine": 5184, "sqlOrCode": "    const cleanup = await client.query<{\n      candidates: number; detached_users: number; deleted_salons: number; retired_salons: number;\n    }>(`SELECT candidates, detached_users, deleted_salons, retired_salons\n         FROM ${quoteSchema(schemaName)}.education_salon_cleanup_reports WHERE version = 99`);\n    if (cleanup.rows[0]) {\n      logger.info(\n        { version: 99, ...cleanup.rows[0] },\n        \"Education registration salon cleanup report\",\n      );\n    }"}
+      ],
+      "execution": "Within owner 1, after runBusinessGrowthSchemaDdl returns and before the ready log. The owner is invoked each reached startup; this query runs only after the inner runner successfully returns from its applicable marker-controlled branch.",
+      "effects": "Read-only observation plus conditional application logging; no source write.",
+      "repeatSafety": "Read is repeatable without changing rows, but operational safety is UNKNOWN because absence of the table makes the query fail startup and current row 99 controls logging.",
+      "stateDependence": "Requires education_salon_cleanup_reports and depends on whether version 99 exists; neither was inspected in production.",
+      "canonicalComparison": "000001:4291-4301 and 8037-8041 define the report table/PK. It has no version-99 SELECT, log, or historical report-writing transformation. Definition does not prove report provenance.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Where is the reviewed writer for version 99?", "Must a missing report/table block startup after migration adoption?"]
+    },
+    {
+      "id": "business-growth/rollout-marker-read",
+      "owner": "ensureBusinessGrowthSchema",
+      "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5036-5042",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5035-5043",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5035, "endLine": 5043, "sqlOrCode": "    const rolloutTable = `${schemaName}.business_growth_schema_rollout`;\n    const existingRollout = await client.query<{ relation: string | null }>(\n      \"SELECT to_regclass($1)::text AS relation\", [rolloutTable],\n    );\n    if (existingRollout.rows[0]?.relation) {\n      const state = await client.query<{ version: number }>(\n        `SELECT version FROM ${quoted}.business_growth_schema_rollout WHERE singleton = true`,\n      );\n      if ((state.rows[0]?.version ?? 0) >= BUSINESS_GROWTH_SCHEMA_VERSION) {"}
+      ],
+      "execution": "Within owner 1 after report-table/cover-image repairs. On each successful entry to this point, it probes marker relation; it reads version only if relation exists. A current version selects the fast path and returns at source line 5125.",
+      "effects": "Read-only observation that controls runtime reconciliation branch selection.",
+      "repeatSafety": "UNKNOWN. Syntax is read-only, but current marker existence/version selects materially different work; branch equivalence is not proven.",
+      "stateDependence": "Directly depends on uninspected production relation existence, singleton row, and version. Missing row is treated as version 0.",
+      "canonicalComparison": "000001:2672-2680 and 7225-7229 define the marker table/PK. No to_regclass probe, version predicate, or fast-path decision exists; canonical covers definition only.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Does marker state reliably equal completed migration state?", "How are empty, malformed, or divergent marker states recovered?"]
+    },
+    {
+      "id": "business-growth/rollout-marker-write",
+      "owner": "ensureBusinessGrowthSchema",
+      "sourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5145-5148",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/business-growth-schema.ts:5139-5149",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/business-growth-schema.ts", "startLine": 5139, "endLine": 5149, "sqlOrCode": "    await client.query(`CREATE TABLE IF NOT EXISTS ${quoted}.business_growth_schema_rollout (\n      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton = true),\n      version integer NOT NULL,\n      completed_at timestamptz NOT NULL DEFAULT now()\n    )`);\n    await client.query(\n      `INSERT INTO ${quoted}.business_growth_schema_rollout (singleton, version, completed_at)\n       VALUES (true, $1, now())\n       ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version, completed_at = EXCLUDED.completed_at`,\n      [BUSINESS_GROWTH_SCHEMA_VERSION],\n    );"}
+      ],
+      "execution": "After the full statement-array loop on non-fast-path execution in owner 1; deliberately autocommit per source lines 5134-5138.",
+      "effects": "Current-data reconciliation / rollout-marker write. Creates table if absent, inserts or updates singleton version and completed_at.",
+      "repeatSafety": "Not idempotent as row values: every qualifying rerun updates completed_at. ON CONFLICT alone is not a proof of safety; it relies on singleton PK and successful preceding work. Overall UNKNOWN.",
+      "stateDependence": "Depends on branch selected by marker read, table/PK state, existing row, version constant, and prior rollout actions; production state uninspected.",
+      "canonicalComparison": "000001 defines table/PK (2672-2680,7225-7229) but has no INSERT/upsert, version constant, or completion timestamp write. It is definition, not current-state reconciliation.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Can autocommit marker update falsely record completed work?", "What ledger state replaces this marker?"]
+    },
+    {
+      "id": "education-bundle/learner-id-backfill",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:54-58",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts", "startLine": 54, "endLine": 58, "sqlOrCode": "    await client.query(`UPDATE ${schema}.education_bundle_purchases purchase\n      SET learner_user_id = employee.user_id\n      FROM ${schema}.employees employee\n      WHERE purchase.target_type = 'salon_employee' AND purchase.employee_id = employee.id\n        AND purchase.learner_user_id IS NULL AND employee.user_id IS NOT NULL`);"}
+      ],
+      "execution": "8th owner (index.ts:91), in its one transaction, after old target checks are dropped (52-53) and before replacement check add/validate (59-63).",
+      "effects": "Existing-data mutation: assigns learner_user_id from employees.user_id for selected purchases.",
+      "repeatSafety": "Conditional convergence only: filled rows no longer match IS NULL. Overall UNKNOWN because mapping correctness and unmatched invalid rows depend on current data and subsequent validation can fail.",
+      "stateDependence": "Depends on actual purchases, employee rows/user_id mappings, and nulls; production was not inspected.",
+      "canonicalComparison": "000001 defines learner_user_id, target check, and user FK (3421-3448,16440-16444); it contains no UPDATE from employees.user_id. Historical transformation is absent.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Is employee.user_id the approved learner identity for every candidate?", "How many selected/unmatched rows exist?", "What is the compensating plan for a wrong assignment?"]
+    },
+    {
+      "id": "education-bundle/payment-reference-backfill",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:24-31",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts", "startLine": 24, "endLine": 31, "sqlOrCode": "    await client.query(`UPDATE ${schema}.education_bundle_purchases\n      SET payment_reference = 'BND-' || left(replace(id::text, '-', ''), 30),\n          payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}',\n            to_jsonb('BND-' || left(replace(id::text, '-', ''), 30)), true)\n      WHERE payment_reference IS NULL`);\n    await client.query(`UPDATE ${schema}.education_bundle_purchases\n      SET payment_instructions = jsonb_set(COALESCE(payment_instructions, '{}'::jsonb), '{reference}', to_jsonb(payment_reference), true)\n      WHERE payment_instructions->>'reference' IS DISTINCT FROM payment_reference`);"}
+      ],
+      "execution": "8th owner, after payment_reference add/drop trigger (22-23), before NOT NULL, unique index, snapshot check, function and trigger (32-51); same transaction.",
+      "effects": "Existing financial data mutation: generates BND UUID-derived references and rewrites JSON reference snapshots.",
+      "repeatSafety": "Conditional convergence predicates are concrete (IS NULL; IS DISTINCT FROM), but uniqueness of truncated values and correctness of JSON rewrite are not proven. Overall UNKNOWN.",
+      "stateDependence": "Depends on current purchase IDs/payment values/JSON and later unique/not-null constraints; production data was not inspected.",
+      "canonicalComparison": "000001 has final NOT NULL/check (3421-3448), unique index (11162-11165), function (1693-1706), and trigger (14775-14778), but no update. Canonical is definition, not backfill.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Do generated 30-character references collide?", "Is overwriting every mismatched snapshot approved financial policy?", "What restore/compensation is available?"]
+    },
+    {
+      "id": "education-bundle/payment-reference-function",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:39-47",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts", "startLine": 39, "endLine": 47, "sqlOrCode": "    await client.query(`CREATE OR REPLACE FUNCTION ${schema}.reject_bundle_payment_reference_change() RETURNS trigger AS $$\n      BEGIN\n        IF NEW.payment_reference IS DISTINCT FROM OLD.payment_reference\n          OR NEW.payment_instructions IS DISTINCT FROM OLD.payment_instructions THEN\n          RAISE EXCEPTION 'education bundle payment_reference is immutable; payment instructions are immutable';\n        END IF;\n        RETURN NEW;\n      END\n    $$ LANGUAGE plpgsql`);"}
+      ],
+      "execution": "8th owner; after payment updates and constraints, before drop/recreate of the trigger at 48-51; same transaction.",
+      "effects": "Existing-schema reconciliation: replaces trigger-function definition, no direct row update.",
+      "repeatSafety": "Syntactically repeatable through CREATE OR REPLACE, but semantic safety is UNKNOWN: current installed definition/trigger bindings/callers were not compared in production.",
+      "stateDependence": "Depends on function namespace and trigger/table state; production catalog uninspected.",
+      "canonicalComparison": "Canonical has materially matching function body (000001:1693-1706) and trigger binding (14775-14778): definition evidence only, not proof current production definition/data is correct.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Does installed function exactly match canonical?", "Are all expected triggers bound to it?", "Is a versioned replacement needed?"]
+    },
+    {
+      "id": "education-bundle/transaction-and-advisory-lock",
+      "owner": "ensureEducationBundlePurchaseSchema",
+      "sourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:9-12,81-84",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts:6-8,85",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts", "startLine": 6, "endLine": 8, "sqlOrCode": "  const schema = `\"${schemaName}\"`, client = await (await resolveStartupDdlPool(poolOverride)).connect(); let locked = false;\n  try { await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client);\n    await client.query(\"SELECT pg_advisory_lock($1)\", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]); locked = true;"},
+        {"path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts", "startLine": 85, "endLine": 85, "sqlOrCode": "    await client.query(\"commit\"); } catch (error) { await client.query(\"rollback\").catch(() => {}); throw error; } finally { try { if (locked) await client.query(\"SELECT pg_advisory_unlock($1)\", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]).catch(() => {}); } finally { client.release(); } }"}
+      ],
+      "execution": "8th owner after all other startup owners; brackets all Education Bundle statements in one transaction and shares Business Growth advisory lock.",
+      "effects": "Operational transaction, timeout and advisory-lock scaffolding.",
+      "repeatSafety": "UNKNOWN. The code proves conditional unlock/client release but swallows rollback/unlock failure and does not prove downstream actions repeat-safe.",
+      "stateDependence": "Client/lock/transaction availability and preceding-owner success determine execution; production state uninspected.",
+      "canonicalComparison": "Canonical contains final bundle objects, but the three precise whole-file searches documented in context.md return no top-level transaction command, advisory-lock call, or SET LOCAL timeout protocol. Runtime behavior is absent.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Why must this share Business Growth lock?", "Which migration transaction boundary safely pairs updates/constraints?"]
+    },
+    {
+      "id": "marketplace/advisory-lock-and-session-state",
+      "owner": "ensureMarketplacePerformanceIndexes",
+      "sourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:18-20,39-44",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/marketplace-performance-schema.ts:16-20,39-47",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts", "startLine": 16, "endLine": 20, "sqlOrCode": "  const client = await (await resolveStartupDdlPool(poolOverride)).connect(); let previousTimeouts: StartupDdlSessionTimeouts | undefined;\n  let locked = false; let startupError: unknown;\n  try { previousTimeouts = await readStartupDdlSessionTimeouts(client); await applyStartupDdlSessionTimeouts(client);\n    await client.query(\"select pg_advisory_lock($1)\", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]);\n    locked = true;"},
+        {"path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts", "startLine": 39, "endLine": 46, "sqlOrCode": "  } catch (error) { startupError = error; throw error; } finally {\n    let cleanupError: unknown;\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock($1)\", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });\n    }\n    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });\n    client.release();\n    if (cleanupError && !startupError) throw cleanupError;\n  }"}
+      ],
+      "execution": "The owner invocation is unconditional in 4th position. No transaction is opened; after its setup succeeds, protected body executes four CREATE INDEX CONCURRENTLY statements (21-37), then cleanup.",
+      "effects": "Runtime advisory lock and session-timeout save/apply/restore around nontransactional concurrent index builds.",
+      "repeatSafety": "UNKNOWN. Reacquisition/release is coded, but current index validity after interruption and suppressed cleanup error behavior are not proven.",
+      "stateDependence": "Depends on session timeout state, lock availability, and existing index/catalog validity; production catalog/session uninspected.",
+      "canonicalComparison": "Final named indexes are canonical definitions (000001:9755-9758,13143-13153,13374-13377). Canonical has no CONCURRENTLY execution, lock, or timeout lifecycle.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["How are invalid concurrent indexes detected/recovered?", "What nontransactional migration mode preserves this behavior?"]
+    },
+    {
+      "id": "media/transaction-and-advisory-lock",
+      "owner": "ensureMediaSchema",
+      "sourcePath": "artifacts/api-server/src/lib/media-schema.ts:105-109",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/media-schema.ts", "startLine": 11, "endLine": 103, "sqlOrCode": "  const statements = [\n    `DO $$ BEGIN\n      CREATE TYPE image_asset_status AS ENUM ('pending', 'processing', 'ready', 'failed');\n    EXCEPTION\n      WHEN duplicate_object THEN null;\n    END $$`,\n    `CREATE TABLE IF NOT EXISTS image_assets (\n      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n      uploaded_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,\n      original_filename text NOT NULL,\n      source_content_type text NOT NULL,\n      source_size integer NOT NULL,\n      staging_object_path text NOT NULL,\n      original_object_path text,\n      original_width integer,\n      original_height integer,\n      variants jsonb,\n      status image_asset_status NOT NULL DEFAULT 'pending',\n      alt_text text NOT NULL DEFAULT '',\n      failure_reason text,\n      expires_at timestamptz NOT NULL,\n      created_at timestamptz NOT NULL DEFAULT now(),\n      updated_at timestamptz NOT NULL DEFAULT now()\n    )`,\n    `CREATE UNIQUE INDEX IF NOT EXISTS image_assets_staging_object_path_unique ON image_assets (staging_object_path)`,\n    `CREATE INDEX IF NOT EXISTS image_assets_uploader_created_idx ON image_assets (uploaded_by_user_id, created_at)`,\n    `CREATE INDEX IF NOT EXISTS image_assets_status_expires_idx ON image_assets (status, expires_at)`,\n    `ALTER TABLE image_assets ADD COLUMN IF NOT EXISTS alt_text text NOT NULL DEFAULT ''`,\n    `CREATE TABLE IF NOT EXISTS media_assets (\n      id uuid PRIMARY KEY,\n      owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,\n      scope text NOT NULL,\n      resource_id uuid,\n      visibility text NOT NULL DEFAULT 'public',\n      original_file_name text NOT NULL,\n      original_content_type text NOT NULL,\n      width integer NOT NULL,\n      height integer NOT NULL,\n      content_hash text NOT NULL,\n      alt_text text NOT NULL DEFAULT '',\n      cleanup_reserved_at timestamptz,\n      test_cleanup_key text,\n      created_at timestamptz NOT NULL DEFAULT now()\n    )`,\n    `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS cleanup_reserved_at timestamptz`,\n    `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS test_cleanup_key text`,\n    `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS alt_text text NOT NULL DEFAULT ''`,\n    `CREATE INDEX IF NOT EXISTS media_assets_owner_created_idx ON media_assets (owner_user_id, created_at)`,\n    `CREATE INDEX IF NOT EXISTS media_assets_scope_resource_idx ON media_assets (scope, resource_id)`,\n    `CREATE INDEX IF NOT EXISTS media_assets_content_hash_idx ON media_assets (content_hash)`,\n    `CREATE INDEX IF NOT EXISTS media_assets_cleanup_reservation_idx ON media_assets (resource_id, cleanup_reserved_at)`,\n    `CREATE INDEX IF NOT EXISTS media_assets_test_cleanup_idx ON media_assets (test_cleanup_key)`,\n    `CREATE TABLE IF NOT EXISTS media_variants (\n      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n      asset_id uuid NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,\n      size_name text NOT NULL,\n      format text NOT NULL,\n      object_path text NOT NULL,\n      content_type text NOT NULL,\n      width integer NOT NULL,\n      height integer NOT NULL,\n      byte_size integer NOT NULL,\n      etag text NOT NULL,\n      created_at timestamptz NOT NULL DEFAULT now()\n    )`,\n    `CREATE UNIQUE INDEX IF NOT EXISTS media_variants_asset_size_format_unique ON media_variants (asset_id, size_name, format)`,\n    `CREATE UNIQUE INDEX IF NOT EXISTS media_variants_object_path_unique ON media_variants (object_path)`,\n    `CREATE INDEX IF NOT EXISTS media_variants_asset_idx ON media_variants (asset_id)`,\n    `CREATE TABLE IF NOT EXISTS media_upload_tickets (\n      id uuid PRIMARY KEY,\n      owner_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n      scope text NOT NULL,\n      resource_id uuid,\n      staging_object_path text NOT NULL,\n      original_file_name text NOT NULL,\n      content_type text NOT NULL,\n      byte_size integer NOT NULL,\n      expires_at timestamptz NOT NULL,\n      finalized_asset_id uuid REFERENCES media_assets(id) ON DELETE SET NULL,\n      finalized_at timestamptz,\n      cleanup_failure_count integer NOT NULL DEFAULT 0,\n      last_cleanup_failure_at timestamptz,\n      test_cleanup_key text,\n      promotion_cleanup_paths jsonb NOT NULL DEFAULT '[]'::jsonb,\n      created_at timestamptz NOT NULL DEFAULT now()\n    )`,\n    `ALTER TABLE media_upload_tickets ADD COLUMN IF NOT EXISTS test_cleanup_key text`,\n    `ALTER TABLE media_upload_tickets ADD COLUMN IF NOT EXISTS promotion_cleanup_paths jsonb NOT NULL DEFAULT '[]'::jsonb`,\n    `CREATE UNIQUE INDEX IF NOT EXISTS media_upload_tickets_staging_path_unique ON media_upload_tickets (staging_object_path)`,\n    `CREATE INDEX IF NOT EXISTS media_upload_tickets_owner_expires_idx ON media_upload_tickets (owner_user_id, expires_at)`,\n    `CREATE INDEX IF NOT EXISTS media_upload_tickets_cleanup_idx ON media_upload_tickets (expires_at, finalized_at)`,\n    `CREATE INDEX IF NOT EXISTS media_upload_tickets_test_cleanup_idx ON media_upload_tickets (test_cleanup_key)`,\n  ];"}, 
+        {"path": "artifacts/api-server/src/lib/media-schema.ts", "startLine": 105, "endLine": 109, "sqlOrCode": "  try { await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [\"lumera:media-schema:v1\"]); locked = true;\n    for (const statement of statements) { await client.query(statement); }\n    await client.query(\"commit\"); logger.info(\"Media database schema is ready\");\n  } catch (error) { await client.query(\"rollback\").catch(() => {}); throw error; }\n  finally { if (locked) await client.query(\"select pg_advisory_unlock(hashtext($1))\", [\"lumera:media-schema:v1\"]).catch(() => {}); client.release(); }"}
+      ],
+      "execution": "The owner invocation is unconditional in 2nd position. It starts a transaction; after setup succeeds, the grouped curated SQL literals at lines 11-103 execute serially in array order at line 106; commit or attempted rollback then lock cleanup.",
+      "effects": "Runtime transaction/local timeout/hash advisory-lock scaffolding around ordered DDL array; this record itself is not a data mutation.",
+      "repeatSafety": "UNKNOWN. Array order and cleanup attempts are evidenced, but rollback/unlock errors are swallowed and array members' catalog/data preconditions vary.",
+      "stateDependence": "Depends on pooled client, lock/transaction state, and every statement's existing schema state; no production inspection.",
+      "canonicalComparison": "Canonical defines media end-state tables/indexes (for example 000001:4663-4666,4857-4906,12534-12803) but no ordered startup loop, transaction, timeout, or advisory-lock lifecycle.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Which exact array members require one transaction?", "What replaces serialization?", "Can all failure paths be safely retried?"]
+    },
+    {
+      "id": "referral/tracking-start-backfill",
+      "owner": "ensureReferralSchema",
+      "sourcePath": "artifacts/api-server/src/lib/referral-schema.ts:27-41",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/referral-schema.ts", "startLine": 27, "endLine": 41, "sqlOrCode": "    await client.query(`\n      update ${schema}.referral_qualifications q\n      set tracking_started_at = coalesce(\n        (select min(a.created_at)\n         from ${schema}.business_verification_audits a\n         where a.next_status = 'verified'\n           and a.evidence->>'referralAttributionId' = q.attribution_id::text),\n        q.updated_at\n      )\n      from ${schema}.referral_attributions r\n      where r.id = q.attribution_id\n        and r.channel in ('A', 'B1')\n        and q.status <> 'pending_verification'\n        and q.tracking_started_at is null\n    `);"}
+      ],
+      "execution": "The owner invocation is unconditional in 5th position. After additive columns (16-23) succeed, this update runs before enum alteration and commit (42-49), inside its transaction/lock.",
+      "effects": "Historical data transformation: updates selected referral qualification timestamps from earliest verified audit or legacy updated_at fallback.",
+      "repeatSafety": "Conditional convergence only: successful rows cease matching IS NULL. Overall UNKNOWN because audit match/fallback policy and candidates are current data-dependent.",
+      "stateDependence": "Depends on referral qualification/attribution/audit contents, JSON attribution linkage, statuses, channels, and timestamps; production not inspected.",
+      "canonicalComparison": "000001 defines nullable tracking_started_at (5645-5663) and attribution FK (18560-18564), but no audit lookup/update/fallback. Historical transformation is absent.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Is updated_at approved when audit proof is absent?", "How are unmatched and ambiguous audit records handled?", "What is the restore policy?"]
+    },
+    {
+      "id": "referral/transaction-and-advisory-lock",
+      "owner": "ensureReferralSchema",
+      "sourcePath": "artifacts/api-server/src/lib/referral-schema.ts:16-18,48-53",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/referral-schema.ts:12-15,49-55",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/referral-schema.ts", "startLine": 12, "endLine": 15, "sqlOrCode": "  const client = await pool.connect(); let locked = false;\n  try {\n    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [\"lumera:referral-schema\"]); locked = true;\n    // The transaction-local policy bounds both advisory-lock and DDL waits."},
+        {"path": "artifacts/api-server/src/lib/referral-schema.ts", "startLine": 49, "endLine": 55, "sqlOrCode": "    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) await client.query(\"select pg_advisory_unlock(hashtext($1))\", [\"lumera:referral-schema\"]).catch(() => {});\n    client.release();"}
+      ],
+      "execution": "The owner invocation is unconditional in 5th position; after setup succeeds it surrounds referral statements, including tracking backfill, with transaction/local timeout/hash lock.",
+      "effects": "Runtime transaction and advisory-lock scaffolding.",
+      "repeatSafety": "UNKNOWN; successful lock lifecycle is coded but rollback/unlock failure is suppressed and paired backfill/schema effects are state-dependent.",
+      "stateDependence": "Depends on client/lock/transaction state and prior owner success; production uninspected.",
+      "canonicalComparison": "Canonical has referral definitions, not this lock/timeout/transaction protocol.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["What serialization and recovery mechanism replaces this paired runtime transaction?"]
+    },
+    {
+      "id": "shipping/duplicate-row-cleanup",
+      "owner": "ensureShippingConfigSchema",
+      "sourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-35,54-65",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/shipping-config.ts:24-36,47-66",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/shipping-config.ts", "startLine": 24, "endLine": 35, "sqlOrCode": "    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound both advisory-lock and table-lock waits.\n    await runShippingConfigSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) {\n      await client.query(\"select pg_advisory_unlock(hashtext($1))\", [SHIPPING_RULES_LOCK_KEY])\n        .catch(() => {});\n    }"},
+        {"path": "artifacts/api-server/src/lib/shipping-config.ts", "startLine": 47, "endLine": 65, "sqlOrCode": "export async function runShippingConfigSchemaDdl(\n  client: PoolClient,\n  schemaName: string,\n): Promise<void> {\n  const schema = quoteSchema(schemaName);\n  // Index names are scoped by the current schema in PostgreSQL; keep the\n  // table qualified while making the target schema local to this transaction.\n  await client.query(`set local search_path to ${schema}`);\n  await client.query(`lock table ${schema}.shipping_rules in share row exclusive mode`);\n  await client.query(`\n    delete from ${schema}.shipping_rules\n    where id <> (\n      select id from ${schema}.shipping_rules order by id asc limit 1\n    )\n  `);\n  await client.query(`\n    create unique index if not exists ${SHIPPING_RULES_INDEX_NAME}\n    on ${schema}.shipping_rules ((true))\n  `);\n}"}
+      ],
+      "execution": "The owner invocation is unconditional in 3rd position; after wrapper transaction/lock setup it calls helper, whose executable SQL order is set local search_path, table lock, delete, unique index, then commit.",
+      "effects": "Destructive existing-data cleanup plus schema reconciliation. Deletes every non-lowest UUID shipping rule.",
+      "repeatSafety": "Second successful cleanup has no duplicates to delete, but semantic safety is UNKNOWN: deleted rows cannot be restored from this code and lowest UUID may not be approved survivor.",
+      "stateDependence": "Directly depends on current row count/UUID ordering and table lock availability; production data was not inspected.",
+      "canonicalComparison": "000001 defines shipping_rules (6536-6548) and singleton index (14558-14561), but no table lock/delete/survivor policy. Canonical definition does not represent destructive cleanup.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Which row is business-approved survivor?", "What backup/restore exists?", "How many duplicates and what lock impact exist?"]
+    },
+    {
+      "id": "ensureWebPushSchema/source-discovered-82-dd7107a5f655438a",
+      "owner": "ensureWebPushSchema",
+      "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:82:22",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:82",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/web-push-schema.ts", "startLine": 80, "endLine": 84, "sqlOrCode": "  await client.query(`ALTER TABLE ${schema}.system_push_deliveries ADD COLUMN IF NOT EXISTS expires_at timestamptz`);\n  await client.query(`ALTER TABLE ${schema}.system_push_deliveries ADD COLUMN IF NOT EXISTS acknowledged_at timestamptz`);\n  await client.query(`UPDATE ${schema}.system_push_deliveries SET expires_at = created_at + interval '24 hours' WHERE expires_at IS NULL`);\n  await client.query(`ALTER TABLE ${schema}.system_push_deliveries ALTER COLUMN expires_at SET NOT NULL`);\n  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS system_push_deliveries_event_subscription_unique ON ${schema}.system_push_deliveries(event_key, subscription_id)`);"}
+      ],
+      "execution": "The owner invocation is unconditional in 6th position. After outer transaction/lock setup and add-if-absent success, inner routine line 82 runs before NOT NULL, inside outer transaction/lock (10-24).",
+      "effects": "Existing-data expiration backfill: fills null expires_at as created_at plus 24 hours.",
+      "repeatSafety": "Conditional convergence only: rows filled no longer match WHERE expires_at IS NULL. Overall UNKNOWN because 24-hour policy and candidate row data are not verified.",
+      "stateDependence": "Depends on table/column, null candidates, created_at values, and subsequent NOT NULL success; production uninspected.",
+      "canonicalComparison": "000001 defines expires_at NOT NULL in system_push_deliveries (6711-6734) and final indexes (14670-14701), but no update/backfill. Definition is not historical data policy.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["Are historical delivery expiry semantics truly 24 hours?", "How many nulls exist and will retroactive expiry affect delivery/retention?"]
+    },
+    {
+      "id": "web-push/transaction-and-advisory-lock",
+      "owner": "ensureWebPushSchema",
+      "sourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:11-15,18-24",
+      "evidenceSourcePath": "artifacts/api-server/src/lib/web-push-schema.ts:10-25",
+      "sourceEvidence": [
+        {"path": "artifacts/api-server/src/lib/web-push-schema.ts", "startLine": 10, "endLine": 24, "sqlOrCode": "export async function ensureWebPushSchema(schemaName = \"public\", poolOverride?: StartupDdlPool): Promise<void> {\n  const client = await (await resolveStartupDdlPool(poolOverride)).connect();\n  let locked = false;\n  try {\n    await client.query(\"begin\"); await setLocalStartupDdlTimeouts(client); await client.query(\"select pg_advisory_lock(hashtext($1))\", [LOCK_KEY]);\n    locked = true;\n    // Transaction-local timeouts bound startup lock and schema work.\n    await runWebPushSchemaDdl(client, schemaName);\n    await client.query(\"commit\");\n  } catch (error) {\n    await client.query(\"rollback\").catch(() => {});\n    throw error;\n  } finally {\n    if (locked) await client.query(\"select pg_advisory_unlock(hashtext($1))\", [LOCK_KEY]).catch(() => {});\n    client.release();\n  }"}
+      ],
+      "execution": "The owner invocation is unconditional in 6th position; it begins transaction, applies local timeouts, takes hash advisory lock, then invokes inner queries in source order 30-88 subject to preceding success, commits/rolls back, unlocks/releases.",
+      "effects": "Runtime transaction/local timeout/advisory-lock scaffolding.",
+      "repeatSafety": "UNKNOWN. Code demonstrates conditional unlock and client release, not safe retry after suppressed rollback/unlock failure or all inner operations.",
+      "stateDependence": "Depends on pooled client, lock/transaction state and inner schema/data state; production uninspected.",
+      "canonicalComparison": "Canonical defines final push tables/indexes/FKs (5499-5504,6711-6734,13437-13447,14670-14701,19352-19364), not this runtime protocol.",
+      "evidenceAssessment": "UNRESOLVED — provisional only.",
+      "uncertainties": ["What versioned transaction sequence will pair column/backfill/not-null?", "Is lock cleanup proven under connection loss?"]
+    }
+  ]
+}
