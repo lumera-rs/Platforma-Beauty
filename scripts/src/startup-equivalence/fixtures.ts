@@ -230,7 +230,7 @@ export async function withOwnedDisposableDatabase<T>(
   }
   if (created) {
     try {
-      await admin.query(`DROP DATABASE ${quoteIdentifier(childName)} WITH (FORCE)`);
+      await admin.query(`DROP DATABASE ${quoteIdentifier(childName)}`);
     } catch (error) {
       cleanupErrors.push(error);
     }
