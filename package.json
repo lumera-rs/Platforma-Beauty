@@ -164,7 +164,7 @@
     "test:booking-development-schema": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ./src/booking-development-schema.test.ts",
     "test:retail-cart-index-development-schema": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ./src/retail-cart-index-development-schema.test.ts",
     "test:business-growth-schema-cleanup-reports": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-growth-schema-cleanup-reports.test.ts",
-    "test:business-growth-schema-boot-regression": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts",
+    "test:business-growth-schema-boot-regression": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts --admin-url=\"${LUMERA_DISPOSABLE_ADMIN_URL:?Set LUMERA_DISPOSABLE_ADMIN_URL to an explicit disposable PostgreSQL admin URL}\"",
     "test:anthropic-integration-lazy-init": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/anthropic-integration-lazy-init.test.ts",
     "test:referrals": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/referral-domain.test.ts ../artifacts/api-server/src/lib/referral-checkout.test.ts ../artifacts/api-server/src/lib/referral-sms.test.ts",
     "test:referral-lifecycle": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/referral-lifecycle.test.ts",

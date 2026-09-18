@@ -69,9 +69,17 @@ async function withDatabase<T>(callback: (pool: pg.Pool) => Promise<T>): Promise
     child = new pg.Pool({ connectionString: childUrl.toString(), max: 4 });
     return await callback(child);
   } finally {
-    await child?.end().catch(() => undefined);
-    await admin.query(`DROP DATABASE IF EXISTS ${quote(name)} WITH (FORCE)`).catch(() => undefined);
-    await admin.end();
+    try {
+      await child?.end();
+    } finally {
+      try {
+        // Ordinary DROP avoids forcibly terminating clients still disconnecting.
+        // It does not wait for connections to close; any remaining sessions cause a visible cleanup failure.
+        await admin.query(`DROP DATABASE IF EXISTS ${quote(name)}`);
+      } finally {
+        await admin.end();
+      }
+    }
   }
 }
 
@@ -120,15 +128,52 @@ async function executeCanonicalBody(pool: pg.Pool): Promise<void> {
   });
 }
 
+async function ledgerReceipts(pool: pg.Pool): Promise<unknown[]> {
+  // JSON retains PostgreSQL timestamp precision, unlike JS Date conversion.
+  return (await pool.query(
+    "SELECT to_jsonb(receipt) AS receipt FROM public.lumera_migration_ledger receipt ORDER BY migration_id",
+  )).rows;
+}
+
+async function expectUnchangedRefusal(
+  pool: pg.Pool,
+  operation: () => Promise<unknown>,
+  message: string,
+  hasLedger = false,
+): Promise<void> {
+  const beforeCatalog = await fingerprint(pool);
+  const beforeReceipts = hasLedger ? await ledgerReceipts(pool) : undefined;
+  await assert.rejects(operation, { message });
+  assert.deepEqual(await fingerprint(pool), beforeCatalog, "Refusal must not mutate the catalog.");
+  if (hasLedger) {
+    assert.deepEqual(await ledgerReceipts(pool), beforeReceipts, "Refusal must not mutate any receipt field.");
+  } else {
+    assert.equal((await pool.query(
+      "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
+    )).rows[0]?.ledger, null, "Refusal must not create a ledger.");
+  }
+}
+
+const canonicalAdoptionRefusal = "Supported baseline adoption requires the exact canonical baseline fingerprint";
+
 test("fresh apply and rerun are a no-op", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
+    assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002"]);
     const first = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    assert.deepEqual(first.applied, ["000001", "000002"]);
+    assert.deepEqual(first.skipped, []);
+    const beforeReceipts = await ledgerReceipts(pool);
+    const beforeCatalog = await fingerprint(pool);
     const second = await withClient(pool, (client) => applyMigrations(client, { migrations }));
-    assert.deepEqual(first.applied, ["000001"]);
     assert.deepEqual(second.applied, []);
+    assert.deepEqual(second.skipped, ["000001", "000002"]);
+    assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
+    assert.deepEqual(await fingerprint(pool), beforeCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
-      .map((item) => item.state), ["APPLIED"]);
+      .map(({ id, state }) => ({ id, state })), [
+        { id: "000001", state: "APPLIED" }, { id: "000002", state: "APPLIED" },
+      ]);
   });
 });
 
@@ -136,12 +181,31 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
   await withDatabase(async (pool) => {
     await executeCanonicalBody(pool);
     const migrations = await loadMigrations();
+    const baselineCatalog = await fingerprint(pool);
     const first = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
-    const second = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
     assert.deepEqual(first.adopted, ["000001"]);
-    assert.deepEqual(second.adopted, ["000001"]);
+    const adoptedCatalog = await fingerprint(pool);
+    // Ledger creation adds an excluded bookkeeping entry, not application schema.
+    assert.equal(adoptedCatalog.structuralFingerprint, baselineCatalog.structuralFingerprint);
+    assert.equal(adoptedCatalog.physicalFingerprint, baselineCatalog.physicalFingerprint);
+    const beforeReceipts = await ledgerReceipts(pool);
+    assert.equal(beforeReceipts.length, 1, "Baseline adoption must not manufacture a data-migration receipt.");
+    const second = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    assert.deepEqual(second.adopted, []);
+    assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
+    assert.deepEqual(await fingerprint(pool), adoptedCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
-      .map((item) => item.state), ["ADOPTED"]);
+      .map(({ id, state }) => ({ id, state })), [
+        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" },
+      ]);
+    // Explicit B1 adoption and data execution are separate operations.
+    const applied = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    assert.deepEqual(applied.applied, ["000002"]);
+    assert.deepEqual(applied.skipped, ["000001"]);
+    assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
+      .map(({ id, state }) => ({ id, state })), [
+        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "APPLIED" },
+      ]);
   });
 });
 
@@ -155,9 +219,10 @@ test("baseline adoption refuses when its standalone routine is missing", skip, a
     ));
     const after = await fingerprint(pool);
     assert.notDeepEqual(after, before);
-    await assert.rejects(
+    await expectUnchangedRefusal(
+      pool,
       () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
-      /baseline adoption mismatch/u,
+      canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
       const ledger = await client.query(
@@ -178,9 +243,10 @@ test("baseline adoption refuses an added standalone routine", skip, async () => 
       LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$`));
     const added = await fingerprint(pool);
     assert.notDeepEqual(added, baseline);
-    await assert.rejects(
+    await expectUnchangedRefusal(
+      pool,
       () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
-      /baseline adoption mismatch/u,
+      canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
       const ledger = await client.query(
@@ -204,9 +270,10 @@ test("baseline adoption refuses a mutated baseline standalone routine", skip, as
       END $$`));
     const mutated = await fingerprint(pool);
     assert.notDeepEqual(mutated, baseline);
-    await assert.rejects(
+    await expectUnchangedRefusal(
+      pool,
       () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
-      /baseline adoption mismatch/u,
+      canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
       const ledger = await client.query(
@@ -220,9 +287,10 @@ test("baseline adoption refuses a mutated baseline standalone routine", skip, as
 test("adoption mismatch leaves zero adopted state", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
-    await assert.rejects(
+    await expectUnchangedRefusal(
+      pool,
       () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
-      /baseline adoption mismatch/u,
+      canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
       const row = await client.query(
@@ -253,32 +321,51 @@ test("manifest tamper is rejected before any SQL is sent", skip, async () => {
 
 test("ledger checksum mismatch and unknown future migration fail closed", skip, async () => {
   await withDatabase(async (pool) => {
-    const migrations = [migration("000001", "transactional", "CREATE TABLE phase4_never_run (id integer)")];
+    const migrations = [
+      migration("000001", "transactional", "CREATE TABLE phase4_completed_marker (id integer)"),
+      migration("000002", "transactional", "CREATE TABLE phase4_never_run (id integer)"),
+    ];
     await withClient(pool, async (client) => {
+      await client.query(migrations[0]!.body);
       await ensureLedger(client);
       await client.query(
-        "INSERT INTO public.lumera_migration_ledger (migration_id, checksum, mode, state) VALUES ($1, $2, $3, $4)",
+        `INSERT INTO public.lumera_migration_ledger
+          (migration_id, checksum, mode, state, started_at, finished_at)
+         VALUES ($1, $2, $3, $4, statement_timestamp(), statement_timestamp())`,
         ["000001", "tampered", "transactional", "APPLIED"],
       );
     });
-    await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
-      /Ledger checksum mismatch/u,
+    const refuse = async (reason: string): Promise<void> => {
+      await expectUnchangedRefusal(
+        pool,
+        () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+        `Unsupported migration ledger: ${reason}`,
+        true,
+      );
+      assert.equal((await pool.query(
+        "SELECT to_regclass('public.phase4_never_run') AS marker",
+      )).rows[0]?.marker, null, "Invalid receipts must block pending SQL.");
+    };
+    await refuse("LEDGER_CHECKSUM_MISMATCH:000001");
+    // Isolate timestamp validation instead of letting it mask checksum/future checks.
+    await pool.query(
+      "UPDATE public.lumera_migration_ledger SET checksum = $2, finished_at = NULL WHERE migration_id = $1",
+      ["000001", migrations[0]!.checksum],
     );
+    await refuse("LEDGER_MISSING_FINISHED_AT:000001");
     await withClient(pool, async (client) => {
       await client.query(
-        "UPDATE public.lumera_migration_ledger SET checksum = $2 WHERE migration_id = $1",
-        ["000001", migrations[0]!.checksum],
+        "UPDATE public.lumera_migration_ledger SET finished_at = clock_timestamp() WHERE migration_id = $1",
+        ["000001"],
       );
       await client.query(
-        "INSERT INTO public.lumera_migration_ledger (migration_id, checksum, mode, state) VALUES ($1, $2, $3, $4)",
-        ["999999", "future", "transactional", "APPLIED"],
+        `INSERT INTO public.lumera_migration_ledger
+          (migration_id, checksum, mode, state, started_at, finished_at)
+         VALUES ($1, $2, $3, $4, statement_timestamp(), statement_timestamp())`,
+        ["999999", "f".repeat(64), "transactional", "APPLIED"],
       );
     });
-    await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
-      /unknown or future migration/u,
-    );
+    await refuse("LEDGER_UNKNOWN_MIGRATION:999999");
   });
 });
 
@@ -325,10 +412,15 @@ test("preexisting nontransactional APPLYING halts without rerun", skip, async ()
         [migrations[0]!.id, migrations[0]!.checksum, "nontransactional", "APPLYING"],
       );
     });
-    await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
-      /Interrupted nontransactional migration is halted/u,
-    );
+    // Phase 5 refuses incomplete receipts before any retry or migration SQL.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expectUnchangedRefusal(
+        pool,
+        () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+        "Unsupported migration ledger: LEDGER_INCOMPLETE:000001",
+        true,
+      );
+    }
     await withClient(pool, async (client) => {
       const object = await client.query("SELECT to_regclass('public.phase4_nontransactional_marker') AS object");
       assert.equal(object.rows[0]?.["object"], null);
@@ -357,14 +449,18 @@ test("fresh and adopted databases have equivalent structural and physical finger
 test("status is read-only", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
+    const beforeCatalog = await fingerprint(pool);
     await withClient(pool, async (client) => {
       assert.deepEqual((await migrationStatus(client, migrations))
-        .map((item) => item.state), ["PENDING"]);
+        .map(({ id, state }) => ({ id, state })), [
+          { id: "000001", state: "PENDING" }, { id: "000002", state: "PENDING" },
+        ]);
       const relation = await client.query(
         "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
       );
       assert.equal(relation.rows[0]?.["ledger"], null);
     });
+    assert.deepEqual(await fingerprint(pool), beforeCatalog);
   });
 });
 

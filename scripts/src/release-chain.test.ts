@@ -155,6 +155,60 @@ async function runCommand(
 
 type TimedCiJob = "database" | "browser";
 
+test("database CI forwards an explicit disposable admin URL to the boot regression", async () => {
+  const workflow = parseWorkflow(await readFile(branchCiPath, "utf8"));
+  const database = workflow.jobs!.database!;
+  const checks = database.steps!.find((step) => step.run === "pnpm run validate:ci:database")!;
+  const adminUrl = "postgres://lumera_ci@127.0.0.1:55432/lumera_ci_database";
+  assert.equal(checks.env?.LUMERA_DISPOSABLE_ADMIN_URL, adminUrl);
+  assert.equal(checks.if, undefined);
+  assert.equal(checks["continue-on-error"], undefined);
+  assert.equal(database.env?.LUMERA_DISPOSABLE_ADMIN_URL, undefined);
+  assert.equal(workflow.env?.LUMERA_DISPOSABLE_ADMIN_URL, undefined);
+  const postgres = (database.services as Record<string, {
+    ports: string[]; env: Record<string, string>;
+  }>).postgres!;
+  assert.deepEqual(postgres.ports, ["127.0.0.1:55432:5432"]);
+  assert.equal(postgres.env.POSTGRES_HOST_AUTH_METHOD, "trust");
+  assert.equal(postgres.env.POSTGRES_USER, "lumera_ci");
+  assert.equal(postgres.env.POSTGRES_DB, "lumera_ci_database");
+
+  const { scripts } = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  assert.ok(chainedPnpmScripts(scripts["validate:release:2-backend"]!)
+    .includes("test:business-growth-schema-boot-regression"), "The existing release check must not be removed.");
+  const command = scripts["test:business-growth-schema-boot-regression"]!;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-boot-ci-args-"));
+  try {
+    const fakePnpm = path.join(tempDir, "pnpm");
+    await writeFile(fakePnpm, '#!/bin/sh\nprintf "%s\\n" "$@"\n');
+    await chmod(fakePnpm, 0o755);
+    const env = {
+      PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+      // A supplied ambient URL must never satisfy the explicit target contract.
+      DATABASE_URL: "postgres://unusable.example.invalid/ambient_must_not_be_used",
+    };
+    for (const extra of [{}, { LUMERA_DISPOSABLE_ADMIN_URL: "" }]) {
+      const refused = await runCommand("sh", ["-c", command], { ...env, ...extra });
+      assert.notEqual(refused.code, 0);
+      assert.match(refused.stderr, /LUMERA_DISPOSABLE_ADMIN_URL/);
+      assert.equal(refused.stdout, "", "Missing target must refuse before invoking pnpm.");
+    }
+    const forwarded = await runCommand("sh", ["-c", command], {
+      ...env, LUMERA_DISPOSABLE_ADMIN_URL: adminUrl,
+    });
+    assert.equal(forwarded.code, 0, forwarded.stderr);
+    assert.deepEqual(forwarded.stdout.trim().split("\n"), [
+      "--filter", "@workspace/scripts", "exec", "tsx",
+      "../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts",
+      `--admin-url=${adminUrl}`,
+    ], "Direct tsx must pass the explicit argument to node:test, not treat it as another test filename.");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 const successfulTimedCiJobInvocations: Record<TimedCiJob, string[]> = {
   database: [
     "run test:monitoring",
@@ -1405,7 +1459,7 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(databaseJob, /POSTGRES_DB: lumera_ci_database/);
   assert.match(
     databaseJob,
-    /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@localhost:5432\/lumera_ci_database/,
+    /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@127\.0\.0\.1:55432\/lumera_ci_database/,
   );
   const databasePreparationCommands = [
     "pnpm --filter @workspace/db run push-force",
@@ -1465,7 +1519,7 @@ test("branch CI isolates database checks and orders browser journeys after every
   );
   assert.equal(
     migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL,
-    "postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database",
+    "postgres://lumera_ci:lumera_ci@127.0.0.1:55432/lumera_ci_database",
   );
   assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DB, "1");
   assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL, undefined);

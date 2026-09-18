@@ -128,13 +128,15 @@ async function realpathWithMissingTail(target: string): Promise<string> {
   }
 }
 
-export async function validatedOutputDirectory(value: string): Promise<string> {
+export async function validatedOutputDirectory(value: string, root = workspaceRoot): Promise<string> {
   const outputDir = path.resolve(value);
-  const [workspace, local, resolvedOutput] = await Promise.all([
-    realpath(workspaceRoot),
-    realpath(path.join(workspaceRoot, ".local")),
+  const [workspace, resolvedOutput] = await Promise.all([
+    realpath(root),
     realpathWithMissingTail(outputDir),
   ]);
+  // .local need not exist in a fresh checkout. Derive its boundary from the
+  // canonical workspace, not from a symlink that could point into tracked paths.
+  const local = path.join(workspace, ".local");
   if (isWithin(resolvedOutput, workspace) && !isWithin(resolvedOutput, local)) {
     throw new Error("Phase 5 output must be outside the workspace or inside ignored .local/.");
   }

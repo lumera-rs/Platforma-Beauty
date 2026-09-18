@@ -285,7 +285,7 @@ jobs:
     env:
       CI: "true"
       NODE_ENV: test
-      DATABASE_URL: postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+      DATABASE_URL: postgres://lumera_ci:lumera_ci@127.0.0.1:55432/lumera_ci_database
       # Several suites in this job genuinely exercise encrypted integration
       # metadata -- automation-provider-events, webhook-secret-reconfirmation,
       # sms-webhook-registration and social-oauth-domain-change all reach
@@ -303,8 +303,11 @@ jobs:
           POSTGRES_USER: lumera_ci
           POSTGRES_PASSWORD: lumera_ci
           POSTGRES_DB: lumera_ci_database
+          # Disposable boot proofs require password-free connections. Trust is
+          # limited to this ephemeral service, published only on host loopback.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
-          - 5432:5432
+          - 127.0.0.1:55432:5432
         options: >-
           --health-cmd "pg_isready -U lumera_ci -d lumera_ci_database"
           --health-interval 10s
@@ -419,10 +422,13 @@ jobs:
       - name: Run database checks
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
+          # Explicit target for the boot proof's owned child databases; never
+          # infer it from DATABASE_URL. The package command forwards --admin-url.
+          LUMERA_DISPOSABLE_ADMIN_URL: postgres://lumera_ci@127.0.0.1:55432/lumera_ci_database
         run: pnpm run validate:ci:database
       - name: Run Phase 4 migration integration suite
         env:
-          LUMERA_PHASE4_DISPOSABLE_DATABASE_URL: postgres://lumera_ci:lumera_ci@localhost:5432/lumera_ci_database
+          LUMERA_PHASE4_DISPOSABLE_DATABASE_URL: postgres://lumera_ci:lumera_ci@127.0.0.1:55432/lumera_ci_database
           LUMERA_PHASE4_DISPOSABLE_DB: "1"
         run: pnpm run test:migrations:integration
       - name: Upload database timing history
