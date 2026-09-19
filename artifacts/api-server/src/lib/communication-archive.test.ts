@@ -28,7 +28,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { runCommunicationArchiveBatch } from "./communication-archive";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID();
 
@@ -42,7 +42,7 @@ function daysAgo(days: number): Date {
 }
 
 async function createFixtureSalon(): Promise<string> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [owner] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (!owner) throw new Error("Archive test requires a seeded user.");
   const [salon] = await db.insert(salonsTable).values({
@@ -63,7 +63,7 @@ async function createFixtureSalon(): Promise<string> {
 }
 
 async function getFixtureUserId(): Promise<string> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [user] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (!user) throw new Error("Archive test requires a seeded user.");
   return user.id;

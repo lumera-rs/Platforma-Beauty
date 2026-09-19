@@ -1,0 +1,2 @@
+pg_ctl: no server running
+PASS: owned temporary PostgreSQL stopped; pg_ctl status exit=3

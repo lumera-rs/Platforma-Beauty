@@ -14,6 +14,7 @@ import type {
   PostgresFingerprintCompatibility,
   SchemaSnapshot,
   TableDefinition,
+  FunctionDefinition,
 } from "./model";
 
 const POSTGRES_16: PostgresFingerprintCompatibility = {
@@ -92,6 +93,17 @@ function table(name = "orders"): TableDefinition {
   };
 }
 
+function functionDefinition(name = "routine"): FunctionDefinition {
+  return {
+    schema: "public", name, kind: "function", identityArguments: "integer",
+    arguments: "value integer", returnType: "integer", returnSet: false,
+    language: "sql", volatility: "immutable", parallel: "safe", strict: true,
+    leakproof: false, securityDefiner: false, cost: 1, rows: 1,
+    configuration: [], definition:
+      `CREATE OR REPLACE FUNCTION public.${name}(value integer) RETURNS integer LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $function$ SELECT value + 1 $function$`,
+  };
+}
+
 const snapshot = (): SchemaSnapshot => ({
   tables: [table("orders"), table("invoices")],
 });
@@ -138,7 +150,7 @@ test("identical, reordered, and repeated snapshots have byte-stable fingerprints
   assert.match(first.physicalFingerprint, /^[a-f0-9]{64}$/);
   assert.equal(first.algorithm, "sha256");
   assert.equal(first.formatVersion, 2);
-  assert.equal(first.fingerprintVersion, 3);
+  assert.equal(first.fingerprintVersion, 4);
   assert.equal(first.structuralPayload.payloadKind, "structural");
   assert.equal(first.physicalPayload.payloadKind, "physical");
   assert.notEqual(first.structuralFingerprint, first.physicalFingerprint);
@@ -147,18 +159,45 @@ test("identical, reordered, and repeated snapshots have byte-stable fingerprints
   assert.equal(first.structuralPayload.postgresDeparserFormat, "postgresql-16-deparser-v1");
 });
 
+test("standalone routines are represented and every identity/behavior field fingerprints", () => {
+  const base = snapshot();
+  base.functions = [functionDefinition()];
+  const original = fingerprints(base);
+  for (const mutate of [
+    (value: SchemaSnapshot) => { value.functions![0]!.name = "renamed"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.kind = "window_function"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.identityArguments = "bigint"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.returnType = "bigint"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.returnSet = true; },
+    (value: SchemaSnapshot) => { value.functions![0]!.language = "plpgsql"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.volatility = "volatile"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.parallel = "unsafe"; },
+    (value: SchemaSnapshot) => { value.functions![0]!.securityDefiner = true; },
+    (value: SchemaSnapshot) => { value.functions![0]!.definition += " -- changed"; },
+  ]) {
+    const changed = structuredClone(base);
+    mutate(changed);
+    const result = fingerprints(changed);
+    assert.notEqual(result.structuralFingerprint, original.structuralFingerprint);
+    assert.notEqual(result.physicalFingerprint, original.physicalFingerprint);
+  }
+  const result = fingerprintSnapshot(base, [], POSTGRES_16);
+  assert.equal(result.functionCount, 1);
+  assert.deepEqual(result.structuralPayload.functions, result.physicalPayload.functions);
+});
+
 test("PostgreSQL 16 golden catalog fixture locks all deparser-sensitive output", () => {
   const result = fingerprintSnapshot(goldenCatalogSnapshot(), [], POSTGRES_16);
   assert.equal(
     result.structuralFingerprint,
-    "9d94ce509e32d85d21317950d2bb5aa0b6ab299993e68574b34ebaf77f8dbeb4",
+      "16413fe143e60faa805f9c019e869fddaf80e074d3523312d158e1958e741974",
   );
   assert.equal(
     result.physicalFingerprint,
-    "ca3e932e3142dbc4d816946b9bdebca0d8bfc98eb6baff9cf5577029f48ff423",
+      "21b9051c34616da80980fb4e882da873021da4e3d40cc34dd2cee27fd5ced1c2",
   );
 
-  const goldenTable = result.physicalPayload.tables[0]!;
+  const goldenTable = result.physicalPayload.tables[0]! as TableDefinition;
   assert.equal(goldenTable.columns[2]!.default, "nextval('catalog_fixture_amount_seq'::regclass)");
   assert.equal(goldenTable.checks[0]!.expression, "amount>=0");
   assert.deepEqual(goldenTable.indexes[0]!.expressions, ["amount", "lower((tenant_id)::text)"]);

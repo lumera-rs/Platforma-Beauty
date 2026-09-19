@@ -1,0 +1,21 @@
+✔ historical extractor is source-pinned and returns nine ordered DML operations (22.646698ms)
+✔ read-only inspection detects shared ownership and preserves every row (4375.756071ms)
+✔ original shared-plan replay clones and relinks education only, preserving salon and tenant IDs (4607.939789ms)
+✔ unrelated legacy-name collision causes original to relink education to the wrong plan (4892.913485ms)
+✔ canonical unique clone names reject duplicate historical-name rows (4694.415641ms)
+✔ original snapshot fill preserves existing values, infers missing active values, and leaves inactive nulls (4745.578689ms)
+✔ original ranked tier inference is price/UUID dependent and a fourth null tier remains unresolved (4223.218061ms)
+✔ original normalization overwrites custom named-tier terms and rewrites education limits (4349.502055ms)
+✔ organic scalar-limits failure leaves autocommit prefix but rolls back in transaction (8680.033372ms)
+✔ canonical foreign keys cover current, pending, salon, and payment historical plan references (4491.271953ms)
+✔ fallback data step remains fail-closed when historical relationships exist (4746.628552ms)
+✔ startup lock wrapper serializes concurrent original replays without duplicate clones (4538.783687ms)
+✔ concurrent read-only inspectors remain blocked and do not mutate fixtures (4775.037528ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 59154.643892

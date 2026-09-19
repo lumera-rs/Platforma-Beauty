@@ -1,0 +1,235 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  assertDatabaseMigrationReady,
+  assertReadOnlyMigrationQuery,
+  inspectDatabaseMigrationReady,
+  migrationReadinessContract,
+  type MigrationDatabasePool,
+} from "./index";
+
+test("migration readiness exposes immutable repository pins", () => {
+  assert.deepEqual(migrationReadinessContract.requiredMigrationIds, ["000001", "000002"]);
+  assert.equal(
+    migrationReadinessContract.baselineChecksum,
+    "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60",
+  );
+  assert.equal(
+    migrationReadinessContract.supportedStartupMigrationChecksum,
+    "a8c910eb9bd60281aa80e343b4b1d6e02a45222293b123ab198fab4315d48e62",
+  );
+  assert.equal(
+    migrationReadinessContract.structuralFingerprint,
+    "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad",
+  );
+  assert.equal(
+    migrationReadinessContract.physicalFingerprint,
+    "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f",
+  );
+  assert.throws(() => assertReadOnlyMigrationQuery("UPDATE public.users SET role = 'ADMIN'"));
+  assert.doesNotThrow(() => assertReadOnlyMigrationQuery("SELECT 1"));
+});
+
+test("readiness returns a safe failure and does not create a ledger", async () => {
+  const queries: string[] = [];
+  let directConnectCalls = 0;
+  const client = {
+    async query(sql: string) {
+      queries.push(sql);
+      if (sql.includes("migration_id, checksum")) {
+        const error = new Error("missing relation") as Error & { code: string };
+        error.code = "42P01";
+        throw error;
+      }
+      return { rows: [] };
+    },
+    connect() {
+      directConnectCalls += 1;
+      throw new Error("direct pg client must not be connected again");
+    },
+  };
+  const report = await inspectDatabaseMigrationReady(client);
+  assert.equal(report.ready, false);
+  assert.equal(report.reason, "MIGRATION_READINESS_LEDGER_MISSING");
+  assert.equal(directConnectCalls, 0);
+  assert.equal(queries.some((query) => /\b(?:CREATE|INSERT|UPDATE|ALTER)\b/i.test(query)), false);
+});
+
+test("readiness leases one dedicated pool client and releases it", async () => {
+  const queries: string[] = [];
+  let released = 0;
+  const client = {
+    async query(sql: string) {
+      queries.push(sql);
+      if (sql.includes("migration_id, checksum")) {
+        return {
+          rows: [
+            {
+              migration_id: "000001",
+              checksum: migrationReadinessContract.baselineChecksum,
+              mode: "transactional",
+              state: "APPLIED",
+              error: null,
+              started_at: "2026-01-01T00:00:00Z",
+              finished_at: "2026-01-01T00:00:01Z",
+            },
+            {
+              migration_id: "000002",
+              checksum: migrationReadinessContract.supportedStartupMigrationChecksum,
+              mode: "transactional",
+              state: "APPLIED",
+              error: null,
+              started_at: "2026-01-01T00:00:02Z",
+              finished_at: "2026-01-01T00:00:03Z",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+    release() {
+      released += 1;
+    },
+  };
+  let poolQueries = 0;
+  const pool = {
+      async connect() {
+        return client;
+      },
+      query() {
+        poolQueries += 1;
+        return Promise.resolve({ rows: [] });
+      },
+    } as unknown as MigrationDatabasePool;
+  const report = await assertDatabaseMigrationReady(
+    pool,
+    async () => ({
+      structuralFingerprint: migrationReadinessContract.structuralFingerprint,
+      physicalFingerprint: migrationReadinessContract.physicalFingerprint,
+      formatVersion: 2,
+      fingerprintVersion: 4,
+      schemaFormatVersion: 1,
+      postgresServerMajorVersion: 16,
+      postgresServerVersionNum: 160010,
+      postgresDeparserFormat: "postgresql-16-deparser-v1",
+      normalizedObjectCount: 5060,
+      enumCount: 103,
+      triggerCount: 24,
+      functionCount: 21,
+    }),
+  );
+  assert.equal(report.ready, true);
+  assert.equal(released, 1);
+  assert.equal(poolQueries, 0);
+  assert.equal(queries.at(-1), "ROLLBACK");
+});
+
+function canonicalCatalogIdentity(postgresServerVersionNum: number) {
+  return {
+    structuralFingerprint: migrationReadinessContract.structuralFingerprint,
+    physicalFingerprint: migrationReadinessContract.physicalFingerprint,
+    formatVersion: 2,
+    fingerprintVersion: 4,
+    schemaFormatVersion: 1,
+    postgresServerMajorVersion: 16,
+    postgresServerVersionNum,
+    postgresDeparserFormat: "postgresql-16-deparser-v1",
+    normalizedObjectCount: 5060,
+    enumCount: 103,
+    triggerCount: 24,
+    functionCount: 21,
+  };
+}
+
+test("readiness admits reviewed PostgreSQL 16 patch releases with identical catalog metadata", async () => {
+  for (const postgresServerVersionNum of [160010, 160011, 160012]) {
+    const client = {
+      async query(sql: string) {
+        if (sql.includes("migration_id, checksum")) {
+          return {
+            rows: [
+              {
+                migration_id: "000001",
+                checksum: migrationReadinessContract.baselineChecksum,
+                mode: "transactional",
+                state: "APPLIED",
+                error: null,
+                started_at: "2026-01-01T00:00:00Z",
+                finished_at: "2026-01-01T00:00:01Z",
+              },
+              {
+                migration_id: "000002",
+                checksum: migrationReadinessContract.supportedStartupMigrationChecksum,
+                mode: "transactional",
+                state: "APPLIED",
+                error: null,
+                started_at: "2026-01-01T00:00:02Z",
+                finished_at: "2026-01-01T00:00:03Z",
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+    const report = await inspectDatabaseMigrationReady(
+      client,
+      async () => canonicalCatalogIdentity(postgresServerVersionNum),
+    );
+    assert.deepEqual(report, {
+      ready: true,
+      reason: null,
+      migrationIds: ["000001", "000002"],
+      ledger: "VALID",
+      catalog: "CANONICAL",
+    });
+  }
+});
+
+test("readiness rejects schema drift and unsupported PostgreSQL majors", async () => {
+  for (const identity of [
+    {
+      ...canonicalCatalogIdentity(160011),
+      structuralFingerprint: "schema-drift",
+    },
+    {
+      ...canonicalCatalogIdentity(150010),
+      postgresServerMajorVersion: 15,
+      postgresDeparserFormat: "postgresql-15-deparser-v1",
+    },
+  ]) {
+    const client = {
+      async query(sql: string) {
+        if (sql.includes("migration_id, checksum")) {
+          return {
+            rows: [
+              {
+                migration_id: "000001",
+                checksum: migrationReadinessContract.baselineChecksum,
+                mode: "transactional",
+                state: "APPLIED",
+                error: null,
+                started_at: "2026-01-01T00:00:00Z",
+                finished_at: "2026-01-01T00:00:01Z",
+              },
+              {
+                migration_id: "000002",
+                checksum: migrationReadinessContract.supportedStartupMigrationChecksum,
+                mode: "transactional",
+                state: "APPLIED",
+                error: null,
+                started_at: "2026-01-01T00:00:02Z",
+                finished_at: "2026-01-01T00:00:03Z",
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+    const report = await inspectDatabaseMigrationReady(client, async () => identity);
+    assert.equal(report.ready, false);
+    assert.equal(report.reason, "MIGRATION_READINESS_CATALOG_DRIFT");
+    assert.equal(report.catalog, "DRIFTED");
+  }
+});

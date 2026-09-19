@@ -2,8 +2,10 @@
 set -euo pipefail
 
 pnpm install --frozen-lockfile
-# The versioned rollout is the project's non-interactive schema reconciliation.
-# drizzle-kit push can request destructive TTY confirmation and still exit 0,
-# so it is not a trustworthy post-merge gate with stdin closed.
+# Development schema preparation first performs a read-only, fail-closed
+# eligibility check and then applies only the immutable migration frontier.
+# It refuses an existing schema without a valid ledger and never adopts a
+# baseline automatically. Do not put drizzle-kit push before this boundary:
+# an unknown target must remain unchanged.
 pnpm --filter @workspace/scripts run ensure:development-schema
 pnpm run test:backend-standards:database

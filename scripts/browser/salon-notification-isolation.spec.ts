@@ -18,6 +18,7 @@ import {
   shopSettingsTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
+  suppliersTable,
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
@@ -33,6 +34,7 @@ type NotificationFixture = {
   notificationBId: string;
   productId: string;
   categoryId: string;
+  supplierId: string;
   orderIds?: string[];
 };
 
@@ -324,6 +326,7 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
   const ownerIds: string[] = [];
   const salonIds: string[] = [];
   let categoryId: string | undefined;
+  let supplierId: string | undefined;
   let productId: string | undefined;
 
   try {
@@ -412,7 +415,17 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
     }).returning({ id: salonNotificationsTable.id });
     if (!notificationA || !notificationB) throw new Error("Notification browser fixture could not create its notifications.");
 
+    const [supplier] = await db.insert(suppliersTable).values({
+      name: `Browser dobavljač obaveštenja ${suffix}`,
+      slug: `browser-notifications-supplier-${suffix}`,
+      scope: "B2B",
+      active: true,
+    }).returning({ id: suppliersTable.id });
+    if (!supplier) throw new Error("Notification browser fixture could not create its supplier.");
+    supplierId = supplier.id;
+
     const [category] = await db.insert(productCategoriesTable).values({
+      supplierId: supplier.id,
       name: categoryName,
       slug: `browser-notifications-category-${suffix}`,
       active: true,
@@ -421,6 +434,7 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
     categoryId = category.id;
 
     const [product] = await db.insert(productsTable).values({
+      supplierId: supplier.id,
       categoryId: category.id,
       categoryName,
       name: `Browser proizvod obaveštenja ${suffix}`,
@@ -445,10 +459,12 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
       notificationBId: notificationB.id,
       productId: product.id,
       categoryId: category.id,
+      supplierId: supplier.id,
     };
   } catch (error) {
     if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
     if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+    if (supplierId) await db.delete(suppliersTable).where(eq(suppliersTable.id, supplierId));
     if (salonIds.length) await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     if (ownerIds.length) await db.delete(usersTable).where(inArray(usersTable.id, ownerIds));
     throw error;
@@ -474,6 +490,7 @@ async function cleanUpNotificationFixture(fixture: NotificationFixture): Promise
   await db.delete(salonsTable).where(inArray(salonsTable.id, [fixture.salonAId, fixture.salonBId]));
   await db.delete(productsTable).where(eq(productsTable.id, fixture.productId));
   await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, fixture.categoryId));
+  await db.delete(suppliersTable).where(eq(suppliersTable.id, fixture.supplierId));
   await db.delete(referralCodesTable).where(inArray(referralCodesTable.referrerUserId, [fixture.ownerA.id, fixture.ownerB.id]));
   await db.delete(usersTable).where(inArray(usersTable.id, [fixture.ownerA.id, fixture.ownerB.id]));
 }

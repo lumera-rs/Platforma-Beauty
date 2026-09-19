@@ -31,12 +31,12 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 type Json = Record<string, unknown>;
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const suffix = randomUUID();
   const today = new Date().toISOString().slice(0, 10);
   const passwordHash = await hashPassword(`multi-location-${suffix}`);

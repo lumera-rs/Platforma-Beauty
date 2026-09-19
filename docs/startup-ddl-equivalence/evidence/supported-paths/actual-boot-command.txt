@@ -1,0 +1,11 @@
+Command:
+env -u DATABASE_URL -u REPLIT_DEPLOYMENT -u REPLIT_DEPLOYMENT_ID -u REPLIT_ENVIRONMENT NODE_ENV=test pnpm --filter @workspace/scripts exec tsx src/migrations/supported-path-boot.integration.test.ts --admin-url=postgres://path_proof_owner@127.0.0.1:39523/postgres --sql-log=/tmp/replit-shell-output-logs/EXTXZ3EMNKP1HIJ7W8R07/log
+
+✔ fresh and verified existing supported paths boot through the actual entrypoint without startup DDL (12682.789834ms)
+✔ canonical baseline with configured global references admits 000002 and boots (35842.721063ms)
+✔ runtime-populated tracked frontier repeats without bootstrap admission and boots (12453.410266ms)
+✔ missing baseline, unknown catalog and ambiguous history fail before process health (34294.38901ms)
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0
+ℹ skipped 0

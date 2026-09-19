@@ -5,6 +5,7 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be owner/repository}"
 
 api_url="${GITHUB_API_URL:-https://api.github.com}"
+graphql_url="${GITHUB_GRAPHQL_URL:-https://api.github.com/graphql}"
 expected_repository="lumera-rs/Platforma-Beauty"
 ruleset_name="${GITHUB_RULESET_NAME:-Protect default branch CI}"
 workflow_lint_context="GitHub Actions syntax and expressions"
@@ -29,11 +30,24 @@ if [[ "$migration_contract_context" != "Migration contract (database-free)" ]]; 
   exit 1
 fi
 
+phase5_migration_context="$(
+  awk '
+    /^  phase5-migration-integration:$/ { in_job = 1; next }
+    in_job && /^  [[:alnum:]_-]+:$/ { exit }
+    in_job && /^    name: / { sub(/^    name: /, ""); print; exit }
+  ' "$branch_ci_file"
+)"
+if [[ "$phase5_migration_context" != "Phase 5 migration integration (owned PostgreSQL 16)" ]]; then
+  echo "Could not derive the exact Phase 5 migration integration check name from ${branch_ci_file}." >&2
+  exit 1
+fi
+
 required_contexts_json="$(
   jq -cn \
     --arg lint "$workflow_lint_context" \
     --arg migration "$migration_contract_context" \
-    '[$lint, $migration]'
+    --arg phase5 "$phase5_migration_context" \
+    '[$lint, $migration, $phase5]'
 )"
 
 if [[ -z "$fixture_dir" ]]; then
@@ -59,9 +73,49 @@ read_api_or_fixture() {
   fi
 }
 
+read_graphql_or_fixture() {
+  local fixture_name="$1"
+  local payload="$2"
+  if [[ -n "$fixture_dir" ]]; then
+    cat "${fixture_dir}/${fixture_name}.json"
+  else
+    curl --fail-with-body --silent --show-error \
+      --header "Accept: application/vnd.github+json" \
+      --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+      --header "Content-Type: application/json" \
+      --data-binary "$payload" \
+      "$graphql_url"
+  fi
+}
+
 repository="$(read_api_or_fixture repository "/repos/${GITHUB_REPOSITORY}")"
 
-if ! jq -e '.delete_branch_on_merge == true' <<<"$repository" >/dev/null; then
+repository_owner="${GITHUB_REPOSITORY%%/*}"
+repository_name="${GITHUB_REPOSITORY#*/}"
+repository_graphql_payload="$(
+  jq -cn \
+    --arg owner "$repository_owner" \
+    --arg name "$repository_name" \
+    '{
+      query: "query RepositoryMergedBranchDeletion($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission deleteBranchOnMerge } }",
+      variables: { owner: $owner, name: $name }
+    }'
+)"
+repository_graphql="$(read_graphql_or_fixture graphql-repository "$repository_graphql_payload")"
+
+if ! jq -e \
+  --arg expected "$expected_repository" \
+  '
+    ((.errors // []) | length == 0)
+    and (.data.repository.nameWithOwner == $expected)
+    and (.data.repository.viewerPermission == "ADMIN")
+    and (.data.repository.deleteBranchOnMerge | type == "boolean")
+  ' <<<"$repository_graphql" >/dev/null; then
+  echo "GitHub GraphQL did not return a complete authoritative repository setting." >&2
+  exit 1
+fi
+
+if ! jq -e '.data.repository.deleteBranchOnMerge == true' <<<"$repository_graphql" >/dev/null; then
   echo "Automatic deletion of merged branches is disabled for ${GITHUB_REPOSITORY}; enable delete_branch_on_merge." >&2
   exit 1
 fi
@@ -151,4 +205,4 @@ latest_merge_group_url="$(
   ' <<<"$merge_group_runs"
 )"
 
-echo "Automatic merged-branch deletion is enabled. GitHub merge queue is active, requires ${workflow_lint_context} and ${migration_contract_context}, and has a successful merge-group run: ${latest_merge_group_url}"
+echo "Automatic merged-branch deletion is enabled. GitHub merge queue is active, requires ${workflow_lint_context}, ${migration_contract_context}, and ${phase5_migration_context}, and has a successful merge-group run: ${latest_merge_group_url}"

@@ -1,0 +1,21 @@
+✔ data-step hashes and source literals are pinned without importing startup owners (157.08746ms)
+✔ fresh reference step reproduces exact fixed and default business fields (4374.068846ms)
+✔ original eight reference SQL and explicit step match every business field (9819.855685ms)
+✔ reference step repeats without overwriting custom singleton or supplier data (4679.970307ms)
+✔ matching partial category preserves its complete row while adding the other sixteen (4276.680692ms)
+✔ category payload conflict aborts all writes and preserves the conflicting row (4626.131156ms)
+✔ independent supplier and category foreign-key records survive the step (4507.506956ms)
+✔ supplier identity collision refuses without partial writes (4679.802244ms)
+✔ fallback plans support empty and exact partial unreferenced state only (9453.414681ms)
+✔ bounded original education-plan reconciliation matches fallback step on empty and exact partial fixtures (19466.067444ms)
+✔ any custom, nullable-tier, duplicate, or related plan blocks and preserves rows (29046.903798ms)
+✔ contract drift and missing table fail closed before data writes (10135.714219ms)
+✔ parallel reference replays serialize and never duplicate rows or ledger (5345.447148ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 110578.647668

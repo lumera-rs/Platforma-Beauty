@@ -1,0 +1,304 @@
+{
+  "schemaVersion": "1.0.0",
+  "document": "future-evidence-capture-contract",
+  "planningOnly": true,
+  "authoritativeStatusRule": "Capture statuses never alter authoritative UNRESOLVED records.",
+  "evidenceStatuses": [
+    "OBSERVED",
+    "PARTIAL",
+    "BLOCKED",
+    "UNKNOWN"
+  ],
+  "authoritativeStatuses": [
+    "UNRESOLVED"
+  ],
+  "emptyCapture": {},
+  "requiredFields": [
+    "evidenceId",
+    "parentAttemptId",
+    "captureId",
+    "diagnosticId",
+    "procedureId",
+    "phase",
+    "chunkId",
+    "authoritativeRecordIds",
+    "capturedAt",
+    "environmentId",
+    "parameters",
+    "parameterBounds",
+    "approval",
+    "evidenceStatus",
+    "result",
+    "observedFact",
+    "inferenceBoundary",
+    "decisionBoundary",
+    "provenance",
+    "scopeDigest",
+    "retention",
+    "freshness",
+    "independentReview",
+    "hashAlgorithm",
+    "evidenceHash",
+    "validationStatus",
+    "blockerOrAbortReason"
+  ],
+  "fieldContracts": {
+    "evidenceId": {
+      "type": "string",
+      "uniquePerPhase": true
+    },
+    "parentAttemptId": {
+      "type": ["string", "null"],
+      "semantics": "logical attempt label; P-05 phases share it but have distinct evidenceId values"
+    },
+    "captureId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "opaque": true,
+      "p05": "shared across the matched preflight and scan attempt/chunk"
+    },
+    "diagnosticId": {
+      "enum": [
+        "D-01",
+        "D-02",
+        "D-03",
+        "D-04",
+        "D-05",
+        "D-06",
+        "D-07",
+        "D-08",
+        "D-09",
+        "D-10"
+      ]
+    },
+    "procedureId": {
+      "enum": [
+        "P-01",
+        "P-02",
+        "P-03",
+        "P-04",
+        "P-05",
+        "P-06",
+        "P-07",
+        "P-08",
+        "P-09",
+        "P-10"
+      ]
+    },
+    "phase": {
+      "enum": [
+        null,
+        "PREFLIGHT",
+        "SCAN"
+      ]
+    },
+    "chunkId": {
+      "type": ["string", "null"],
+      "required": true
+    },
+    "authoritativeRecordIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "capturedAt": {
+      "type": "timestamp",
+      "futureCaptureOnly": true
+    },
+    "environmentId": {
+      "type": "string",
+      "nonSecret": true
+    },
+    "parameters": {
+      "type": "object",
+      "names": "must match the diagnostic parameter contract; camelCase envelope only"
+    },
+    "parameterBounds": {
+      "type": "object",
+      "required": [
+        "statementTimeoutMs",
+        "lockTimeoutMs",
+        "idleInTransactionSessionTimeoutMs",
+        "maxChunkRecordIds",
+        "resultRows",
+        "resultBytes"
+      ]
+    },
+    "approval": {
+      "type": "object",
+      "required": [
+        "systemOwner",
+        "dataOwner",
+        "businessPolicyOwner",
+        "independentReviewer"
+      ]
+    },
+    "evidenceStatus": {
+      "enum": [
+        "OBSERVED",
+        "PARTIAL",
+        "BLOCKED",
+        "UNKNOWN"
+      ]
+    },
+    "result": {
+      "type": ["object", "null"],
+      "strictResultFields": true,
+      "keyConvention": "snake_case SQL row columns only; SQL rows retain the exact catalog schema",
+      "variants": {
+        "sql": "kind=SQL, rows=array bounded by the diagnostic per-statement row/byte cap; each row matches the catalog output schema",
+        "attestation": "kind=ATTESTATION, attestationRef=opaque controlled reference, summary=minimized owner-reviewed text; no SQL rows; separately approved attestation byte cap",
+        "uncollected": "null; mandatory when no result was collected; never fabricate an empty or zero result"
+      }
+    },
+    "observedFact": {
+      "type": "string",
+      "futureCaptureOnly": true
+    },
+    "inferenceBoundary": {
+      "type": "string",
+      "required": true
+    },
+    "decisionBoundary": {
+      "type": "string",
+      "required": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "inputDigest",
+        "collectorIdentity",
+        "sourcePins"
+      ]
+    },
+    "scopeDigest": {
+      "type": "sha256"
+    },
+    "retention": {
+      "type": "object",
+      "required": [
+        "classification",
+        "expiresAt"
+      ]
+    },
+    "freshness": {
+      "type": "object",
+      "required": [
+        "capturedAt",
+        "invalidatedBy"
+      ]
+    },
+    "independentReview": {
+      "type": "object",
+      "required": [
+        "reviewer",
+        "disposition"
+      ]
+    },
+    "hashAlgorithm": {
+      "const": "SHA-256"
+    },
+    "evidenceHash": {
+      "type": "sha256",
+      "canonicalization": "SHA-256 over recursively sorted UTF-8 JSON keys, excluding evidenceHash and no other field"
+    },
+    "validationStatus": {
+      "enum": [
+        "VALID",
+        "INVALID",
+        "NOT_VALIDATED"
+      ]
+    },
+    "blockerOrAbortReason": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": ["code", "explanation", "occurredAt"]
+    }
+  },
+  "resultFieldAllowlist": {
+    "D-01": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "database_name",
+      "server_version_num",
+      "transaction_read_only"
+    ],
+    "D-02": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "object_found",
+      "marker_relation",
+      "estimated_rows"
+    ],
+    "D-03": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "object_found",
+      "nspname",
+      "relname",
+      "relkind",
+      "owner_name",
+      "definition_excerpt",
+      "definition_length"
+    ],
+    "D-04": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "object_found",
+      "relname",
+      "index_name",
+      "indisvalid",
+      "indisready",
+      "indisunique"
+    ],
+    "D-05": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "phase",
+      "target_exists",
+      "observed_rows_capped_at_two"
+    ],
+    "D-06": [],
+    "D-07": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "observed_sessions_capped_at_201",
+      "sample_truncated"
+    ],
+    "D-08": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "object_found",
+      "nspname",
+      "proname",
+      "argument_excerpt"
+    ],
+    "D-09": [
+      "capture_id",
+      "chunk_id",
+      "record_id",
+      "result_kind",
+      "result_value",
+      "bounded",
+      "truncation_applied"
+    ],
+    "D-10": []
+  },
+  "interpretation": {
+    "PASS": "Establishes only the stated scoped observed fact.",
+    "FAIL": "Never resolves an authoritative record.",
+    "UNKNOWN": "Never resolves an authoritative record."
+  }
+}

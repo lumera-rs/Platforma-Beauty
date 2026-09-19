@@ -1,5 +1,6 @@
 import app from "./app";
-import { closePool, databasePoolStats } from "@workspace/db";
+import { closePool, databasePoolStats, pool } from "@workspace/db";
+import { assertDatabaseMigrationReady } from "@workspace/db/migration-runtime";
 import { logger } from "./lib/logger";
 import { retryFailedRetryableEmails } from "./lib/brevo";
 import { processUpcomingEducationSessions } from "./lib/education-sessions";
@@ -11,9 +12,6 @@ import { runEducationGalleryCleanup } from "./routes/marketplace";
 import { cleanupExpiredImageAssets } from "./routes/image-media";
 import { runMediaUploadCleanup } from "./routes/media";
 import { migrateLegacyMediaReferences } from "./lib/media-migration";
-import { ensureMediaSchema } from "./lib/media-schema";
-import { ensureBusinessGrowthSchema } from "./lib/business-growth-schema";
-import { ensureShippingConfigSchema } from "./lib/shipping-config";
 import {
   catalogCacheStats,
   startCatalogCacheInvalidationListener,
@@ -23,7 +21,6 @@ import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
 import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts, runMalformedWebhookAlerts } from "./lib/delivery-report-alerts";
-import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
 import {
   createResilientScheduledJob,
   runSchedulerStartupSweep,
@@ -32,12 +29,7 @@ import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
 import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
-import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
 import { runReferralMaintenance } from "./lib/referral-service";
-import { ensureReferralSchema } from "./lib/referral-schema";
-import { ensureWebPushSchema } from "./lib/web-push-schema";
-import { ensureBookingCommandSchema } from "./lib/booking-command-schema";
-import { ensureEducationBundlePurchaseSchema } from "./lib/education-bundle-purchase-schema";
 import { assertAnthropicIntegrationConfigured } from "@workspace/integrations-anthropic-ai";
 import { runSystemPushWorker } from "./lib/web-push";
 import { drainSmsOutbox } from "./lib/sms";
@@ -79,21 +71,11 @@ if (process.env.NODE_ENV === "production") {
   assertAnthropicIntegrationConfigured();
 }
 
-// Production does not run drizzle-kit push. Roll out additive schema changes
-// before DB listeners, listen(), and every scheduler/worker so the very first
-// query sees the required objects.
-await ensureBusinessGrowthSchema();
-await ensureMediaSchema();
-await ensureShippingConfigSchema();
-await ensureMarketplacePerformanceIndexes();
-await ensureReferralSchema();
-await ensureWebPushSchema();
-await ensureBookingCommandSchema();
-await ensureEducationBundlePurchaseSchema();
+// Schema and initial data are prepared by explicit numbered migrations.
+// Refuse missing receipts or catalog drift before any startup data mutation,
+// listener, scheduler, or HTTP request; startup never repairs the database.
+await assertDatabaseMigrationReady(pool);
 await reconcileKnownTestListings();
-if (process.env.NODE_ENV === "production") {
-  await seedProductionMarketplaceDemoContent();
-}
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");

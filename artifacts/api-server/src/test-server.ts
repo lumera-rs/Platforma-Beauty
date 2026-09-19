@@ -1,7 +1,7 @@
 import { createServer, type ServerResponse } from "node:http";
 import { access, writeFile } from "node:fs/promises";
 import app from "./app";
-import { ensureDemoData } from "./lib/seed";
+import { initializeDevelopmentTestFixtures } from "./lib/seed";
 import {
   dropSalonNotificationListenerConnectionForTests,
   failNextSalonNotificationListenerUnlistenForTests,
@@ -28,7 +28,7 @@ const mediaCachePurgeControl = (
   : null;
 
 if (process.env.LUMERA_TEST_SEED === "1") {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
 }
 
 await startSalonNotificationEventListener();

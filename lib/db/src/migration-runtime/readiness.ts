@@ -1,0 +1,251 @@
+import type { MigrationDatabaseClient } from "./database-client";
+import { pinMigrationFingerprintEnvironment } from "./fingerprint-transaction";
+import { readOnlyMigrationClient } from "./read-only-query";
+import {
+  readPostgresFingerprintCompatibility,
+  readPostgresSnapshot,
+} from "./catalog";
+import { fingerprintSnapshot } from "./fingerprint";
+import { ownershipExceptions } from "./ownership";
+import { assertPublicOnlyNamespaces, NON_PUBLIC_NAMESPACE_REASON } from "./namespaces";
+import { POSTGRES_DEPARSE_FORMAT, SUPPORTED_POSTGRES_MAJOR_VERSIONS } from "./model";
+
+const BASELINE_CHECKSUM = "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60";
+const SUPPORTED_STARTUP_MIGRATION_CHECKSUM =
+  "a8c910eb9bd60281aa80e343b4b1d6e02a45222293b123ab198fab4315d48e62";
+const BASELINE_STRUCTURAL = "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad";
+const BASELINE_PHYSICAL = "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f";
+const REVIEWED_POSTGRES_MAJOR_VERSION = 16;
+
+export interface DatabaseMigrationReadiness {
+  readonly ready: boolean;
+  readonly reason: string | null;
+  readonly migrationIds: readonly string[];
+  readonly ledger: "MISSING" | "VALID" | "INVALID";
+  readonly catalog: "CANONICAL" | "DRIFTED" | "UNKNOWN";
+}
+
+export class DatabaseMigrationReadinessError extends Error {
+  readonly report: DatabaseMigrationReadiness;
+
+  constructor(report: DatabaseMigrationReadiness) {
+    super(report.reason ?? "MIGRATION_READINESS_FAILED");
+    this.name = "DatabaseMigrationReadinessError";
+    this.report = report;
+  }
+}
+
+export interface MigrationDatabasePool {
+  connect(): Promise<MigrationDatabaseClient & { release(): void }>;
+}
+
+export interface CatalogIdentity {
+  structuralFingerprint: string;
+  physicalFingerprint: string;
+  formatVersion: number;
+  fingerprintVersion: number;
+  schemaFormatVersion: number;
+  postgresServerMajorVersion: number;
+  postgresServerVersionNum: number;
+  postgresDeparserFormat: string;
+  normalizedObjectCount: number;
+  enumCount: number;
+  triggerCount: number;
+  functionCount: number;
+}
+
+export type CatalogIdentityReader = (client: MigrationDatabaseClient) => Promise<CatalogIdentity>;
+
+function text(value: unknown): string {
+  return value == null ? "" : String(value);
+}
+
+function isMissingRelation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error
+    && (error as { code?: unknown }).code === "42P01";
+}
+
+/**
+ * Read-only pre-listen gate for the API entry point.
+ *
+ * It does not create the ledger, run migrations, inspect tenant data, or
+ * acknowledge baseline adoption. The caller owns this already-connected client;
+ * the strict pool entrypoint below is responsible for leasing and releasing.
+ */
+export async function inspectDatabaseMigrationReady(
+  client: MigrationDatabaseClient,
+  injectedReader?: CatalogIdentityReader,
+): Promise<DatabaseMigrationReadiness> {
+  const readCatalogIdentity = injectedReader ?? defaultCatalogIdentity;
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionStarted = true;
+    await pinMigrationFingerprintEnvironment(client);
+    const readOnly = readOnlyMigrationClient(client);
+    await assertPublicOnlyNamespaces(readOnly);
+    const result = await readOnly.query(`
+      SELECT migration_id, checksum, mode, state, error, started_at, finished_at
+      FROM public.lumera_migration_ledger
+      ORDER BY migration_id
+    `);
+    const rows = result.rows;
+    const expected = new Map([
+      ["000001", { checksum: BASELINE_CHECKSUM, mode: "transactional" }],
+      ["000002", { checksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM, mode: "transactional" }],
+    ]);
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const id = text(row.migration_id);
+      const contract = expected.get(id);
+      if (!contract || seen.has(id)) {
+        throw new Error(`MIGRATION_READINESS_INVALID_LEDGER:${id}`);
+      }
+      seen.add(id);
+      if (text(row.checksum) !== contract.checksum || text(row.mode) !== contract.mode) {
+        throw new Error(`MIGRATION_READINESS_LEDGER_METADATA:${id}`);
+      }
+      const state = text(row.state);
+      const startedAt = timestampMilliseconds(row.started_at);
+      const finishedAt = timestampMilliseconds(row.finished_at);
+      if (startedAt === null || finishedAt === null || finishedAt < startedAt) {
+        throw new Error(`MIGRATION_READINESS_LEDGER_TIMESTAMPS:${id}`);
+      }
+      if ((id === "000001" && state !== "APPLIED" && state !== "ADOPTED")
+        || (id === "000002" && state !== "APPLIED")
+        || state === "APPLYING" || state === "FAILED" || row.error != null) {
+        throw new Error(`MIGRATION_READINESS_INCOMPLETE_LEDGER:${id}`);
+      }
+    }
+    const baseline = rows.find((row) => text(row.migration_id) === "000001");
+    const data = rows.find((row) => text(row.migration_id) === "000002");
+    if (!baseline || !data) throw new Error("MIGRATION_READINESS_LEDGER_FRONTIER");
+    const identity = await readCatalogIdentity(readOnly);
+    if (!matchesCanonicalCatalog(identity)) {
+      throw new Error("MIGRATION_READINESS_CATALOG_DRIFT");
+    }
+    await client.query("ROLLBACK");
+    return {
+      ready: true,
+      reason: null,
+      migrationIds: ["000001", "000002"],
+      ledger: "VALID",
+      catalog: "CANONICAL",
+    };
+  } catch (error) {
+    if (transactionStarted) await client.query("ROLLBACK").catch(() => undefined);
+    const code = error instanceof Error && error.message === NON_PUBLIC_NAMESPACE_REASON
+      ? "MIGRATION_READINESS_NON_PUBLIC_NAMESPACE"
+      : isMissingRelation(error)
+      ? "MIGRATION_READINESS_LEDGER_MISSING"
+      : error instanceof Error && /^MIGRATION_READINESS_[A-Z0-9_]+$/u.test(error.message)
+      ? error.message
+      : "MIGRATION_READINESS_READ_FAILED";
+    return {
+      ready: false,
+      reason: code,
+      migrationIds: [],
+      ledger: code === "MIGRATION_READINESS_LEDGER_MISSING" ? "MISSING"
+        : code.includes("LEDGER") ? "INVALID" : "MISSING",
+      catalog: code === "MIGRATION_READINESS_CATALOG_DRIFT" ? "DRIFTED" : "UNKNOWN",
+    };
+  }
+}
+
+/**
+ * Strict API-entrypoint assertion. Unlike the inspection helper, this cannot
+ * accidentally allow boot to continue after a failed readiness check.
+ */
+export async function assertDatabaseMigrationReady(
+  pool: MigrationDatabasePool,
+  injectedReader?: CatalogIdentityReader,
+): Promise<DatabaseMigrationReadiness> {
+  const client = await pool.connect();
+  try {
+    const report = await inspectDatabaseMigrationReady(client, injectedReader);
+    if (!report.ready) throw new DatabaseMigrationReadinessError(report);
+    return report;
+  } finally {
+    try {
+      client.release();
+    } catch {
+      // Preserve the readiness/query error; release is best-effort cleanup.
+    }
+  }
+}
+
+async function defaultCatalogIdentity(
+  client: MigrationDatabaseClient,
+): Promise<CatalogIdentity> {
+  const readOnly = readOnlyMigrationClient(client);
+  const compatibility = await readPostgresFingerprintCompatibility(readOnly);
+  const snapshot = await readPostgresSnapshot(readOnly);
+  const fingerprint = fingerprintSnapshot(snapshot, ownershipExceptions, compatibility);
+  return {
+    structuralFingerprint: fingerprint.structuralFingerprint,
+    physicalFingerprint: fingerprint.physicalFingerprint,
+    formatVersion: fingerprint.formatVersion,
+    fingerprintVersion: fingerprint.fingerprintVersion,
+    schemaFormatVersion: fingerprint.schemaFormatVersion,
+    postgresServerMajorVersion: fingerprint.postgresCompatibility.serverMajorVersion,
+    postgresServerVersionNum: fingerprint.postgresCompatibility.serverVersionNum,
+    postgresDeparserFormat: fingerprint.postgresCompatibility.deparserFormat,
+    normalizedObjectCount: fingerprint.normalizedObjectCount,
+    enumCount: fingerprint.enumCount,
+    triggerCount: fingerprint.triggerCount,
+    functionCount: fingerprint.functionCount,
+  };
+}
+
+function timestampMilliseconds(value: unknown): number | null {
+  if (value instanceof Date) {
+    const milliseconds = value.getTime();
+    return Number.isFinite(milliseconds) ? milliseconds : null;
+  }
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? milliseconds : null;
+}
+
+function matchesCanonicalCatalog(identity: CatalogIdentity): boolean {
+  return identity.structuralFingerprint === BASELINE_STRUCTURAL
+    && identity.physicalFingerprint === BASELINE_PHYSICAL
+    && identity.formatVersion === 2
+    && identity.fingerprintVersion === 4
+    && identity.schemaFormatVersion === 1
+    && isReviewedPostgresPatch(identity)
+    && identity.normalizedObjectCount === 5060
+    && identity.enumCount === 103
+    && identity.triggerCount === 24
+    && identity.functionCount === 21;
+}
+
+/**
+ * The migration fingerprints were reviewed against PostgreSQL 16.10. Runtime
+ * patch admission may use another member of the reviewed major/deparser family,
+ * but only after every catalog fingerprint and metadata check below matches.
+ * The original 16.10 manifest metadata remains immutable.
+ */
+export function isReviewedPostgresPatch(
+  identity: Pick<CatalogIdentity, "postgresServerMajorVersion" | "postgresServerVersionNum"
+    | "postgresDeparserFormat">,
+  expectedMajor = REVIEWED_POSTGRES_MAJOR_VERSION,
+): boolean {
+  return identity.postgresServerMajorVersion === expectedMajor
+    && (SUPPORTED_POSTGRES_MAJOR_VERSIONS as readonly number[]).includes(
+      identity.postgresServerMajorVersion,
+    )
+    && Number.isInteger(identity.postgresServerVersionNum)
+    && Math.floor(identity.postgresServerVersionNum / 10000)
+      === identity.postgresServerMajorVersion
+    && identity.postgresDeparserFormat === POSTGRES_DEPARSE_FORMAT;
+}
+
+export const migrationReadinessContract = Object.freeze({
+  baselineChecksum: BASELINE_CHECKSUM,
+  supportedStartupMigrationChecksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM,
+  structuralFingerprint: BASELINE_STRUCTURAL,
+  physicalFingerprint: BASELINE_PHYSICAL,
+  requiredMigrationIds: ["000001", "000002"] as const,
+});

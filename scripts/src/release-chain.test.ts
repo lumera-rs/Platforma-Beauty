@@ -38,12 +38,16 @@ type WorkflowJob = {
     uses?: string;
     name?: string;
     run?: string;
+    if?: string;
+    env?: Record<string, unknown>;
+    "continue-on-error"?: boolean;
     with?: Record<string, unknown>;
   }>;
 };
 
 type GitHubWorkflow = {
   on?: Record<string, unknown>;
+  env?: Record<string, unknown>;
   jobs?: Record<string, WorkflowJob>;
 };
 
@@ -54,15 +58,27 @@ function parseWorkflow(source: string): GitHubWorkflow {
 async function writeRulesetAuditFixture(
   fixtureDir: string,
   requiredContexts: string[],
+  graphqlRepository: unknown = {
+    data: {
+      repository: {
+        nameWithOwner: "lumera-rs/Platforma-Beauty",
+        viewerPermission: "ADMIN",
+        deleteBranchOnMerge: true,
+      },
+    },
+  },
 ): Promise<void> {
   await Promise.all([
     writeFile(
       path.join(fixtureDir, "repository.json"),
       JSON.stringify({
-        delete_branch_on_merge: true,
         owner: { type: "Organization" },
         visibility: "public",
       }),
+    ),
+    writeFile(
+      path.join(fixtureDir, "graphql-repository.json"),
+      JSON.stringify(graphqlRepository),
     ),
     writeFile(
       path.join(fixtureDir, "rulesets.json"),
@@ -138,6 +154,60 @@ async function runCommand(
 }
 
 type TimedCiJob = "database" | "browser";
+
+test("database CI forwards an explicit disposable admin URL to the boot regression", async () => {
+  const workflow = parseWorkflow(await readFile(branchCiPath, "utf8"));
+  const database = workflow.jobs!.database!;
+  const checks = database.steps!.find((step) => step.run === "pnpm run validate:ci:database")!;
+  const adminUrl = "postgres://lumera_ci@127.0.0.1:55432/lumera_ci_database";
+  assert.equal(checks.env?.LUMERA_DISPOSABLE_ADMIN_URL, adminUrl);
+  assert.equal(checks.if, undefined);
+  assert.equal(checks["continue-on-error"], undefined);
+  assert.equal(database.env?.LUMERA_DISPOSABLE_ADMIN_URL, undefined);
+  assert.equal(workflow.env?.LUMERA_DISPOSABLE_ADMIN_URL, undefined);
+  const postgres = (database.services as Record<string, {
+    ports: string[]; env: Record<string, string>;
+  }>).postgres!;
+  assert.deepEqual(postgres.ports, ["127.0.0.1:55432:5432"]);
+  assert.equal(postgres.env.POSTGRES_HOST_AUTH_METHOD, "trust");
+  assert.equal(postgres.env.POSTGRES_USER, "lumera_ci");
+  assert.equal(postgres.env.POSTGRES_DB, "lumera_ci_database");
+
+  const { scripts } = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  assert.ok(chainedPnpmScripts(scripts["validate:release:2-backend"]!)
+    .includes("test:business-growth-schema-boot-regression"), "The existing release check must not be removed.");
+  const command = scripts["test:business-growth-schema-boot-regression"]!;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lumera-boot-ci-args-"));
+  try {
+    const fakePnpm = path.join(tempDir, "pnpm");
+    await writeFile(fakePnpm, '#!/bin/sh\nprintf "%s\\n" "$@"\n');
+    await chmod(fakePnpm, 0o755);
+    const env = {
+      PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+      // A supplied ambient URL must never satisfy the explicit target contract.
+      DATABASE_URL: "postgres://unusable.example.invalid/ambient_must_not_be_used",
+    };
+    for (const extra of [{}, { LUMERA_DISPOSABLE_ADMIN_URL: "" }]) {
+      const refused = await runCommand("sh", ["-c", command], { ...env, ...extra });
+      assert.notEqual(refused.code, 0);
+      assert.match(refused.stderr, /LUMERA_DISPOSABLE_ADMIN_URL/);
+      assert.equal(refused.stdout, "", "Missing target must refuse before invoking pnpm.");
+    }
+    const forwarded = await runCommand("sh", ["-c", command], {
+      ...env, LUMERA_DISPOSABLE_ADMIN_URL: adminUrl,
+    });
+    assert.equal(forwarded.code, 0, forwarded.stderr);
+    assert.deepEqual(forwarded.stdout.trim().split("\n"), [
+      "--filter", "@workspace/scripts", "exec", "tsx",
+      "../artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts",
+      `--admin-url=${adminUrl}`,
+    ], "Direct tsx must pass the explicit argument to node:test, not treat it as another test filename.");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
 
 const successfulTimedCiJobInvocations: Record<TimedCiJob, string[]> = {
   database: [
@@ -920,8 +990,33 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   );
   assert.match(
     auditScript,
+    /\.data\.repository\.deleteBranchOnMerge == true/,
+    "The audit must require authoritative GraphQL confirmation of automatic merged-branch deletion.",
+  );
+  assert.match(
+    auditScript,
+    /\.data\.repository\.viewerPermission == "ADMIN"/,
+    "The GraphQL setting must be accepted only for an administrator.",
+  );
+  assert.match(
+    auditScript,
+    /\.data\.repository\.nameWithOwner == \$expected/,
+    "The GraphQL response must match the pinned repository identity.",
+  );
+  assert.doesNotMatch(
+    auditScript,
     /\.delete_branch_on_merge == true/,
-    "The audit must fail unless automatic merged-branch deletion is enabled.",
+    "The audit must not treat the optional REST field as authoritative.",
+  );
+  assert.match(
+    auditScript,
+    /query RepositoryMergedBranchDeletion/,
+    "The repository setting must be read through a GraphQL query.",
+  );
+  assert.doesNotMatch(
+    auditScript,
+    /\bmutation\b/,
+    "The GraphQL operation must remain read-only.",
   );
   assert.doesNotMatch(
     auditScript,
@@ -950,6 +1045,11 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   );
   assert.match(
     auditScript,
+    /phase5_migration_context=.*[\s\S]*Phase 5 migration integration \(owned PostgreSQL 16\)/,
+    "The audit must derive and verify the Phase 5 integration job's exact check name.",
+  );
+  assert.match(
+    auditScript,
     /all\(\$contexts\[\];/,
     "The same strict status-check rule must contain every required context.",
   );
@@ -968,6 +1068,7 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
   const requiredContexts = [
     "GitHub Actions syntax and expressions",
     "Migration contract (database-free)",
+    "Phase 5 migration integration (owned PostgreSQL 16)",
   ];
   try {
     await writeRulesetAuditFixture(fixtureDir, requiredContexts);
@@ -1008,6 +1109,87 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
       /fixture mode is forbidden in native GitHub Actions context/i,
     );
 
+    const invalidGraphqlFixtures: Array<{
+      name: string;
+      response: unknown;
+      error: RegExp;
+    }> = [
+      {
+        name: "explicit false",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "ADMIN",
+              deleteBranchOnMerge: false,
+            },
+          },
+        },
+        error: /automatic deletion of merged branches is disabled/i,
+      },
+      {
+        name: "missing field",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "ADMIN",
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "null repository",
+        response: { data: { repository: null } },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "GraphQL errors",
+        response: {
+          data: { repository: null },
+          errors: [{ message: "Repository lookup failed" }],
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "wrong repository",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Other-Repository",
+              viewerPermission: "ADMIN",
+              deleteBranchOnMerge: true,
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+      {
+        name: "insufficient permission",
+        response: {
+          data: {
+            repository: {
+              nameWithOwner: "lumera-rs/Platforma-Beauty",
+              viewerPermission: "WRITE",
+              deleteBranchOnMerge: true,
+            },
+          },
+        },
+        error: /did not return a complete authoritative repository setting/i,
+      },
+    ];
+    for (const fixture of invalidGraphqlFixtures) {
+      await writeRulesetAuditFixture(fixtureDir, requiredContexts, fixture.response);
+      const result = await runCommand(
+        "bash",
+        [rulesetAuditScriptPath],
+        fixtureEnv,
+      );
+      assert.equal(result.code, 1, `${fixture.name} must fail closed.`);
+      assert.match(result.stderr, fixture.error, fixture.name);
+    }
+
     await writeRulesetAuditFixture(fixtureDir, [requiredContexts[0]]);
     const missingMigrationContextResult = await runCommand(
       "bash",
@@ -1021,6 +1203,22 @@ test("repository audit verifies branch cleanup, merge queue configuration, and a
     );
     assert.match(
       missingMigrationContextResult.stderr,
+      /ruleset is missing or invalid/,
+    );
+
+    await writeRulesetAuditFixture(fixtureDir, requiredContexts.slice(0, 2));
+    const missingPhase5ContextResult = await runCommand(
+      "bash",
+      [rulesetAuditScriptPath],
+      fixtureEnv,
+    );
+    assert.equal(
+      missingPhase5ContextResult.code,
+      1,
+      "Removing Phase 5 migration integration from an offline fixture must fail closed.",
+    );
+    assert.match(
+      missingPhase5ContextResult.stderr,
       /ruleset is missing or invalid/,
     );
   } finally {
@@ -1261,13 +1459,14 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.match(databaseJob, /POSTGRES_DB: lumera_ci_database/);
   assert.match(
     databaseJob,
-    /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@localhost:5432\/lumera_ci_database/,
+    /DATABASE_URL: postgres:\/\/lumera_ci:lumera_ci@127\.0\.0\.1:55432\/lumera_ci_database/,
   );
   const databasePreparationCommands = [
     "pnpm --filter @workspace/db run push-force",
     "pnpm --filter @workspace/scripts run ensure:retail-cart-index:ci",
     "pnpm --filter @workspace/scripts run test:retail-cart-ci-preparation",
     "pnpm run validate:ci:database",
+    "pnpm run test:migrations:integration",
   ];
   let previousDatabasePreparationIndex = -1;
   for (const command of databasePreparationCommands) {
@@ -1302,6 +1501,39 @@ test("branch CI isolates database checks and orders browser journeys after every
     1,
     "The database backend-standard audit must run exactly once.",
   );
+  const migrationIntegrationSteps = databaseSteps.filter(
+    (step) => step.run?.trim() === "pnpm run test:migrations:integration",
+  );
+  assert.equal(
+    migrationIntegrationSteps.length,
+    1,
+    "The real Phase 4 migration integration suite must run exactly once.",
+  );
+  const migrationIntegrationStep = migrationIntegrationSteps[0]!;
+  const databaseChecksStepIndex = findDatabaseStep("pnpm run validate:ci:database");
+  const migrationIntegrationStepIndex = findDatabaseStep("pnpm run test:migrations:integration");
+  assert.equal(
+    migrationIntegrationStepIndex,
+    databaseChecksStepIndex + 1,
+    "The Phase 4 migration integration suite must run immediately after existing database checks.",
+  );
+  assert.equal(
+    migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL,
+    "postgres://lumera_ci:lumera_ci@127.0.0.1:55432/lumera_ci_database",
+  );
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_DISPOSABLE_DB, "1");
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_DISPOSABLE_DB, undefined);
+  assert.equal(migrationIntegrationStep.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(databaseWorkflowJob.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(parsedWorkflow.env?.LUMERA_PHASE4_UNIT_ONLY, undefined);
+  assert.equal(migrationIntegrationStep["continue-on-error"], undefined);
+  assert.equal(migrationIntegrationStep.if, undefined);
+  const serializedMigrationIntegrationStep = JSON.stringify(migrationIntegrationStep);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(workflow, /LUMERA_PHASE4_UNIT_ONLY/u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\$\{\{\s*secrets\./u);
+  assert.doesNotMatch(serializedMigrationIntegrationStep, /\b(?:publish|deploy)\b/iu);
   assert.doesNotMatch(
     databaseStepRuns.join("\n"),
     /ensure(?::|-)?development-schema/,

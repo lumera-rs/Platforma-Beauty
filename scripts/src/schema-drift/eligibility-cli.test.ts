@@ -46,6 +46,18 @@ const runtimeAllowlist = new Set([
 const forbiddenRuntimeCapability =
   /\b(?:BEGIN\s+READ\s+WRITE|CREATE\s+(?:SCHEMA|TABLE)|INSERT\s+INTO|UPDATE\s+\S+\s+SET|DELETE\s+FROM|LOCK\s+TABLE|ACCESS\s+EXCLUSIVE|pg_advisory_lock|adoptKnownLegacy|baseline_adoptions)\b/i;
 const runtimePackageSpecifier = "@workspace/db/destructive-test-runtime";
+const sharedMigrationRuntimeSpecifier = "@workspace/db/migration-runtime";
+const sharedMigrationRuntimeFiles = [
+  "index.ts",
+  "read-only-query.ts",
+  "fingerprint-transaction.ts",
+  "readiness.ts",
+  "namespaces.ts",
+  "model.ts",
+  "catalog.ts",
+  "fingerprint.ts",
+  "ownership.ts",
+].map((file) => `lib/db/src/migration-runtime/${file}`);
 
 type PackageManifest = {
   exports?: unknown;
@@ -186,7 +198,7 @@ async function auditRuntimeGraph(
     );
     for (const specifier of runtimeModuleSpecifiers(source, path)) {
       if (specifier.startsWith("node:") || specifier === "pg") continue;
-      if (specifier === runtimePackageSpecifier) {
+       if (specifier === runtimePackageSpecifier || specifier === sharedMigrationRuntimeSpecifier) {
         pending.push(await resolveExactPackageExport(specifier, path, load));
         continue;
       }
@@ -203,6 +215,7 @@ test("eligibility CLI runtime dependency graph is explicitly read-only", async (
   const allowed = new Set([
     ...[...runtimeAllowlist].map((file) => resolve(root, file)),
     resolve(workspaceRoot, "lib/db/src/destructive-test-runtime.ts"),
+    ...sharedMigrationRuntimeFiles.map((file) => resolve(workspaceRoot, file)),
   ]);
   const visited = await auditRuntimeGraph(
     resolve(root, "eligibility-cli.ts"),

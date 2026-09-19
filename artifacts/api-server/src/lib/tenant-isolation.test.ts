@@ -58,7 +58,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const suffix = randomUUID().slice(0, 8);
 const PASSWORD = "tenant-isolation-2025";
@@ -117,7 +117,7 @@ function assertRejected(
 // ---------------------------------------------------------------------------
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
 
   const passwordHash = await hashPassword(PASSWORD);
   let server: ReturnType<typeof app.listen> | undefined;

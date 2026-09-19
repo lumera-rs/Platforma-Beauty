@@ -23,7 +23,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 import { approvedServiceCategoryReference, migrateLegacyMediaReferences } from "./media-migration";
 import {
   canClaimMediaReference,
@@ -146,7 +146,7 @@ async function run() {
     "https://images.unsplash.com/photo-not-the-approved-source?auto=format",
     "An arbitrary external category image must remain subject to the normal migration audit.",
   );
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const [ownerAndSalon] = await db.select({ user: usersTable, salon: salonsTable }).from(usersTable)
     .innerJoin(salonsTable, eq(salonsTable.id, usersTable.activeSalonId))
     .where(and(eq(usersTable.role, "SALON_OWNER"), eq(usersTable.active, true)))

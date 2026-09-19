@@ -1,0 +1,15 @@
+✔ builds a deterministic operation-level crosswalk for all owners (18762.794916ms)
+✔ retains exact SQL or a curated operation for every record (6.021816ms)
+✔ distinguishes schema, historical, function, runtime, and scaffolding operations (1.234676ms)
+✔ records static source order without inventing runtime branch order (1.235489ms)
+✔ pins all original owner sources and does not authorize equivalence (0.718049ms)
+✔ rejects tampered source pins and any attempted equivalence status (4.676124ms)
+✔ rejects count-preserving forged narratives and omitted/replaced operations (6374.351925ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 26485.807807

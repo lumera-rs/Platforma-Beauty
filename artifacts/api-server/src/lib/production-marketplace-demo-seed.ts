@@ -13,7 +13,7 @@ import {
 } from "@workspace/db/schema";
 import { count, eq, inArray, like, sql } from "drizzle-orm";
 import { logger } from "./logger";
-import { restoreDemoEducationOwnerRole } from "./seed";
+import { restoreDemoEducationOwnerRole } from "./demo-identity-repair";
 
 const MARKER = "[LUMERA_DEMO_MARKETPLACE_2026_08_25]";
 const DEMO_USER_EMAIL = "kupac24@lumera.local";

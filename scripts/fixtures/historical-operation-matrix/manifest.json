@@ -1,0 +1,4143 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "815465404f7ed530cdb79446bfcba68e5dc1821b",
+  "expectedCrosswalkSha256": "174ebf6e31fd8f7c53ea5e1112518a2afd2d56e72c3762e796e139a8a43b90a3",
+  "generator": "scripts/src/startup-equivalence/crosswalk.ts",
+  "payload": {
+    "file": "sources.json.gz",
+    "sha256": "c71fd9dc60233090dcfa08aba04942886bfdfef62709c166ae81f82543d0adaa",
+    "uncompressedBytes": 16782702
+  },
+  "files": [
+    {
+      "path": "artifacts/api-server/src/app.ts",
+      "bytes": 7608,
+      "sha256": "2a5040b19c1eee1461408498f5a74510192acedb4efdd28236f8b7cf15f31db1"
+    },
+    {
+      "path": "artifacts/api-server/src/index.ts",
+      "bytes": 16938,
+      "sha256": "81779a45eb64d883a7031c6a95bde1cf905b125f63eb192b336359f16c4c1dc9"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/.gitkeep",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/active-product-sale.test.ts",
+      "bytes": 1439,
+      "sha256": "4f8cb71f2ef9cf7fe72ed2a751404dabb9ce4f80d641add31f32fcac2c47aead"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/active-product-sale.ts",
+      "bytes": 1976,
+      "sha256": "779271d75d17357be32a1d35d6798c8632a806925ac4203161593629bdb5126b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/admin-list-pagination.test.ts",
+      "bytes": 9420,
+      "sha256": "515ec445097b07792bb5746314dc0ca1b4f4ad76781cff6e22241fe085023d3b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/admin-order-search.test.ts",
+      "bytes": 6065,
+      "sha256": "10edb1dc3f1eaf790f95e0ebda12aa1de747492edf54771c507acdd17a5f080e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/admin-summary.test.ts",
+      "bytes": 29619,
+      "sha256": "2eab0cb33b4a93590dbb4f7b69e82a0ae7706ce5375295149f5435abb2db493f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/admin-validation.test.ts",
+      "bytes": 5681,
+      "sha256": "eb791c2102ae2ec9996ce0c45505b9c05249b48f321684951a3f9284bf43ead7"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/aftercare-api.test.ts",
+      "bytes": 24434,
+      "sha256": "821b5f6a6da78ec128527710d34069813dd979449878b85844a6fb27861dd2cd"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/aftercare-domain.test.ts",
+      "bytes": 1318,
+      "sha256": "a3bea1852746bd5d53153a2f2d19cae502426ce6d2fe6c37d4d1ccda1cc69ea2"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/aftercare-domain.ts",
+      "bytes": 2169,
+      "sha256": "217b8aed22562613693c6db92de13f176d064df33a1ca20947f1ac87c33fd928"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/aftercare-worker.integration.test.ts",
+      "bytes": 38839,
+      "sha256": "c33a723153895bee8e09577e3d26fd2f4273ce9f9e882f1d8aefa8eb9a5be27f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/aftercare-worker.ts",
+      "bytes": 27812,
+      "sha256": "8f1175967671251e12a880f88c08ed365cf784e499810e4360b87040734ddbd5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/anthropic-integration-lazy-init.test.ts",
+      "bytes": 8787,
+      "sha256": "33aea63c1ca83d9ae6f9f918a6cb0695beb0dde9e73420ff9acffc90aafc84fa"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/api-errors.ts",
+      "bytes": 5384,
+      "sha256": "32828f069b5834eb6698f7825363a3b371b6a807e416c67fdd3c8716189dd838"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-customer-events.test.ts",
+      "bytes": 3716,
+      "sha256": "cc3d3603592f656fb122ad033b219430e4f7061532499fdbc10ae4dbd6c09721"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-customer-events.ts",
+      "bytes": 20761,
+      "sha256": "d2e213caae95e6e37fa2c7767c5da270cea5a29fe8ae91c20571318278ce98a8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-lifecycle.test.ts",
+      "bytes": 2692,
+      "sha256": "254de83c196abc6d35f9d6b63372a1fc6cc7a74cd615fbb435f70df4d7afad45"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-lifecycle.ts",
+      "bytes": 3102,
+      "sha256": "9220d15a5369819d90f57dcb839dbc74cc8228bb826a4622c388b045fbc438ac"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-locks.test.ts",
+      "bytes": 15259,
+      "sha256": "ebc30082433fb4e9518b8da7091ae4d83e17b535c18ef962885a110f9d656c48"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-locks.ts",
+      "bytes": 3240,
+      "sha256": "3ef9a489a83be7b53667553be602192625332ae9e2a7dee9287bfeed185a4e41"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/appointment-routes.test.ts",
+      "bytes": 117262,
+      "sha256": "8ff98614c526813231e9a3db109795e9751fdec4a7975b1d40f0d046f869697e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/attributed-appointments-pagination.test.ts",
+      "bytes": 15394,
+      "sha256": "d09180fdf740de299487195e79cd86353a2d677fa3e65611dcc7ed062eef844d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/attributed-appointments-returning.test.ts",
+      "bytes": 17131,
+      "sha256": "50dc89a1a81a5d0a3587bb3e4c69a7ac2a506752fe84d0096cc308ae7d758640"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/auth.ts",
+      "bytes": 3163,
+      "sha256": "91259c0a51ec731f166c53ae2308082fb00ac764524043f0ea01337a936447db"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/automation-provider-events.logcheck.ts",
+      "bytes": 1908,
+      "sha256": "6bde811540fb0ac675ea0ab5bc2940207437b236939852c897037d9746bd71d4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/automation-provider-events.test.ts",
+      "bytes": 138057,
+      "sha256": "86a777e1af559d61751d8d165a3736c76bfd00a26cd742f488b6bc7df37aff7d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/automation-worker.ts",
+      "bytes": 32742,
+      "sha256": "6a9297d0cdd6a2863d3a6971839267580a5c32dde355702d7b6d2ff283a56fda"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/availability-engine.test.ts",
+      "bytes": 3620,
+      "sha256": "88af04fcdb4b215b61115a075ccaf9eab36c01eb5a5a39a5f8b0418cf3f3916b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/availability-engine.ts",
+      "bytes": 21393,
+      "sha256": "b7324ffe1b037760f61287166a83692cc0890cbcd7b12cb4b8f6643acb2b205a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/availability-store.ts",
+      "bytes": 33483,
+      "sha256": "04a9775481f342836e0774debeb18624c421af2641f6f465a36cecbab7e6218f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/b2b-order-import-parser.test.ts",
+      "bytes": 658,
+      "sha256": "1df0f17ce3a6af06f2ab94e0991e48beffb9c61b988de412a91edf61e2bee1ef"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/b2c-product-reviews.test.ts",
+      "bytes": 12885,
+      "sha256": "809b84476444ad08f8efb06c614e75653841328b8564279702291d5deea93b45"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/beauty-jobs-delivery-monitor.ts",
+      "bytes": 12999,
+      "sha256": "6a1d53c0b15ec23cb843ed6c1ca7ce01730d1dafe26c113a3374fd835c39ef13"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/beauty-jobs-email.ts",
+      "bytes": 5594,
+      "sha256": "39396169a8707324b0dd5a73fc119335b55cbf46fdb465c7d3e60a56c3a21a5e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/beauty-jobs-maintenance.ts",
+      "bytes": 3284,
+      "sha256": "d7da5b5980e6fb41663f62cc8efee9e347ab6c8426b260626d388c883860aa94"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/beauty-jobs-routes.test.ts",
+      "bytes": 104030,
+      "sha256": "b0b620e2ad21e4934d3c35bebadb6b49becb76da3159f3b1f42a31708dde78c8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-admission.test.ts",
+      "bytes": 3667,
+      "sha256": "2ec31b814a92453aeceaad9b3fbdee0104c2975b8929cda32fc875c758ca36a4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-admission.ts",
+      "bytes": 1344,
+      "sha256": "541e9e350771ae5c87a22eb215f75452c57ef2ce90b97a68fef7e4156cfb79b0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-audit-v2.test.ts",
+      "bytes": 51602,
+      "sha256": "32d41106d94ae703d37df34d0839395365ca5c76cb77fc1e95969b6a68460deb"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-audit.test.ts",
+      "bytes": 67584,
+      "sha256": "d5a16cd9f3defafb3c6bbacc439a2ca3ff5b54a404bf84dca84393a4cac8aea6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-command-schema.ts",
+      "bytes": 2012,
+      "sha256": "c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-command.ts",
+      "bytes": 5878,
+      "sha256": "81ecc2f615807f05271c3b00e8bc9e8e1e9756bbbeae4ff9e5a0c9c433583d71"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-p1-regressions.test.ts",
+      "bytes": 24699,
+      "sha256": "ec65186ee899531d2e289e649aaf7c236b733e6875ff0293b55c7544ab42c7d4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/booking-settings-contract.test.ts",
+      "bytes": 2618,
+      "sha256": "67e1df8a976692eb776ac1b5afd7b65e27866a045ac027fe60db030e5336e7e6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/brevo-registration-monitor.test.ts",
+      "bytes": 9512,
+      "sha256": "3a30fedd7dc35986085b2d218b1123be6d40464e900c1233822b9f884a9c3107"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/brevo-stale-webhook-cleanup.test.ts",
+      "bytes": 24788,
+      "sha256": "2c453f92db213357f82f8081f16506dacd99f7113d72348fea1731a2b5b33404"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/brevo.ts",
+      "bytes": 34194,
+      "sha256": "f0469622157399a4160dfc3380bd7364e110793e22d54ef574a75b6f4044c98e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-commerce-approvals.test.ts",
+      "bytes": 24463,
+      "sha256": "61efc28f85e64094713e0d60154351f5f7a8d02751ac5ba0b1babc2c9c950eaf"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts",
+      "bytes": 8671,
+      "sha256": "03df932cdc2d8b9ee9db1541753ea87acdfcc0e4c1685509246df2c41305ca67"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth-schema-cleanup-reports.test.ts",
+      "bytes": 12082,
+      "sha256": "bb8adaa6d6e2a5ed34fa51250ea90283fcdd8b337860664d957160c0698f73ee"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth-schema-ensure-child.ts",
+      "bytes": 2589,
+      "sha256": "19815f0484b182bf29224df44404abe9d71b9b58eec0f5098419b13e6a2377b8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth-schema.test.ts",
+      "bytes": 118202,
+      "sha256": "4f1b5fe6f40896aa8e8d93aa9b1b9dcd16521e21a3440c117a52fee17a727245"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth-schema.ts",
+      "bytes": 394690,
+      "sha256": "000e7e2b564e450c6a16808bab372871c721d5faf9cd50d702cd76c90e573b30"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-growth.test.ts",
+      "bytes": 170405,
+      "sha256": "3e1308bffd5d82ee549c3eebc588d615aa3a21813cc8adf55b8617c3104b97ff"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-guide-content.ts",
+      "bytes": 32650,
+      "sha256": "851e3b2bfc81669c11c996534e5b4c35ca202c3ba6d81e5a5d8913aefe329eb9"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-guide-links.test.ts",
+      "bytes": 2612,
+      "sha256": "4c500bc5a6b981232969ca29b04c59449449efd65f4880de9a3b3c73a13bca6f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-guide-pdf.test.ts",
+      "bytes": 3491,
+      "sha256": "0a43475d7f561e5eec66ea9b2b79f04c9ecec26994d9615ad4022c756bdba7d3"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-guide-pdf.ts",
+      "bytes": 11791,
+      "sha256": "4dab1e9d586da00edf8400c48844917eb9d5c3449e556212722d191bdca61f91"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/business-role-transition.test.ts",
+      "bytes": 11902,
+      "sha256": "77e3f8b31d0566e9c30cd0e9e269993f120f75e34ffa29338da83cc483639658"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/calendar-timezone-boundaries.test.ts",
+      "bytes": 2662,
+      "sha256": "3025fd530909107477e3179198a34193965454bd108d2b4fedc9b97f9f68021e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/campaign-attributed-appointments-window.test.ts",
+      "bytes": 25276,
+      "sha256": "cc0aef0688b3fa3f0ed68e140d9c524a007240d41dfb3feb0c4de5bbd9d42a63"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/catalog-cache-invalidator.test-support.ts",
+      "bytes": 350,
+      "sha256": "00b5597eb4fd544943eddb019144cd831f1eeb2b2a2e80774f69e30a908bb63f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/catalog-cache.test.ts",
+      "bytes": 5531,
+      "sha256": "076ece952c5016fc5bc25782d4d717af389808c17e30be3b93da696d0643216e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/catalog-cache.ts",
+      "bytes": 19587,
+      "sha256": "55b801b999f1ef740ae731286517b4a6e131d539e57528daa87c9502265115a4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/change-password-session-revocation.test.ts",
+      "bytes": 17385,
+      "sha256": "04793caccde07360a6e889f2c1ad6c67bf4cd87e12bf46ff129b8058f031e5d3"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-discount-engine.test.ts",
+      "bytes": 2341,
+      "sha256": "3cd3b8915aaabb9e37bc7ce91e1ac74003861089e5f26736941a98a6095a3c4a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-discount-engine.ts",
+      "bytes": 4550,
+      "sha256": "1204fc0f79ebd35421c9bd4f6a4fc3ad166f344218ba19e9846e22f9335dec28"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-ef.test.ts",
+      "bytes": 57306,
+      "sha256": "77c3fe286dbfb8a0af2a250c96d6e28afa1a7be0675d689d1a42131c3a3b8542"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-g-domain.test.ts",
+      "bytes": 1046,
+      "sha256": "031cfb2dffa08660b121ffe2d143793025ea39027d18fe0b39012e9759a8a2c4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-g-domain.ts",
+      "bytes": 1051,
+      "sha256": "2ed42b664fcecb51ee4daa970b01f2489021546564dafdd568688f9bde86553e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-pricing-engine.test.ts",
+      "bytes": 24643,
+      "sha256": "99318d46b544bf1b70034f2fd31486ac3a2b8c6a6bf0da387de0dbf7b269feb5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/commerce-pricing-engine.ts",
+      "bytes": 45686,
+      "sha256": "477cc54044458adc5c7107cf7382b5342dd9c710b236823d30140e647987fcca"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/communication-archive.test.ts",
+      "bytes": 23679,
+      "sha256": "c1be6ce1814a48ec45a761bbeec7af91fe1719e3d5f12c604cd34a2ff68e3493"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/communication-archive.ts",
+      "bytes": 13192,
+      "sha256": "1a38f700e371b8b4a7b596cbe04dc6445d59114d8d225701f64505ceac17e77a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/coupon-engine.test.ts",
+      "bytes": 1984,
+      "sha256": "0964d2ac38d1df7fef68db275b67597a56aaa6c6df878aa1f371248226d2a712"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/coupon-engine.ts",
+      "bytes": 5003,
+      "sha256": "3401f800113174a6b75ba3457d1ef92da443ec0b425b95fbdb79547aca1fabd1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/customer-notifications.ts",
+      "bytes": 2539,
+      "sha256": "a47c80bfc073eaa2e97385112ebd35e113e7884d14c86fc941967ce45d8521d0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/customer-password-setup.test.ts",
+      "bytes": 35207,
+      "sha256": "b64804a15f384abff9843754eee2485cc8081916af634af309e0faef962d7c46"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/date-serialization.test.ts",
+      "bytes": 17953,
+      "sha256": "79feef0087b4b9163468c2e7d3c6dd6e9e3a1068d4311e5cafff4fad14e715f5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/date-serialization.ts",
+      "bytes": 411,
+      "sha256": "5acd79ae1d9649f8a2844c78419c7b7855cdb4d0d9767ea84977afcc5ae23945"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/delivery-report-alerts.ts",
+      "bytes": 43679,
+      "sha256": "1571de471ce4caaf0e106341dc0bff5fdf750754295c2da1e6591bd4e0921b32"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/demo-identity-repair.ts",
+      "bytes": 771,
+      "sha256": "b03ac990c50ba95ad4dd7d4f2126ea2a15be795ba7228255845d9806cc45793b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/deo-g2-rule-loader.ts",
+      "bytes": 10960,
+      "sha256": "0e426620bae9b9924d34f2d88fd48022022ce8320be35b2f59f149dda677139f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/deo-g2-rules.test.ts",
+      "bytes": 2572,
+      "sha256": "9d4b3ba08fd29a618d876e890412e253e9d19fde96c7024204a6f48dbab5c3f4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/deo-g2-rules.ts",
+      "bytes": 3161,
+      "sha256": "d9e040f4ab0aee434bbe9746bc22403c710c39688fd0ba4f99bf467237b3925e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/destructive-test-runtime.ts",
+      "bytes": 167,
+      "sha256": "0ebf00f3cf21aa080efc7267d0e5274e58d147dd12a4ec698a29ce6729071f64"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/development-test-fixtures.ts",
+      "bytes": 1024,
+      "sha256": "7e952ea390e24ce5cfe3d942bffe9bf76acbdb28ecc0239903055fc7c42d6fb1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-availability-store.ts",
+      "bytes": 9127,
+      "sha256": "607acf75e5bae558d40061d294f5f8655da8e19ee0eb78dc12bf23536edbb304"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-b2b-checkout-idempotency.test.ts",
+      "bytes": 17548,
+      "sha256": "bb13f8c14f7b3345fb642bee50f92a663a32241ee1949d404fc2c69fd2c0316c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-b2b-discounts.test.ts",
+      "bytes": 1432,
+      "sha256": "917fdba15a50cbc8886f1da764a559287aa6e31c42864f185c617dd430ec0836"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-b2b-integration.test.ts",
+      "bytes": 8594,
+      "sha256": "f24f9aaea7fa4e4968a0142a893ab4b10425b38ff5b75391489a89855f13b36d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-bank-reconciliation.ts",
+      "bytes": 9977,
+      "sha256": "13a9289c71dc803f9cc38d6f1dcda30ca2fd4bb680389d8ba793a6e117870d0e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-belgrade-calendar.ts",
+      "bytes": 6267,
+      "sha256": "b14e1f98392c0843831ca075e6c6bf8092a72f87ea8ccdf9f8dbfd0e8b4db009"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-billing.ts",
+      "bytes": 4890,
+      "sha256": "c93427381dfdc886269fd1c8c34c0f63e8841f0e989f5b657ba67d954f547f89"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-bundle-purchase-schema.ts",
+      "bytes": 10399,
+      "sha256": "53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-bundle-purchases.test.ts",
+      "bytes": 37272,
+      "sha256": "9ae90476ccdfbb577111e5a917792b4e19f5486ce88440603dca9b5c30807973"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-camt053.test.ts",
+      "bytes": 7054,
+      "sha256": "8d431327f1c53573f39f8324f2f57e58817015d70741bc75d914ac83c36454ba"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-camt053.ts",
+      "bytes": 8008,
+      "sha256": "2a776454dd3f1c49e5d31a94bb94b75ad42aea788656e782ef971d7494798031"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-center-eligibility.ts",
+      "bytes": 2523,
+      "sha256": "903c8a00a76e9754ceb9ca1b1c48b13bf5e8dd979fd95af1a08389b2af479bd4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-certificate-eligibility.ts",
+      "bytes": 6651,
+      "sha256": "e328bc18f228b878738e605ba6ee1d1d844b4544364899a9648eedc02f9b742d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-course-authoring-isolation.test.ts",
+      "bytes": 896,
+      "sha256": "c3e1e8a8323d584956fb2ea4112b4acc6b4b1b0e3166238caab2453de8a13ce6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-course-featured-authorization.test.ts",
+      "bytes": 15179,
+      "sha256": "3b85e8308868144aae0fef49dd132481ff28dd4bfc2e7a8a42f17748a4b16664"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-entitlement.ts",
+      "bytes": 5147,
+      "sha256": "61636f0ce9a5258cf24f21a15d2e76464608b087a1652e3b1e59b84a5ee7455e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-extras.test.ts",
+      "bytes": 86382,
+      "sha256": "46d40597bdb7cf6e6a0f856c4f096f8320b2cc4bdb6739dc845fbd1fa0622cff"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-featured-eligibility-consistency.test.ts",
+      "bytes": 13613,
+      "sha256": "d6701b7186f49972da90502671aeeab28eca3daa61c3f7dc0f017f4d08a85591"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-featured-eligibility.ts",
+      "bytes": 6471,
+      "sha256": "cc97217b1a4621c0af39c9766bf3b8cdfdc6d31dece92354489a55856f84c691"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-financial-audit.test.ts",
+      "bytes": 4275,
+      "sha256": "5952a7c58698a0e4b505390a07007cc1c0686c1ffe506c3c3bb6c592af5db273"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-financial-audit.ts",
+      "bytes": 5034,
+      "sha256": "e0cf45da52cc12bb99e127d35ef0a6f5b88de2a9a34d1c0745dd9a4c910800f0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-financial.test.ts",
+      "bytes": 88760,
+      "sha256": "f7b8fec5e1217782904000a743f1093a4141032c337a5c12ac492317f38c7ac7"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-idempotency-contract.test.ts",
+      "bytes": 4212,
+      "sha256": "b140efa65f5ffa3cbe1fb2767643d2dd0ba0bc5cc0c6bbb05837be85410058d5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-idempotency.ts",
+      "bytes": 2013,
+      "sha256": "d5829d12ed95f6e5d9afa47fc5cc9606dd21144a40e0cba83c8a71f360e33398"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-ips-production-safety.test.ts",
+      "bytes": 3742,
+      "sha256": "9deeb42b9515999c40813262bb75b4d13ff9ca23ae6a0a4d904c2e958aff06a0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-locks.ts",
+      "bytes": 1475,
+      "sha256": "3695ea9f97b9f0ad587f8b11e3de443d41dbe1b83de588cc55e12a8402081a4f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-marketplace-domain.test.ts",
+      "bytes": 5741,
+      "sha256": "a4997213f3bd5f929865ce06d624ee1e047c4940c9c730fa9da1c80aa55f9a41"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-marketplace-domain.ts",
+      "bytes": 11290,
+      "sha256": "1a2da77853093add8d0704b17180d4915f3876f7a48f6ea315e3047b87e38ea5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-online-access-transfer.test.ts",
+      "bytes": 35351,
+      "sha256": "2df975608abb30319c0ee76d1c425c374b68c5c2f3773a4a9bf87d8a01a7d8b8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-operational-policy.test.ts",
+      "bytes": 2960,
+      "sha256": "37fff6130f42cd1e1ccfa32385b462337f1d8ef807698fbaf01c9fbd58599f69"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-operational-policy.ts",
+      "bytes": 1603,
+      "sha256": "52fab70b2bf4667909d956b6526f8814ce0d891b0a3afc46248e85ee1949d77c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-operational-routes.test.ts",
+      "bytes": 116817,
+      "sha256": "8130387a4bc35a2d7c11740adbed4d54c5ad1d41c8c3747421781a7043083948"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-outbox.ts",
+      "bytes": 12477,
+      "sha256": "322f48c3ccbfbf70972b33541a7c22172b031871e6723de1dff58fd50c348edd"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-payment-obligation-settlement.ts",
+      "bytes": 10695,
+      "sha256": "83881fd647b3ef08ba7f08475f7654456cdf8927753789f84e86c94ae652455c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-placement-lifecycle.test.ts",
+      "bytes": 25937,
+      "sha256": "bb997f100bd44ae8a10c54cfab87ea3476a3418b37f5928554e2626e3cb84ff8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-popular-featured-ranking.test.ts",
+      "bytes": 15906,
+      "sha256": "f223e9f2cbebc6a9873195e57234601cd6cec5477ba6d1dd483c71a9ff1126ce"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-scheduler.ts",
+      "bytes": 827,
+      "sha256": "f9c0d15586297b61f81c21eec0e5d44af4c0d8fa0a381e5b7882f6fee64ec34c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-sessions.test.ts",
+      "bytes": 69844,
+      "sha256": "d60a577cf99047d90436f66d5e5f00b92905ff1472f559b0aecbff4584b3f79e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-sessions.ts",
+      "bytes": 49693,
+      "sha256": "517ebbf2e4881054c55d110494e690e101e92668b28e1a52e474131741427683"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-subscription-billing.test.ts",
+      "bytes": 28308,
+      "sha256": "47c82920fb291805bcbab9096efb0a34b03ee08384601a18939887b56b44142e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-subscription-contract.test.ts",
+      "bytes": 53971,
+      "sha256": "bbe0bdc6adef6a3ffa8682e35f47f9f6a133d0faece8d21a731f7f74ded9edc6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-subscription-domain.ts",
+      "bytes": 3264,
+      "sha256": "5827c83b9bb674b9fe261ce58cedcb650342a6244e510e55c99191b3aead4c5e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-subscription-reactivation.ts",
+      "bytes": 2947,
+      "sha256": "c5929940f7a05d3b23b400b6dd63ea5ca54f330396c455979940da6b38e5bf9d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-subscription-worker.ts",
+      "bytes": 17207,
+      "sha256": "448e664ba9d11c3cab3ee9ddebe8b05019a5eddf4366ce6dca742298a21533fe"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-taxonomy.ts",
+      "bytes": 24975,
+      "sha256": "8a7244002953dc47dbce9e05c4753d836cd0828f4e76f590e41d13adc58e7972"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/education-test-fixtures.ts",
+      "bytes": 3708,
+      "sha256": "55f0ca19361084f609b1714301db82497b7f23ecac3a4afb589e1f9d7d872eec"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/employee-location-deactivation-scoping.test.ts",
+      "bytes": 37487,
+      "sha256": "b1784542fafff31da9408bc72521940961a53003a9ee25ee9de100dc154ae505"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/employee-performance.ts",
+      "bytes": 11044,
+      "sha256": "b53b38540180e5301f30f9a0ba40c05c25ec8166e541d7261bf992f1410a71df"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/featured-placement-payment-reminders.ts",
+      "bytes": 6858,
+      "sha256": "71202088c6e92113528ed01bd2bcef298ed55c6afae8931faaf73a7d5a2c4a10"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/final-booking-hardening.test.ts",
+      "bytes": 28970,
+      "sha256": "985d2eb6fbfef926c45df206d41c580fa1db75cf52c3d300ca513279c94688ea"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/fixtures/raiffeisen-camt053-anonymized.xml",
+      "bytes": 2433,
+      "sha256": "db1cb72becea71a433de01fceb13100c69fd31b94eb2ac8a6331e1a1f77c85a7"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/growth-ai-snapshot.ts",
+      "bytes": 8470,
+      "sha256": "a487ba6608bd8992642eaec2c68574db7fc1c3e73366cef2543ebb3e5253cecb"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/growth-salon-isolation.test.ts",
+      "bytes": 791,
+      "sha256": "f35348d6f2504af65e5e96707a23d2c13862e02a7a540ff59bd31fe28d37e1f6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/http-errors.ts",
+      "bytes": 2210,
+      "sha256": "b1715ca42f99d52f1de988058eb36acba3cb7d489d4a6ae2c7fe218e62ffab30"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/http-security-hardening.test.ts",
+      "bytes": 11128,
+      "sha256": "99d94f64641f1851b02185622d0634d80f2df2900074b694fa7e267f9f252840"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/http-security-hsts-child.ts",
+      "bytes": 1020,
+      "sha256": "53c1e83b1c5062dba2d35084844cc15c80861cc6bb7a161b26fcd2f49b9b4763"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/image-pipeline.test.ts",
+      "bytes": 34101,
+      "sha256": "8bba38c24d8b4e45a26a8cf5a11e2fc8289276953a5335f3e798cc84914bb70d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/image-storage.ts",
+      "bytes": 7833,
+      "sha256": "ba95dd15c32fc486a1542beed783bc7837e37bb5729406b07c099ed789427ee8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/integrations.ts",
+      "bytes": 23343,
+      "sha256": "076c90f644559addba65e8658441b814439898e040781ecf003ada1d67c4f604"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/internal-job-secret-timing-safety.test.ts",
+      "bytes": 10235,
+      "sha256": "f8318c26007bd6e9caba05e1a1ace0a9a9320f46bc65c0eb0cf995191dd0f8f0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/internal-request-controls.test.ts",
+      "bytes": 25367,
+      "sha256": "c1440ca4b57c5e1d7490299151a878bd038676bf0af0d958a54ee57f648f9743"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/internal-request-controls.ts",
+      "bytes": 3835,
+      "sha256": "a60bb88fb2371833d3dd7b5e4473420497e144912aa959514eeccdf42033bffc"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/logger.ts",
+      "bytes": 2150,
+      "sha256": "c8923da4c128d51d905cebc336f51e8e0d00d2b3743c5e410c60389e3689a22a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/login-rate-limit.test.ts",
+      "bytes": 17097,
+      "sha256": "eff2ea17ccfa04685e52c0a87f8270f2bb7f41c4809dd8bb12d240c4367381f0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/loyalty-status.test.ts",
+      "bytes": 5195,
+      "sha256": "d4822f2242efef3ac8b791eb4a053e55f84ac6d41975d2ac4d66146a4dfefd58"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/marketplace-performance-schema.ts",
+      "bytes": 2858,
+      "sha256": "892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/media-migration.ts",
+      "bytes": 15586,
+      "sha256": "db6e21af7691b53785301f2ad8e0b21e57480313df1730beba510e58b458854b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/media-routes.test.ts",
+      "bytes": 88214,
+      "sha256": "456c636cb0420bacc3d945e081845657c4123a89167265f3b1b2c10ddba37ca4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/media-schema.ts",
+      "bytes": 6152,
+      "sha256": "313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/monitoring.test.ts",
+      "bytes": 15466,
+      "sha256": "67bfb3d57e6796cd5b30aec80d68778ce1f9da271d4ea97e06ae8e9d5f26947c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/monitoring.ts",
+      "bytes": 8836,
+      "sha256": "ddcb2f95b645a3b673821f1885c96f8a81864e7b4f8dc36dfd18d52d1a58c2ac"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/multi-location.test.ts",
+      "bytes": 25408,
+      "sha256": "d604eedfc2c4c2634a1b0632f5f76367e41b813afd3cb4ea4179c15b3589e84c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/object-storage.ts",
+      "bytes": 8899,
+      "sha256": "93c617a72b58228f0a340739bc6725ac7642a681e0eae13eef25792310000cec"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/order-import-wishlist-api.test.ts",
+      "bytes": 12153,
+      "sha256": "30782be35b2f0bf5ddfd3e0bac2c7465202b242d90f855aa9926653c1c9781f8"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/owner-reset-password-session-revocation.test.ts",
+      "bytes": 4287,
+      "sha256": "135ef6d2641842b9c2b581260f707813161e7a7caa96e854d8cd73e8bc36ab75"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/package-entitlement.ts",
+      "bytes": 18747,
+      "sha256": "c9fd1f7eada76da89188d9b1ddcfd2fcff11ac312218a4a8a8a302d4efcafbd4"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/pg-busy-client.test-support.ts",
+      "bytes": 970,
+      "sha256": "c011440096df6805c5562f0e02722b6d39950174b75966ac8fba4128235893d1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/phone-contact-sql-bounds.test.ts",
+      "bytes": 7516,
+      "sha256": "b8683be3797465a3606943236c0d94adc8d2c4665424ff98ca037f3250cf39b1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/process-lifecycle.ts",
+      "bytes": 3300,
+      "sha256": "97901ec498e83cce3f49d508907e48e1f675cfda10d2abd5b296b05af95ed07f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/product-swatch.test.ts",
+      "bytes": 2273,
+      "sha256": "90e28a339f9d548f7da556223f8863094a71722daa322d90e469d3d9af1708b1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/product-swatch.ts",
+      "bytes": 685,
+      "sha256": "3d2a7593895e8236766a35fc0da1acde372427575c84326320f637171f52842e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/product-waitlist-worker.ts",
+      "bytes": 3709,
+      "sha256": "cf187a3c7919386c47dc897b4912af17c737c4b9a894890cc3d3f2b921ab6558"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/production-demo-seed-isolated-harness.ts",
+      "bytes": 31588,
+      "sha256": "333e9bd2d223a9f6f551b5d46700fbc4730cbf725c292946e8f6d9eb7647b9e3"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/production-demo-seed.test.ts",
+      "bytes": 16591,
+      "sha256": "259baccccf093a07fe9c7c10633bc867a3d75ca3a3fdf5baeaf89c73e5194029"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/production-marketplace-demo-seed.ts",
+      "bytes": 14202,
+      "sha256": "2f82e765d61c90aeff5b3b38c6b997833b64f95e06bda9723190533e6becc45b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/provider-events.ts",
+      "bytes": 48083,
+      "sha256": "fd530b1d2c5e26ecb981a7ae94ad931d7be826f63e0a41fd054c8a3f0abf27e7"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/query-count.test.ts",
+      "bytes": 33470,
+      "sha256": "aa94feafb44b8d7ff4252622f858320a3bcc812fa88759f825a9d950b389506c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-checkout.test.ts",
+      "bytes": 3717,
+      "sha256": "da01a4e600adb66c3a44c4b0974f73d87b9257498a5706520c078a9de41653d6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-domain.test.ts",
+      "bytes": 3970,
+      "sha256": "81b2a40d458ac4cc6c455ed3b4cccc2da7a6d8dbefd0603272a9e7a7932e4fe1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-domain.ts",
+      "bytes": 7257,
+      "sha256": "e554ea8c58dc5e6f4eb98cc415ac0ecbc1bb6169823bf54a24543704630eb283"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-lifecycle.test.ts",
+      "bytes": 90855,
+      "sha256": "0c4c37f23035d251be3dc05e5939e0b3f955e90942440cbc68fabdc702c47eb6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-schema.ts",
+      "bytes": 3423,
+      "sha256": "9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-service.ts",
+      "bytes": 77435,
+      "sha256": "9656b387454ab0060bb016b2592fe5b3f296203c4d72c67eff1e0f5360de2590"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/referral-sms.test.ts",
+      "bytes": 5855,
+      "sha256": "f9fa799fc8079ef571f749591ba40ebabce745702feb6f6764d4f8e30a352c28"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/rescheduled-confirmation-retries.test.ts",
+      "bytes": 12133,
+      "sha256": "b72d4840209d4a1f876a5251d3e74d942420170f9183e805564aa2ca8c38b1ac"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/rescheduled-confirmation-retries.ts",
+      "bytes": 1319,
+      "sha256": "8fc44c7a2b55350df9c4c3061fd152009af1dd090b52d81b38e6f3d4ec66a872"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retail-cart-reminders.test.ts",
+      "bytes": 6611,
+      "sha256": "5df25956e71e61a976af6d84b22e6c08aae1764be510cff4413c67468ef6ce90"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retail-cart-reminders.ts",
+      "bytes": 4663,
+      "sha256": "134a06189f38feadc78841b76c32b61516b3dee5ad3ff12bdc6310b4d18c7cc6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retail-checkout.test.ts",
+      "bytes": 92217,
+      "sha256": "4106fd13ca125a7b85f8b065daa3c3592b220b8c5fdf09dd0fd18b01b565d672"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retail-subscription-worker.ts",
+      "bytes": 8382,
+      "sha256": "c13a40fdc88bbbb7638068ea3b2da5fd7418e0e7262c7abbbb6a87ffd854a901"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retail-subscription.test.ts",
+      "bytes": 9134,
+      "sha256": "2bc5064d2828ffb6a6174e416f48b6699dd58362d8c19259fc79d6cb2b9d083d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retention-classification.ts",
+      "bytes": 10470,
+      "sha256": "f5c7aa4df03c2bc486ef1a2a05a84cc3a14cce19338353f76af20610c9935645"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retention-settings.test.ts",
+      "bytes": 89619,
+      "sha256": "aa9103468d374f892156aa629c3f8a6fdadcea06fffa239fdb95f9c64a4aa32d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/retention-settings.ts",
+      "bytes": 64302,
+      "sha256": "04f3ceaac8798cbf7a57c15d441b19a1162b253e40e171a8a0ac8fdca933e0da"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/review-invitations.ts",
+      "bytes": 2580,
+      "sha256": "e086fcfc3bde2ba65feea3628ada2491205e3b6177bc006d810d60c57f30bf37"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/review-photo-privacy.test.ts",
+      "bytes": 20761,
+      "sha256": "f6f918687bedc0249bf989e62a53beb045dd43a03c09edfabae9c4133598b894"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/runtime-adversarial-authorization.test.ts",
+      "bytes": 17985,
+      "sha256": "c663886244b26e132a4beefd0f51be0593a269809d792763c62070cf90221b65"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/runtime-environment.test.ts",
+      "bytes": 2779,
+      "sha256": "ee600eed87124f169df2d15c0a4208976c767db81e13206c59374dece0d12d14"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/runtime-environment.ts",
+      "bytes": 3471,
+      "sha256": "cc35adef17ba8f3cc6e6bf07b64ef8da945a6313e09efdf56e6fa36a4a715540"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/runtime-error-disclosure.test.ts",
+      "bytes": 8509,
+      "sha256": "ec5d925c6f278f1293f0d9fb7a1259147da657ad067e21f2faaaddf511f968fb"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/runtime-restart-durability.test.ts",
+      "bytes": 8495,
+      "sha256": "f1897a3f47025440bbbb707060042a1c87bfa03a6f8886bf2db4705928a28088"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/safe-external-url.test.ts",
+      "bytes": 15431,
+      "sha256": "cbb6445bd1554697295d625bad30470ae1b3c35549fdb614803fa2602f469c89"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/safe-external-url.ts",
+      "bytes": 1616,
+      "sha256": "0e08dfba334db5f2579c2d54e05810cfc95255ba794bec8d5c296ba0735a0373"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/safe-mode-external-calls.test.ts",
+      "bytes": 1783,
+      "sha256": "2e8bffbed1287d1664da200aed5ff5345d73cb15b7bede0fd06c9d4657ceef82"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/salon-inventory.ts",
+      "bytes": 9341,
+      "sha256": "5ff8e0479ceb07b87ef5fa5e08198f732195b159194f7b2d16edeacfa7e891b0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/salon-notification-events.ts",
+      "bytes": 12070,
+      "sha256": "b1c365bebbb9c96738500b03a097f2007ea1a0879c2ac4b4cdcf83bb7f89e57b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/scheduler-affected-jobs.test.ts",
+      "bytes": 1371,
+      "sha256": "643296d5575fac3183d23ad6dd72747367794defe8ac02c6335c2677c150898e"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/scheduler-resilience.test.ts",
+      "bytes": 13942,
+      "sha256": "1ba12c564c3091f16675abb006ab7ab1183e585917a0a5b8f6cb57b92092e525"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/scheduler-resilience.ts",
+      "bytes": 17654,
+      "sha256": "94b9b95f9515efc50ded571725cfa9c09a1462b212d6cccffcc0b73a917a62e5"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/seed-maintenance.ts",
+      "bytes": 5525,
+      "sha256": "1380f78081ced4b7537acf9ce0220d068c1829b793306aee3fb959fbaa414ae9"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/seed.test.ts",
+      "bytes": 12574,
+      "sha256": "8f5ffbf4ec21c805052473ca0ce4399b4376205410066d662bb679593be84e77"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/seed.ts",
+      "bytes": 89906,
+      "sha256": "0ba6c8d6ab335673b1d1753f67765e742987090ef1d898719d72f55176438bab"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/shipping-config.test.ts",
+      "bytes": 2970,
+      "sha256": "8d0ffb43e8365579e7c68c2f4a741f3b6d4d16f120d909276162ab146fa5d44d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/shipping-config.ts",
+      "bytes": 3769,
+      "sha256": "65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/sms-fallback-admin-phone-notice.test.ts",
+      "bytes": 8824,
+      "sha256": "ee37dacac8de8fb6441c489dc3578cf57e3658f629c34f0e427a410183d662c9"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/sms-reminders.ts",
+      "bytes": 1059,
+      "sha256": "cb4f93d2812215c9f4d83a810fb5bfb7f7ffb2d3b03a4c7cd771d0733b003fd3"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/sms-webhook-registration.test.ts",
+      "bytes": 27458,
+      "sha256": "7261bb8580c557c14fbd95dd001c1c996f49d21c43430c1598580ea62bf9bc7d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/sms.ts",
+      "bytes": 24319,
+      "sha256": "32b25753fcd8effb08d1b6bcfaeacd61a3210957061220ad49713218fe610f2a"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/social-oauth-domain-change.test.ts",
+      "bytes": 12191,
+      "sha256": "c8a056e9a3311b56e7c266dbf003fdc6c737365d120295a729fb618a3bee3d61"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/social-oauth-facebook-account-linking-safety.test.ts",
+      "bytes": 26524,
+      "sha256": "991b078738622b88844adddcb647553ae63b4d8de36edd4f1231bf7eae05d79f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/social-oauth-google-account-linking-safety.test.ts",
+      "bytes": 34830,
+      "sha256": "8fd0427c8ad6b946646b11270d6d3e2293040fb41f5811d64063bcb79f62e316"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/social-oauth-referral-context.test.ts",
+      "bytes": 11264,
+      "sha256": "666bd6a6e9b5996b6b116be079467dca430cbb3cbf00f784f83cdcce137141ea"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/social-oauth-return-to.test.ts",
+      "bytes": 12654,
+      "sha256": "acdf8e238f678cd8d3247a944768d1183685390766f149f3678897940a2b2bce"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/startup-ddl-pool.ts",
+      "bytes": 295,
+      "sha256": "1e48183db73d11724e786aeea91f146ef9b1a8407cc60bdaaeeacd0c1bf2c0b0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/startup-ddl-safety.test.ts",
+      "bytes": 11219,
+      "sha256": "cf4b8cebceb99f3deeebb0cd2ef7ce9b5f3d05b8fc1efeae7a72a798b77abe5d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/startup-ddl-safety.ts",
+      "bytes": 1660,
+      "sha256": "9aa86e95af48cb495f563a3270cfcf4a70779191d3631b4ad31345280cb868ac"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/stats-compare-window-boundaries.test.ts",
+      "bytes": 47891,
+      "sha256": "3462fcfe0c6a89109a33e7da34ad6d1844e6130d5aa693cf747253853c4660ad"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/supplier-catalog.test.ts",
+      "bytes": 87138,
+      "sha256": "25b10ebbc25da2d65c7f3ede8a32cfa2586550011a813c735ace42d80998f5b0"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/tenant-isolation.test.ts",
+      "bytes": 78317,
+      "sha256": "f9b62315c37b86b9fe64be469584e02bcbc2f44f67a6925c97a038e91eadf62c"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/test-listing-reconciliation.test.ts",
+      "bytes": 1268,
+      "sha256": "d2d8f50ed489c64c5d466b05fb99015fb3f4730148a1bcc981655e61e6096932"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/test-listing-reconciliation.ts",
+      "bytes": 1755,
+      "sha256": "e3f302046d25f4f6265629867d47d492431b5f1ae9a394536697cad9a9321da1"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/timestamp-age.test.ts",
+      "bytes": 728,
+      "sha256": "8fc61308a0b8dcf646b426da937698caf4146c6b972a8bf8dc51fb11e0b0650f"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/timestamp-age.ts",
+      "bytes": 355,
+      "sha256": "2a81b2a77f8d70617fd569d1bbfad8cd2f497f751ba0def67e582aac26fb0c07"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/transactional-email-outbox.test.ts",
+      "bytes": 1693,
+      "sha256": "3ae91ce30975b94a21a9cd180d69423c9ca91cb890bc42a7d95b8849149d8166"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/web-push-schema.ts",
+      "bytes": 4671,
+      "sha256": "5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/web-push.test.ts",
+      "bytes": 10371,
+      "sha256": "ebc1e48589fd14c585c3c02e2a073b59390022f74b6cd14d8c0066d561aca8ac"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/web-push.ts",
+      "bytes": 17238,
+      "sha256": "4a8ba4d2e12479b3bad3d4a0930b012c0dcb8a4db072cb3657e26892b7393f93"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/webhook-registration-verification.test.ts",
+      "bytes": 33010,
+      "sha256": "40aaccfa0c758145233f033a732321900eb02e5528e7b1ccd5f373b3fb474c6d"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/webhook-repair-selection.test.ts",
+      "bytes": 24438,
+      "sha256": "84664f1f23160a052bfcb77605eb4d7ff3ec88b2c5c261f5c54fab3e788ddbff"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/webhook-secret-reconfirmation.test.ts",
+      "bytes": 35043,
+      "sha256": "6c940aa345a84038900f883b2c6a991b7e37438384aefbcd7ce32d7325f350e9"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/widget-appointment-contract.test.ts",
+      "bytes": 4364,
+      "sha256": "74a846b3e8d3f74d70071e69cf2875488f4e30e4cb80836d2dcbd53608d5ceb6"
+    },
+    {
+      "path": "artifacts/api-server/src/lib/widget-rate-limit.test.ts",
+      "bytes": 1576,
+      "sha256": "d4ffc965b0c86c70688883428b06fb19b36c610acd81b274fd7afe60e0f65835"
+    },
+    {
+      "path": "artifacts/api-server/src/middlewares/.gitkeep",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/b2c-discovery.ts",
+      "bytes": 39545,
+      "sha256": "4829d59ddc1dabe8321c6818abe6421a4a9027ff3cc2333890a74cbd0d09077d"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/beauty-jobs.ts",
+      "bytes": 100902,
+      "sha256": "6d560e8251338152851b2b6f233a37fd6f2eeb566ca2336494097be9bbdfbddd"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/business-guide.ts",
+      "bytes": 2191,
+      "sha256": "1acc025490d518c1e209dcb2165c775af363d64c8686910df941034abca17034"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/commerce-ef.ts",
+      "bytes": 44604,
+      "sha256": "4c1de2aa4c7749f217d26d2b25254e792b3d9628e728293db6c7bc38e7774021"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/commerce-g.ts",
+      "bytes": 19080,
+      "sha256": "88b08873f481199b4064a3d2fc503edfcd8860e2e9d6c8382efc2565a7a22bed"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/deo-g2.ts",
+      "bytes": 26566,
+      "sha256": "fde0ce66f5a48e5ea2daafe6c56d92d58bc5e2e0dfa098cd5abfd43d18800052"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/education-b2b-discounts.ts",
+      "bytes": 20626,
+      "sha256": "0336fe7cb196fb7c3c524f962ff64ee47eac338521a26d6c82c713f6a31a1730"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/education-bundle-purchases.ts",
+      "bytes": 30511,
+      "sha256": "ff11a36fce17d2249fa5b8c2cecf465a9918852814549c7cd2accaefb0c1ad43"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/education-center-operations.ts",
+      "bytes": 16816,
+      "sha256": "95858d1322e389df45c092306d9f16ff8dd1b109b374a0b02ce6ae9a9aec0aca"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/education-operations.ts",
+      "bytes": 117077,
+      "sha256": "b7ef6cc4e23bca28c4a1b16cdab290baaddadaaa9dd2c804a40e0b14b3b7a0b0"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/education-subscription-billing.ts",
+      "bytes": 72540,
+      "sha256": "704eed533da45e5c83e84f0374cceb41816152397a7f0415e8e18b9e66bc99d4"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/growth.ts",
+      "bytes": 109005,
+      "sha256": "c649eddd589a9fb3b888909b7ff400ddb2e723bfab503a7209a5b93f888dba52"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/health.ts",
+      "bytes": 654,
+      "sha256": "0616ddb47d3574bacc9d027362035e5e61b89ed71611dc38d0f065211ad9f715"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/image-media.ts",
+      "bytes": 17337,
+      "sha256": "0bc805675e8b1fac5cea3010718fee286aa712a450538c08a7bf38491751155d"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/index.ts",
+      "bytes": 1881,
+      "sha256": "e13b01e630990dad30aedddeb2dbf3d95cc86cce20b3318c62f91120ee25a141"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/location-schedule-validation.test.ts",
+      "bytes": 1040,
+      "sha256": "c616b0f088babcdde0743eb7c046d47201f66ff04bd2ea8b1a3255c16eca14e0"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
+      "bytes": 32005,
+      "sha256": "9d3775f3cbf94f9c57d7e47bf86ef2f60f08b1680d3d5c75e2cf33e9b6642acb"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/marketplace.ts",
+      "bytes": 1613945,
+      "sha256": "4589bb64de3bf3ad27b66b053e6d2b7eb8662f33c737d24d79579cc119d0fe40"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/media.ts",
+      "bytes": 54745,
+      "sha256": "2c5736f85dd3a24979ea3fc93fe34f568389b537bf2b1d308ab91f6d8402c7ca"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/phase3.ts",
+      "bytes": 38760,
+      "sha256": "3c171c7a80b62c1031d97b31eb4e644929e207b47046624d9f1a86a78220bae7"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/provider-webhooks.ts",
+      "bytes": 4839,
+      "sha256": "a80abc2f626f969180d44bd29ef6ea2890d5efcf8fd9e4b40c7e84685e85997a"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/referrals.ts",
+      "bytes": 12902,
+      "sha256": "d8a0bcf2491e413c760a6f4221f2e9a11d3f46c3bbbb7d82686215afd99f5c92"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/retail-subscriptions.ts",
+      "bytes": 7242,
+      "sha256": "fa64000bdf22ea2592171f481fae4ccac7bee55b8ca44ceac05e5db67e547f25"
+    },
+    {
+      "path": "artifacts/api-server/src/routes/widget.ts",
+      "bytes": 26896,
+      "sha256": "14c45d366d6128f73f1dd7845466eac3b2e317b45267f2dde575c834acfca5a1"
+    },
+    {
+      "path": "artifacts/api-server/src/test-server.ts",
+      "bytes": 5021,
+      "sha256": "6a30fb4e63cca9c2c0adc67798ff6e27c7994d6bf33a6da004ca024c24cd8097"
+    },
+    {
+      "path": "lib/api-client-react/package.json",
+      "bytes": 265,
+      "sha256": "ae70f97a12d1f7e7cbb291b5ffd1d6893f0d7a0ff7721a21e615d47bccfad789"
+    },
+    {
+      "path": "lib/api-spec/package.json",
+      "bytes": 454,
+      "sha256": "5c5c1b4b571131b18aa7d1088d996694188f65bec6c902a3d8ae65ff2f50e12f"
+    },
+    {
+      "path": "lib/api-zod/package.json",
+      "bytes": 189,
+      "sha256": "07009861b2ba8decccb4e9d78d743cb7273bd91915231b5eb1463b296efca13e"
+    },
+    {
+      "path": "lib/api-zod/src/generated/api.ts",
+      "bytes": 1562170,
+      "sha256": "4efe4a7b2b63b3214c26e0bfa5d13c5efe2e484d57edd17bcdede89790c959f5"
+    },
+    {
+      "path": "lib/api-zod/src/index.ts",
+      "bytes": 33,
+      "sha256": "5c9e0525f7aa993c9f8adad9637a3f50b781259debba890811c9060f6430754d"
+    },
+    {
+      "path": "lib/db/migrations/000001_canonical_schema/migration.sql",
+      "bytes": 669107,
+      "sha256": "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60"
+    },
+    {
+      "path": "lib/db/package.json",
+      "bytes": 706,
+      "sha256": "9e32e573befb33c7e23c20804672fc5a2463549f6f7cafd18292f91fd3c5dd2d"
+    },
+    {
+      "path": "lib/db/src/destructive-test-runtime.ts",
+      "bytes": 864,
+      "sha256": "d8723a726e00d7a35dad17e0ffdfd3b1406ab822e4430d34af388d8e5b4b8cd2"
+    },
+    {
+      "path": "lib/db/src/index.ts",
+      "bytes": 9554,
+      "sha256": "6661f34e18602fc1b2793136c24b5a275bbc9f8c1e951b49e37507b6b0116aa8"
+    },
+    {
+      "path": "lib/db/src/query-observation.ts",
+      "bytes": 664,
+      "sha256": "d1fd0298aca086641b8b20c194fbff73cec6ccd356de87970e0854ed08f25e4e"
+    },
+    {
+      "path": "lib/db/src/schema/aftercare.ts",
+      "bytes": 12609,
+      "sha256": "2b4fd1a7cba67b11eedd4bfd604c1773b9811656fc3254744e9f8d231bb4b856"
+    },
+    {
+      "path": "lib/db/src/schema/b2c-catalog-taxonomy.ts",
+      "bytes": 2854,
+      "sha256": "e193304a74311fdf69ed70a80aee0d080b4f49c6ecf3e0be9f094053e799087b"
+    },
+    {
+      "path": "lib/db/src/schema/b2c-discovery.ts",
+      "bytes": 8155,
+      "sha256": "2966b3467facba9db7156d63bceaef601f84911dd7d15c92783d4c432b2612d0"
+    },
+    {
+      "path": "lib/db/src/schema/b2c-product-reviews.ts",
+      "bytes": 5051,
+      "sha256": "4dd8f9760532f398acea36b2a12a1539b5d86da582125bf719758f13c525173f"
+    },
+    {
+      "path": "lib/db/src/schema/beauty-jobs.ts",
+      "bytes": 17266,
+      "sha256": "c073010ef615692e354014b453363b35af4e77ef7f92a3f7773ba64b7ab2cf5c"
+    },
+    {
+      "path": "lib/db/src/schema/booking-commands.ts",
+      "bytes": 1412,
+      "sha256": "b136e381e8e70760dc2d79e1bf98c556d235d538369e154aae34815a78de803c"
+    },
+    {
+      "path": "lib/db/src/schema/business-growth.ts",
+      "bytes": 25399,
+      "sha256": "e697b39892c7a5c8558131fcba263a9dabd40db6efd7d94f234bd17a674f0130"
+    },
+    {
+      "path": "lib/db/src/schema/commerce-coupon-approvals.ts",
+      "bytes": 8377,
+      "sha256": "cf9422feeeb9bce5ab40c4b0de725f3e6df06e30be3919735c374bca21e83e46"
+    },
+    {
+      "path": "lib/db/src/schema/commerce-deo-g2.ts",
+      "bytes": 9646,
+      "sha256": "ec3f5ae34ec72e0bc9608d9c3f639ac865e58ed2a28a8622a8b56491b87b9fc8"
+    },
+    {
+      "path": "lib/db/src/schema/commerce-ef.ts",
+      "bytes": 8152,
+      "sha256": "a2e929e9e794f1cc43a1a2f657e1fc0d76897701f57c59918853e4851b3af4ae"
+    },
+    {
+      "path": "lib/db/src/schema/commerce-g.ts",
+      "bytes": 2568,
+      "sha256": "54cea8bdc14d5bbb56011ee7702231d83563f6c714cb065893c5f68afd3ccefe"
+    },
+    {
+      "path": "lib/db/src/schema/commerce.ts",
+      "bytes": 58916,
+      "sha256": "33ac7c087fc2aab49a17f0921e629f916d5fba27b115209b2aa92dbfdea23f56"
+    },
+    {
+      "path": "lib/db/src/schema/core.ts",
+      "bytes": 71566,
+      "sha256": "6b5ce98ece919583a382f5890c5fcddcdb4ddc7870d09e092a97e3f9adfab54d"
+    },
+    {
+      "path": "lib/db/src/schema/customer-password-setup.ts",
+      "bytes": 3206,
+      "sha256": "163cfcebfbc6c4fb238565928b61886dc94fdccab26de4eb17204f4334008564"
+    },
+    {
+      "path": "lib/db/src/schema/education.ts",
+      "bytes": 111458,
+      "sha256": "ae3e74d31da900951dd21454089efa37df98c5551dd183eadb3065baec6a50c3"
+    },
+    {
+      "path": "lib/db/src/schema/index.ts",
+      "bytes": 654,
+      "sha256": "7c04f165f384feba06235ffdc4231836e4060dec344dccb6eeda176656e171d5"
+    },
+    {
+      "path": "lib/db/src/schema/media.ts",
+      "bytes": 4300,
+      "sha256": "513a4a759cd082fbf3b3afd73be18b1b43d64ab804f4a21a5d304b989a82a91d"
+    },
+    {
+      "path": "lib/db/src/schema/phase3.ts",
+      "bytes": 10671,
+      "sha256": "c5acc2d6bc059808a6118fa5336b791d685256fa30ae211629b99de5011d23ee"
+    },
+    {
+      "path": "lib/db/src/schema/referral.ts",
+      "bytes": 19282,
+      "sha256": "03dcf9fa3c88772b8fc4aab1f6c6ca4b5dbbf8b4acfe1728c4fa837c34a08b7f"
+    },
+    {
+      "path": "lib/db/src/schema/retail-subscriptions.ts",
+      "bytes": 4616,
+      "sha256": "8715d3a75f4117515169e9de10c7b2700e48ac6aab03d9c6136fe15dce072efd"
+    },
+    {
+      "path": "lib/db/src/schema/web-push.ts",
+      "bytes": 3211,
+      "sha256": "c100ea2d213bf9c26150f5f03d6129809d52d05818a574e6f647fdebf432dbb3"
+    },
+    {
+      "path": "lib/integrations-anthropic-ai/package.json",
+      "bytes": 277,
+      "sha256": "ac1e02f78497ee3cbe83c148854d8260fc6d1051438afe4a08f2d647d07a690b"
+    },
+    {
+      "path": "lib/integrations-anthropic-ai/src/client.ts",
+      "bytes": 2499,
+      "sha256": "841ed387d5e009eb1d4fd94a733a346c26f5f4ad8ae0ff891ed3801a42c410b9"
+    },
+    {
+      "path": "lib/integrations-anthropic-ai/src/index.ts",
+      "bytes": 85,
+      "sha256": "ce27ad67c85fe586abac3599bc6f398c1bb4440908894de0bfc94f1d40e7334f"
+    },
+    {
+      "path": "package.json",
+      "bytes": 29658,
+      "sha256": "79c7df3de53c9e98da5864acbdc365b19428ec5b74ea703a164b3978253390b4"
+    },
+    {
+      "path": "scripts/package.json",
+      "bytes": 17010,
+      "sha256": "ba55e0ab16fdd6ec101d6aa457e58bbdb650eb6ab9011cd3979ca1db87790ad7"
+    },
+    {
+      "path": "scripts/src/additional-operations-evidence-validation.ts",
+      "bytes": 17684,
+      "sha256": "d608ffaf69fa87c27abce54218807a9ee4b1549755e0a92f2ac75cc261fae09c"
+    },
+    {
+      "path": "scripts/src/additional-operations-evidence.test.ts",
+      "bytes": 10900,
+      "sha256": "e3713706c7a8e347d1d6b363c1ced943bbd8a6fb7220df3f6b2221df1904c9c0"
+    },
+    {
+      "path": "scripts/src/anonymized-pg-dump.test.sh",
+      "bytes": 2563,
+      "sha256": "fd323495f83627fe2700ed81f108bbb1aec33acf74fef311a0dddeea3de86609"
+    },
+    {
+      "path": "scripts/src/api-fixtures.test.ts",
+      "bytes": 2162,
+      "sha256": "23bf29b0c6a97730aa17b039afa541fb0e347b5781d3aa549fe68c26b0c04374"
+    },
+    {
+      "path": "scripts/src/api-preflight.sh",
+      "bytes": 1223,
+      "sha256": "e9a636e4ebe222337ec894522f471e477cd5c3df70ac88cf2dc104f604d794e2"
+    },
+    {
+      "path": "scripts/src/api-preflight.test.sh",
+      "bytes": 1657,
+      "sha256": "f64f27739034b70447de5cc30a6ec8f19ca49740ef3efdaf62ae6c65523cfdc3"
+    },
+    {
+      "path": "scripts/src/assert-destructive-test-runtime.ts",
+      "bytes": 186,
+      "sha256": "eb7abf12a0fc1f4d67c6887e2d875d85ae27628e09d53eb052ebc9be5a5b6b35"
+    },
+    {
+      "path": "scripts/src/audit-schema-drift.ts",
+      "bytes": 2047,
+      "sha256": "80801ac4123017f4b9fe8ae0cfd13c504eb0ffbf7455f9f292168f1f9bf0d50f"
+    },
+    {
+      "path": "scripts/src/backend-standards-database.test.ts",
+      "bytes": 28730,
+      "sha256": "d88288eea61255425a21aa4faf7e3159d0777979b9d9a89a93f07a785181e909"
+    },
+    {
+      "path": "scripts/src/backend-standards-database.ts",
+      "bytes": 3799,
+      "sha256": "fa67bfd2cc1af8d3979410c8bb96d33e1c562277c4ca827c08ca49fa4cf3eb2e"
+    },
+    {
+      "path": "scripts/src/booking-development-schema.test.ts",
+      "bytes": 4282,
+      "sha256": "3de5e6e4511b07b934b983613e9411ebca0fa1e7cdf332630bfebfa1eb1502af"
+    },
+    {
+      "path": "scripts/src/booking-development-schema.ts",
+      "bytes": 17544,
+      "sha256": "1259077975365ebd29e7e796c5c2717e27832cfc889efc4a54fecc380435f48e"
+    },
+    {
+      "path": "scripts/src/booking-load-metrics.test.ts",
+      "bytes": 1767,
+      "sha256": "7d473ac105c9690b60cb97e47efe5e7ac31fda8f5b0bf6efc8157d85360b90ab"
+    },
+    {
+      "path": "scripts/src/booking-load-metrics.ts",
+      "bytes": 2214,
+      "sha256": "be9bce5aeffb172b61158bedd775131133fed1335bb9919751336b48e9edac4c"
+    },
+    {
+      "path": "scripts/src/booking-load-suite.ts",
+      "bytes": 40464,
+      "sha256": "a4c120a8a6bbbbc39b35fb85f6ec3909adb82f2dde7a484dc131b9443db0db55"
+    },
+    {
+      "path": "scripts/src/booking-load-telemetry.test.ts",
+      "bytes": 1907,
+      "sha256": "436d378c8396f172fab2d6e65e444b2cbe75b011ecab08dc5ed5ce8408d1e534"
+    },
+    {
+      "path": "scripts/src/booking-load-telemetry.ts",
+      "bytes": 4781,
+      "sha256": "7151f5696106302cb40934509f04b4f280fddc3eca88bbf954b7b7342b03708c"
+    },
+    {
+      "path": "scripts/src/browser-api-fixtures.ts",
+      "bytes": 8322,
+      "sha256": "e460499ff8fff3d52a7f89512315764ca579b1a1235a220f9b300ee5f87186ea"
+    },
+    {
+      "path": "scripts/src/browser-preflight.ts",
+      "bytes": 3739,
+      "sha256": "15f90e2a4899b7409297bab664a5221ad32591a5ac7aa428a4ef8ec4f27ffddc"
+    },
+    {
+      "path": "scripts/src/bundle-budget.ts",
+      "bytes": 10650,
+      "sha256": "e34f58a296ff81166a7107375382eddad2f51e71c2623dc4565982116a5ec357"
+    },
+    {
+      "path": "scripts/src/check-browser-spec-types.test.ts",
+      "bytes": 41550,
+      "sha256": "924c35cddadcc62d8fa389a5c05c8fcca2224c52337ffa159fd04590fe659ded"
+    },
+    {
+      "path": "scripts/src/check-browser-spec-types.ts",
+      "bytes": 20871,
+      "sha256": "37c34c8e3cf91e15f6190a175b8e8f3f289d3f5db31d4c7549a7833b0a371682"
+    },
+    {
+      "path": "scripts/src/dependency-declaration-parser-guard.test.ts",
+      "bytes": 21782,
+      "sha256": "ebfa51f7efa808c143b155fee92b7df63eb9dfd9db6e217463f7cc706697f679"
+    },
+    {
+      "path": "scripts/src/destructive-harness-registry.ts",
+      "bytes": 6123,
+      "sha256": "9aaf361510cddc26bdb9090b71d076a3b764880e56a034c10c31a27a9cd3dbf4"
+    },
+    {
+      "path": "scripts/src/destructive-test-runtime.sh",
+      "bytes": 332,
+      "sha256": "445760373a0672593b7afdce01a2c3c3f39077de7f24d70b93f423a71ff7c48a"
+    },
+    {
+      "path": "scripts/src/destructive-test-runtime.ts",
+      "bytes": 167,
+      "sha256": "0ebf00f3cf21aa080efc7267d0e5274e58d147dd12a4ec698a29ce6729071f64"
+    },
+    {
+      "path": "scripts/src/ensure-development-schema.ts",
+      "bytes": 1043,
+      "sha256": "24e45593e8e5c001d27a39c0f4da66d399f099811e6fbb193fdff4a12229ce2e"
+    },
+    {
+      "path": "scripts/src/ensure-retail-cart-index-ci.test.ts",
+      "bytes": 2607,
+      "sha256": "97412f622519c4008f1745051509ef4dce87da5dfd0ffe54866efb6fa729df35"
+    },
+    {
+      "path": "scripts/src/ensure-retail-cart-index-ci.ts",
+      "bytes": 1419,
+      "sha256": "3de491a67ff31bb21a1c675713da0de133ab7ef837b380d391e9ccf01ee2733c"
+    },
+    {
+      "path": "scripts/src/fingerprint-schema.ts",
+      "bytes": 2153,
+      "sha256": "3a9d07c373fa117358a6fdcb3d9b00436b89138ad1a2fb97fbb383beb02304a3"
+    },
+    {
+      "path": "scripts/src/frontend-performance-standards.test.ts",
+      "bytes": 3849,
+      "sha256": "a59c22171b2e3d7ca6da1aefc8d4b3556d373a145538e3050e190173dcf2d9ea"
+    },
+    {
+      "path": "scripts/src/generated-api-check.ts",
+      "bytes": 5239,
+      "sha256": "1074f432b81c1d403e193463cef39d55883aa02ea573f8ad75c3bda5c408d28b"
+    },
+    {
+      "path": "scripts/src/hello.ts",
+      "bytes": 46,
+      "sha256": "9a865c3de9900891e697e1ee8632dd565ce69bd7cb6b610e48b26bc0ee9e81e9"
+    },
+    {
+      "path": "scripts/src/internal-request-control-output-check.test.ts",
+      "bytes": 20710,
+      "sha256": "34e528ed58e46fc159088df32c2931fdea602749663cf0480c1b05b3065ef66b"
+    },
+    {
+      "path": "scripts/src/internal-request-control-output-check.ts",
+      "bytes": 3827,
+      "sha256": "ee7c2cd7da276acbf58a0ff74af1199134960116a6f34ce595109bdaadbc9b2c"
+    },
+    {
+      "path": "scripts/src/isolated-admin-fixture.sh",
+      "bytes": 2206,
+      "sha256": "e0ce80bc2f5de5f325bc7b41db63fcefef9dc63bbf0dafc10e59a04225835acf"
+    },
+    {
+      "path": "scripts/src/migration-contract/README.md",
+      "bytes": 4244,
+      "sha256": "11c1ea4325fbeed6a9381e9eb972202804445c3110b3984b32f906de185fce8b"
+    },
+    {
+      "path": "scripts/src/migration-contract/ci-migration-contract.test.ts",
+      "bytes": 25066,
+      "sha256": "09bc5e413280393e9cef365ac8fd29322b7aef87055be32dbd6c6f032bc10cc0"
+    },
+    {
+      "path": "scripts/src/migration-contract/contract.ts",
+      "bytes": 7379,
+      "sha256": "cab1dd5581a7156c616f8e17625920eafbf878a45a04bcac4efc6938ccaff1cd"
+    },
+    {
+      "path": "scripts/src/migration-contract/header.test.ts",
+      "bytes": 10751,
+      "sha256": "73d92402686b64a3eb7bc5f41e372460b0131357f377c6183a15d9ad16765275"
+    },
+    {
+      "path": "scripts/src/migration-contract/header.ts",
+      "bytes": 11037,
+      "sha256": "7c47c56bab3c667e9df58b87489b0cf6ab3cf88447b25d9e177d9be4ba2dd395"
+    },
+    {
+      "path": "scripts/src/migration-contract/migration-contract.test.ts",
+      "bytes": 21525,
+      "sha256": "10929eaeb3b285e8cb9497bd1faada7c8c67c438e45a674a46f6cc23f9a6fe64"
+    },
+    {
+      "path": "scripts/src/migration-contract/validate-ci-migration-contract.ts",
+      "bytes": 14541,
+      "sha256": "0f43ecb5cea354b0ce6d8b99ccf1601de3adf6208e535f6736cd33a296b2c1e2"
+    },
+    {
+      "path": "scripts/src/migration-contract/verify-migration-contract.ts",
+      "bytes": 1804,
+      "sha256": "b873affd553852cc984d4e41f65a8fc69cccb307c6b09733b3700d429bc33d28"
+    },
+    {
+      "path": "scripts/src/migrations/PHASE-5B-RUNBOOK.md",
+      "bytes": 5340,
+      "sha256": "f6cb4b48cdd846ce18e36395b476b3331d1ffe19f5d1a71712ef38a20e5c9746"
+    },
+    {
+      "path": "scripts/src/migrations/cli.ts",
+      "bytes": 2997,
+      "sha256": "b4d9e0864411268985c19587a1806ecd6384ff677e3ed98c2ffddd52679f214f"
+    },
+    {
+      "path": "scripts/src/migrations/files.ts",
+      "bytes": 2041,
+      "sha256": "4efc901729341ee25580e4ebee8855c3255dc37211e48849556aa93fda7a8db0"
+    },
+    {
+      "path": "scripts/src/migrations/index.ts",
+      "bytes": 153,
+      "sha256": "b5f45f9657442748d34c68850773e72954a52d6aee5cdbab44dea745615d1c8e"
+    },
+    {
+      "path": "scripts/src/migrations/ledger.ts",
+      "bytes": 4949,
+      "sha256": "efd64df8d8968eedcd83d9bf4ff948c084462a0fef742e6a41dc7b405f73451c"
+    },
+    {
+      "path": "scripts/src/migrations/lock.ts",
+      "bytes": 1848,
+      "sha256": "25427b717e9b10b94a4fde71b11a03f0aa593d7e8592c504555fd3a8223e2f75"
+    },
+    {
+      "path": "scripts/src/migrations/manifest.ts",
+      "bytes": 1511,
+      "sha256": "13105f891f9f8341b0f9e9c7141379dd1f319d6bc2f8b90e2ca9e8eae4d7597f"
+    },
+    {
+      "path": "scripts/src/migrations/migrations.integration.test.ts",
+      "bytes": 25878,
+      "sha256": "a548b62d3c0de4df066229c3fe01edd6bbda68d3d895da0865da888e57668399"
+    },
+    {
+      "path": "scripts/src/migrations/migrations.test.ts",
+      "bytes": 7761,
+      "sha256": "48ded1eb0a3217cfcb08620c15dc1754deff9367315aec364a3dac0f52419fa4"
+    },
+    {
+      "path": "scripts/src/migrations/preflight-cli.ts",
+      "bytes": 2336,
+      "sha256": "4c56a308d1a6ec81eb627c73504913ae80453391bbbea7d04970be71a6a20a9a"
+    },
+    {
+      "path": "scripts/src/migrations/preflight.test.ts",
+      "bytes": 2652,
+      "sha256": "da6645b88137035a6408a549843dc76841724d5f5205c9e03402a4fee1ba7db9"
+    },
+    {
+      "path": "scripts/src/migrations/preflight.ts",
+      "bytes": 7160,
+      "sha256": "a54f0d3831f802cffe909cf609e7a4d19643bef0cd7e17b96351c88fd52d6859"
+    },
+    {
+      "path": "scripts/src/migrations/read-only-ledger.ts",
+      "bytes": 4565,
+      "sha256": "4ab94212812b8a897d989b837f628935ed5ec83eab35489ef15ff88f808a7b61"
+    },
+    {
+      "path": "scripts/src/migrations/runner.ts",
+      "bytes": 13828,
+      "sha256": "4afe2c551a3a3f0560e0ee202d18ab9d1299c305f884995da4cc92b3e254a376"
+    },
+    {
+      "path": "scripts/src/migrations/types.ts",
+      "bytes": 1578,
+      "sha256": "8c115ea78341d4b4f8deade5e7f0dadb9e8c02f54ef4eb9aa634b37106ba5ab7"
+    },
+    {
+      "path": "scripts/src/object-storage-stub.ts",
+      "bytes": 7819,
+      "sha256": "b76f11d9e1013f30319ec38bf8e103efb946db2b881f036229104178083211fa"
+    },
+    {
+      "path": "scripts/src/production-request-dependency-boundary.test.ts",
+      "bytes": 5537,
+      "sha256": "61def536ceeb66cb776db98b9166ef74f5728a187b4180f06d35e79b093598c9"
+    },
+    {
+      "path": "scripts/src/production-request-dependency-boundary.ts",
+      "bytes": 27606,
+      "sha256": "f69ea90a408e124e4e1d0cdd6ef55e49cd6b2d7b0ec5ea8ea84e2eec7e9179a0"
+    },
+    {
+      "path": "scripts/src/production-startup-ddl-baseline.json",
+      "bytes": 1151184,
+      "sha256": "a8bcfc8731d8017f901dde01e04d5fd78ad1f930b0562a6a642d980483f465e2"
+    },
+    {
+      "path": "scripts/src/production-startup-ddl-inventory.test.ts",
+      "bytes": 22619,
+      "sha256": "565a5fe09193222dd7143b32b1591c3c726a14df67ff58b93c5b8006691d80dd"
+    },
+    {
+      "path": "scripts/src/production-startup-ddl-inventory.ts",
+      "bytes": 71180,
+      "sha256": "181b198363808eaf066cdf9d8acb3d7c32bfd898985ecaf97c1c4a611e18a9e9"
+    },
+    {
+      "path": "scripts/src/release-chain.test.ts",
+      "bytes": 81419,
+      "sha256": "c99ccd2c0f2180a36b549cc30bcf266469fca14b888b41d4078354c2a70dbe60"
+    },
+    {
+      "path": "scripts/src/retail-cart-ci-preparation.test.ts",
+      "bytes": 10384,
+      "sha256": "9bf789d68edb751c4ec48befb670add9e29e040c109bd93165f059bcda5816bd"
+    },
+    {
+      "path": "scripts/src/retail-cart-index-development-schema.test.ts",
+      "bytes": 6013,
+      "sha256": "080f3c54713a5fa05d8a293d4e39710018c2244e23e4d8ce1d663befe780eb28"
+    },
+    {
+      "path": "scripts/src/retail-cart-index-development-schema.ts",
+      "bytes": 4081,
+      "sha256": "c81e2ee3b3947dfe0821f92da98a452178a97d59672e600752827e04108a10cf"
+    },
+    {
+      "path": "scripts/src/retry-rescheduled-confirmations.ts",
+      "bytes": 704,
+      "sha256": "c823c2c2a9623eab7819d790cb3b494ca742321bffb5903b65afae188f8363e5"
+    },
+    {
+      "path": "scripts/src/rma-market-contract.test.ts",
+      "bytes": 5836,
+      "sha256": "e35d2e59a6d4176b2eacf8c3bded5db0442790c61fe16974c4664e78754179ab"
+    },
+    {
+      "path": "scripts/src/run-admin-access-configuration.ts",
+      "bytes": 503,
+      "sha256": "1ced20e7d75bf2fada69ade6ec5e6c9d6659ca4cb531a9572c0fea861963bef9"
+    },
+    {
+      "path": "scripts/src/run-admin-bounded-pagination.ts",
+      "bytes": 1479,
+      "sha256": "90b8d198568e37fe34f8d22a6dcb293e473dd993b915c13b6280a054da6b76e7"
+    },
+    {
+      "path": "scripts/src/run-admin-form-resilience.ts",
+      "bytes": 577,
+      "sha256": "2df0b1050655d2d07bbeff07e5e8ac2f77b5b8e00c9b70e6e930364d98c3bfa0"
+    },
+    {
+      "path": "scripts/src/run-admin-navigation-regression.ts",
+      "bytes": 519,
+      "sha256": "2fcf706679c1ea9525cfdadc928eedb19d3aaa3599d3ad5fedf4a7f641052956"
+    },
+    {
+      "path": "scripts/src/run-api-regressions-lifecycle.test.ts",
+      "bytes": 110676,
+      "sha256": "a9b576f7bbc1821e063848727ca48b2f96d56be431a54c0e1c566e2cd6e8b280"
+    },
+    {
+      "path": "scripts/src/run-api-regressions.ts",
+      "bytes": 1686,
+      "sha256": "96d3fece5dcdc5aaa83cc589bb4978c9ce31b9246115a34ff4f70f2a4e04af8f"
+    },
+    {
+      "path": "scripts/src/run-beauty-jobs-browser.ts",
+      "bytes": 1207,
+      "sha256": "c2ba640002ed95efce2ecc4edbb38897d740cc966fd3329b6ccdf567c54e1423"
+    },
+    {
+      "path": "scripts/src/run-booking-journey-browser.ts",
+      "bytes": 1480,
+      "sha256": "c0b2529483d203fc913a66a991254cb26deb7f913c7a0214702436b8d9016d04"
+    },
+    {
+      "path": "scripts/src/run-booking-load.ts",
+      "bytes": 14978,
+      "sha256": "b0627a333d9e620374ffba8ac8ff8a879fc4078e5a07796207189d6d36b09513"
+    },
+    {
+      "path": "scripts/src/run-booking-qa.ts",
+      "bytes": 23179,
+      "sha256": "a58f7d0b8a1d34f0549d1e5bd2a9ef50afdb3bcafa07b7f85644a3f97d046417"
+    },
+    {
+      "path": "scripts/src/run-booking-settings-browser.ts",
+      "bytes": 569,
+      "sha256": "a6f790ac03f26167cc2fdc7b3f816b8fc35f33d9fe42a39771089e2af600d3ca"
+    },
+    {
+      "path": "scripts/src/run-cover-image-description-browser.ts",
+      "bytes": 1680,
+      "sha256": "ebb0bc7c353d904bef5d7b4d8da7e0712971c98286094bbb0ff4e721e6d4319a"
+    },
+    {
+      "path": "scripts/src/run-crm-backfill-isolated.ts",
+      "bytes": 558,
+      "sha256": "bf9b0514534caa8effe1a48070dc9b0a773f226a8256c2f56708e538f22dc182"
+    },
+    {
+      "path": "scripts/src/run-education-dispute-browser.ts",
+      "bytes": 573,
+      "sha256": "28107af4e968716586c04d694b717bd036f2a095f34c2bd765cdbe2911f7a619"
+    },
+    {
+      "path": "scripts/src/run-education-group-online-consent-browser.ts",
+      "bytes": 623,
+      "sha256": "c2ab67eaa3d8990bd8ae29222cc7a5197c65c71da7e40d0d880398244d3662b5"
+    },
+    {
+      "path": "scripts/src/run-education-ips-production-safety.ts",
+      "bytes": 575,
+      "sha256": "bd3e1df25a85ea643ed3db60eb4d21b9faf06fdd9095d1a73b47f44d64c688ee"
+    },
+    {
+      "path": "scripts/src/run-education-placement-lifecycle.ts",
+      "bytes": 539,
+      "sha256": "ca8e96231a61e39106116f0e5045addf623922847ed2e32f821c75fc27829f66"
+    },
+    {
+      "path": "scripts/src/run-education-public-center-hook-order-browser.ts",
+      "bytes": 641,
+      "sha256": "06c2c9ca156d859a7d6ba1a9a0fc54172323dea5be211ae2d1ea3b3f148ac906"
+    },
+    {
+      "path": "scripts/src/run-employee-location-deactivation-browser.ts",
+      "bytes": 630,
+      "sha256": "9e09b1650b754800c3eceb558b55bd3d3761518215c16c3df4feadf381101741"
+    },
+    {
+      "path": "scripts/src/run-final-booking-qa.ts",
+      "bytes": 517,
+      "sha256": "c749a075d0173a7a1d31bfd3bb57b5b14e0095c8ad3c664f27c75802aab22e99"
+    },
+    {
+      "path": "scripts/src/run-infobip-registration-browser.ts",
+      "bytes": 1455,
+      "sha256": "fd237f4b3aa4e6515f8bdabf1654a21684b0fcd438faaaeaa720305fce094fba"
+    },
+    {
+      "path": "scripts/src/run-isolated-browser-suite.ts",
+      "bytes": 34623,
+      "sha256": "30feffc139c1ce0196dfd0cb6d49533b14032e17f3a0e83e773253bc437be606"
+    },
+    {
+      "path": "scripts/src/run-logout-login-cache-residue-browser.ts",
+      "bytes": 606,
+      "sha256": "24edbe73a502ac651f6626a3d676197efa55282e976828bc50881e7b23979c4a"
+    },
+    {
+      "path": "scripts/src/run-playwright-with-preflight.ts",
+      "bytes": 871,
+      "sha256": "f5cb73c44087adc1cc38f5a2f08516eccaae8246d89bd14c7faddfd095f3131b"
+    },
+    {
+      "path": "scripts/src/run-rescheduled-confirmation-qa.ts",
+      "bytes": 564,
+      "sha256": "10e4d973303125b20e911a0d31a5b2883c9d10aaa868fcb063690418de68cca2"
+    },
+    {
+      "path": "scripts/src/run-retail-checkout-api.ts",
+      "bytes": 512,
+      "sha256": "28b5cbeeaf60e6068bb88eca6699cf3cba97e7f7d5a9ae589c46e50bfada01bb"
+    },
+    {
+      "path": "scripts/src/run-retail-checkout.ts",
+      "bytes": 554,
+      "sha256": "636d08d2bee68516c552f855c875f7852d4512091ecdced62e64e72c2c6254d4"
+    },
+    {
+      "path": "scripts/src/run-retention-preview.ts",
+      "bytes": 3204,
+      "sha256": "d8f27b45c4608a2f1870af3f61af6b6f758c279388c9fc034345141e85208e20"
+    },
+    {
+      "path": "scripts/src/run-runtime-security-suite.ts",
+      "bytes": 561,
+      "sha256": "e38e7b2c93496302d465874408044f285c1a40e8ef467379b00d12bfb26435ea"
+    },
+    {
+      "path": "scripts/src/run-safe-external-url-rendering-browser.ts",
+      "bytes": 598,
+      "sha256": "a4b1bcdcc11fdd3646576ad0e1432988d3c34855b1e1727055ca036553bf21f8"
+    },
+    {
+      "path": "scripts/src/run-salon-notification-release.ts",
+      "bytes": 575,
+      "sha256": "14dc39d8c17838538b42894d24dff7436be7430db21e8f69f95daee4900604dc"
+    },
+    {
+      "path": "scripts/src/run-supplier-catalog-api.ts",
+      "bytes": 518,
+      "sha256": "7f9012e38807724f57b0ae780982ac0f82bccb9cee40a567053564f5183fa36b"
+    },
+    {
+      "path": "scripts/src/safe-child-process-output.ts",
+      "bytes": 3900,
+      "sha256": "8a09d97072f361c98c412688914873a8e042f9522c1af8f3b8ccf9125c273026"
+    },
+    {
+      "path": "scripts/src/schema-drift/FINGERPRINT.md",
+      "bytes": 6585,
+      "sha256": "736b702dd36a91f7f62491d1d0370058b1fb4cb53b257b84ea534d897a6158f7"
+    },
+    {
+      "path": "scripts/src/schema-drift/baseline-manifest.json",
+      "bytes": 42,
+      "sha256": "deeba797f147b6116f41d43d5d0a091cf4e8a2a3e58a901c24ba6e2267991549"
+    },
+    {
+      "path": "scripts/src/schema-drift/canonical.ts",
+      "bytes": 4431,
+      "sha256": "5c79865f76e1977bbc51ba0383d9b36f96af7e713f34e4c58af21845187b1870"
+    },
+    {
+      "path": "scripts/src/schema-drift/catalog.ts",
+      "bytes": 27467,
+      "sha256": "10ef359421b3e4097dba10f829903c61b847b973efc594193dddc4b14f7d280b"
+    },
+    {
+      "path": "scripts/src/schema-drift/compare.ts",
+      "bytes": 15905,
+      "sha256": "700e61137888ea65eb8fae7e56748dccdca2467435eabd3ea3c890e7f7f19d54"
+    },
+    {
+      "path": "scripts/src/schema-drift/eligibility-cli.test.ts",
+      "bytes": 9281,
+      "sha256": "5486abd2cecc285aeb10409f4582553aa633f0dbf45bddcfeba99420ec25dff9"
+    },
+    {
+      "path": "scripts/src/schema-drift/eligibility-cli.ts",
+      "bytes": 2570,
+      "sha256": "0374109c8d9f4eda3c92dea9b111298f6c95c74e20c66495d0b14f00bef7446d"
+    },
+    {
+      "path": "scripts/src/schema-drift/eligibility.test.ts",
+      "bytes": 8965,
+      "sha256": "c276d8dff939ba6cdc4ca7897500b4a33862976c911dedd85c81658fc95fb161"
+    },
+    {
+      "path": "scripts/src/schema-drift/eligibility.ts",
+      "bytes": 8016,
+      "sha256": "4913cb17f7af6337c0da6bdb1568c68a8666a4ef4d9735d3f09979416464a4c8"
+    },
+    {
+      "path": "scripts/src/schema-drift/fingerprint-golden-fixture.integration.test.ts",
+      "bytes": 7058,
+      "sha256": "20ab573e48187e15fc33a5b3e90de880deb440be6f883679cefd6b5b8c9a3123"
+    },
+    {
+      "path": "scripts/src/schema-drift/fingerprint-transaction.ts",
+      "bytes": 1008,
+      "sha256": "e448b690a1bd337e30ac79b2226e795584d834667745d83e6dc6d2218fb8d8f6"
+    },
+    {
+      "path": "scripts/src/schema-drift/fingerprint.integration.test.ts",
+      "bytes": 2920,
+      "sha256": "35393f0870631f8b759233c2ca919053dd2f4af3f06da5957e00e61cfe03ab51"
+    },
+    {
+      "path": "scripts/src/schema-drift/fingerprint.test.ts",
+      "bytes": 31676,
+      "sha256": "0ebec771755c4c9a255d1f87eab43b7da1d264281202d4925d0c55ff2b9a3ff5"
+    },
+    {
+      "path": "scripts/src/schema-drift/fingerprint.ts",
+      "bytes": 18068,
+      "sha256": "3710e3f5d17ce7676b7d51f2a4dd7d7d3e05e4c784e37ba192de2866a33f5ea7"
+    },
+    {
+      "path": "scripts/src/schema-drift/index.ts",
+      "bytes": 136,
+      "sha256": "2aa4117c329947840485828075713678b5adf7563e46ee886ec5bdf7bde12801"
+    },
+    {
+      "path": "scripts/src/schema-drift/model.ts",
+      "bytes": 44280,
+      "sha256": "a4353444c4d5596c380ecd31b0868e5666e7e67f2d90c1b30a0beb19553fe257"
+    },
+    {
+      "path": "scripts/src/schema-drift/ownership.ts",
+      "bytes": 1193,
+      "sha256": "149da0d944444e524fb20898df42bd49d3206d4cd18bd7b4f16d67984a2329ca"
+    },
+    {
+      "path": "scripts/src/schema-drift/read-only-query.ts",
+      "bytes": 818,
+      "sha256": "1b8da727c8cc4aea04e0a00dd4be174a17d58cf013b5b9a4e509b0600d409d5b"
+    },
+    {
+      "path": "scripts/src/schema-drift/schema-drift.integration.test.ts",
+      "bytes": 2032,
+      "sha256": "3fa0d466603fe2bcddf180861ae3ada62bf7bce92c353a589a49eb19654d1d35"
+    },
+    {
+      "path": "scripts/src/schema-drift/schema-drift.test.ts",
+      "bytes": 45577,
+      "sha256": "0bc3586b0548bad6578c7e2b55d732a5c8b1ec5da883cfd1abcdd060390f129f"
+    },
+    {
+      "path": "scripts/src/send-sms-reminders.ts",
+      "bytes": 682,
+      "sha256": "2dafb32e30afbe5aa5b6e9bb80f430e3a5861557a880ee572a99fad06be74807"
+    },
+    {
+      "path": "scripts/src/seo-standards.test.ts",
+      "bytes": 35773,
+      "sha256": "1f51d2ca0f4c9de12cabcae2f4f54a2264a5a29be68bf1b8ce5ede26c9c134d6"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/crosswalk.test.ts",
+      "bytes": 4922,
+      "sha256": "d06c539110f30fc0bd4c191fd69952bedba1c5244e6c7818d254aa749a8c9112"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/crosswalk.ts",
+      "bytes": 26902,
+      "sha256": "c7b4aa576f31b6fd09432d154ba9218e898217194fb4676f8ffd2aa954adcbe8"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/fixtures-cli.ts",
+      "bytes": 1009,
+      "sha256": "d0063c7d622e7e83d9adb4db731300855593b2b037f13b06c6b1295d3f23715f"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/fixtures.test.ts",
+      "bytes": 4104,
+      "sha256": "1c8d9a43577a2363335907f14bdd587f1728bff315af4a17436feb773eec0e16"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/fixtures.ts",
+      "bytes": 30063,
+      "sha256": "619f0687a4396c2ebc1264980757bcb4605397636eae0b8d4f164c26645ccff9"
+    },
+    {
+      "path": "scripts/src/startup-equivalence/recovery.test.ts",
+      "bytes": 2341,
+      "sha256": "26052eee005528b75ea9c88a4fbfdb98be40b6d85b1681970a31e1e1d647baf0"
+    },
+    {
+      "path": "scripts/src/startup-migration-crosswalk.test.ts",
+      "bytes": 21507,
+      "sha256": "edb6735d70d055df77d878922bbe3258169aa876cbcab0bdb0fbe0f6c6c6d061"
+    },
+    {
+      "path": "scripts/src/startup-migration-crosswalk.ts",
+      "bytes": 72711,
+      "sha256": "7d7917b2a948858d77bdcb00767e4098ef9c2d1f56faac37914eef4e3dcdbb17"
+    },
+    {
+      "path": "scripts/src/test-backend-standards.ts",
+      "bytes": 22487,
+      "sha256": "e1dfd0a6d3e761b0d5a5736a3289cacb0b0ba45d46409f7adde04fd4e3e85056"
+    },
+    {
+      "path": "scripts/src/test-backend-static-checks.ts",
+      "bytes": 27131,
+      "sha256": "1c651293575cfd40cac89613d0e4cecbc58fd449119a2046d8071eb76f42d804"
+    },
+    {
+      "path": "scripts/tsconfig.json",
+      "bytes": 282,
+      "sha256": "83225952f187379cab6fda8fefc7e74a4a937661305a539bf5943fc675e7e808"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "bytes": 692,
+      "sha256": "2dfaa6f6168f618e0e6deff048c17e4f5f73d59325bd935d471905ae6773585c"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 297,
+      "sha256": "2734ebee9dbe438b72c4ccdebf361afe2a66409b6ccdaad16a06bf46b8ed0816"
+    }
+  ],
+  "directories": [
+    "artifacts",
+    "artifacts/api-server",
+    "artifacts/api-server/src",
+    "artifacts/api-server/src/lib",
+    "artifacts/api-server/src/lib/fixtures",
+    "artifacts/api-server/src/middlewares",
+    "artifacts/api-server/src/routes",
+    "lib",
+    "lib/api-client-react",
+    "lib/api-spec",
+    "lib/api-zod",
+    "lib/api-zod/src",
+    "lib/api-zod/src/generated",
+    "lib/db",
+    "lib/db/migrations",
+    "lib/db/migrations/000001_canonical_schema",
+    "lib/db/src",
+    "lib/db/src/schema",
+    "lib/integrations-anthropic-ai",
+    "lib/integrations-anthropic-ai/src",
+    "scripts",
+    "scripts/src",
+    "scripts/src/migration-contract",
+    "scripts/src/migrations",
+    "scripts/src/schema-drift",
+    "scripts/src/startup-equivalence"
+  ],
+  "closureEvidence": {
+    "method": "Original historical generator, source inventory resolver, and test-caller scans; observed file/probe/enumeration closure with unchanged source bytes and complete observed directory entries. Package/TypeScript configuration inputs retained explicitly.",
+    "executionModules": [
+      "scripts/src/startup-equivalence/crosswalk.ts",
+      "scripts/src/startup-migration-crosswalk.ts",
+      "scripts/src/production-startup-ddl-inventory.ts"
+    ],
+    "nodeVersion": "24.13.0",
+    "tsxVersion": "4.23.1",
+    "typescriptVersion": "5.9.3",
+    "sourceBytes": 12562259,
+    "sourceFiles": 442,
+    "referenceCrosswalkBytes": 7377721,
+    "directoryObservations": [
+      {
+        "path": "artifacts/api-server/src",
+        "entries": [
+          {
+            "name": "app.ts",
+            "type": "file"
+          },
+          {
+            "name": "index.ts",
+            "type": "file"
+          },
+          {
+            "name": "lib",
+            "type": "directory"
+          },
+          {
+            "name": "middlewares",
+            "type": "directory"
+          },
+          {
+            "name": "routes",
+            "type": "directory"
+          },
+          {
+            "name": "test-server.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "artifacts/api-server/src/lib",
+        "entries": [
+          {
+            "name": ".gitkeep",
+            "type": "file"
+          },
+          {
+            "name": "active-product-sale.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "active-product-sale.ts",
+            "type": "file"
+          },
+          {
+            "name": "admin-list-pagination.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "admin-order-search.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "admin-summary.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "admin-validation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "aftercare-api.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "aftercare-domain.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "aftercare-domain.ts",
+            "type": "file"
+          },
+          {
+            "name": "aftercare-worker.integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "aftercare-worker.ts",
+            "type": "file"
+          },
+          {
+            "name": "anthropic-integration-lazy-init.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "api-errors.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-customer-events.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-customer-events.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-lifecycle.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-lifecycle.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-locks.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-locks.ts",
+            "type": "file"
+          },
+          {
+            "name": "appointment-routes.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "attributed-appointments-pagination.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "attributed-appointments-returning.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "auth.ts",
+            "type": "file"
+          },
+          {
+            "name": "automation-provider-events.logcheck.ts",
+            "type": "file"
+          },
+          {
+            "name": "automation-provider-events.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "automation-worker.ts",
+            "type": "file"
+          },
+          {
+            "name": "availability-engine.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "availability-engine.ts",
+            "type": "file"
+          },
+          {
+            "name": "availability-store.ts",
+            "type": "file"
+          },
+          {
+            "name": "b2b-order-import-parser.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "b2c-product-reviews.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "beauty-jobs-delivery-monitor.ts",
+            "type": "file"
+          },
+          {
+            "name": "beauty-jobs-email.ts",
+            "type": "file"
+          },
+          {
+            "name": "beauty-jobs-maintenance.ts",
+            "type": "file"
+          },
+          {
+            "name": "beauty-jobs-routes.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-admission.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-admission.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-audit-v2.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-audit.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-command-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-command.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-p1-regressions.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-settings-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "brevo-registration-monitor.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "brevo-stale-webhook-cleanup.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "brevo.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-commerce-approvals.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth-schema-boot-regression.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth-schema-cleanup-reports.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth-schema-ensure-child.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth-schema.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-growth.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-guide-content.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-guide-links.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-guide-pdf.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-guide-pdf.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-role-transition.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "calendar-timezone-boundaries.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "campaign-attributed-appointments-window.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "catalog-cache-invalidator.test-support.ts",
+            "type": "file"
+          },
+          {
+            "name": "catalog-cache.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "catalog-cache.ts",
+            "type": "file"
+          },
+          {
+            "name": "change-password-session-revocation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-discount-engine.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-discount-engine.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-ef.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-g-domain.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-g-domain.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-pricing-engine.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-pricing-engine.ts",
+            "type": "file"
+          },
+          {
+            "name": "communication-archive.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "communication-archive.ts",
+            "type": "file"
+          },
+          {
+            "name": "coupon-engine.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "coupon-engine.ts",
+            "type": "file"
+          },
+          {
+            "name": "customer-notifications.ts",
+            "type": "file"
+          },
+          {
+            "name": "customer-password-setup.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "date-serialization.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "date-serialization.ts",
+            "type": "file"
+          },
+          {
+            "name": "delivery-report-alerts.ts",
+            "type": "file"
+          },
+          {
+            "name": "demo-identity-repair.ts",
+            "type": "file"
+          },
+          {
+            "name": "deo-g2-rule-loader.ts",
+            "type": "file"
+          },
+          {
+            "name": "deo-g2-rules.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "deo-g2-rules.ts",
+            "type": "file"
+          },
+          {
+            "name": "destructive-test-runtime.ts",
+            "type": "file"
+          },
+          {
+            "name": "development-test-fixtures.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-availability-store.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-b2b-checkout-idempotency.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-b2b-discounts.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-b2b-integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-bank-reconciliation.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-belgrade-calendar.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-billing.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-bundle-purchase-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-bundle-purchases.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-camt053.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-camt053.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-center-eligibility.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-certificate-eligibility.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-course-authoring-isolation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-course-featured-authorization.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-entitlement.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-extras.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-featured-eligibility-consistency.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-featured-eligibility.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-financial-audit.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-financial-audit.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-financial.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-idempotency-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-idempotency.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-ips-production-safety.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-locks.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-marketplace-domain.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-marketplace-domain.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-online-access-transfer.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-operational-policy.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-operational-policy.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-operational-routes.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-outbox.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-payment-obligation-settlement.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-placement-lifecycle.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-popular-featured-ranking.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-scheduler.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-sessions.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-sessions.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-billing.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-domain.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-reactivation.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-worker.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-taxonomy.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-test-fixtures.ts",
+            "type": "file"
+          },
+          {
+            "name": "employee-location-deactivation-scoping.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "employee-performance.ts",
+            "type": "file"
+          },
+          {
+            "name": "featured-placement-payment-reminders.ts",
+            "type": "file"
+          },
+          {
+            "name": "final-booking-hardening.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "fixtures",
+            "type": "directory"
+          },
+          {
+            "name": "growth-ai-snapshot.ts",
+            "type": "file"
+          },
+          {
+            "name": "growth-salon-isolation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "http-errors.ts",
+            "type": "file"
+          },
+          {
+            "name": "http-security-hardening.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "http-security-hsts-child.ts",
+            "type": "file"
+          },
+          {
+            "name": "image-pipeline.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "image-storage.ts",
+            "type": "file"
+          },
+          {
+            "name": "integrations.ts",
+            "type": "file"
+          },
+          {
+            "name": "internal-job-secret-timing-safety.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "internal-request-controls.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "internal-request-controls.ts",
+            "type": "file"
+          },
+          {
+            "name": "logger.ts",
+            "type": "file"
+          },
+          {
+            "name": "login-rate-limit.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "loyalty-status.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "marketplace-performance-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "media-migration.ts",
+            "type": "file"
+          },
+          {
+            "name": "media-routes.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "media-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "monitoring.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "monitoring.ts",
+            "type": "file"
+          },
+          {
+            "name": "multi-location.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "object-storage.ts",
+            "type": "file"
+          },
+          {
+            "name": "order-import-wishlist-api.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "owner-reset-password-session-revocation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "package-entitlement.ts",
+            "type": "file"
+          },
+          {
+            "name": "pg-busy-client.test-support.ts",
+            "type": "file"
+          },
+          {
+            "name": "phone-contact-sql-bounds.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "process-lifecycle.ts",
+            "type": "file"
+          },
+          {
+            "name": "product-swatch.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "product-swatch.ts",
+            "type": "file"
+          },
+          {
+            "name": "product-waitlist-worker.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-demo-seed-isolated-harness.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-demo-seed.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-marketplace-demo-seed.ts",
+            "type": "file"
+          },
+          {
+            "name": "provider-events.ts",
+            "type": "file"
+          },
+          {
+            "name": "query-count.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-checkout.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-domain.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-domain.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-lifecycle.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-service.ts",
+            "type": "file"
+          },
+          {
+            "name": "referral-sms.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "rescheduled-confirmation-retries.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "rescheduled-confirmation-retries.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-cart-reminders.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-cart-reminders.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-checkout.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-subscription-worker.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-subscription.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retention-classification.ts",
+            "type": "file"
+          },
+          {
+            "name": "retention-settings.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retention-settings.ts",
+            "type": "file"
+          },
+          {
+            "name": "review-invitations.ts",
+            "type": "file"
+          },
+          {
+            "name": "review-photo-privacy.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "runtime-adversarial-authorization.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "runtime-environment.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "runtime-environment.ts",
+            "type": "file"
+          },
+          {
+            "name": "runtime-error-disclosure.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "runtime-restart-durability.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "safe-external-url.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "safe-external-url.ts",
+            "type": "file"
+          },
+          {
+            "name": "safe-mode-external-calls.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "salon-inventory.ts",
+            "type": "file"
+          },
+          {
+            "name": "salon-notification-events.ts",
+            "type": "file"
+          },
+          {
+            "name": "scheduler-affected-jobs.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "scheduler-resilience.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "scheduler-resilience.ts",
+            "type": "file"
+          },
+          {
+            "name": "seed-maintenance.ts",
+            "type": "file"
+          },
+          {
+            "name": "seed.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "seed.ts",
+            "type": "file"
+          },
+          {
+            "name": "shipping-config.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "shipping-config.ts",
+            "type": "file"
+          },
+          {
+            "name": "sms-fallback-admin-phone-notice.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "sms-reminders.ts",
+            "type": "file"
+          },
+          {
+            "name": "sms-webhook-registration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "sms.ts",
+            "type": "file"
+          },
+          {
+            "name": "social-oauth-domain-change.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "social-oauth-facebook-account-linking-safety.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "social-oauth-google-account-linking-safety.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "social-oauth-referral-context.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "social-oauth-return-to.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "startup-ddl-pool.ts",
+            "type": "file"
+          },
+          {
+            "name": "startup-ddl-safety.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "startup-ddl-safety.ts",
+            "type": "file"
+          },
+          {
+            "name": "stats-compare-window-boundaries.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "supplier-catalog.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "tenant-isolation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "test-listing-reconciliation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "test-listing-reconciliation.ts",
+            "type": "file"
+          },
+          {
+            "name": "timestamp-age.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "timestamp-age.ts",
+            "type": "file"
+          },
+          {
+            "name": "transactional-email-outbox.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "web-push-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "web-push.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "web-push.ts",
+            "type": "file"
+          },
+          {
+            "name": "webhook-registration-verification.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "webhook-repair-selection.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "webhook-secret-reconfirmation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "widget-appointment-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "widget-rate-limit.test.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "artifacts/api-server/src/lib/fixtures",
+        "entries": [
+          {
+            "name": "raiffeisen-camt053-anonymized.xml",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "artifacts/api-server/src/middlewares",
+        "entries": [
+          {
+            "name": ".gitkeep",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "artifacts/api-server/src/routes",
+        "entries": [
+          {
+            "name": "b2c-discovery.ts",
+            "type": "file"
+          },
+          {
+            "name": "beauty-jobs.ts",
+            "type": "file"
+          },
+          {
+            "name": "business-guide.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-ef.ts",
+            "type": "file"
+          },
+          {
+            "name": "commerce-g.ts",
+            "type": "file"
+          },
+          {
+            "name": "deo-g2.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-b2b-discounts.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-bundle-purchases.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-center-operations.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-operations.ts",
+            "type": "file"
+          },
+          {
+            "name": "education-subscription-billing.ts",
+            "type": "file"
+          },
+          {
+            "name": "growth.ts",
+            "type": "file"
+          },
+          {
+            "name": "health.ts",
+            "type": "file"
+          },
+          {
+            "name": "image-media.ts",
+            "type": "file"
+          },
+          {
+            "name": "index.ts",
+            "type": "file"
+          },
+          {
+            "name": "location-schedule-validation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "marketplace-query-budget.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "marketplace.ts",
+            "type": "file"
+          },
+          {
+            "name": "media.ts",
+            "type": "file"
+          },
+          {
+            "name": "phase3.ts",
+            "type": "file"
+          },
+          {
+            "name": "provider-webhooks.ts",
+            "type": "file"
+          },
+          {
+            "name": "referrals.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-subscriptions.ts",
+            "type": "file"
+          },
+          {
+            "name": "widget.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "lib",
+        "entries": [
+          {
+            "name": "api-client-react",
+            "type": "directory"
+          },
+          {
+            "name": "api-spec",
+            "type": "directory"
+          },
+          {
+            "name": "api-zod",
+            "type": "directory"
+          },
+          {
+            "name": "db",
+            "type": "directory"
+          },
+          {
+            "name": "integrations-anthropic-ai",
+            "type": "directory"
+          }
+        ]
+      },
+      {
+        "path": "scripts/src",
+        "entries": [
+          {
+            "name": "additional-operations-evidence-validation.ts",
+            "type": "file"
+          },
+          {
+            "name": "additional-operations-evidence.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "anonymized-pg-dump.test.sh",
+            "type": "file"
+          },
+          {
+            "name": "api-fixtures.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "api-preflight.sh",
+            "type": "file"
+          },
+          {
+            "name": "api-preflight.test.sh",
+            "type": "file"
+          },
+          {
+            "name": "assert-destructive-test-runtime.ts",
+            "type": "file"
+          },
+          {
+            "name": "audit-schema-drift.ts",
+            "type": "file"
+          },
+          {
+            "name": "backend-standards-database.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "backend-standards-database.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-development-schema.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-development-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-load-metrics.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-load-metrics.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-load-suite.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-load-telemetry.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "booking-load-telemetry.ts",
+            "type": "file"
+          },
+          {
+            "name": "browser-api-fixtures.ts",
+            "type": "file"
+          },
+          {
+            "name": "browser-preflight.ts",
+            "type": "file"
+          },
+          {
+            "name": "bundle-budget.ts",
+            "type": "file"
+          },
+          {
+            "name": "check-browser-spec-types.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "check-browser-spec-types.ts",
+            "type": "file"
+          },
+          {
+            "name": "dependency-declaration-parser-guard.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "destructive-harness-registry.ts",
+            "type": "file"
+          },
+          {
+            "name": "destructive-test-runtime.sh",
+            "type": "file"
+          },
+          {
+            "name": "destructive-test-runtime.ts",
+            "type": "file"
+          },
+          {
+            "name": "ensure-development-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "ensure-retail-cart-index-ci.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "ensure-retail-cart-index-ci.ts",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "frontend-performance-standards.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "generated-api-check.ts",
+            "type": "file"
+          },
+          {
+            "name": "hello.ts",
+            "type": "file"
+          },
+          {
+            "name": "internal-request-control-output-check.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "internal-request-control-output-check.ts",
+            "type": "file"
+          },
+          {
+            "name": "isolated-admin-fixture.sh",
+            "type": "file"
+          },
+          {
+            "name": "migration-contract",
+            "type": "directory"
+          },
+          {
+            "name": "migrations",
+            "type": "directory"
+          },
+          {
+            "name": "object-storage-stub.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-request-dependency-boundary.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-request-dependency-boundary.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-startup-ddl-baseline.json",
+            "type": "file"
+          },
+          {
+            "name": "production-startup-ddl-inventory.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "production-startup-ddl-inventory.ts",
+            "type": "file"
+          },
+          {
+            "name": "release-chain.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-cart-ci-preparation.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-cart-index-development-schema.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "retail-cart-index-development-schema.ts",
+            "type": "file"
+          },
+          {
+            "name": "retry-rescheduled-confirmations.ts",
+            "type": "file"
+          },
+          {
+            "name": "rma-market-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-admin-access-configuration.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-admin-bounded-pagination.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-admin-form-resilience.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-admin-navigation-regression.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-api-regressions-lifecycle.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-api-regressions.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-beauty-jobs-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-booking-journey-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-booking-load.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-booking-qa.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-booking-settings-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-cover-image-description-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-crm-backfill-isolated.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-education-dispute-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-education-group-online-consent-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-education-ips-production-safety.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-education-placement-lifecycle.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-education-public-center-hook-order-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-employee-location-deactivation-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-final-booking-qa.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-infobip-registration-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-isolated-browser-suite.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-logout-login-cache-residue-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-playwright-with-preflight.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-rescheduled-confirmation-qa.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-retail-checkout-api.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-retail-checkout.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-retention-preview.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-runtime-security-suite.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-safe-external-url-rendering-browser.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-salon-notification-release.ts",
+            "type": "file"
+          },
+          {
+            "name": "run-supplier-catalog-api.ts",
+            "type": "file"
+          },
+          {
+            "name": "safe-child-process-output.ts",
+            "type": "file"
+          },
+          {
+            "name": "schema-drift",
+            "type": "directory"
+          },
+          {
+            "name": "send-sms-reminders.ts",
+            "type": "file"
+          },
+          {
+            "name": "seo-standards.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "startup-equivalence",
+            "type": "directory"
+          },
+          {
+            "name": "startup-migration-crosswalk.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "startup-migration-crosswalk.ts",
+            "type": "file"
+          },
+          {
+            "name": "test-backend-standards.ts",
+            "type": "file"
+          },
+          {
+            "name": "test-backend-static-checks.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "scripts/src/migration-contract",
+        "entries": [
+          {
+            "name": "ci-migration-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "contract.ts",
+            "type": "file"
+          },
+          {
+            "name": "header.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "header.ts",
+            "type": "file"
+          },
+          {
+            "name": "migration-contract.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "README.md",
+            "type": "file"
+          },
+          {
+            "name": "validate-ci-migration-contract.ts",
+            "type": "file"
+          },
+          {
+            "name": "verify-migration-contract.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "scripts/src/migrations",
+        "entries": [
+          {
+            "name": "cli.ts",
+            "type": "file"
+          },
+          {
+            "name": "files.ts",
+            "type": "file"
+          },
+          {
+            "name": "index.ts",
+            "type": "file"
+          },
+          {
+            "name": "ledger.ts",
+            "type": "file"
+          },
+          {
+            "name": "lock.ts",
+            "type": "file"
+          },
+          {
+            "name": "manifest.ts",
+            "type": "file"
+          },
+          {
+            "name": "migrations.integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "migrations.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "PHASE-5B-RUNBOOK.md",
+            "type": "file"
+          },
+          {
+            "name": "preflight-cli.ts",
+            "type": "file"
+          },
+          {
+            "name": "preflight.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "preflight.ts",
+            "type": "file"
+          },
+          {
+            "name": "read-only-ledger.ts",
+            "type": "file"
+          },
+          {
+            "name": "runner.ts",
+            "type": "file"
+          },
+          {
+            "name": "types.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "scripts/src/schema-drift",
+        "entries": [
+          {
+            "name": "baseline-manifest.json",
+            "type": "file"
+          },
+          {
+            "name": "canonical.ts",
+            "type": "file"
+          },
+          {
+            "name": "catalog.ts",
+            "type": "file"
+          },
+          {
+            "name": "compare.ts",
+            "type": "file"
+          },
+          {
+            "name": "eligibility-cli.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "eligibility-cli.ts",
+            "type": "file"
+          },
+          {
+            "name": "eligibility.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "eligibility.ts",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint-golden-fixture.integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint-transaction.ts",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint.integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "FINGERPRINT.md",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "fingerprint.ts",
+            "type": "file"
+          },
+          {
+            "name": "index.ts",
+            "type": "file"
+          },
+          {
+            "name": "model.ts",
+            "type": "file"
+          },
+          {
+            "name": "ownership.ts",
+            "type": "file"
+          },
+          {
+            "name": "read-only-query.ts",
+            "type": "file"
+          },
+          {
+            "name": "schema-drift.integration.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "schema-drift.test.ts",
+            "type": "file"
+          }
+        ]
+      },
+      {
+        "path": "scripts/src/startup-equivalence",
+        "entries": [
+          {
+            "name": "crosswalk.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "crosswalk.ts",
+            "type": "file"
+          },
+          {
+            "name": "fixtures-cli.ts",
+            "type": "file"
+          },
+          {
+            "name": "fixtures.test.ts",
+            "type": "file"
+          },
+          {
+            "name": "fixtures.ts",
+            "type": "file"
+          },
+          {
+            "name": "recovery.test.ts",
+            "type": "file"
+          }
+        ]
+      }
+    ],
+    "absentPaths": [
+      "artifacts/api-server/src/app",
+      "artifacts/api-server/src/lib/active-product-sale",
+      "artifacts/api-server/src/lib/aftercare-domain",
+      "artifacts/api-server/src/lib/aftercare-worker",
+      "artifacts/api-server/src/lib/api-errors",
+      "artifacts/api-server/src/lib/appointment-customer-events",
+      "artifacts/api-server/src/lib/appointment-lifecycle",
+      "artifacts/api-server/src/lib/appointment-locks",
+      "artifacts/api-server/src/lib/auth",
+      "artifacts/api-server/src/lib/automation-worker",
+      "artifacts/api-server/src/lib/availability-engine",
+      "artifacts/api-server/src/lib/availability-store",
+      "artifacts/api-server/src/lib/beauty-jobs-delivery-monitor",
+      "artifacts/api-server/src/lib/beauty-jobs-email",
+      "artifacts/api-server/src/lib/beauty-jobs-maintenance",
+      "artifacts/api-server/src/lib/booking-admission",
+      "artifacts/api-server/src/lib/booking-command",
+      "artifacts/api-server/src/lib/booking-command-schema",
+      "artifacts/api-server/src/lib/brevo",
+      "artifacts/api-server/src/lib/business-growth-schema",
+      "artifacts/api-server/src/lib/business-guide-content",
+      "artifacts/api-server/src/lib/business-guide-pdf",
+      "artifacts/api-server/src/lib/catalog-cache",
+      "artifacts/api-server/src/lib/commerce-discount-engine",
+      "artifacts/api-server/src/lib/commerce-g-domain",
+      "artifacts/api-server/src/lib/commerce-pricing-engine",
+      "artifacts/api-server/src/lib/communication-archive",
+      "artifacts/api-server/src/lib/coupon-engine",
+      "artifacts/api-server/src/lib/customer-notifications",
+      "artifacts/api-server/src/lib/date-serialization",
+      "artifacts/api-server/src/lib/delivery-report-alerts",
+      "artifacts/api-server/src/lib/deo-g2-rule-loader",
+      "artifacts/api-server/src/lib/deo-g2-rules",
+      "artifacts/api-server/src/lib/education-availability-store",
+      "artifacts/api-server/src/lib/education-bank-reconciliation",
+      "artifacts/api-server/src/lib/education-belgrade-calendar",
+      "artifacts/api-server/src/lib/education-billing",
+      "artifacts/api-server/src/lib/education-bundle-purchase-schema",
+      "artifacts/api-server/src/lib/education-camt053",
+      "artifacts/api-server/src/lib/education-center-eligibility",
+      "artifacts/api-server/src/lib/education-certificate-eligibility",
+      "artifacts/api-server/src/lib/education-entitlement",
+      "artifacts/api-server/src/lib/education-featured-eligibility",
+      "artifacts/api-server/src/lib/education-financial-audit",
+      "artifacts/api-server/src/lib/education-idempotency",
+      "artifacts/api-server/src/lib/education-locks",
+      "artifacts/api-server/src/lib/education-marketplace-domain",
+      "artifacts/api-server/src/lib/education-operational-policy",
+      "artifacts/api-server/src/lib/education-outbox",
+      "artifacts/api-server/src/lib/education-payment-obligation-settlement",
+      "artifacts/api-server/src/lib/education-sessions",
+      "artifacts/api-server/src/lib/education-subscription-domain",
+      "artifacts/api-server/src/lib/education-subscription-reactivation",
+      "artifacts/api-server/src/lib/education-subscription-worker",
+      "artifacts/api-server/src/lib/employee-performance",
+      "artifacts/api-server/src/lib/featured-placement-payment-reminders",
+      "artifacts/api-server/src/lib/growth-ai-snapshot",
+      "artifacts/api-server/src/lib/image-storage",
+      "artifacts/api-server/src/lib/integrations",
+      "artifacts/api-server/src/lib/internal-request-controls",
+      "artifacts/api-server/src/lib/logger",
+      "artifacts/api-server/src/lib/marketplace-performance-schema",
+      "artifacts/api-server/src/lib/media-migration",
+      "artifacts/api-server/src/lib/media-schema",
+      "artifacts/api-server/src/lib/monitoring",
+      "artifacts/api-server/src/lib/object-storage",
+      "artifacts/api-server/src/lib/package-entitlement",
+      "artifacts/api-server/src/lib/process-lifecycle",
+      "artifacts/api-server/src/lib/product-swatch",
+      "artifacts/api-server/src/lib/product-waitlist-worker",
+      "artifacts/api-server/src/lib/provider-events",
+      "artifacts/api-server/src/lib/referral-domain",
+      "artifacts/api-server/src/lib/referral-schema",
+      "artifacts/api-server/src/lib/referral-service",
+      "artifacts/api-server/src/lib/rescheduled-confirmation-retries",
+      "artifacts/api-server/src/lib/retail-cart-reminders",
+      "artifacts/api-server/src/lib/retail-subscription-worker",
+      "artifacts/api-server/src/lib/retention-classification",
+      "artifacts/api-server/src/lib/retention-settings",
+      "artifacts/api-server/src/lib/review-invitations",
+      "artifacts/api-server/src/lib/runtime-environment",
+      "artifacts/api-server/src/lib/safe-external-url",
+      "artifacts/api-server/src/lib/salon-inventory",
+      "artifacts/api-server/src/lib/salon-notification-events",
+      "artifacts/api-server/src/lib/scheduler-resilience",
+      "artifacts/api-server/src/lib/shipping-config",
+      "artifacts/api-server/src/lib/sms",
+      "artifacts/api-server/src/lib/sms-reminders",
+      "artifacts/api-server/src/lib/startup-ddl-pool",
+      "artifacts/api-server/src/lib/startup-ddl-safety",
+      "artifacts/api-server/src/lib/test-listing-reconciliation",
+      "artifacts/api-server/src/lib/timestamp-age",
+      "artifacts/api-server/src/lib/web-push",
+      "artifacts/api-server/src/lib/web-push-schema",
+      "artifacts/api-server/src/routes.cjs",
+      "artifacts/api-server/src/routes.cts",
+      "artifacts/api-server/src/routes.js",
+      "artifacts/api-server/src/routes.jsx",
+      "artifacts/api-server/src/routes.mjs",
+      "artifacts/api-server/src/routes.mts",
+      "artifacts/api-server/src/routes.ts",
+      "artifacts/api-server/src/routes.tsx",
+      "artifacts/api-server/src/routes/b2c-discovery",
+      "artifacts/api-server/src/routes/beauty-jobs",
+      "artifacts/api-server/src/routes/business-guide",
+      "artifacts/api-server/src/routes/commerce-ef",
+      "artifacts/api-server/src/routes/commerce-g",
+      "artifacts/api-server/src/routes/deo-g2",
+      "artifacts/api-server/src/routes/education-b2b-discounts",
+      "artifacts/api-server/src/routes/education-bundle-purchases",
+      "artifacts/api-server/src/routes/education-center-operations",
+      "artifacts/api-server/src/routes/education-operations",
+      "artifacts/api-server/src/routes/education-subscription-billing",
+      "artifacts/api-server/src/routes/growth",
+      "artifacts/api-server/src/routes/health",
+      "artifacts/api-server/src/routes/image-media",
+      "artifacts/api-server/src/routes/marketplace",
+      "artifacts/api-server/src/routes/media",
+      "artifacts/api-server/src/routes/phase3",
+      "artifacts/api-server/src/routes/provider-webhooks",
+      "artifacts/api-server/src/routes/referrals",
+      "artifacts/api-server/src/routes/retail-subscriptions",
+      "artifacts/api-server/src/routes/widget",
+      "lib/api-zod/src/generated/api",
+      "lib/db/src/destructive-test-runtime",
+      "lib/db/src/query-observation",
+      "lib/db/src/schema.cjs",
+      "lib/db/src/schema.cts",
+      "lib/db/src/schema.js",
+      "lib/db/src/schema.jsx",
+      "lib/db/src/schema.mjs",
+      "lib/db/src/schema.mts",
+      "lib/db/src/schema.ts",
+      "lib/db/src/schema.tsx",
+      "lib/db/src/schema/aftercare",
+      "lib/db/src/schema/b2c-catalog-taxonomy",
+      "lib/db/src/schema/b2c-discovery",
+      "lib/db/src/schema/b2c-product-reviews",
+      "lib/db/src/schema/beauty-jobs",
+      "lib/db/src/schema/booking-commands",
+      "lib/db/src/schema/business-growth",
+      "lib/db/src/schema/commerce",
+      "lib/db/src/schema/commerce-coupon-approvals",
+      "lib/db/src/schema/commerce-deo-g2",
+      "lib/db/src/schema/commerce-ef",
+      "lib/db/src/schema/commerce-g",
+      "lib/db/src/schema/core",
+      "lib/db/src/schema/customer-password-setup",
+      "lib/db/src/schema/education",
+      "lib/db/src/schema/media",
+      "lib/db/src/schema/phase3",
+      "lib/db/src/schema/referral",
+      "lib/db/src/schema/retail-subscriptions",
+      "lib/db/src/schema/web-push",
+      "lib/integrations-anthropic-ai/src/client"
+    ]
+  }
+}

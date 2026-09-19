@@ -1,0 +1,15 @@
+✔ canonical baseline plus exact fast function converges and repeats (7293.665664ms)
+✔ unknown function and extra public objects reject before ledger mutation (21175.46154ms)
+✔ cleanup provenance rejects and zero report timestamp is preserved (21945.950636ms)
+✔ production runtime guard rejects before querying a client (17.786729ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50439.028357
+nd ledger unchanged
+2026-09-17T10:06:50.141Z zero cleanup report PASS; timestamp preserved
+2026-09-17T10:06:53.311Z production guard PASS; fake client query count 0

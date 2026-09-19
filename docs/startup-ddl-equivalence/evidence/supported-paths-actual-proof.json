@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-09-17T10:54:35.077Z",
+  "actualEntrypoint": "artifacts/api-server/src/index.ts",
+  "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c",
+  "exactRemovedEnsureSymbols": [
+    "ensureBusinessGrowthSchema",
+    "ensureMediaSchema",
+    "ensureShippingConfigSchema",
+    "ensureMarketplacePerformanceIndexes",
+    "ensureReferralSchema",
+    "ensureWebPushSchema",
+    "ensureBookingCommandSchema",
+    "ensureEducationBundlePurchaseSchema"
+  ],
+  "candidateHistory": {
+    "sourceSha256": "81779a45eb64d883a7031c6a95bde1cf905b125f63eb192b336359f16c4c1dc9",
+    "transformedCandidateSha256": "8937a8cc16fa85edc99d42a1007c8d7e8d94dd47b32a8ce51fbf70e1522f61c5",
+    "note": "Retained metadata from the disposable candidate proof; no candidate was generated in this actual-entrypoint run."
+  },
+  "ddlLogPath": "/tmp/replit-shell-output-logs/EXTXZ3EMNKP1HIJ7W8R07/log",
+  "phases": [
+    {
+      "phase": "A_FRESH_APPLY_BOOT",
+      "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c"
+    },
+    {
+      "phase": "B1_EXISTING_GLOBAL_CONFIGURATION_BOOT",
+      "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c"
+    },
+    {
+      "phase": "B1_ADOPTED_KNOWN_FAST_CATALOG_BOOT",
+      "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c",
+      "ledgerState": "ADOPTED",
+      "catalogFixture": "known-fast-function-definition"
+    },
+    {
+      "phase": "B2_TRACKED_RUNTIME_BOOT",
+      "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c"
+    },
+    {
+      "phase": "C_UNSUPPORTED_PREHEALTH_REJECTION",
+      "actualSourceSha256": "c8fc0f5ea394bd6b2bce4a494b0a6ba28ba06be3b8c53baa651ceb16a832593c"
+    }
+  ],
+  "note": "Disposable proof only; not evidence about the published database."
+}

@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db";
+import { pool } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 
 /**
  * Additive rollout guard for columns/enums introduced by referral redemption.
@@ -9,10 +9,10 @@ import { pool } from "@workspace/db";
 export async function ensureReferralSchema(schemaName = "public"): Promise<void> {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schemaName)) throw new Error("Invalid schema name.");
   const schema = `"${schemaName}"`;
-  const client = await pool.connect();
+  const client = await pool.connect(); let locked = false;
   try {
-    await client.query("select pg_advisory_lock(hashtext($1))", ["lumera:referral-schema"]);
-    await client.query("begin");
+    await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", ["lumera:referral-schema"]); locked = true;
+    // The transaction-local policy bounds both advisory-lock and DDL waits.
     await client.query(`alter table ${schema}.orders add column if not exists referral_credit_applied_rsd integer not null default 0`);
     await client.query(`alter table ${schema}.orders add column if not exists referral_credit_restored_at timestamptz`);
     await client.query(`alter table ${schema}.retail_orders add column if not exists referral_credit_applied_rsd integer not null default 0`);
@@ -51,7 +51,7 @@ export async function ensureReferralSchema(schemaName = "public"): Promise<void>
     await client.query("rollback").catch(() => {});
     throw error;
   } finally {
-    await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:referral-schema"]).catch(() => {});
+    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:referral-schema"]).catch(() => {});
     client.release();
   }
 }

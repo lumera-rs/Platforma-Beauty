@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
+import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
 import { logger } from "./logger";
 
 /**
@@ -7,7 +7,7 @@ import { logger } from "./logger";
  * idempotent bootstrap ahead of every media query so an existing database can
  * accept the media pipeline on the first deploy.
  */
-export async function ensureMediaSchema(): Promise<void> {
+export async function ensureMediaSchema(poolOverride?: StartupDdlPool): Promise<void> { const client = await (await resolveStartupDdlPool(poolOverride)).connect(); let locked = false;
   const statements = [
     `DO $$ BEGIN
       CREATE TYPE image_asset_status AS ENUM ('pending', 'processing', 'ready', 'failed');
@@ -102,8 +102,9 @@ export async function ensureMediaSchema(): Promise<void> {
     `CREATE INDEX IF NOT EXISTS media_upload_tickets_test_cleanup_idx ON media_upload_tickets (test_cleanup_key)`,
   ];
 
-  for (const statement of statements) {
-    await db.execute(sql.raw(statement));
-  }
-  logger.info("Media database schema is ready");
+  try { await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", ["lumera:media-schema:v1"]); locked = true;
+    for (const statement of statements) { await client.query(statement); }
+    await client.query("commit"); logger.info("Media database schema is ready");
+  } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
+  finally { if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:media-schema:v1"]).catch(() => {}); client.release(); }
 }

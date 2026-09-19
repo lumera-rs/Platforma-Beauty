@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "purpose": "Immutable manifest for the complete 103-row independent AST census.",
+  "sourceArtifact": {
+    "repositoryCommit": "0f2e39b75f3014edd8f92f83afaa651c8ddf1743",
+    "path": "docs/additional-operations-evidence/census.json",
+    "sha256": "a0ac773509603a7527c05b1740e855f4f1548d930440c050c8ea9b67b3f28c72",
+    "readCommand": "git show 0f2e39b75f3014edd8f92f83afaa651c8ddf1743:docs/additional-operations-evidence/census.json"
+  },
+  "crosswalkProvenance": {
+    "sourceCommit": "6e7ac9411eb454b4aeddccd46444df1aa7e120bc",
+    "reproductionCommand": "tmp=$(mktemp -d) && git archive 6e7ac9411eb454b4aeddccd46444df1aa7e120bc | tar -x -C \"$tmp\" && (cd \"$tmp\" && pnpm install --frozen-lockfile && pnpm --filter @workspace/scripts exec tsx ./src/startup-migration-crosswalk.ts --json)"
+  },
+  "expected": {
+    "literalRows": 103,
+    "dataMutationLiterals": 70,
+    "functionReplacementLiterals": 33,
+    "representedOperationIds": 101,
+    "nonCensusOperationIds": 9
+  },
+  "note": "The source artifact remains byte-identical and contains every literal ID, owner/kind code, exact line-column span, raw-SQL SHA-256 and E/R linkage marker. This manifest replaces only its ephemeral provenance."
+}

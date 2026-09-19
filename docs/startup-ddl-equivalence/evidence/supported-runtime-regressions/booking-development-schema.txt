@@ -1,0 +1,6 @@
+
+> workspace@0.0.0 test:booking-development-schema /home/runner/workspace
+> NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ./src/booking-development-schema.test.ts
+
+✓ booking development schema is replay-safe and production-guarded
+exit=0

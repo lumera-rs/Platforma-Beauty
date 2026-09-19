@@ -1,328 +1,407 @@
 /**
- * Regression coverage for the CRITICAL fix to demo-account seeding.
+ * Production demo-fixture safety regression suite.
  *
- * Before this fix, `ensureDemoData()` (called from nearly every marketplace
- * route, including the public unauthenticated booking widget) would, on any
- * database with zero users, silently insert a set of well-known demo
- * accounts -- including a SUPER_ADMIN ("admin@lumera.local") -- using a
- * password documented in this repository (docs/development.md). That made
- * every freshly-provisioned production database vulnerable to an
- * unauthenticated full-platform takeover by anyone who had read the source.
+ * This suite is intentionally DB-free.  The former version created a
+ * database and ran schema-changing setup; that is not an acceptable safety
+ * test because it exercised migration machinery and could be pointed at
+ * persistent workspace data.  The harness below bundles app.ts
+ * against a controlled in-memory adapter, removes DATABASE_URL from every
+ * child process, and records mutations for behavioral assertions.
  *
- * `productionDemoSeedAllowed()` (lib/seed.ts) now gates that entire
- * demo-identity-creation branch: it is allowed unconditionally outside
- * production, and in production only when an operator has explicitly set
- * LUMERA_ALLOW_PRODUCTION_DEMO_SEED=1 (for an intentional showcase/demo
- * deployment). This file verifies both the pure decision function and the
- * real end-to-end HTTP behavior against a genuinely empty, freshly
- * schema-pushed, disposable database and a real running API server -- the
- * same "createdb / push-force / spawn test-server.ts" primitives already
- * used by scripts/src/run-isolated-browser-suite.ts, reimplemented here in a
- * small, self-contained form so this file stays fully additive and does not
- * modify that shared harness.
- *
- * Run:
- *   NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test \
- *     ../artifacts/api-server/src/lib/production-demo-seed.test.ts
+ * The app is imported directly, never through index.ts.  This keeps startup
+ * DDL, workers, listeners, and production bootstrap out of the harness.
  */
 import assert from "node:assert/strict";
-import test from "node:test";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
-import { randomUUID } from "node:crypto";
-import { promisify } from "node:util";
+import test, { after } from "node:test";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
-import { PRODUCTION_DEMO_SEED_OPT_IN_ENV, productionDemoSeedAllowed } from "./seed";
+import {
+  disposeIsolatedHarness,
+  runSeedFacadeInFreshProcess,
+  runSeedFacadeWithFixtureSpy,
+  startIsolatedHttpServer,
+  type IsolatedDbSnapshot,
+  type IsolatedHttpServer,
+  type IsolatedWrite,
+} from "./production-demo-seed-isolated-harness";
 
-const execFileAsync = promisify(execFile);
-const workspaceRoot = path.resolve(import.meta.dirname, "..", "..", "..", "..");
-const tsxPath = path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx");
-const testServerPath = path.join(workspaceRoot, "artifacts", "api-server", "src", "test-server.ts");
+const apiServerRoot = path.resolve(import.meta.dirname, "..", "..");
+const routesRoot = path.join(apiServerRoot, "src", "routes");
 
-// -----------------------------------------------------------------------
-// Part 1: pure, DB-free coverage of the gating decision itself.
-// -----------------------------------------------------------------------
+const DEMO_FIXTURE_TABLES = new Set([
+  "salons",
+  "serviceCategories",
+  "services",
+  "employees",
+  "employeeServices",
+  "employeeLocationAssignments",
+  "salonHours",
+  "appointments",
+  "salonCustomers",
+  "products",
+  "productCategories",
+  "productBrands",
+  "salonBrands",
+  "educationCenters",
+  "educationInstructors",
+  "courses",
+  "courseCategories",
+  "beautyJobListings",
+  "educationSections",
+  "educationSubcategories",
+  "educationCourseTypes",
+]);
+const ALLOWED_AUTH_WRITE_TABLES = new Set([
+  "customerPasswordSetupRateLimits",
+  "phoneVerificationProofs",
+  "sessions",
+  "users",
+]);
 
-void test("productionDemoSeedAllowed blocks production by default", () => {
-  assert.equal(productionDemoSeedAllowed({ NODE_ENV: "production" }), false);
-});
-
-void test("productionDemoSeedAllowed allows production only with the exact opt-in value", () => {
-  assert.equal(
-    productionDemoSeedAllowed({ NODE_ENV: "production", [PRODUCTION_DEMO_SEED_OPT_IN_ENV]: "1" }),
-    true,
-  );
-});
-
-void test("productionDemoSeedAllowed fails safe for near-miss opt-in values", () => {
-  const nearMisses = ["true", "TRUE", "yes", "on", "0", "", " 1", "1 "];
-  for (const value of nearMisses) {
-    assert.equal(
-      productionDemoSeedAllowed({ NODE_ENV: "production", [PRODUCTION_DEMO_SEED_OPT_IN_ENV]: value }),
-      false,
-      `opt-in value ${JSON.stringify(value)} must not enable production demo seeding`,
-    );
-  }
-});
-
-void test("productionDemoSeedAllowed never requires the opt-in outside production", () => {
-  for (const nodeEnv of ["test", "development", undefined]) {
-    assert.equal(
-      productionDemoSeedAllowed(nodeEnv === undefined ? {} : { NODE_ENV: nodeEnv }),
-      true,
-      `NODE_ENV=${nodeEnv ?? "(unset)"} must not require the production opt-in`,
-    );
-  }
-});
-
-void test("the opt-in env var is not silently satisfied by an unrelated truthy env var", () => {
-  // Guards against a future edit accidentally keying off the wrong variable
-  // name (e.g. a generic "SEED_DEMO_DATA=1") and reintroducing silent
-  // production seeding.
-  assert.equal(
-    productionDemoSeedAllowed({ NODE_ENV: "production", SEED_DEMO_DATA: "1", LUMERA_ALLOW_DEMO: "1" }),
-    false,
-  );
-});
-
-// -----------------------------------------------------------------------
-// Part 2: real end-to-end HTTP behavior against a disposable, genuinely
-// empty database and a real running API server process.
-// -----------------------------------------------------------------------
-
-assertDestructiveTestRuntimeAllowed(process.env, "Production demo-seed guard regression");
-
-const baseDatabaseUrl = process.env.DATABASE_URL;
-assert.ok(baseDatabaseUrl, "DATABASE_URL is required to provision disposable regression databases.");
-
-async function findAvailablePort(): Promise<number> {
-  const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await new Promise<void>((resolve) => server.once("listening", resolve));
-  const address = server.address();
-  await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-  if (!address || typeof address === "string") {
-    throw new Error("Could not reserve a local TCP port for the disposable API server.");
-  }
-  return address.port;
-}
-
-async function waitForHealthz(apiBaseUrl: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/healthz`);
-      if (response.ok) return;
-      lastError = new Error(`received ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(
-    `Disposable API server did not become ready within 30 seconds${
-      lastError ? ` (${lastError instanceof Error ? lastError.message : String(lastError)})` : ""
-    }.`,
-  );
-}
-
-async function stopProcess(child: ChildProcess | undefined): Promise<void> {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
-  ]);
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-}
-
-type DisposableEnvironment = {
-  apiBaseUrl: string;
-  queryUsers: () => Promise<Array<{ email: string; role: string }>>;
-  cleanup: () => Promise<void>;
-};
-
-/**
- * Provisions a brand-new, empty (freshly schema-pushed, zero rows), disposable
- * Postgres database and starts a real API server process against it with the
- * given environment. This intentionally reimplements only the small subset of
- * scripts/src/run-isolated-browser-suite.ts's primitives needed here (createdb
- * / push-force / spawn test-server.ts / wait for /api/healthz), so this
- * regression file stays self-contained and never modifies that shared,
- * more general-purpose harness.
- */
-async function provisionDisposableApiServer(
-  serverEnvironment: Record<string, string>,
-): Promise<DisposableEnvironment> {
-  const databaseName = `lumera_prod_demo_seed_test_${process.pid}_${randomUUID().replaceAll("-", "")}`;
-  const testDatabaseUrl = (() => {
-    const url = new URL(baseDatabaseUrl!);
-    url.pathname = `/${databaseName}`;
-    return url.toString();
-  })();
-
-  await execFileAsync("createdb", ["--maintenance-db", baseDatabaseUrl!, databaseName]);
-
-  let databaseExists = true;
-  try {
-    await execFileAsync(
-      "pnpm",
-      ["--filter", "@workspace/db", "run", "push-force"],
-      { cwd: workspaceRoot, env: { ...process.env, DATABASE_URL: testDatabaseUrl } },
-    );
-
-    const port = await findAvailablePort();
-    const apiBaseUrl = `http://127.0.0.1:${port}`;
-    const child = spawn(tsxPath, [testServerPath], {
-      cwd: workspaceRoot,
-      env: {
-        ...process.env,
-        // The Anthropic integration is resolved lazily now, so importing the
-        // app no longer needs these. They are still supplied because this
-        // helper boots servers with NODE_ENV=production, and production boots
-        // assert the integration up front (artifacts/api-server/src/index.ts).
-        // No test request here ever reaches the provider, so unreachable
-        // placeholder values are sufficient; the real production deployment
-        // configures its own real credentials independently of this test.
-        AI_INTEGRATIONS_ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
-        AI_INTEGRATIONS_ANTHROPIC_API_KEY: "unused-in-this-regression-test",
-        ...serverEnvironment,
-        DATABASE_URL: testDatabaseUrl,
-        PORT: String(port),
-      },
-      stdio: "ignore",
+function forbiddenDemoWrites(snapshot: IsolatedDbSnapshot): IsolatedWrite[] {
+  return snapshot.writes.filter((write) => {
+    if (DEMO_FIXTURE_TABLES.has(write.table)) return true;
+    if (write.table !== "users") return false;
+    return write.rows.some((row) => {
+      const email = typeof row === "object" && row !== null && "email" in row
+        ? String((row as { email?: unknown }).email ?? "")
+        : "";
+      return email.endsWith("@lumera.local");
     });
-    const startupError = new Promise<never>((_, reject) => {
-      child.once("error", (error) => reject(new Error(`Disposable API server could not start: ${error.message}`)));
-      child.once("exit", (code, signal) => {
-        if (code !== 0 || signal) {
-          reject(new Error(`Disposable API server exited early (code=${code ?? "null"}, signal=${signal ?? "null"}).`));
-        }
-      });
-    });
-
-    await Promise.race([waitForHealthz(apiBaseUrl), startupError]);
-
-    const queryUsers = async (): Promise<Array<{ email: string; role: string }>> => {
-      const { stdout } = await execFileAsync("psql", [
-        testDatabaseUrl,
-        "-At",
-        "-F", "\t",
-        "-c",
-        "select email, role from users order by email",
-      ]);
-      return stdout
-        .split("\n")
-        .filter((line) => line.trim().length > 0)
-        .map((line) => {
-          const [email, role] = line.split("\t");
-          return { email: email ?? "", role: role ?? "" };
-        });
-    };
-
-    return {
-      apiBaseUrl,
-      queryUsers,
-      cleanup: async () => {
-        await stopProcess(child);
-        if (databaseExists) {
-          databaseExists = false;
-          await execFileAsync("dropdb", ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]);
-        }
-      },
-    };
-  } catch (error) {
-    if (databaseExists) {
-      databaseExists = false;
-      await execFileAsync("dropdb", ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]).catch(() => undefined);
-    }
-    throw error;
-  }
+  });
 }
 
-void test(
-  "production + empty database: no request path creates the demo SUPER_ADMIN (auth, public, and widget routes)",
-  { timeout: 60_000 },
-  async () => {
-    const environment = await provisionDisposableApiServer({ NODE_ENV: "production" });
+async function jsonResponse(
+  server: IsolatedHttpServer,
+  pathname: string,
+  init?: RequestInit,
+): Promise<{ response: Response; body: unknown }> {
+  const response = await fetch(`${server.baseUrl}${pathname}`, init);
+  const text = await response.text();
+  let body: unknown = null;
+  if (text) {
     try {
-      // Requirement 1: an unauthenticated request must not seed anything.
-      const meResponse = await fetch(`${environment.apiBaseUrl}/api/auth/me`);
-      assert.equal(meResponse.status, 200, "GET /auth/me should succeed anonymously");
-
-      // Requirement 1 (public route, non-auth flavor).
-      const salonsResponse = await fetch(`${environment.apiBaseUrl}/api/salons`);
-      assert.equal(salonsResponse.status, 200, "GET /salons should succeed publicly");
-
-      // Requirement 1 (an auth-flow entry point, exercised with no real account).
-      const loginResponse = await fetch(`${environment.apiBaseUrl}/api/auth/login`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: "nobody@example.test", password: "wrong-password" }),
-      });
-      assert.equal(loginResponse.status, 401, "a login attempt with no existing account must fail, not seed one");
-
-      // Requirement 2: the public, unauthenticated booking widget must not
-      // trigger demo-account creation either, even against a nonexistent slug.
-      const widgetResponse = await fetch(`${environment.apiBaseUrl}/api/widget/salons/does-not-exist`);
-      assert.equal(widgetResponse.status, 404, "the widget route should 404 for an unknown salon, not error");
-
-      // Requirement 1 & 3: after every one of the above, the database must
-      // still have zero users -- in particular, no admin@lumera.local
-      // SUPER_ADMIN and no other predictable demo account.
-      const users = await environment.queryUsers();
-      assert.deepEqual(
-        users,
-        [],
-        "a fresh production database must gain no users at all from ordinary request traffic",
-      );
-    } finally {
-      await environment.cleanup();
+      body = JSON.parse(text);
+    } catch {
+      body = text;
     }
-  },
-);
+  }
+  return { response, body };
+}
 
-void test(
-  "production + explicit operator opt-in: demo identities are created only then, and observably (not silently)",
-  { timeout: 60_000 },
-  async () => {
-    const environment = await provisionDisposableApiServer({
+function jsonRequestBody(body: unknown): RequestInit {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
+async function assertNoForbiddenWrites(server: IsolatedHttpServer): Promise<IsolatedDbSnapshot> {
+  const snapshot = await server.snapshot();
+  assert.deepEqual(
+    forbiddenDemoWrites(snapshot),
+    [],
+    `ordinary production traffic created demo writes: ${JSON.stringify(snapshot.writes)}`,
+  );
+  assert.ok(
+    snapshot.writes.every((write) =>
+      DEMO_FIXTURE_TABLES.has(write.table) || ALLOWED_AUTH_WRITE_TABLES.has(write.table)),
+    `unexpected non-auth mutation in isolated production traffic: ${JSON.stringify(snapshot.writes)}`,
+  );
+  return snapshot;
+}
+
+after(async () => {
+  await disposeIsolatedHarness();
+});
+
+test("production ensureDemoData is a DB-free no-op even with the old opt-in", async () => {
+  const result = await runSeedFacadeInFreshProcess({
+    NODE_ENV: "production",
+    LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /LUMERA_SEED_DONE/);
+  assert.doesNotMatch(result.stdout, /LUMERA_SEED_ERROR/);
+});
+
+test("production ensureDemoData does not reconcile an existing account or salon", async () => {
+  const result = await runSeedFacadeWithFixtureSpy({
+    NODE_ENV: "production",
+    LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    LUMERA_INERT_DB_MODE: "existing",
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const snapshotLine = result.stdout.match(/LUMERA_DB_SNAPSHOT:(\{.*\})/);
+  assert.ok(snapshotLine, result.stdout);
+  const snapshot = JSON.parse(snapshotLine[1]!) as IsolatedDbSnapshot;
+  assert.deepEqual(snapshot.users, [{ id: "real-user-1", email: "real@example.test", role: "CUSTOMER" }]);
+  assert.deepEqual(snapshot.salons, [{ id: "real-salon-1", slug: "real-salon", name: "Stvarni salon" }]);
+  assert.deepEqual(forbiddenDemoWrites(snapshot), []);
+});
+
+test("strict fixture initialization refuses production before importing a database", async () => {
+  const result = await runSeedFacadeInFreshProcess(
+    {
       NODE_ENV: "production",
-      [PRODUCTION_DEMO_SEED_OPT_IN_ENV]: "1",
+      LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    },
+    "initialize",
+  );
+  assert.equal(result.code, 2, result.stdout);
+  assert.match(result.stderr, /Development\/test fixtures require NODE_ENV=development or NODE_ENV=test/);
+});
+
+test("deployment markers cannot turn NODE_ENV=test into a production fixture runtime", async () => {
+  for (const marker of ["REPLIT_DEPLOYMENT", "REPL_DEPLOYMENT"]) {
+    const result = await runSeedFacadeInFreshProcess({
+      NODE_ENV: "test",
+      [marker]: "1",
+      LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
     });
-    try {
-      const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`);
-      assert.equal(response.status, 200);
+    assert.equal(result.code, 0, `${marker}: ${result.stderr}`);
+    assert.match(result.stdout, /LUMERA_SEED_DONE/);
+  }
+});
 
-      const users = await environment.queryUsers();
-      const admin = users.find((user) => user.email === "admin@lumera.local");
-      assert.ok(admin, "an operator who explicitly opts in must still get the intentional showcase demo set");
-      assert.equal(admin?.role, "SUPER_ADMIN");
-    } finally {
-      await environment.cleanup();
-    }
-  },
-);
+test("explicit development and test fixture entry points are the only positive path", async () => {
+  for (const nodeEnv of ["development", "test"]) {
+    const result = await runSeedFacadeWithFixtureSpy({ NODE_ENV: nodeEnv }, "initialize");
+    assert.equal(result.code, 0, `${nodeEnv}: ${result.stderr}`);
+    assert.match(result.stdout, new RegExp(`LUMERA_FIXTURE_SPY:${nodeEnv}`));
+    assert.match(result.stdout, /LUMERA_FIXTURE_DONE/);
+  }
+});
 
-void test(
-  "development/test workflows keep seeding demo accounts exactly as before, unaffected by the production gate",
-  { timeout: 60_000 },
-  async () => {
-    const environment = await provisionDisposableApiServer({ NODE_ENV: "test" });
-    try {
-      const response = await fetch(`${environment.apiBaseUrl}/api/auth/me`);
-      assert.equal(response.status, 200);
+test("ordinary production HTTP requests do not seed an empty database", async () => {
+  const server = await startIsolatedHttpServer({
+    NODE_ENV: "production",
+    LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    LUMERA_INERT_DB_MODE: "empty",
+    DATABASE_URL: "postgres://must-not-reach-a-database",
+    OPENAI_API_KEY: "must-not-reach-a-provider",
+    AI_INTEGRATIONS_ANTHROPIC_API_KEY: "must-not-reach-a-provider",
+  });
+  try {
+    const network = await jsonResponse(server, "/__inert-network-control");
+    assert.equal(network.response.status, 204);
+    assert.equal(network.response.headers.get("x-isolated-network"), "blocked");
 
-      const users = await environment.queryUsers();
-      const admin = users.find((user) => user.email === "admin@lumera.local");
-      const educationOwner = users.find((user) => user.email === "edukacija@lumera.local");
-      assert.ok(admin, "non-production environments must keep seeding the demo SUPER_ADMIN as before");
-      assert.equal(admin?.role, "SUPER_ADMIN");
-      assert.ok(educationOwner, "non-production environments must keep seeding the rest of the demo identities");
-    } finally {
-      await environment.cleanup();
-    }
-  },
-);
+    const salons = await jsonResponse(server, "/api/salons");
+    assert.equal(salons.response.status, 200);
+    assert.deepEqual(salons.body, []);
+
+    const profile = await jsonResponse(server, "/api/salons/does-not-exist");
+    assert.equal(profile.response.status, 404);
+
+    const widget = await jsonResponse(server, "/api/widget/salons/does-not-exist");
+    assert.equal(widget.response.status, 404);
+
+    const login = await jsonResponse(
+      server,
+      "/api/auth/login",
+      jsonRequestBody({ email: "nobody@example.test", password: "wrong-password" }),
+    );
+    assert.equal(login.response.status, 401);
+
+    const register = await jsonResponse(
+      server,
+      "/api/auth/register",
+      jsonRequestBody({
+        firstName: "Nova",
+        lastName: "Korisnica",
+        email: "new@example.test",
+        password: "strong-password",
+        phone: "+381612345678",
+        phoneVerificationCode: "123456",
+      }),
+    );
+    assert.equal(register.response.status, 400, "without a verification row registration must not invent one");
+
+    const privateRoute = await jsonResponse(server, "/api/customer/dashboard");
+    assert.equal(privateRoute.response.status, 401);
+
+    const snapshot = await assertNoForbiddenWrites(server);
+    assert.deepEqual(snapshot.users, []);
+    assert.deepEqual(snapshot.salons, []);
+    assert.ok(
+      snapshot.writes.every((write) => write.operation === "auth-rate-limit-write"),
+      `ordinary anonymous auth traffic emitted an unexpected write: ${JSON.stringify(snapshot.writes)}`,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("existing production data is returned unchanged and never reconciled as demo data", async () => {
+  const server = await startIsolatedHttpServer({
+    NODE_ENV: "production",
+    REPLIT_DEPLOYMENT: "1",
+    LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    LUMERA_INERT_DB_MODE: "existing",
+  });
+  try {
+    const before = await server.snapshot();
+    assert.equal((before.rowsByTable.salons as Array<{ servesMen?: boolean }>)[0]?.servesMen, false);
+    assert.equal((before.rowsByTable.services as Array<{ price?: number; promoPrice?: number }>)[0]?.price, 2400);
+    assert.equal((before.rowsByTable.services as Array<{ promoPrice?: number }>)[0]?.promoPrice, 2100);
+    assert.equal((before.rowsByTable.products as Array<{ price?: number; retailEnabled?: boolean }>)[0]?.price, 1800);
+    assert.equal((before.rowsByTable.products as Array<{ retailEnabled?: boolean }>)[0]?.retailEnabled, true);
+    assert.equal((before.rowsByTable.employees as Array<{ id?: string }>)[0]?.id, "real-employee-1");
+    assert.equal((before.rowsByTable.salonCustomers as Array<{ userId?: string }>)[0]?.userId, "real-user-1");
+
+    const salons = await jsonResponse(server, "/api/salons");
+    assert.equal(salons.response.status, 200);
+    assert.ok(Array.isArray(salons.body));
+    assert.equal((salons.body as Array<{ slug?: string }>)[0]?.slug, "real-salon");
+
+    const profile = await jsonResponse(server, "/api/salons/real-salon");
+    assert.equal(profile.response.status, 200, JSON.stringify({ body: profile.body, diagnostics: server.diagnostics() }));
+    assert.equal((profile.body as { slug?: string }).slug, "real-salon");
+    assert.equal((profile.body as { name?: string }).name, "Stvarni salon");
+
+    const widget = await jsonResponse(server, "/api/widget/salons/real-salon");
+    assert.equal(widget.response.status, 200);
+    assert.equal((widget.body as { slug?: string }).slug, "real-salon");
+    assert.deepEqual(
+      (widget.body as { services?: Array<{ id?: string; price?: number; promoPrice?: number }> }).services,
+      [{ id: "real-service-1", name: "Stvarno šišanje", durationMinutes: 60, price: 2400, promoPrice: 2100, categoryName: "Šišanje" }],
+    );
+    assert.deepEqual(
+      (widget.body as { employees?: Array<{ id?: string }> }).employees,
+      [{ id: "real-employee-1", name: "Stvarna Zaposlena", role: "Frizerka", serviceIds: ["real-service-1"] }],
+    );
+
+    const login = await jsonResponse(
+      server,
+      "/api/auth/login",
+      jsonRequestBody({ email: "real@example.test", password: "wrong-password" }),
+    );
+    assert.equal(login.response.status, 401);
+
+    const privateRoute = await jsonResponse(server, "/api/customer/dashboard");
+    assert.equal(privateRoute.response.status, 401);
+
+    const snapshot = await assertNoForbiddenWrites(server);
+    assert.deepEqual(snapshot.users, [{ id: "real-user-1", email: "real@example.test", role: "CUSTOMER" }]);
+    assert.deepEqual(snapshot.salons, [{ id: "real-salon-1", slug: "real-salon", name: "Stvarni salon" }]);
+    assert.deepEqual(snapshot.rowsByTable.salons, before.rowsByTable.salons);
+    assert.deepEqual(snapshot.rowsByTable.services, before.rowsByTable.services);
+    assert.deepEqual(snapshot.rowsByTable.employees, before.rowsByTable.employees);
+    assert.deepEqual(snapshot.rowsByTable.employeeServices, before.rowsByTable.employeeServices);
+    assert.deepEqual(snapshot.rowsByTable.salonCustomers, before.rowsByTable.salonCustomers);
+    assert.deepEqual(snapshot.rowsByTable.products, before.rowsByTable.products);
+    assert.deepEqual(snapshot.rowsByTable.productCategories, before.rowsByTable.productCategories);
+    assert.ok(
+      snapshot.writes.every((write) => write.operation === "auth-rate-limit-write"),
+      `existing-data traffic emitted an unexpected write: ${JSON.stringify(snapshot.writes)}`,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("isolated adapter captures ORM demo writes and denies raw SQL demo writes", async () => {
+  const server = await startIsolatedHttpServer({
+    NODE_ENV: "production",
+    LUMERA_INERT_DB_MODE: "empty",
+  });
+  try {
+    const orm = await jsonResponse(server, "/__inert-db-negative-control/orm", { method: "POST" });
+    assert.equal(orm.response.status, 204);
+    let snapshot = await server.snapshot();
+    assert.ok(snapshot.writes.some((write) => write.operation === "insert" && write.table === "salons"));
+    assert.ok(snapshot.writes.some((write) => write.table === "salons" && write.rows.some((row) =>
+      typeof row === "object" && row !== null && "id" in row && (row as { id?: unknown }).id === "negative-control-salon",
+    )));
+
+    const raw = await jsonResponse(server, "/__inert-db-negative-control/raw", { method: "POST" });
+    assert.equal(raw.response.status, 500);
+    assert.match(String((raw.body as { error?: unknown }).error), /Raw SQL writes are denied/);
+    snapshot = await server.snapshot();
+    assert.ok(snapshot.writes.some((write) => write.operation === "raw-write" && write.table === "raw-sql"));
+  } finally {
+    await server.close();
+  }
+});
+
+test("legitimate registration may write its one real account but cannot trigger demo fixture writes", async () => {
+  const server = await startIsolatedHttpServer({
+    NODE_ENV: "production",
+    LUMERA_INERT_DB_MODE: "registration",
+  });
+  try {
+    const register = await jsonResponse(
+      server,
+      "/api/auth/register",
+      jsonRequestBody({
+        firstName: "Nova",
+        lastName: "Korisnica",
+        email: "new@example.test",
+        password: "strong-password",
+        phone: "+381612345678",
+        phoneVerificationCode: "123456",
+      }),
+    );
+    assert.equal(register.response.status, 201);
+    assert.equal((register.body as { user?: { email?: string; role?: string } }).user?.email, "new@example.test");
+    assert.equal((register.body as { user?: { role?: string } }).user?.role, "CUSTOMER");
+
+    const snapshot = await assertNoForbiddenWrites(server);
+    assert.deepEqual(snapshot.users, [{ id: "registered-user-1", email: "new@example.test", role: "CUSTOMER" }]);
+    assert.ok(
+      snapshot.writes.some((write) => write.table === "users" && write.operation === "insert"),
+      "the harness must prove that real registration is still allowed rather than suppressing all writes",
+    );
+    assert.ok(
+      snapshot.writes.every((write) =>
+        write.operation === "auth-rate-limit-write" || ALLOWED_AUTH_WRITE_TABLES.has(write.table)),
+      `registration emitted an unexpected write: ${JSON.stringify(snapshot.writes)}`,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("two fresh HTTP processes remain safe independently", async () => {
+  const servers = await Promise.all([
+    startIsolatedHttpServer({
+      NODE_ENV: "production",
+      LUMERA_INERT_DB_MODE: "empty",
+      LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    }),
+    startIsolatedHttpServer({
+      NODE_ENV: "production",
+      LUMERA_INERT_DB_MODE: "empty",
+      LUMERA_ALLOW_PRODUCTION_DEMO_SEED: "1",
+    }),
+  ]);
+  try {
+    const responses = await Promise.all(servers.map((server) => jsonResponse(server, "/api/salons")));
+    assert.deepEqual(responses.map(({ response }) => response.status), [200, 200]);
+    const snapshots = await Promise.all(servers.map((server) => assertNoForbiddenWrites(server)));
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.users), [[], []]);
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.salons), [[], []]);
+  } finally {
+    await Promise.all(servers.map((server) => server.close()));
+  }
+});
+
+test("route modules and authentication helpers have no fixture dependency", async () => {
+  const entries = await readdir(routesRoot, { recursive: true, withFileTypes: true });
+  const routeFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => path.join(entry.parentPath, entry.name));
+  routeFiles.push(path.join(apiServerRoot, "src", "lib", "auth.ts"));
+  const sources = await Promise.all(routeFiles.map((file) => readFile(file, "utf8")));
+
+  for (const source of sources) {
+    assert.doesNotMatch(source, /\bensureDemoData\s*\(/, "HTTP/auth code must not call the fixture facade");
+    assert.doesNotMatch(
+      source,
+      /from\s+["'][^"']*(?:\/|\\)seed(?:["']|["']\s*;)/,
+      "HTTP/auth code must not import the fixture facade",
+    );
+  }
+});

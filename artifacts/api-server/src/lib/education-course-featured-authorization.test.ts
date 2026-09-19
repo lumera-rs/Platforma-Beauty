@@ -59,7 +59,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { initializeDevelopmentTestFixtures } from "./seed";
 
 const scrypt = promisify(scryptCallback);
 type Json = Record<string, unknown>;
@@ -71,7 +71,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function run(): Promise<void> {
-  await ensureDemoData();
+  await initializeDevelopmentTestFixtures();
   const suffix = randomUUID();
   let server: ReturnType<typeof app.listen> | undefined;
   const userIds: string[] = [];

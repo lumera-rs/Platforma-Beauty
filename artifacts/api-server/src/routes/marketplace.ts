@@ -720,13 +720,6 @@ import
 
 import 
 {
- ensureDemoData 
-}
- from "../lib/seed"
-;
-
-import 
-{
  enqueueSms, maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms
 }
  from "../lib/sms"
@@ -1413,7 +1406,6 @@ function calendarDateCourseResponse<T extends { startDate?: Date | null }>(cours
 }
 
 async function current(req: Request, res: Response) {
-  await ensureDemoData();
   const user = await getCurrentUser(req);
   if (!user) {
     res.status(401).json({ error: "Prijavite se da biste nastavili." });
@@ -2930,7 +2922,6 @@ export type EducationAccess = {
 };
 
 async function requireEducationAccess(req: Request, res: Response): Promise<EducationAccess | null> {
-  await ensureDemoData();
   const user = await getCurrentUser(req);
   if (!user) {
     res.status(403).json({ error: "Edukacije su dostupne samo poslovnim nalozima." });
@@ -2964,7 +2955,6 @@ type LmsAccess = {
 };
 
 async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess | null> {
-  await ensureDemoData();
   const user = await getCurrentUser(req);
   if (!user) {
     res.status(403).json({ error: "Sistem za učenje je dostupan samo upisanim poslovnim korisnicima." });
@@ -4605,7 +4595,6 @@ router.post("/auth/phone-verification/confirm", async (req, res): Promise<void> 
 });
 
 router.post("/auth/register", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = RegisterBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
@@ -4661,7 +4650,6 @@ function isCalendarDate(value: string): boolean {
 /** A distinct registration flow: browsers cannot choose a role, DOB stays a
  * date-only value, and phone verification is consumed with account creation. */
 router.post("/auth/jobseeker-register", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = RegisterJobseekerBody.safeParse(req.body);
   if (!parsed.success || !isCalendarDate(parsed.data?.dateOfBirth ?? "")) {
     res.status(400).json({ error: "Datum rođenja mora biti ispravan datum u formatu YYYY-MM-DD i ne sme biti u budućnosti." }); return;
@@ -4794,7 +4782,6 @@ router.put("/jobseeker/salon-interests", async (req, res): Promise<void> => {
 // This separate endpoint intentionally shares validation with customer
 // registration but never reads a role from the browser.
 router.post("/auth/student-register", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = RegisterBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const input = parsed.data;
@@ -6087,7 +6074,6 @@ router.post("/internal/jobs/education-gallery-cleanup", async (req, res): Promis
 });
 
 router.post("/auth/business-register", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = RegisterBusinessBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const input = parsed.data;
@@ -6276,7 +6262,6 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const admission = await admitLoginAttempt(req, parsed.data.email);
@@ -6411,7 +6396,6 @@ router.post("/auth/logout", async (req, res): Promise<void> => {
 });
 
 router.get("/auth/me", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const user = await getCurrentUser(req);
   // Task #8: session-bound identity response -- must never be served from a
   // shared/intermediary cache to a different visitor, or reused after logout
@@ -6533,7 +6517,6 @@ router.delete("/auth/sign-in-methods/:provider", async (req, res): Promise<void>
 });
 
 router.get("/salons", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const normalized = normalizeBooleanQuery(req.query, ["homeService", "discountsOnly", "acceptsCards", "openSunday", "instantBooking", "topSalon", "featured"]);
   if (!normalized) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
   const parsed = ListSalonsQueryParams.safeParse(normalized);
@@ -6776,7 +6759,6 @@ router.get("/salons", async (req, res): Promise<void> => {
 });
 
 router.get("/cities", async (_req, res): Promise<void> => {
-  await ensureDemoData();
   // Cache the city catalog under the shared "salons" tag so any salon
   // active/city mutation that broadcasts "salons" also drops this entry.
   const cities = await catalogCache.getOrLoad(
@@ -6801,7 +6783,6 @@ router.get("/cities", async (_req, res): Promise<void> => {
 });
 
 router.get("/discovery/home", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = GetMarketplaceHomeDiscoveryQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -7027,7 +7008,6 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
 });
 
 router.get("/platform/trust-stats", async (_req, res): Promise<void> => {
-  await ensureDemoData();
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const [[activeSalons], [bookingsThisMonth], [customerAccounts]] = await Promise.all([
@@ -7044,7 +7024,6 @@ router.get("/platform/trust-stats", async (_req, res): Promise<void> => {
 });
 
 router.get("/salons/:slug", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const parsed = GetSalonParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [salon] = await db.select().from(salonsTable).where(and(
@@ -7237,7 +7216,6 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
 });
 
 router.get("/inspiracija", async (_req, res): Promise<void> => {
-  await ensureDemoData();
   const [items, salons, services] = await Promise.all([
     db.select().from(inspirationItemsTable).orderBy(desc(inspirationItemsTable.createdAt)),
     db.select().from(salonsTable).where(eq(salonsTable.active, true)),
@@ -7254,12 +7232,10 @@ router.get("/inspiracija", async (_req, res): Promise<void> => {
 });
 
 router.get("/recnik", async (_req, res): Promise<void> => {
-  await ensureDemoData();
   res.json(await db.select().from(beautyGlossaryTable).orderBy(asc(beautyGlossaryTable.term)));
 });
 
 router.get("/brendovi", async (_req, res): Promise<void> => {
-  await ensureDemoData();
   const [brands, links, salons] = await Promise.all([db.select().from(productBrandsTable), db.select().from(salonBrandsTable), db.select().from(salonsTable)]);
   // Build active salon set and per-brand count map to avoid O(n²) scans.
   const activeSalonIds = new Set(salons.filter((s) => s.active).map((s) => s.id));
@@ -7276,7 +7252,6 @@ router.get("/brendovi", async (_req, res): Promise<void> => {
 });
 
 router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
-  await ensureDemoData();
   if (typeof req.query.serviceId !== "string" || !req.query.serviceId.trim()) {
     res.status(400).json({ error: "serviceId je obavezan parametar." }); return;
   }
@@ -7302,7 +7277,6 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
 });
 
 router.get("/salons/:salonId/first-available", async (req, res): Promise<void> => {
-  await ensureDemoData();
   const params = GetSalonFirstAvailableParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Salon nije ispravno izabran." });
