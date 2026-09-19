@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { assertDatabaseMigrationReady } from "@workspace/db/migration-runtime";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { loadMigrations } from "./files";
 import { classifyDeploymentEligibility } from "./deployment-eligibility";
 import { applyMigrations } from "./runner";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Migration namespace boundary integration tests");
 const adminUrl = explicitAdminUrlFromArgs();
 if (!adminUrl) throw new Error("An explicit disposable --admin-url is required");
 

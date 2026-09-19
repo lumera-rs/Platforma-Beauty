@@ -4,11 +4,13 @@ import pg from "pg";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
 import { ensureLedger, readLedger } from "./ledger";
 import { loadMigrations } from "./files";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Supported migration state integration tests");
 const adminUrl = explicitAdminUrlFromArgs();
 const skip = adminUrl ? undefined : "Pass --admin-url=postgres://<owner>@127.0.0.1:<non-5432-port>/<db>";
 

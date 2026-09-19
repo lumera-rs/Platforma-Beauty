@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { checkProductionRequestDependencyBoundary } from "../production-request-dependency-boundary";
 import {
   readPostgresFingerprintCompatibility,
@@ -21,6 +22,7 @@ import { ensureLedger, readLedger } from "./ledger";
 import { preflightBaselineAdoption } from "./preflight";
 import type { LoadedMigration } from "./types";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Migrations integration tests");
 const unitOnly = process.env.LUMERA_PHASE4_UNIT_ONLY === "1";
 const disposableUrl = process.env.LUMERA_PHASE4_DISPOSABLE_DATABASE_URL;
 if (!unitOnly && (!disposableUrl || process.env.LUMERA_PHASE4_DISPOSABLE_DB !== "1")) {

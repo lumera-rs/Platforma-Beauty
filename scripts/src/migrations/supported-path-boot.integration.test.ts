@@ -27,6 +27,8 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import test from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transaction";
 import {
   explicitAdminUrlFromArgs,
   withOwnedDisposableDatabase,
@@ -42,6 +44,8 @@ import {
   proofOutputFromArgs,
   type PostgresLogSettings,
 } from "./postgres-log-evidence";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Supported path boot integration tests");
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(thisDir, "../../..");
@@ -235,8 +239,10 @@ async function expectActualReject(
 }
 
 async function catalogSignature(pool: pg.Pool): Promise<string> {
-  const [classes, functions, triggers] = await Promise.all([
-    pool.query(`
+  const client = await pool.connect();
+  try {
+    await beginFingerprintTransaction(client);
+    const classes = await client.query(`
       SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY q.schema_name,q.object_name,q.kind), '[]'::jsonb) AS value
       FROM (
         SELECT n.nspname AS schema_name,c.relname AS object_name,c.relkind AS kind,
@@ -244,8 +250,8 @@ async function catalogSignature(pool: pg.Pool): Promise<string> {
         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public'
       ) q
-    `),
-    pool.query(`
+    `);
+    const functions = await client.query(`
       SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY q.schema_name,q.object_name,q.identity), '[]'::jsonb) AS value
       FROM (
         SELECT n.nspname AS schema_name,p.proname AS object_name,
@@ -254,8 +260,8 @@ async function catalogSignature(pool: pg.Pool): Promise<string> {
         FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public'
       ) q
-    `),
-    pool.query(`
+    `);
+    const triggers = await client.query(`
       SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY q.table_name,q.trigger_name), '[]'::jsonb) AS value
       FROM (
         SELECT c.relname AS table_name,t.tgname AS trigger_name,
@@ -264,14 +270,24 @@ async function catalogSignature(pool: pg.Pool): Promise<string> {
         JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND NOT t.tgisinternal
       ) q
-    `),
-  ]);
-  const value = JSON.stringify({
-    classes: classes.rows[0]?.value,
-    functions: functions.rows[0]?.value,
-    triggers: triggers.rows[0]?.value,
-  });
-  return createHash("sha256").update(value).digest("hex");
+    `);
+    const value = JSON.stringify({
+      classes: classes.rows[0]?.value,
+      functions: functions.rows[0]?.value,
+      triggers: triggers.rows[0]?.value,
+    });
+    await client.query("COMMIT");
+    return createHash("sha256").update(value).digest("hex");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], "Catalog fingerprint and rollback both failed");
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function fastFunctionDefinition(): Promise<string> {
@@ -439,6 +455,62 @@ async function runBootPath(
   assert.equal(await catalogSignature(pool), signatureBefore, "API boot changed the catalog.");
   recordBootLogEvidence(evidence);
 }
+
+test("catalog signatures are stable across pooled connections and search paths but detect real catalog changes", async () => {
+  await withOwnedDisposableDatabase(requireAdminUrl(), async ({ pool, connectionString }) => {
+    await pool.query(`
+      CREATE TABLE public.catalog_signature_argument (id integer);
+      CREATE FUNCTION public.catalog_signature_probe(value public.catalog_signature_argument)
+        RETURNS integer LANGUAGE sql AS 'SELECT (value).id';
+    `);
+    const pools = [
+      new pg.Pool({ connectionString, max: 1, options: "-c search_path=public,pg_catalog" }),
+      new pg.Pool({ connectionString, max: 1, options: "-c search_path=pg_catalog" }),
+    ];
+    const sessionState = async (candidate: pg.Pool) => ({
+      pid: (await candidate.query("SELECT pg_backend_pid() AS pid")).rows[0].pid,
+      settings: (await candidate.query(`
+        SELECT name, setting FROM pg_catalog.pg_settings
+        WHERE name = ANY($1::text[]) ORDER BY name
+      `, [[
+        "search_path", "quote_all_identifiers", "TimeZone", "DateStyle",
+        "IntervalStyle", "extra_float_digits", "bytea_output",
+        "transaction_isolation", "transaction_read_only",
+      ]])).rows,
+    });
+    try {
+      const before = await Promise.all(pools.map(sessionState));
+      assert.notEqual(before[0]!.pid, before[1]!.pid, "The regression requires distinct backend connections.");
+      assert.notDeepEqual(before[0]!.settings, before[1]!.settings, "The session search paths must differ.");
+      const identities = await Promise.all(pools.map(async (candidate) =>
+        (await candidate.query(`
+          SELECT pg_catalog.pg_get_function_identity_arguments(
+            'public.catalog_signature_probe(public.catalog_signature_argument)'::regprocedure
+          ) AS identity
+        `)).rows[0].identity,
+      ));
+      assert.notEqual(identities[0], identities[1], "The fixture must expose search-path-dependent identity formatting.");
+      const signatures = await Promise.all(pools.map(catalogSignature));
+      assert.equal(signatures[0], signatures[1], "Pinned catalog fingerprints must not depend on session search_path.");
+      const baseline = signatures[0]!;
+      await pool.query("CREATE TABLE public.catalog_signature_added (id integer)");
+      const withTable = await Promise.all(pools.map(catalogSignature));
+      assert.equal(withTable[0], withTable[1]);
+      assert.notEqual(withTable[0], baseline, "A real table addition must change the signature.");
+      await pool.query("DROP TABLE public.catalog_signature_added");
+      assert.deepEqual(await Promise.all(pools.map(catalogSignature)), [baseline, baseline]);
+      await pool.query("CREATE FUNCTION public.catalog_signature_added() RETURNS integer LANGUAGE sql AS 'SELECT 1'");
+      const withFunction = await Promise.all(pools.map(catalogSignature));
+      assert.equal(withFunction[0], withFunction[1]);
+      assert.notEqual(withFunction[0], baseline, "A real function addition must change the signature.");
+      await pool.query("DROP FUNCTION public.catalog_signature_added()");
+      assert.deepEqual(await Promise.all(pools.map(catalogSignature)), [baseline, baseline]);
+      assert.deepEqual(await Promise.all(pools.map(sessionState)), before, "Fingerprint transactions must preserve pooled session settings.");
+    } finally {
+      await Promise.all(pools.map((candidate) => candidate.end()));
+    }
+  });
+});
 
 test("fresh and verified existing supported paths boot through the actual entrypoint without startup DDL", async () => {
   const actual = await readActualEntrypoint();

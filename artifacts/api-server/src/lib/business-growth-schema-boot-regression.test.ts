@@ -20,7 +20,9 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema boot regression tests");
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(thisDir, "../../../../");
 const apiEntrypoint = path.resolve(workspaceRoot, "artifacts/api-server/src/index.ts");

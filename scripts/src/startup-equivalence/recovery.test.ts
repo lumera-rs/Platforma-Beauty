@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { applyMigrations } from "../migrations/runner";
 import { readLedger } from "../migrations/ledger";
 import { loadMigrations } from "../migrations/files";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "./fixtures";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Startup equivalence recovery tests");
 const admin = explicitAdminUrlFromArgs();
 test("terminated transactional baseline rolls back and remains fail-closed without automatic retry", {
   skip: !admin ? "Explicit disposable target required" : false,

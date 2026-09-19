@@ -28,7 +28,7 @@ export const phase5TestInventory: readonly Phase5TestInventoryEntry[] = [
   { path: "scripts/src/migrations/postgres-log-evidence.test.ts", declaredTests: 5, execution: "database-free", provenance: "phase5-followup" },
   { path: "scripts/src/migrations/run-phase5-integration.test.ts", declaredTests: 8, execution: "database-free", provenance: "phase5-followup" },
   { path: "scripts/src/migrations/supported-convergence.integration.test.ts", declaredTests: 4, execution: "disposable-integration", provenance: "80f822ac..343ea5ae" },
-  { path: "scripts/src/migrations/supported-path-boot.integration.test.ts", declaredTests: 4, execution: "disposable-integration", provenance: "343ea5ae" },
+  { path: "scripts/src/migrations/supported-path-boot.integration.test.ts", declaredTests: 5, execution: "disposable-integration", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/supported-state.integration.test.ts", declaredTests: 15, execution: "disposable-integration", provenance: "80f822ac..343ea5ae" },
   { path: "scripts/src/schema-drift/eligibility-cli.test.ts", declaredTests: 6, execution: "database-free", provenance: "80f822ac..343ea5ae" },
   { path: "scripts/src/startup-data/apply.test.ts", declaredTests: 13, execution: "disposable-integration", provenance: "80f822ac..343ea5ae" },
@@ -69,7 +69,7 @@ export const phase5DisposableIntegrationSuites = [
   },
   {
     id: "actual-entrypoint-boot",
-    declaredTests: 4,
+    declaredTests: 5,
     files: ["scripts/src/migrations/supported-path-boot.integration.test.ts"],
   },
   {

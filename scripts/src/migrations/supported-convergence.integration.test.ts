@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { test } from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   explicitAdminUrlFromArgs,
   withOwnedDisposableDatabase,
@@ -19,6 +20,7 @@ import { applyMigrations } from "./runner";
 import { loadMigrations } from "./files";
 import type { LoadedMigration } from "./types";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Supported migration convergence integration tests");
 const adminUrl = explicitAdminUrlFromArgs();
 const skip = adminUrl
   ? undefined

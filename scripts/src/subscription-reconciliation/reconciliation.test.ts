@@ -5,12 +5,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import pg from "pg";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { applyStartupData } from "../startup-data/apply";
 import { createPlanFixture, canonical, snapshot, type Pool } from "./fixture";
 import { inspectPlanReconciliation } from "./inspect";
 import { OPERATION_NAMES, originalPlanOperations, STARTUP_SOURCE_SHA256 } from "./source";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Subscription reconciliation tests");
 const adminUrl = explicitAdminUrlFromArgs();
 const skip = adminUrl ? undefined : "Pass --admin-url with the owned loopback test cluster";
 const reportDir = "/tmp/lumera-plan-history-results";

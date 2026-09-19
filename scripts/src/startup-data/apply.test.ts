@@ -7,11 +7,13 @@ import path from "node:path";
 import { test } from "node:test";
 import pg from "pg";
 import ts from "typescript";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { loadMigrations } from "../migrations/files";
 import { applyStartupData, loadDataStep, type DataStep } from "./apply";
 import { DATA_STEP_CHECKSUMS } from "./manifest";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Startup data application tests");
 const adminUrl = explicitAdminUrlFromArgs();
 const skip = adminUrl ? undefined : "Pass --admin-url=postgres://<owner>@127.0.0.1:<non-5432-port>/<db>";
 const sourcePath = fileURLToPath(new URL("../../../artifacts/api-server/src/lib/business-growth-schema.ts", import.meta.url));

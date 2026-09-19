@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   checkStartupDdlRemovalGate,
   removeStartupDdlStatements,
 } from "./startup-ddl-removal-gate";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Startup DDL removal gate tests");
 const rootPath = "artifacts/api-server/src/index.ts";
 const realRoot = readFileSync(new URL("../../artifacts/api-server/src/index.ts", import.meta.url), "utf8");
 

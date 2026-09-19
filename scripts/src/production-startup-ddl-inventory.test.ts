@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   checkProductionStartupDdlInventory,
   checkRealRepositoryProductionStartupDdlInventory,
@@ -8,6 +9,7 @@ import {
   type StartupDdlBaseline,
 } from "./production-startup-ddl-inventory";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Production startup DDL inventory tests");
 function fixture(extra: Record<string, string> = {}): Record<string, string> {
   const imports = EXPECTED_STARTUP_DDL_ROOTS.map((name, index) => `import { ${name} } from "./owner-${index}";`).join("\n");
   const calls = EXPECTED_STARTUP_DDL_ROOTS.map((name) => `await ${name}();`).join("\n");

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import type { StartupDdlBaseline } from "./production-startup-ddl-inventory";
 import {
   ADDITIONAL_STARTUP_OPERATIONS,
@@ -19,6 +20,7 @@ import {
   type StartupMigrationCrosswalk,
 } from "./startup-migration-crosswalk";
 
+assertDestructiveTestRuntimeAllowed(process.env, "Startup migration crosswalk tests");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const baseline = JSON.parse(readFileSync(
   path.join(ROOT, "scripts/src/production-startup-ddl-baseline.json"),
