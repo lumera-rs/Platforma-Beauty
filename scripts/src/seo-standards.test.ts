@@ -896,6 +896,7 @@ try {
       description: "LUMERA",
       indexable: true,
     });
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
     assert.equal(nodes.get('meta[property="og:image:width"]')?.content, "1200");
     assert.equal(nodes.get('meta[property="og:image:height"]')?.content, "630");
     assert.equal(nodes.get('meta[property="og:image:type"]')?.content, "image/png");
