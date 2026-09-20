@@ -1,5 +1,14 @@
 # Local provenance
 
+## Open Phase 6 item: historical fixture provenance
+
+The fixture source commit `815465404f7e` declared in
+`historical-source-fixture.ts` is not present on GitHub, so that fixture's
+provenance is not reproducible from the remote. It does not currently block CI
+because the identifier is compared only as a string and is never passed to Git.
+The fixture and its declared source commit remain unchanged; remote
+reproducibility is an open Phase 6 item.
+
 ## Open Phase 7 item: wishlist historical operation ownership
 
 The historical inventory retains the create-index operation for
