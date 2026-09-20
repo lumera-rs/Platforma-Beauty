@@ -910,6 +910,21 @@ try {
     assert.equal(nodes.has('meta[property="og:image:width"]'), false);
     assert.equal(nodes.has('meta[property="og:image:height"]'), false);
     assert.equal(nodes.has('meta[property="og:image:type"]'), false);
+    nodes.get('meta[name="lumera:site-indexable"]')!.content = "true";
+    applySeo("/", {
+      title: "LUMERA",
+      description: "LUMERA",
+      indexable: true,
+    });
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "index, follow");
+
+    Object.assign(globalThis.window.location, { host: "different-host.example" });
+    applySeo("/", {
+      title: "LUMERA",
+      description: "LUMERA",
+      indexable: true,
+    });
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
   } finally {
     if (originalDocument === undefined) {
       Reflect.deleteProperty(globalThis, "document");
