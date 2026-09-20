@@ -446,13 +446,12 @@ export function referralLink(code: string, channel: ReferralChannel = "B2"): str
   const publicSiteUrl = process.env["PUBLIC_SITE_URL"]?.trim();
   const legacyAppBaseUrl = process.env["APP_BASE_URL"]?.trim();
   const configured = publicSiteUrl || legacyAppBaseUrl;
-  const candidate = configured;
-  if (!candidate) {
+  if (!configured) {
     throw new Error("PUBLIC_SITE_URL (or legacy APP_BASE_URL) is required to create public referral links.");
   }
   let base: URL;
   try {
-    base = new URL(candidate);
+    base = new URL(configured);
   } catch {
     throw new Error("The public referral link origin must be a valid absolute HTTPS origin.");
   }
