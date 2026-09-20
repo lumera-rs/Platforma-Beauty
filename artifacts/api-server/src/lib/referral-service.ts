@@ -443,12 +443,23 @@ export function stableReferralCode(channel: ReferralChannel, sourceId: string): 
 }
 
 export function referralLink(origin: string, code: string, channel: ReferralChannel = "B2"): string {
-  const fallback = process.env["APP_BASE_URL"] || "http://localhost";
+  const publicSiteUrl = process.env["PUBLIC_SITE_URL"]?.trim();
+  const legacyAppBaseUrl = process.env["APP_BASE_URL"]?.trim();
+  const configured = publicSiteUrl || legacyAppBaseUrl;
+  const candidate = configured || origin?.trim();
+  if (!candidate) {
+    throw new Error("PUBLIC_SITE_URL (or legacy APP_BASE_URL) is required to create public referral links.");
+  }
   let base: URL;
-  try { base = new URL(process.env["APP_BASE_URL"] || origin); } catch { base = new URL(fallback); }
-  // Request origin is used only when it is an http(s) origin. This supports
-  // custom deployment domains without persisting an environment-specific link.
-  if (!/^https?:$/.test(base.protocol)) base = new URL(fallback);
+  try {
+    base = new URL(candidate);
+  } catch {
+    throw new Error("The public referral link origin must be a valid absolute HTTPS origin.");
+  }
+  if (base.protocol !== "https:" || base.username || base.password
+    || base.pathname !== "/" || base.search || base.hash) {
+    throw new Error("The public referral link origin must be a valid absolute HTTPS origin.");
+  }
   base.pathname = channel === "A" || channel === "B1" ? "/poslovna-registracija"
     : channel === "C" ? "/student/prijava" : "/prijava";
   base.search = "";

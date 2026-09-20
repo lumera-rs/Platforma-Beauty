@@ -4,6 +4,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
 import { getPublicCategoryPage } from '@/lib/public-category-pages';
 import staticSeoPages from '@/lib/static-seo-pages.json';
+import { publicSiteOrigin } from '@/lib/public-site-url';
 import {
   isRetryableBeautyJobDetailError,
   shouldRetryBeautyJobDetail,
@@ -25,7 +26,7 @@ export type SeoHeadMetadata = {
   title: string;
   description: string;
   canonical: string;
-  robots: 'index, follow' | 'noindex, follow';
+  robots: 'index, follow' | 'noindex, follow' | 'noindex, nofollow';
   image: string;
   imageAlt: string;
   openGraph: {
@@ -103,7 +104,7 @@ function setOptionalMeta(selector: string, attribute: 'name' | 'property', key: 
   }
   setMeta(selector, attribute, key, String(content));
 }
-export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string): SeoHeadMetadata {
+export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed = true): SeoHeadMetadata {
   const publicPath = payload.canonicalPath ?? pathname;
   const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
   const canonical = new URL(cleanPublicPath, origin).href;
@@ -118,7 +119,7 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
     title,
     description,
     canonical,
-    robots: payload.indexable ? 'index, follow' : 'noindex, follow',
+    robots: !siteAllowed ? 'noindex, nofollow' : payload.indexable ? 'index, follow' : 'noindex, follow',
     image,
     imageAlt,
     openGraph: { title, description, url: canonical, image, imageAlt, imageWidth, imageHeight, imageType },
@@ -136,7 +137,10 @@ function socialImagePayload(entity: any, fallbackImage?: string): Pick<SeoPayloa
   };
 }
 export function applySeo(pathname: string, payload: SeoPayload) {
-  const metadata = seoHeadMetadata(pathname, payload, window.location.origin);
+  const origin = publicSiteOrigin();
+  const allowed = document.querySelector<HTMLMetaElement>('meta[name="lumera:site-indexable"]')?.content === 'true'
+    && window.location.host.toLowerCase() === new URL(origin).host;
+  const metadata = seoHeadMetadata(pathname, payload, origin, allowed);
   document.title = metadata.title;
   setMeta('meta[name="description"]', 'name', 'description', metadata.description);
   setMeta('meta[name="robots"]', 'name', 'robots', metadata.robots);

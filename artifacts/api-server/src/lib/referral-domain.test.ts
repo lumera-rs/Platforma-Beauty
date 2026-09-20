@@ -14,13 +14,33 @@ test("referral domain creates stable keys and immutable first-touch window", () 
 });
 
 test("server-issued referral codes and channel links are source scoped", () => {
-  assert.equal(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-1"));
-  assert.notEqual(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-2"));
-  assert.notEqual(stableReferralCode("A", "business-1"), stableReferralCode("C", "business-1"));
-  assert.notEqual(stableReferralCode("A", "salon:same-id"), stableReferralCode("A", "education_center:same-id"));
-  assert.equal(new URL(referralLink("https://tenant.example", "A-ABC", "A")).pathname, "/poslovna-registracija");
-  assert.equal(new URL(referralLink("https://tenant.example", "C-ABC", "C")).pathname, "/student/prijava");
-  assert.equal(new URL(referralLink("https://tenant.example", "D-ABC", "D")).searchParams.get("ref"), "D-ABC");
+  const previousPublicSiteUrl = process.env["PUBLIC_SITE_URL"];
+  const previousAppBaseUrl = process.env["APP_BASE_URL"];
+  try {
+    delete process.env["PUBLIC_SITE_URL"];
+    delete process.env["APP_BASE_URL"];
+    assert.equal(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-1"));
+    assert.notEqual(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-2"));
+    assert.notEqual(stableReferralCode("A", "business-1"), stableReferralCode("C", "business-1"));
+    assert.notEqual(stableReferralCode("A", "salon:same-id"), stableReferralCode("A", "education_center:same-id"));
+    assert.equal(new URL(referralLink("https://tenant.example", "A-ABC", "A")).pathname, "/poslovna-registracija");
+    assert.equal(new URL(referralLink("https://tenant.example", "C-ABC", "C")).pathname, "/student/prijava");
+    assert.equal(new URL(referralLink("https://tenant.example", "D-ABC", "D")).searchParams.get("ref"), "D-ABC");
+
+    process.env["APP_BASE_URL"] = "https://legacy.example";
+    process.env["PUBLIC_SITE_URL"] = "https://public.example";
+    assert.equal(new URL(referralLink("https://request.example", "A-ABC")).origin, "https://public.example");
+    process.env["PUBLIC_SITE_URL"] = "http://public.example";
+    assert.throws(() => referralLink("https://request.example", "A-ABC"), /HTTPS origin/);
+    delete process.env["PUBLIC_SITE_URL"];
+    delete process.env["APP_BASE_URL"];
+    assert.throws(() => referralLink("", "A-ABC"), /required/);
+  } finally {
+    if (previousPublicSiteUrl === undefined) delete process.env["PUBLIC_SITE_URL"];
+    else process.env["PUBLIC_SITE_URL"] = previousPublicSiteUrl;
+    if (previousAppBaseUrl === undefined) delete process.env["APP_BASE_URL"];
+    else process.env["APP_BASE_URL"] = previousAppBaseUrl;
+  }
 });
 
 test("PIB normalization and legal-entity duplicate preflight are deterministic", () => {

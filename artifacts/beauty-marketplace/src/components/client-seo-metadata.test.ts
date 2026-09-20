@@ -23,6 +23,16 @@ const taxonomy = [{
   }],
 }];
 
+test('site-wide noindex survives client metadata updates and domain changes', () => {
+  const payload = { title: 'Salon', description: 'Salon description', indexable: true };
+  const staged = seoHeadMetadata('/saloni/test', payload, 'https://new-domain.example', false);
+  assert.equal(staged.robots, 'noindex, nofollow');
+  assert.equal(staged.canonical, 'https://new-domain.example/saloni/test');
+  assert.equal(staged.openGraph.url, staged.canonical);
+  assert.equal(staged.image, 'https://new-domain.example/og-lumera.png');
+  assert.equal(seoHeadMetadata('/saloni/test', payload, 'https://new-domain.example', true).robots, 'index, follow');
+});
+
 test('primary-only product media keeps its loaded description on unrelated saves', () => {
   const primaryUrl = '/api/media/00000000-0000-4000-8000-000000000001?v=primary';
   assert.deepEqual(canonicalProductImageUrls(primaryUrl, []), [primaryUrl]);
