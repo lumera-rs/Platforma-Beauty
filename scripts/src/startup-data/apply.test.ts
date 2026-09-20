@@ -130,7 +130,7 @@ async function executeOriginalReference(pool: Pool): Promise<void> {
 
 async function executeOriginalEducationPlanOperations(pool: Pool): Promise<void> {
   const operations = await sourceOperationsInLines(
-    4605, 4640, /\b(?:INSERT|UPDATE)\s+/iu,
+    4787, 4822, /\b(?:INSERT|UPDATE)\s+/iu,
   );
   assert.ok(operations.length >= 5, `Expected bounded subscription reconciliation operations, got ${operations.length}`);
   const client = await pool.connect();

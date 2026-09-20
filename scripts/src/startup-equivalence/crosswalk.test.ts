@@ -3,12 +3,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { checkStartupDdlRemovalGate } from "../startup-ddl-removal-gate";
 import {
   buildStartupEquivalenceCrosswalk,
   validateStartupEquivalenceCrosswalk,
   type StartupEquivalenceCrosswalk,
 } from "./crosswalk";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Startup equivalence crosswalk tests");
 
 const repositoryCrosswalk = (() => {
   let cached: StartupEquivalenceCrosswalk | undefined;
