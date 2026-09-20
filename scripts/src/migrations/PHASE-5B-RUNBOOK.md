@@ -9,9 +9,16 @@ apply, deployment, backup deletion, or restore.
   configuration alone does not prove that a deployment is currently live.
 - The API requires an externally injected `DATABASE_URL`, binds the injected
   `PORT`, and exposes `/healthz`.
-- API startup runs eight existing additive schema owners before HTTP binding.
-  Those 1,459 startup DDL operations remain authoritative and must not change in
-  Phase 5B.
+- Repository API startup no longer runs the eight additive schema owners.
+  `artifacts/api-server/src/index.ts` imports none of them, and
+  `pnpm --filter @workspace/scripts run validate:ci:startup-ddl-removal-gate`
+  passes against that entry point across 148 scanned modules. The 1,459
+  operations are retained as the authenticated historical inventory and must not
+  change in Phase 5B.
+- Repository state does not prove what the deployed revision executes. Until the
+  deployed-revision startup attestation required by readiness condition TOP-04
+  exists, assume a live instance may still run startup DDL and fence
+  accordingly.
 - The repository does not pin a `[deployment]` run command. The configured
   build and artifact package start commands do not invoke `drizzle-kit push`,
   migration apply, or baseline adoption. Replit's exact revision-overlap and implicit

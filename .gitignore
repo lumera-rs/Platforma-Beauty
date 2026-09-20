@@ -50,3 +50,9 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Owner safety backups must remain untracked across branch switches.
+/recovery-backups/
+
+# Local uploads and working notes must not be added to Git.
+/attached_assets/

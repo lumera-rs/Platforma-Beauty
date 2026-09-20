@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS } from "./startup-migration-crosswalk";
+import { loadRepositoryCrosswalk, PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS, validateStartupMigrationCrosswalk } from "./startup-migration-crosswalk";
+import { loadReviewedHistoricalSources, reviewedHistoricalSource } from "./reviewed-historical-source";
 import {
   assertSourceEvidence,
   JsonRecord,
@@ -30,6 +31,31 @@ function expectEvidenceRejection(mutate: (records: JsonRecord[]) => void): void 
   mutate(records);
   assert.throws(() => validateAdditionalOperationsEvidence(root, records));
 }
+
+test("altered historical source is rejected without poisoning authenticated source", () => {
+  const { baseline, crosswalk } = loadRepositoryCrosswalk();
+  const source = "artifacts/api-server/src/lib/business-growth-schema.ts";
+  const overrides = loadReviewedHistoricalSources(root);
+  const authentic = overrides.get(source)!;
+  overrides.set(source, `${authentic}\n// unauthenticated historical alteration\n`);
+  assert.throws(() => validateStartupMigrationCrosswalk(crosswalk, baseline, {
+    sourceOverrides: overrides,
+  }), /checksum|drift/iu);
+  assert.equal(reviewedHistoricalSource(root, source), authentic);
+  validateStartupMigrationCrosswalk(crosswalk, baseline);
+});
+
+test("incorrect historical evidence spans and altered excerpts are rejected", () => {
+  const record = evidence[0]!;
+  const item = (record.sourceEvidence as JsonRecord[])[0]!;
+  assertSourceEvidence(root, String(record.id), item, item);
+  assert.throws(() => assertSourceEvidence(root, String(record.id), {
+    ...item, startLine: 1, endLine: 1,
+  }, item), /cited source slice|reviewed pin/iu);
+  assert.throws(() => assertSourceEvidence(root, String(record.id), {
+    ...item, sqlOrCode: "SELECT 'altered historical evidence';",
+  }, item), /cited source slice|reviewed pin/iu);
+});
 
 test("additional evidence is schema-normalized, pin-authoritative, and unresolved", () => {
   const statistics = validateAdditionalOperationsEvidence(root, evidence);
@@ -174,7 +200,7 @@ test("pinned canonical baseline, inventory, owners, and reviewed pin remain inta
   assert.equal(createHash("sha256").update(canonical).digest("hex"), "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60");
   assert.equal(Object.keys(PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS).length, 8);
   for (const [source, checksum] of Object.entries(PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS)) {
-    assert.equal(createHash("sha256").update(readFileSync(path.join(root, source))).digest("hex"), checksum, source);
+    assert.equal(createHash("sha256").update(reviewedHistoricalSource(root, source)).digest("hex"), checksum, source);
   }
   const reviewed = execFileSync("git", [
     "show",

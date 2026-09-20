@@ -305,10 +305,9 @@ async function readRegularFile(filePath: string, description: string): Promise<B
   return readFile(filePath);
 }
 
-export async function materializeHistoricalSourceFixture(
-  destination: string,
+export async function loadAuthenticatedHistoricalSourceFixture(
   fixtureDirectory = DEFAULT_FIXTURE_DIRECTORY,
-): Promise<void> {
+) {
   const manifestPath = path.join(fixtureDirectory, "manifest.json");
   const manifestBytes = await readRegularFile(manifestPath, "Historical source fixture manifest");
   const actualManifestSha256 = sha256(manifestBytes);
@@ -341,7 +340,14 @@ export async function materializeHistoricalSourceFixture(
     throw new Error("Historical source fixture uncompressed byte count does not match its manifest.");
   }
   const files = validateInventory(manifest, payloadBytes);
+  return { manifest, files };
+}
 
+export async function materializeHistoricalSourceFixture(
+  destination: string,
+  fixtureDirectory = DEFAULT_FIXTURE_DIRECTORY,
+): Promise<void> {
+  const { manifest, files } = await loadAuthenticatedHistoricalSourceFixture(fixtureDirectory);
   const resolvedDestination = path.resolve(destination);
   await requireEmptyDestination(resolvedDestination);
   for (const directory of manifest.directories) {

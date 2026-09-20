@@ -100,6 +100,12 @@ export function runAuditedSuite(validatePackage) {
   }, 'approved interpretation fixture');
   assert.deepEqual(validatePackage(clone(candidate), inputs), { valid: true, records: 1545, diagnostics: 10 });
   const cases = [
+    ['N1 original hash mutated', (c) => { c.protectedInputManifest.originalProtectedFiles['scripts/src/startup-migration-crosswalk.ts'] = '0'.repeat(64); }, 'E_PROTECTED_ORIGINAL73_MISMATCH'],
+    ['N2 original entry removed', (c) => { delete c.protectedInputManifest.originalProtectedFiles['scripts/src/startup-migration-crosswalk.ts']; }, 'E_PROTECTED_ORIGINAL73_MISMATCH'],
+    ['N3 immutable baseline disabled', (c) => { c.protectedInputManifest.immutableBaseline = false; }, 'E_PROTECTED_MANIFEST_INVALID'],
+    ['N4 current crosswalk corrupted', (c) => { c.protectedInputManifest.files['scripts/src/startup-migration-crosswalk.ts'] = '0'.repeat(64); }, 'E_PROTECTED_HASH_DRIFT:scripts/src/startup-migration-crosswalk.ts'],
+    ['N5 stale historical hash in current tier', (c) => { const p = 'scripts/src/startup-migration-crosswalk.ts'; c.protectedInputManifest.files[p] = c.protectedInputManifest.originalProtectedFiles[p]; }, 'E_PROTECTED_HASH_DRIFT:scripts/src/startup-migration-crosswalk.ts'],
+    ['N6 original replaced with current hash', (c) => { const p = 'scripts/src/startup-migration-crosswalk.ts'; c.protectedInputManifest.originalProtectedFiles[p] = c.protectedInputManifest.files[p]; }, 'E_PROTECTED_ORIGINAL73_MISMATCH'],
     ['missing procedure', (c) => c.executionPlan.procedures.splice(2, 1), 'E_PROCEDURE_DUPLICATE_OR_UNKNOWN'],
     ['missing diagnostic', (c) => c.executionPlan.diagnostics.splice(3, 1), 'E_DIAGNOSTIC_DUPLICATE_OR_UNKNOWN'],
     ['wrong record ID', (c) => { c.coverageMatrix.records[0].authoritativeRecordId = 'mapping:not-authoritative'; }, 'E_RECORD_UNKNOWN:mapping:not-authoritative'],

@@ -83,6 +83,16 @@ const exactlyOne = (items, id, error) => {
 function checkProtected(manifest, inputs) {
   exactKeys(manifest, ['schemaVersion', 'document', 'algorithm', 'immutableBaseline', 'snapshotBoundary', 'approvedDirectories', 'requiredPathInventory', 'originalProtectedFileCount', 'canonicalComparison', 'files', 'originalProtectedFiles'], 'E_PROTECTED_MANIFEST_FIELD_UNKNOWN');
   if (manifest.algorithm !== 'sha256' || manifest.immutableBaseline !== true || manifest.originalProtectedFileCount !== 73) fail('E_PROTECTED_MANIFEST_INVALID');
+  // Pinned independently of both candidate manifests and caller-provided inputs.
+  // Reproduced from the authenticated historical b8f30561 snapshot (73 files).
+  const pin = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  if (!object(manifest.originalProtectedFiles) ||
+      pin(Object.entries(manifest.originalProtectedFiles).sort()) !== 'ea939afa67068f34523fef2e76c811adeca39178ad5955959c8d4e7adceb14da')
+    fail('E_PROTECTED_ORIGINAL73_MISMATCH');
+  if (!Array.isArray(manifest.requiredPathInventory) || !object(manifest.files) ||
+      pin([...manifest.requiredPathInventory].sort()) !== 'd0665f6c4d1a70e66fcf32acf417eb3fc02d558b98d6fcca1c04faa80510e438' ||
+      pin(Object.keys(manifest.files).sort()) !== 'd0665f6c4d1a70e66fcf32acf417eb3fc02d558b98d6fcca1c04faa80510e438')
+    fail('E_PROTECTED_PATH_INVENTORY_MISMATCH');
   if (!sameSet(manifest.requiredPathInventory, inputs.requiredPathInventory)) fail('E_PROTECTED_PATH_INVENTORY_MISMATCH');
   if (!sameSet(Object.keys(manifest.files), inputs.requiredPathInventory)) fail('E_PROTECTED_PATH_INVENTORY_MISMATCH');
   if (manifest.canonicalComparison?.path !== canonicalPath || manifest.canonicalComparison?.sha256 !== canonicalHash) fail('E_CANONICAL_PIN_MISMATCH');

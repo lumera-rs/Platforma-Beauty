@@ -375,7 +375,7 @@ async function seedLegacySchema(schema: string) {
 async function run() {
   const s = TEST_SCHEMA;
   try {
-    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 126, "v126 is the current production schema rollout");
+    assert.equal(BUSINESS_GROWTH_SCHEMA_VERSION, 127, "v127 is the current production schema rollout");
     const fixtures = await seedLegacySchema(s);
     const sharedPlan = await q<{ id: string }>(`INSERT INTO "${s}".subscription_plans DEFAULT VALUES RETURNING id`);
     const sharedPlanId = sharedPlan.rows[0]!.id;
@@ -1438,6 +1438,323 @@ async function run() {
       /duplicate key|unique/i,
       "the rollout rejects a second null-variant line for the same product and cart",
     );
+
+    // ── v127 wishlist index → constraint convergence ───────────────────────
+    // Use one dedicated, still-connected client for every catalog mutation and
+    // rollout invocation in this proof. In particular, do not reuse the client
+    // released after the initial rollout above.
+    const wishlistDdlClient = await pool.connect();
+    try {
+      const wishlistQuery = <T extends Record<string, unknown> = Record<string, unknown>>(
+        sql: string,
+        params: unknown[] = [],
+      ) => wishlistDdlClient.query<T>(sql, params);
+      const wishlistName = "product_wishlists_user_product_variant_unique";
+      const wishlistTable = `"${s}".product_wishlists`;
+      const wishlistRows = (await wishlistQuery<{ id: string }>(
+        `INSERT INTO ${wishlistTable} (user_id, product_id, variant_value)
+         VALUES ($1, $2, NULL), ($1, $2, '50ml') RETURNING id`,
+        [fixtures.user.id, fixtures.retailProduct.id],
+      )).rows.map((row) => row.id).sort();
+
+      // Reconstruct the exact catalog shape left by v126.
+      await wishlistQuery(`ALTER TABLE ${wishlistTable} DROP CONSTRAINT ${wishlistName}`);
+      await wishlistQuery(
+        `CREATE UNIQUE INDEX ${wishlistName}
+           ON ${wishlistTable} (user_id, product_id, variant_value) NULLS NOT DISTINCT`,
+      );
+      const v126IndexOid = (await wishlistQuery<{ oid: string }>(
+        `SELECT $1::regclass::oid::text AS oid`,
+        [`${s}.${wishlistName}`],
+      )).rows[0]!.oid;
+      await wishlistQuery(
+        `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+      );
+      await runBusinessGrowthSchemaDdl(wishlistDdlClient, s);
+
+      const adopted = (await wishlistQuery<{
+        oid: string;
+        contype: string;
+        indnullsnotdistinct: boolean;
+      }>(
+        `SELECT index_relation.oid::text AS oid,
+                constraint_definition.contype,
+                index_definition.indnullsnotdistinct
+           FROM pg_constraint constraint_definition
+           JOIN pg_class index_relation ON index_relation.oid = constraint_definition.conindid
+           JOIN pg_index index_definition ON index_definition.indexrelid = index_relation.oid
+          WHERE constraint_definition.conrelid = $1::regclass
+            AND constraint_definition.conname = $2`,
+        [`${s}.product_wishlists`, wishlistName],
+      )).rows[0]!;
+      assert.deepEqual(adopted, {
+        oid: v126IndexOid,
+        contype: "u",
+        indnullsnotdistinct: true,
+      }, "v127 adopts the exact v126 wishlist index as the canonical constraint without rebuilding it");
+      assert.deepEqual(
+        (await wishlistQuery<{ id: string }>(
+          `SELECT id FROM ${wishlistTable} WHERE id = ANY($1::uuid[]) ORDER BY id`,
+          [wishlistRows],
+        )).rows.map((row) => row.id),
+        wishlistRows,
+        "v127 preserves every wishlist row while adopting the index",
+      );
+      await assert.rejects(
+        wishlistQuery(
+          `INSERT INTO ${wishlistTable} (user_id, product_id, variant_value) VALUES ($1, $2, NULL)`,
+          [fixtures.user.id, fixtures.retailProduct.id],
+        ),
+        /duplicate key|unique/i,
+        "the adopted wishlist constraint retains NULLS NOT DISTINCT enforcement",
+      );
+
+      const incompatibleIndexes = [
+        {
+          label: "wrong ordered keys",
+          definition: "(product_id, user_id, variant_value) NULLS NOT DISTINCT",
+        },
+        {
+          label: "ordinary NULL-distinct semantics",
+          definition: "(user_id, product_id, variant_value)",
+        },
+        {
+          label: "partial predicate",
+          definition: "(user_id, product_id, variant_value) NULLS NOT DISTINCT WHERE variant_value IS NOT NULL",
+        },
+        {
+          label: "expression key",
+          definition: "(user_id, product_id, lower(variant_value)) NULLS NOT DISTINCT",
+        },
+        {
+          label: "included column",
+          definition: "(user_id, product_id, variant_value) INCLUDE (created_at) NULLS NOT DISTINCT",
+        },
+        {
+          label: "non-default opclass",
+          definition: "(user_id, product_id, variant_value text_pattern_ops) NULLS NOT DISTINCT",
+        },
+        {
+          label: "non-default ordering",
+          definition: "(user_id, product_id, variant_value DESC) NULLS NOT DISTINCT",
+        },
+      ] as const;
+
+      for (const incompatibleIndex of incompatibleIndexes) {
+        await wishlistQuery(`ALTER TABLE ${wishlistTable} DROP CONSTRAINT ${wishlistName}`);
+        await wishlistQuery(
+          `CREATE UNIQUE INDEX ${wishlistName} ON ${wishlistTable} ${incompatibleIndex.definition}`,
+        );
+        const incompatibleOid = (await wishlistQuery<{ oid: string }>(
+          `SELECT $1::regclass::oid::text AS oid`,
+          [`${s}.${wishlistName}`],
+        )).rows[0]!.oid;
+        await wishlistQuery(
+          `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+        );
+        await assert.rejects(
+          runBusinessGrowthSchemaDdl(wishlistDdlClient, s),
+          (error: unknown) => error instanceof Error
+            && /incompatible index/.test(error.message)
+            && /will not drop it or delete\/merge wishlist rows/.test(
+              (error as Error & { hint?: string }).hint ?? "",
+            ),
+          `v127 rejects a same-named wishlist index with ${incompatibleIndex.label} and gives safe remediation`,
+        );
+        assert.equal(
+          (await wishlistQuery<{ oid: string }>(
+            `SELECT $1::regclass::oid::text AS oid`,
+            [`${s}.${wishlistName}`],
+          )).rows[0]!.oid,
+          incompatibleOid,
+          `v127 does not replace the incompatible wishlist index with ${incompatibleIndex.label}`,
+        );
+        assert.deepEqual(
+          (await wishlistQuery<{ id: string }>(
+            `SELECT id FROM ${wishlistTable} WHERE id = ANY($1::uuid[]) ORDER BY id`,
+            [wishlistRows],
+          )).rows.map((row) => row.id),
+          wishlistRows,
+          `v127 preserves wishlist rows when rejecting ${incompatibleIndex.label}`,
+        );
+        await wishlistQuery(`DROP INDEX "${s}".${wishlistName}`);
+        await wishlistQuery(
+          `ALTER TABLE ${wishlistTable}
+             ADD CONSTRAINT ${wishlistName}
+             UNIQUE NULLS NOT DISTINCT (user_id, product_id, variant_value)`,
+        );
+      }
+
+      await wishlistQuery(`ALTER TABLE ${wishlistTable} DROP CONSTRAINT ${wishlistName}`);
+      await wishlistQuery(
+        `ALTER TABLE ${wishlistTable}
+           ADD CONSTRAINT ${wishlistName}
+           UNIQUE NULLS NOT DISTINCT (product_id, user_id, variant_value)`,
+      );
+      const incompatibleConstraintOid = (await wishlistQuery<{ oid: string }>(
+        `SELECT constraint_definition.oid::text AS oid
+           FROM pg_constraint constraint_definition
+          WHERE constraint_definition.conrelid = $1::regclass
+            AND constraint_definition.conname = $2`,
+        [`${s}.product_wishlists`, wishlistName],
+      )).rows[0]!.oid;
+      await wishlistQuery(
+        `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+      );
+      await assert.rejects(
+        runBusinessGrowthSchemaDdl(wishlistDdlClient, s),
+        (error: unknown) => error instanceof Error
+          && /incompatible constraint/.test(error.message)
+          && /will not drop objects or delete\/merge wishlist rows/.test(
+            (error as Error & { hint?: string }).hint ?? "",
+          ),
+        "v127 rejects an existing non-canonical same-named constraint with safe remediation",
+      );
+      assert.equal(
+        (await wishlistQuery<{ oid: string }>(
+          `SELECT constraint_definition.oid::text AS oid
+             FROM pg_constraint constraint_definition
+            WHERE constraint_definition.conrelid = $1::regclass
+              AND constraint_definition.conname = $2`,
+          [`${s}.product_wishlists`, wishlistName],
+        )).rows[0]!.oid,
+        incompatibleConstraintOid,
+        "v127 leaves an incompatible existing wishlist constraint untouched",
+      );
+      await wishlistQuery(`ALTER TABLE ${wishlistTable} DROP CONSTRAINT ${wishlistName}`);
+
+      // A constraint-owned schema-level name collision on another table must
+      // not be mistaken for a bare wishlist index that USING INDEX may adopt.
+      await wishlistQuery(
+        `ALTER TABLE "${s}".products ADD CONSTRAINT ${wishlistName} UNIQUE (id)`,
+      );
+      const wrongTableIndexOid = (await wishlistQuery<{ oid: string }>(
+        `SELECT $1::regclass::oid::text AS oid`,
+        [`${s}.${wishlistName}`],
+      )).rows[0]!.oid;
+      await wishlistQuery(
+        `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+      );
+      await assert.rejects(
+        runBusinessGrowthSchemaDdl(wishlistDdlClient, s),
+        /incompatible index/,
+        "v127 rejects a same-named constraint-owned index on the wrong table",
+      );
+      assert.equal(
+        (await wishlistQuery<{ oid: string }>(
+          `SELECT constraint_definition.conindid::text AS oid
+             FROM pg_constraint constraint_definition
+            WHERE constraint_definition.conrelid = $1::regclass
+              AND constraint_definition.conname = $2`,
+          [`${s}.products`, wishlistName],
+        )).rows[0]!.oid,
+        wrongTableIndexOid,
+        "v127 leaves the wrong-table constraint owner and index untouched",
+      );
+      await wishlistQuery(
+        `ALTER TABLE "${s}".products DROP CONSTRAINT ${wishlistName}`,
+      );
+
+      // A non-unique lookalike proves the rejection path never "repairs" data
+      // by deleting or merging duplicate business rows.
+      await wishlistQuery(
+        `CREATE INDEX ${wishlistName} ON ${wishlistTable} (user_id, product_id, variant_value)`,
+      );
+      const duplicate = (await wishlistQuery<{ id: string }>(
+        `INSERT INTO ${wishlistTable} (user_id, product_id, variant_value)
+         VALUES ($1, $2, NULL) RETURNING id`,
+        [fixtures.user.id, fixtures.retailProduct.id],
+      )).rows[0]!;
+      const duplicateIndexOid = (await wishlistQuery<{ oid: string }>(
+        `SELECT $1::regclass::oid::text AS oid`,
+        [`${s}.${wishlistName}`],
+      )).rows[0]!.oid;
+      await wishlistQuery(
+        `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+      );
+      await assert.rejects(
+        runBusinessGrowthSchemaDdl(wishlistDdlClient, s),
+        /incompatible index/,
+        "v127 rejects a non-unique same-named index instead of merging duplicate wishlist rows",
+      );
+      assert.equal(
+        (await wishlistQuery<{ count: string }>(
+          `SELECT count(*)::text AS count FROM ${wishlistTable}
+            WHERE user_id = $1 AND product_id = $2 AND variant_value IS NULL`,
+          [fixtures.user.id, fixtures.retailProduct.id],
+        )).rows[0]!.count,
+        "2",
+        "v127 leaves duplicate wishlist rows untouched on incompatible-index failure",
+      );
+      assert.equal(
+        (await wishlistQuery<{ oid: string }>(
+          `SELECT $1::regclass::oid::text AS oid`,
+          [`${s}.${wishlistName}`],
+        )).rows[0]!.oid,
+        duplicateIndexOid,
+        "v127 leaves the non-unique incompatible index untouched",
+      );
+
+      // Test-owned cleanup restores the canonical state for the rest of this
+      // long-running schema suite; the rollout itself performed no cleanup.
+      await wishlistQuery(`DELETE FROM ${wishlistTable} WHERE id = $1`, [duplicate.id]);
+      await wishlistQuery(`DROP INDEX "${s}".${wishlistName}`);
+
+      // With no same-named object, v127 takes the fresh ADD CONSTRAINT path.
+      // Existing duplicate keys must make PostgreSQL reject that build with
+      // 23505; the rollout must leave every row and no half-created constraint.
+      const freshBuildDuplicate = (await wishlistQuery<{ id: string }>(
+        `INSERT INTO ${wishlistTable} (user_id, product_id, variant_value)
+         VALUES ($1, $2, NULL) RETURNING id`,
+        [fixtures.user.id, fixtures.retailProduct.id],
+      )).rows[0]!;
+      await wishlistQuery(
+        `UPDATE "${s}".business_growth_schema_rollout SET version = 126 WHERE singleton = true`,
+      );
+      await assert.rejects(
+        runBusinessGrowthSchemaDdl(wishlistDdlClient, s),
+        (error: unknown) => error instanceof Error
+          && (error as Error & { code?: string }).code === "23505",
+        "v127 surfaces 23505 when a fresh constraint build finds duplicate wishlist rows",
+      );
+      assert.equal(
+        (await wishlistQuery<{ count: string }>(
+          `SELECT count(*)::text AS count FROM ${wishlistTable}
+            WHERE user_id = $1 AND product_id = $2 AND variant_value IS NULL`,
+          [fixtures.user.id, fixtures.retailProduct.id],
+        )).rows[0]!.count,
+        "2",
+        "a failed fresh constraint build preserves all duplicate wishlist rows",
+      );
+      assert.equal(
+        (await wishlistQuery<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1
+               FROM pg_constraint
+              WHERE conrelid = $1::regclass AND conname = $2
+           ) AS exists`,
+          [`${s}.product_wishlists`, wishlistName],
+        )).rows[0]!.exists,
+        false,
+        "a failed fresh constraint build leaves no wishlist constraint behind",
+      );
+      assert.equal(
+        (await wishlistQuery<{ relation: string | null }>(
+          `SELECT to_regclass($1)::text AS relation`,
+          [`${s}.${wishlistName}`],
+        )).rows[0]!.relation,
+        null,
+        "a failed fresh constraint build leaves no same-named index behind",
+      );
+      await wishlistQuery(`DELETE FROM ${wishlistTable} WHERE id = $1`, [freshBuildDuplicate.id]);
+      await wishlistQuery(
+        `CREATE UNIQUE INDEX ${wishlistName}
+           ON ${wishlistTable} (user_id, product_id, variant_value) NULLS NOT DISTINCT`,
+      );
+      await runBusinessGrowthSchemaDdl(wishlistDdlClient, s);
+    } finally {
+      wishlistDdlClient.release();
+    }
 
     // ── Public product rollout query proof ─────────────────────────────────
     // Insert both an approved public product and a private B2B product after

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -13,9 +14,10 @@ import {
   type StartupMigrationCrosswalk,
 } from "../startup-migration-crosswalk";
 import {
-  checkRealRepositoryProductionStartupDdlInventory,
+  checkProductionStartupDdlInventory,
   type StartupDdlBaseline,
 } from "../production-startup-ddl-inventory";
+import { loadReviewedHistoricalSources, reviewedHistoricalSource } from "../reviewed-historical-source";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const STARTUP_ROOT = "artifacts/api-server/src/index.ts";
@@ -174,7 +176,7 @@ function sourceNodeAt(
 function parsedSource(sourcePath: string): ParsedSource {
   const cached = parsedSourceCache.get(sourcePath);
   if (cached) return cached;
-  const source = readFileSync(path.join(REPOSITORY_ROOT, sourcePath), "utf8");
+  const source = reviewedHistoricalSource(REPOSITORY_ROOT, sourcePath);
   const sourceFile = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true);
   const nodes: ts.Node[] = [];
   const exactNodes = new Map<string, ts.Node>();
@@ -269,7 +271,7 @@ function contextAt(sourcePath: string, line: number, column?: number): SourceCon
 function ownerSourceChecksum(sourcePath: string): string {
   const expected = PINNED_STARTUP_OWNER_SOURCE_CHECKSUMS[sourcePath];
   if (!expected) throw new Error(`Missing independent source pin for ${sourcePath}`);
-  const actual = hash(readFileSync(path.join(REPOSITORY_ROOT, sourcePath), "utf8"));
+  const actual = hash(reviewedHistoricalSource(REPOSITORY_ROOT, sourcePath));
   if (actual !== expected) throw new Error(`Startup owner source checksum mismatch: ${sourcePath}`);
   return expected;
 }
@@ -338,26 +340,13 @@ function additionalMigrationCoverage(): MigrationCoverage {
 }
 
 function testCallerEvidence(owner: string): string[] {
-  const roots = [
-    path.join(REPOSITORY_ROOT, "artifacts/api-server/src"),
-    path.join(REPOSITORY_ROOT, "scripts/src"),
-  ];
-  const result: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (entry.name === "node_modules" || entry.name === "dist") continue;
-      const full = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(full);
-      else if (entry.isFile() && entry.name.endsWith(".test.ts")) {
-        const source = readFileSync(full, "utf8");
-        if (new RegExp(`\\b${owner}\\b`, "u").test(source)) {
-          result.push(path.relative(REPOSITORY_ROOT, full).replaceAll(path.sep, "/"));
-        }
-      }
-    }
-  };
-  for (const root of roots) if (statSync(root).isDirectory()) visit(root);
-  return result.sort();
+  return [...loadReviewedHistoricalSources(REPOSITORY_ROOT)]
+    .filter(([file, source]) => (
+      file.startsWith("artifacts/api-server/src/") || file.startsWith("scripts/src/")
+    ) && file.endsWith(".test.ts") && !file.split("/").some((part) =>
+      part === "node_modules" || part === "dist")
+      && new RegExp(`\\b${owner}\\b`, "u").test(source))
+    .map(([file]) => file).sort();
 }
 
 function operationSource(
@@ -525,7 +514,7 @@ export function buildStartupEquivalenceCrosswalk(): StartupEquivalenceCrosswalk 
 }
 
 function excerptChecksum(sourcePath: string, range: string): string {
-  const source = readFileSync(path.join(REPOSITORY_ROOT, sourcePath), "utf8");
+  const source = reviewedHistoricalSource(REPOSITORY_ROOT, sourcePath);
   return hash(sourceExcerpt(source, range));
 }
 
@@ -611,7 +600,30 @@ function assertIndependentInventory(
   baseline: StartupDdlBaseline,
   crosswalk: StartupMigrationCrosswalk,
 ): void {
-  const report = checkRealRepositoryProductionStartupDdlInventory(REPOSITORY_ROOT, baseline);
+  // This crosswalk shares the reviewed 91b6 additional-operation/inventory
+  // authority. The matrix's original 815465 archive remains a separate domain.
+  // Materialize the authenticated revision, including package exports, so
+  // resolution cannot fall back to today's DDL-free entrypoint or dependencies.
+  const temporary = mkdtempSync(path.join(os.tmpdir(), "startup-equivalence-history-"));
+  let report;
+  try {
+    const sources = loadReviewedHistoricalSources(REPOSITORY_ROOT);
+    const moduleSources = new Map(sources);
+    for (const [relative, source] of sources) {
+      const target = path.join(temporary, relative);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, source);
+      moduleSources.set(target, source);
+    }
+    report = checkProductionStartupDdlInventory({
+      repositoryRoot: temporary,
+      moduleSources,
+      rootFile: STARTUP_ROOT,
+      baseline,
+    });
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
   if (report.violations.length > 0 || !report.matchesBaseline) {
     throw new Error(`Independent startup inventory rejected:\n${report.violations
       .map((violation) => `- ${violation.reason}: ${violation.detail}`).join("\n")}`);

@@ -49,7 +49,7 @@ test("historical matrix is source-pinned and contains exactly 67 records", { tim
       "Repository-derived historical operation evidence changed.",
     );
 
-    const matrix = buildHistoricalOperationMatrix(archive);
+    const matrix = await buildHistoricalOperationMatrix(archive);
     assert.equal(matrix.archive.operationCount, 1569);
     assert.equal(matrix.archive.ownerCount, 8);
     assert.equal(matrix.archive.historicalBackfillCount, 67);
@@ -86,6 +86,19 @@ test("historical matrix is source-pinned and contains exactly 67 records", { tim
     }
     assert.ok(matrix.records.every((record) => record.applicability.C_unknown_old_historical === "REFUSE"));
     assert.equal(matrix.supportedStateBoundary.globalEquivalence, "BLOCKED");
+    // The fixture pins the entire original archive, including every owner
+    // checksum and span. Neither can be substituted while keeping its counts.
+    const wrongOwner = JSON.parse(archiveBytes.toString("utf8"));
+    wrongOwner.sourcePin.ownerSourceChecksums["artifacts/api-server/src/lib/business-growth-schema.ts"] = "0".repeat(64);
+    const wrongOwnerPath = path.join(fixtureRoot, "wrong-owner.json");
+    await writeFile(wrongOwnerPath, JSON.stringify(wrongOwner));
+    await assert.rejects(buildHistoricalOperationMatrix(wrongOwnerPath), /archive SHA-256/);
+    const wrongSpan = JSON.parse(archiveBytes.toString("utf8"));
+    const historical = wrongSpan.operations.find((operation: { classification: string }) => operation.classification === "historical-backfill");
+    historical.source.path = "artifacts/api-server/src/lib/business-growth-schema.ts:1-1";
+    const wrongSpanPath = path.join(fixtureRoot, "wrong-span.json");
+    await writeFile(wrongSpanPath, JSON.stringify(wrongSpan));
+    await assert.rejects(buildHistoricalOperationMatrix(wrongSpanPath), /archive SHA-256/);
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }

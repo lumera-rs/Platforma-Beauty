@@ -17,7 +17,7 @@ export const phase5TestInventory: readonly Phase5TestInventoryEntry[] = [
   { path: "lib/db/src/migration-runtime/contract.test.ts", declaredTests: 5, execution: "database-free", provenance: "343ea5ae" },
   { path: "lib/db/src/migration-runtime/namespaces.test.ts", declaredTests: 2, execution: "database-free", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/adoption-boundary.integration.test.ts", declaredTests: 1, execution: "disposable-integration", provenance: "343ea5ae" },
-  { path: "scripts/src/migrations/deployment-eligibility.test.ts", declaredTests: 9, execution: "database-free", provenance: "343ea5ae" },
+  { path: "scripts/src/migrations/deployment-eligibility.test.ts", declaredTests: 10, execution: "database-free", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/historical-operation-matrix.test.ts", declaredTests: 1, execution: "database-free", provenance: "343ea5ae", skipPolicy: "forbidden" },
   { path: "scripts/src/migrations/migration-runtime-parity.test.ts", declaredTests: 1, execution: "database-free", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/migrations.integration.test.ts", declaredTests: 22, execution: "existing-phase4-command", provenance: "80f822ac..343ea5ae" },

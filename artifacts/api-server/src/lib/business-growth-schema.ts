@@ -29,7 +29,7 @@ import { logger } from "./logger"; import { applyStartupDdlSessionTimeouts, read
  * Versioned/auditable: bump BUSINESS_GROWTH_SCHEMA_VERSION whenever the DDL set
  * changes.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 126;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 127;
 
 /**
  * Stable advisory lock key for every Business Growth rollout version. It is
@@ -2566,8 +2566,190 @@ function tableStatements(s: string): string[] {
        product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
        variant_value text, created_at timestamptz NOT NULL DEFAULT now()
      )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS product_wishlists_user_product_variant_unique
-       ON ${s}.product_wishlists (user_id, product_id, variant_value) NULLS NOT DISTINCT`,
+    // v127 — Drizzle declares this object as a UNIQUE constraint, not a bare
+    // unique index. Adopt an exactly compatible v126 index in place so its OID,
+    // physical rows, and continuously-live uniqueness guarantee are preserved.
+    // Refuse every non-canonical same-named object: USING INDEX has stricter
+    // semantics than name/uniqueness alone, and silently accepting the wrong
+    // keys or NULL behavior would make the catalog disagree with Drizzle.
+    `DO $$
+     DECLARE
+       wishlist_table regclass := format('%I.%I', current_schema(), 'product_wishlists')::regclass;
+       existing_constraint pg_constraint%ROWTYPE;
+       existing_index_oid oid;
+       compatible boolean;
+     BEGIN
+       SELECT constraint_definition.*
+         INTO existing_constraint
+         FROM pg_constraint constraint_definition
+        WHERE constraint_definition.conrelid = wishlist_table
+          AND constraint_definition.conname = 'product_wishlists_user_product_variant_unique';
+
+       IF FOUND THEN
+         SELECT existing_constraint.contype = 'u'
+                AND existing_constraint.convalidated
+                AND NOT existing_constraint.condeferrable
+                AND NOT existing_constraint.condeferred
+                AND (
+                  SELECT array_agg(table_attribute.attname::text ORDER BY key_column.ordinality)
+                    FROM unnest(existing_constraint.conkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                    JOIN pg_attribute table_attribute
+                      ON table_attribute.attrelid = wishlist_table
+                     AND table_attribute.attnum = key_column.attnum
+                ) = ARRAY['user_id', 'product_id', 'variant_value']
+                AND index_definition.indrelid = wishlist_table
+                AND index_definition.indisunique
+                AND index_definition.indnullsnotdistinct
+                AND index_definition.indisvalid
+                AND index_definition.indisready
+                AND index_definition.indislive
+                AND index_definition.indimmediate
+                AND index_definition.indpred IS NULL
+                AND index_definition.indexprs IS NULL
+                AND index_definition.indnkeyatts = 3
+                AND index_definition.indnatts = 3
+                AND index_relation.relkind = 'i'
+                AND index_relation.relname = 'product_wishlists_user_product_variant_unique'
+                AND index_schema.nspname = current_schema()
+                AND access_method.amname = 'btree'
+                AND (
+                  SELECT array_agg(table_attribute.attname::text ORDER BY key_column.ordinality)
+                    FROM unnest(index_definition.indkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                    JOIN pg_attribute table_attribute
+                      ON table_attribute.attrelid = wishlist_table
+                     AND table_attribute.attnum = key_column.attnum
+                   WHERE key_column.ordinality <= index_definition.indnkeyatts
+                ) = ARRAY['user_id', 'product_id', 'variant_value']
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indclass) WITH ORDINALITY AS index_class(opclass_oid, ordinality)
+                    JOIN pg_opclass operator_class ON operator_class.oid = index_class.opclass_oid
+                   WHERE index_class.ordinality <= index_definition.indnkeyatts
+                     AND (NOT operator_class.opcdefault OR operator_class.opcmethod <> index_relation.relam)
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indcollation) WITH ORDINALITY AS index_collation(collation_oid, ordinality)
+                    JOIN unnest(index_definition.indkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                      USING (ordinality)
+                    JOIN pg_attribute table_attribute
+                      ON table_attribute.attrelid = wishlist_table
+                     AND table_attribute.attnum = key_column.attnum
+                   WHERE index_collation.ordinality <= index_definition.indnkeyatts
+                     AND index_collation.collation_oid <> table_attribute.attcollation
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indoption) WITH ORDINALITY AS index_option(option_bits, ordinality)
+                   WHERE index_option.ordinality <= index_definition.indnkeyatts
+                     AND index_option.option_bits <> 0
+                )
+           INTO compatible
+           FROM pg_index index_definition
+           JOIN pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+           JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+           JOIN pg_am access_method ON access_method.oid = index_relation.relam
+          WHERE index_definition.indexrelid = existing_constraint.conindid;
+
+         IF NOT coalesce(compatible, false) THEN
+           RAISE EXCEPTION USING
+             MESSAGE = 'product_wishlists_user_product_variant_unique exists as an incompatible constraint',
+             DETAIL = 'Expected a validated, immediate UNIQUE NULLS NOT DISTINCT constraint on product_wishlists (user_id, product_id, variant_value) backed by a live, ready, valid, plain btree index with default key semantics.',
+             HINT = 'Inspect the constraint and its backing index, then repair or rename it manually; this rollout will not drop objects or delete/merge wishlist rows.';
+         END IF;
+         RETURN;
+       END IF;
+
+       SELECT index_relation.oid
+         INTO existing_index_oid
+         FROM pg_class index_relation
+         JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+        WHERE index_schema.nspname = current_schema()
+          AND index_relation.relname = 'product_wishlists_user_product_variant_unique';
+
+       IF FOUND THEN
+         SELECT index_definition.indrelid = wishlist_table
+                AND index_definition.indisunique
+                AND index_definition.indnullsnotdistinct
+                AND index_definition.indisvalid
+                AND index_definition.indisready
+                AND index_definition.indislive
+                AND index_definition.indimmediate
+                AND index_definition.indpred IS NULL
+                AND index_definition.indexprs IS NULL
+                AND index_definition.indnkeyatts = 3
+                AND index_definition.indnatts = 3
+                AND index_relation.relkind = 'i'
+                AND index_relation.relname = 'product_wishlists_user_product_variant_unique'
+                AND index_schema.nspname = current_schema()
+                AND access_method.amname = 'btree'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM pg_constraint index_owner
+                   WHERE index_owner.conindid = index_definition.indexrelid
+                )
+                AND (
+                  SELECT array_agg(table_attribute.attname::text ORDER BY key_column.ordinality)
+                    FROM unnest(index_definition.indkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                    JOIN pg_attribute table_attribute
+                      ON table_attribute.attrelid = wishlist_table
+                     AND table_attribute.attnum = key_column.attnum
+                   WHERE key_column.ordinality <= index_definition.indnkeyatts
+                ) = ARRAY['user_id', 'product_id', 'variant_value']
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indclass) WITH ORDINALITY AS index_class(opclass_oid, ordinality)
+                    JOIN pg_opclass operator_class ON operator_class.oid = index_class.opclass_oid
+                   WHERE index_class.ordinality <= index_definition.indnkeyatts
+                     AND (NOT operator_class.opcdefault OR operator_class.opcmethod <> index_relation.relam)
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indcollation) WITH ORDINALITY AS index_collation(collation_oid, ordinality)
+                    JOIN unnest(index_definition.indkey) WITH ORDINALITY AS key_column(attnum, ordinality)
+                      USING (ordinality)
+                    JOIN pg_attribute table_attribute
+                      ON table_attribute.attrelid = wishlist_table
+                     AND table_attribute.attnum = key_column.attnum
+                   WHERE index_collation.ordinality <= index_definition.indnkeyatts
+                     AND index_collation.collation_oid <> table_attribute.attcollation
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM unnest(index_definition.indoption) WITH ORDINALITY AS index_option(option_bits, ordinality)
+                   WHERE index_option.ordinality <= index_definition.indnkeyatts
+                     AND index_option.option_bits <> 0
+                )
+           INTO compatible
+           FROM pg_index index_definition
+           JOIN pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+           JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+           JOIN pg_am access_method ON access_method.oid = index_relation.relam
+          WHERE index_definition.indexrelid = existing_index_oid;
+
+         IF NOT coalesce(compatible, false) THEN
+           RAISE EXCEPTION USING
+             MESSAGE = 'product_wishlists_user_product_variant_unique exists as an incompatible index',
+             DETAIL = 'Expected a live, ready, valid, non-partial, non-expression, no-INCLUDE UNIQUE NULLS NOT DISTINCT btree index on product_wishlists (user_id, product_id, variant_value), using default opclasses, collations, and ordering.',
+             HINT = 'Inspect and repair or rename the index manually; this rollout will not drop it or delete/merge wishlist rows.';
+         END IF;
+
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE USING INDEX %I',
+           current_schema(),
+           'product_wishlists',
+           'product_wishlists_user_product_variant_unique',
+           'product_wishlists_user_product_variant_unique'
+         );
+       ELSE
+         EXECUTE format(
+           'ALTER TABLE %I.%I ADD CONSTRAINT %I UNIQUE NULLS NOT DISTINCT (user_id, product_id, variant_value)',
+           current_schema(),
+           'product_wishlists',
+           'product_wishlists_user_product_variant_unique'
+         );
+       END IF;
+     END $$`,
     `CREATE INDEX IF NOT EXISTS product_wishlists_product_idx ON ${s}.product_wishlists (product_id)`,
     `CREATE INDEX IF NOT EXISTS product_wishlists_user_created_idx ON ${s}.product_wishlists (user_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.commerce_customer_notifications (
@@ -4980,6 +5162,16 @@ function coverImageDescriptionColumnStatements(s: string, guardMissingTables = f
 }
 
 /**
+ * Clients whose session-scoped `lumera.snapshot_backfill` bypass could not be
+ * closed. The bypass is honoured by the commercial-snapshot triggers, so a
+ * session that still has it enabled must never serve another request. This
+ * runner does not own the client's lifecycle -- it is also driven directly by
+ * isolated upgrade tests -- so it records the failure here and the owning
+ * caller destroys the connection instead of returning it to the pool.
+ */
+const clientsWithOpenSnapshotBypass = new WeakMap<PoolClient, unknown>();
+
+/**
  * Internal runner: applies the full rollout against a validated `schemaName`
  * using the supplied PoolClient (already connected). Runs in autocommit; sets
  * the search_path so unqualified references in `DO` blocks resolve to the
@@ -5151,7 +5343,16 @@ export async function runBusinessGrowthSchemaDdl(
     // Custom GUCs are session scoped. Always close the narrowly-scoped
     // migration bypass before this client can return to the pool.
     await client.query("ROLLBACK").catch(() => {});
-    let cleanupError: unknown; try { await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`); } catch (error) { cleanupError = error; }
+    let cleanupError: unknown;
+    try {
+      await client.query(`SELECT set_config('lumera.snapshot_backfill', 'off', false)`);
+    } catch (error) {
+      // A cancelled reset or an aborted transaction (the ROLLBACK above is
+      // best-effort) leaves the session queryable, so pg would otherwise pool
+      // it with the bypass still enabled.
+      cleanupError = error;
+      clientsWithOpenSnapshotBypass.set(client, error);
+    }
     if (locked) await client.query(
       "SELECT pg_advisory_unlock($1)",
       [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
@@ -5193,7 +5394,20 @@ export async function ensureBusinessGrowthSchema(schemaName = "public", poolOver
     } catch (error) {
       cleanupError ??= error;
     }
-    client.release();
+    if (clientsWithOpenSnapshotBypass.has(client)) {
+      const bypassError = clientsWithOpenSnapshotBypass.get(client);
+      clientsWithOpenSnapshotBypass.delete(client);
+      // Destroy the connection: pg only removes a client from the pool when
+      // release() receives a truthy argument, and this session may still skip
+      // the commercial-snapshot triggers.
+      logger.error(
+        { err: bypassError, schema: schemaName },
+        "Destroying pooled client: lumera.snapshot_backfill bypass could not be closed",
+      );
+      client.release(bypassError instanceof Error ? bypassError : true);
+    } else {
+      client.release();
+    }
     if (cleanupError && !startupError) throw cleanupError;
   }
 }

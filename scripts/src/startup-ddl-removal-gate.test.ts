@@ -7,6 +7,7 @@ import {
   checkStartupDdlRemovalGate,
   removeStartupDdlStatements,
 } from "./startup-ddl-removal-gate";
+import { loadRepositoryCrosswalk } from "./startup-migration-crosswalk";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Startup DDL removal gate tests");
 const rootPath = "artifacts/api-server/src/index.ts";
@@ -49,6 +50,19 @@ test("the real entrypoint passes after removing all eight startup owners", () =>
   assert.equal(report.pass, true, report.violations.map((item) => item.detail).join("\n"));
   assert.equal(report.readinessGuard, "assertDatabaseMigrationReady");
   assert.equal(report.inventory.owners.length, 0);
+});
+
+test("authenticated historical evidence never hides newly injected current startup DDL", () => {
+  const { crosswalk } = loadRepositoryCrosswalk();
+  assert.equal(crosswalk.inventory.recordCount, 1459);
+  const sources = candidateSources();
+  sources[rootPath] = `${sources[rootPath]}\nawait pool.query("CREATE TABLE phase_c_current_injection (id integer)");`;
+  const report = checkStartupDdlRemovalGate({ rootFile: rootPath, moduleSources: sources });
+  assert.equal(report.pass, false);
+  assert.ok(report.violations.some((item) =>
+    item.reason === "inventory-violation" || item.reason === "unsafe-top-level-evaluation"),
+  JSON.stringify(report.violations));
+  assert.equal(checkStartupDdlRemovalGate({ rootFile: rootPath }).pass, true);
 });
 
 test("an AST candidate with a read-only guard passes the removal gate", () => {

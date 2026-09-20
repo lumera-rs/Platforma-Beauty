@@ -250,3 +250,24 @@ test("admission-contract adoption refuses deployment runtime before touching the
   }
   assert.equal(statements.length, 0);
 });
+/**
+ * `adoptBaseline` reaches the development-only gate only while at least one
+ * loaded migration carries an admission contract. If that entry were dropped
+ * from the manifest, adoption would fall through to the legacy branch, which
+ * writes the ledger without an enclosing transaction or table locks -- the
+ * time-of-check/time-of-use window the supported path closes. The refusal
+ * test above proves the gate fires today, but only indirectly: stubbing
+ * `options.migrations` would silently retire that coverage. This pins the
+ * precondition itself.
+ */
+test("the loaded manifest always carries the admission contract that gates adoption", async () => {
+  const migrations = await loadMigrations();
+  const admitted = migrations.filter((migration) => migration.admissionContract);
+  assert.ok(
+    admitted.length > 0,
+    "without an admission contract adoptBaseline would use the legacy, unfenced ledger path",
+  );
+  for (const migration of admitted) {
+    assert.equal(migration.admissionContract, "supported-startup-v1", migration.id);
+  }
+});

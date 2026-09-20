@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EquivalenceClassification, StartupEquivalenceCrosswalk, StartupEquivalenceOperation } from "../startup-equivalence/crosswalk";
+import { loadAuthenticatedHistoricalSourceFixture } from "./historical-source-fixture";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const DEFAULT_ARCHIVE = "/tmp/lumera-ddl-equivalence-report/operation-crosswalk.json";
@@ -111,11 +112,13 @@ function stripPosition(pathWithPosition: string): { file: string; lineRange: str
   return { file: match[1]!, lineRange: match[2]! };
 }
 
-function sourceLines(file: string, lineRange: string): string {
-  const lines = readFileSync(resolve(ROOT, file), "utf8").split(/\r?\n/u);
+function sourceLines(file: string, lineRange: string, sources: ReadonlyMap<string, Buffer>): string {
+  const source = sources.get(file);
+  if (!source) throw new Error(`Missing authenticated matrix source: ${file}`);
+  const lines = source.toString("utf8").split(/\r?\n/u);
   const ranges = lineRange.split(",").map((part) => {
     const [start, end = start] = part.split("-").map(Number);
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start || end > lines.length) {
       throw new Error(`Invalid source range ${file}:${lineRange}`);
     }
     return { start, end };
@@ -168,12 +171,12 @@ function runtimeConsumerProof(category: RuntimeOperationEvidence["category"]): s
   return "The source reads version-99 cleanup counters after startup for logging only; it does not make the cleanup report a proof of candidate provenance.";
 }
 
-function buildRuntimeOperations(archive: StartupEquivalenceCrosswalk): RuntimeOperationEvidence[] {
+function buildRuntimeOperations(archive: StartupEquivalenceCrosswalk, sources: ReadonlyMap<string, Buffer>): RuntimeOperationEvidence[] {
   return archive.operations
     .filter((operation) => operation.classification === "runtime-data-operation")
     .map((operation) => {
       const { file, lineRange } = stripPosition(operation.source.path);
-      const excerpt = sourceLines(file, lineRange);
+      const excerpt = sourceLines(file, lineRange, sources);
       const category = runtimeCategory(operation);
       const tables = affectedTables(excerpt);
       return {
@@ -274,6 +277,7 @@ function validateArchive(
   archive: StartupEquivalenceCrosswalk,
   archiveBytes: Buffer,
   scopePath: string,
+  sources: ReadonlyMap<string, Buffer>,
 ): { canonicalSha256: string; ownerFilesChecked: number; supportedScopeArchiveMatched: boolean } {
   if (archive.version !== 1 || archive.operations.length !== EXPECTED_OPERATION_COUNT
     || archive.owners.length !== EXPECTED_OWNER_COUNT) {
@@ -289,7 +293,9 @@ function validateArchive(
     if (!knownOwners.has(owner.ownerSource)) throw new Error(`Owner is not source-pinned: ${owner.ownerSource}`);
   }
   for (const [file, expected] of Object.entries(archive.sourcePin.ownerSourceChecksums)) {
-    const actual = sha256(readFileSync(resolve(ROOT, file)));
+    const source = sources.get(file);
+    if (!source) throw new Error(`Missing authenticated matrix owner: ${file}`);
+    const actual = sha256(source);
     if (actual !== expected) throw new Error(`Owner source checksum mismatch: ${file}`);
   }
   for (const operation of historical) {
@@ -315,22 +321,29 @@ function validateArchive(
   };
 }
 
-export function buildHistoricalOperationMatrix(
+export async function buildHistoricalOperationMatrix(
   archivePath = DEFAULT_ARCHIVE,
   scopePath = DEFAULT_SCOPE,
-): HistoricalOperationMatrix {
+): Promise<HistoricalOperationMatrix> {
+  // This domain retains its original 815465 fixture authority. The 91b6
+  // reviewed additional-evidence authority must not replace these source pins.
+  const { manifest, files } = await loadAuthenticatedHistoricalSourceFixture();
+  const sources = new Map(files.map((file) => [file.path, file.bytes]));
   const archiveBytes = readFileSync(archivePath);
+  if (sha256(archiveBytes) !== manifest.expectedCrosswalkSha256) {
+    throw new Error("Historical matrix archive SHA-256 does not match its authenticated fixture pin");
+  }
   const archive = JSON.parse(archiveBytes.toString("utf8")) as StartupEquivalenceCrosswalk;
-  const validation = validateArchive(archive, archiveBytes, scopePath);
+  const validation = validateArchive(archive, archiveBytes, scopePath, sources);
   const records = archive.operations
     .filter((operation): operation is ArchiveOperation => operation.classification === "historical-backfill")
     .map((operation): HistoricalOperationMatrixRecord => {
       const { file, lineRange } = stripPosition(operation.source.path);
       const line = operation.source.sourcePosition.line;
-      const sql = operation.source.exactSql ?? sourceLines(file, lineRange);
+      const sql = operation.source.exactSql ?? sourceLines(file, lineRange, sources);
       const tables = affectedTables(sql);
       const decision = sourceDisposition(operation, line, tables, sql);
-      const excerpt = operation.source.exactSql ? undefined : sourceLines(file, lineRange);
+      const excerpt = operation.source.exactSql ? undefined : sourceLines(file, lineRange, sources);
       return {
         id: operation.id,
         owner: operation.owner,
@@ -349,7 +362,7 @@ export function buildHistoricalOperationMatrix(
         ...decision,
       };
     });
-  const runtimeOperations = buildRuntimeOperations(archive);
+  const runtimeOperations = buildRuntimeOperations(archive, sources);
   if (runtimeOperations.length !== 3) {
     throw new Error(`Expected exactly three runtime marker/consumer operations, got ${runtimeOperations.length}`);
   }
@@ -413,5 +426,5 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   const output = argument("--output") ?? process.argv[3]
     ?? "docs/startup-ddl-equivalence/evidence/historical-operation-matrix.json";
   const scope = argument("--scope") ?? DEFAULT_SCOPE;
-  writeFileSync(resolve(ROOT, output), `${JSON.stringify(buildHistoricalOperationMatrix(archive, scope), null, 2)}\n`);
+  writeFileSync(resolve(ROOT, output), `${JSON.stringify(await buildHistoricalOperationMatrix(archive, scope), null, 2)}\n`);
 }
