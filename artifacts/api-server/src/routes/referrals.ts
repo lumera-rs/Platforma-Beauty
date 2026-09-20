@@ -43,7 +43,7 @@ router.get("/referrals/validate/:code", async (req: Request, res: Response): Pro
     valid: true,
     code: code.code,
     channel: code.channel,
-    link: referralLink(`${req.protocol}://${req.get("host")}`, normalizedReferralCode(code.code), code.channel),
+    link: referralLink(normalizedReferralCode(code.code), code.channel),
   }));
 });
 
@@ -133,7 +133,6 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
     }
     return result;
   });
-  const requestOrigin = `${req.protocol}://${req.get("host")}`;
   const response = {
     availableRsd: walletSnapshots.reduce((sum, snapshot) => sum + snapshot.availableRsd, 0),
     expiringSoonRsd: walletSnapshots.reduce((sum, snapshot) => sum + snapshot.expiringSoonRsd, 0),
@@ -148,7 +147,7 @@ router.get("/referrals/dashboard", async (req: Request, res: Response): Promise<
         : null;
       return {
         channel, sourceBusinessId, sourceBusinessKind, sourceBusinessName,
-        code: code.code, link: referralLink(requestOrigin, code.code, channel),
+        code: code.code, link: referralLink(code.code, channel),
         qualified: scoped.filter((item) => ["qualified", "held", "available"].includes(item.status)).length,
         pending: scoped.filter((item) => !["available", "reversed", "rejected"].includes(item.status)).length,
         terms: REFERRAL_TERMS_SR[channel],

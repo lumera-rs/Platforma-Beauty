@@ -23,18 +23,18 @@ test("server-issued referral codes and channel links are source scoped", () => {
     assert.notEqual(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-2"));
     assert.notEqual(stableReferralCode("A", "business-1"), stableReferralCode("C", "business-1"));
     assert.notEqual(stableReferralCode("A", "salon:same-id"), stableReferralCode("A", "education_center:same-id"));
-    assert.equal(new URL(referralLink("https://tenant.example", "A-ABC", "A")).pathname, "/poslovna-registracija");
-    assert.equal(new URL(referralLink("https://tenant.example", "C-ABC", "C")).pathname, "/student/prijava");
-    assert.equal(new URL(referralLink("https://tenant.example", "D-ABC", "D")).searchParams.get("ref"), "D-ABC");
+    assert.equal(new URL(referralLink("A-ABC", "A")).pathname, "/poslovna-registracija");
+    assert.equal(new URL(referralLink("C-ABC", "C")).pathname, "/student/prijava");
+    assert.equal(new URL(referralLink("D-ABC", "D")).searchParams.get("ref"), "D-ABC");
 
     process.env["APP_BASE_URL"] = "https://legacy.example";
     process.env["PUBLIC_SITE_URL"] = "https://public.example";
-    assert.equal(new URL(referralLink("https://request.example", "A-ABC")).origin, "https://public.example");
+    assert.equal(new URL(referralLink("A-ABC")).origin, "https://public.example");
     process.env["PUBLIC_SITE_URL"] = "http://public.example";
-    assert.throws(() => referralLink("https://request.example", "A-ABC"), /HTTPS origin/);
+    assert.throws(() => referralLink("A-ABC"), /HTTPS origin/);
     delete process.env["PUBLIC_SITE_URL"];
     delete process.env["APP_BASE_URL"];
-    assert.throws(() => referralLink("", "A-ABC"), /required/);
+    assert.throws(() => referralLink("A-ABC"), /required/);
   } finally {
     if (previousPublicSiteUrl === undefined) delete process.env["PUBLIC_SITE_URL"];
     else process.env["PUBLIC_SITE_URL"] = previousPublicSiteUrl;
@@ -43,19 +43,17 @@ test("server-issued referral codes and channel links are source scoped", () => {
   }
 });
 
-test("referral links fail closed for a hostile HTTPS Host when both configured origins are absent", () => {
+test("referral links fail closed when both configured origins are absent", () => {
   const previousPublicSiteUrl = process.env["PUBLIC_SITE_URL"];
   const previousAppBaseUrl = process.env["APP_BASE_URL"];
   try {
     delete process.env["PUBLIC_SITE_URL"];
     delete process.env["APP_BASE_URL"];
-    const request = { protocol: "https", headers: { host: "attacker.example" } };
-    const requestOrigin = `${request.protocol}://${request.headers.host}`;
-    assert.throws(() => referralLink(requestOrigin, "A-ABC", "A"), /required/);
+    assert.throws(() => referralLink("A-ABC", "A"), /required/);
     process.env["APP_BASE_URL"] = "https://legacy.example";
-    assert.equal(new URL(referralLink(requestOrigin, "A-ABC", "A")).origin, "https://legacy.example");
+    assert.equal(new URL(referralLink("A-ABC", "A")).origin, "https://legacy.example");
     process.env["PUBLIC_SITE_URL"] = "https://public.example";
-    assert.equal(new URL(referralLink(requestOrigin, "A-ABC", "A")).origin, "https://public.example");
+    assert.equal(new URL(referralLink("A-ABC", "A")).origin, "https://public.example");
   } finally {
     if (previousPublicSiteUrl === undefined) delete process.env["PUBLIC_SITE_URL"];
     else process.env["PUBLIC_SITE_URL"] = previousPublicSiteUrl;
