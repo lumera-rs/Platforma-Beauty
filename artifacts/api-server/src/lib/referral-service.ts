@@ -442,11 +442,12 @@ export function stableReferralCode(channel: ReferralChannel, sourceId: string): 
   return `${channel}-${digest}`;
 }
 
-export function referralLink(origin: string, code: string, channel: ReferralChannel = "B2"): string {
+export function referralLink(_origin: string, code: string, channel: ReferralChannel = "B2"): string {
   const publicSiteUrl = process.env["PUBLIC_SITE_URL"]?.trim();
   const legacyAppBaseUrl = process.env["APP_BASE_URL"]?.trim();
   const configured = publicSiteUrl || legacyAppBaseUrl;
-  const candidate = configured || origin?.trim();
+  // Keep the call signature, but never trust a request-derived origin.
+  const candidate = configured;
   if (!candidate) {
     throw new Error("PUBLIC_SITE_URL (or legacy APP_BASE_URL) is required to create public referral links.");
   }

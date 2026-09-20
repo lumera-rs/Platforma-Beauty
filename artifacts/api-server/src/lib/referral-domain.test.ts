@@ -17,7 +17,7 @@ test("server-issued referral codes and channel links are source scoped", () => {
   const previousPublicSiteUrl = process.env["PUBLIC_SITE_URL"];
   const previousAppBaseUrl = process.env["APP_BASE_URL"];
   try {
-    delete process.env["PUBLIC_SITE_URL"];
+    process.env["PUBLIC_SITE_URL"] = "https://tenant.example";
     delete process.env["APP_BASE_URL"];
     assert.equal(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-1"));
     assert.notEqual(stableReferralCode("A", "salon-1"), stableReferralCode("A", "salon-2"));
@@ -35,6 +35,27 @@ test("server-issued referral codes and channel links are source scoped", () => {
     delete process.env["PUBLIC_SITE_URL"];
     delete process.env["APP_BASE_URL"];
     assert.throws(() => referralLink("", "A-ABC"), /required/);
+  } finally {
+    if (previousPublicSiteUrl === undefined) delete process.env["PUBLIC_SITE_URL"];
+    else process.env["PUBLIC_SITE_URL"] = previousPublicSiteUrl;
+    if (previousAppBaseUrl === undefined) delete process.env["APP_BASE_URL"];
+    else process.env["APP_BASE_URL"] = previousAppBaseUrl;
+  }
+});
+
+test("referral links fail closed for a hostile HTTPS Host when both configured origins are absent", () => {
+  const previousPublicSiteUrl = process.env["PUBLIC_SITE_URL"];
+  const previousAppBaseUrl = process.env["APP_BASE_URL"];
+  try {
+    delete process.env["PUBLIC_SITE_URL"];
+    delete process.env["APP_BASE_URL"];
+    const request = { protocol: "https", headers: { host: "attacker.example" } };
+    const requestOrigin = `${request.protocol}://${request.headers.host}`;
+    assert.throws(() => referralLink(requestOrigin, "A-ABC", "A"), /required/);
+    process.env["APP_BASE_URL"] = "https://legacy.example";
+    assert.equal(new URL(referralLink(requestOrigin, "A-ABC", "A")).origin, "https://legacy.example");
+    process.env["PUBLIC_SITE_URL"] = "https://public.example";
+    assert.equal(new URL(referralLink(requestOrigin, "A-ABC", "A")).origin, "https://public.example");
   } finally {
     if (previousPublicSiteUrl === undefined) delete process.env["PUBLIC_SITE_URL"];
     else process.env["PUBLIC_SITE_URL"] = previousPublicSiteUrl;
