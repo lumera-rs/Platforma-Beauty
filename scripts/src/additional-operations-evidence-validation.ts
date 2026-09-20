@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { loadRepositoryCrosswalk } from "./startup-migration-crosswalk";
+import { reviewedHistoricalSource } from "./reviewed-historical-source";
 
 export const PINNED_REVIEWED_EVIDENCE_COMMIT = "91b6b162b6b491a5dc76f90cb55de9894c199de6";
 export const PINNED_REVIEWED_EVIDENCE_PATH = "docs/additional-operations-evidence/complete-evidence.json";
@@ -57,7 +58,7 @@ function normalizedText(value: string): string {
 }
 
 function citedSlice(root: string, file: string, startLine: number, endLine: number): string {
-  return readFileSync(path.join(root, file), "utf8").split(/\r?\n/u).slice(startLine - 1, endLine).join("\n");
+  return reviewedHistoricalSource(root, file).split(/\r?\n/u).slice(startLine - 1, endLine).join("\n");
 }
 
 type NarrativeDetail = { path: string; statement: string };
@@ -215,14 +216,12 @@ export function assertSourceEvidence(
 ): "exact" | "contained" {
   const evidence = asRecord(item, `${id}: source evidence`);
   const evidencePath = nonEmptyString(evidence.path, `${id}: source evidence path`);
-  const absolutePath = path.join(root, evidencePath);
-  if (!existsSync(absolutePath)) fail(`${id}: missing evidence path ${evidencePath}`);
   if (!Number.isInteger(evidence.startLine) || !Number.isInteger(evidence.endLine)) {
     fail(`${id}: source evidence lines must be integers`);
   }
   const startLine = Number(evidence.startLine);
   const endLine = Number(evidence.endLine);
-  const lines = readFileSync(absolutePath, "utf8").split(/\r?\n/u);
+  const lines = reviewedHistoricalSource(root, evidencePath).split(/\r?\n/u);
   if (startLine < 1 || endLine < startLine || endLine > lines.length) fail(`${id}: source evidence bounds`);
   const claimed = normalizedText(nonEmptyString(evidence.sqlOrCode, `${id}: sqlOrCode`));
   const actual = normalizedText(citedSlice(root, evidencePath, startLine, endLine));
@@ -288,9 +287,7 @@ export function validateAdditionalOperationsEvidence(root: string, data: unknown
     const spans = sourceSpans(String(record.sourcePath));
     if (spans.length === 0) fail(`${id}: sourcePath must contain a source span`);
     for (const span of spans) {
-      const source = path.join(root, span.file);
-      if (!existsSync(source)) fail(`${id}: missing sourcePath file ${span.file}`);
-      const lineCount = readFileSync(source, "utf8").split(/\r?\n/u).length;
+      const lineCount = reviewedHistoricalSource(root, span.file).split(/\r?\n/u).length;
       if (span.start < 1 || span.end < span.start || span.end > lineCount) fail(`${id}: sourcePath bounds`);
     }
     const pinnedRecord = expectedById.get(id)!;

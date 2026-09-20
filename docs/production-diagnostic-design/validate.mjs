@@ -328,8 +328,19 @@ export function validatePackage(inputs, artifacts) {
   if (!catalog.executionEnvelope || catalog.executionEnvelope.connectionCap !== 1 ||
       catalog.executionEnvelope.resultCaps.rows !== 1000 || catalog.executionEnvelope.resultCaps.bytes !== 2097152)
     throw new Error("invalid execution envelope");
-  for (const [file, expected] of Object.entries(manifest.inputs)) {
-    if (digest(fs.readFileSync(file, "utf8")) !== expected) throw new Error("protected hash drift: " + file);
+  // Independent authority: all 73 entries and file bytes reproduced from b8f30561.
+  // Historical evidence must never be compared to today's working-tree source.
+  if (!manifest.inputs || Array.isArray(manifest.inputs) ||
+      digest(JSON.stringify(Object.entries(manifest.inputs).sort())) !== "ea939afa67068f34523fef2e76c811adeca39178ad5955959c8d4e7adceb14da")
+    throw new Error("historical baseline drift");
+  if (manifest.algorithm !== "sha256" || manifest.fileCount !== 73)
+    throw new Error("protected manifest invalid");
+  if (!manifest.currentInputs || Array.isArray(manifest.currentInputs) ||
+      digest(JSON.stringify(Object.keys(manifest.currentInputs).sort())) !== "2cf4681c2e15d0bbfeb5e9571083f9f5ccadc5e748561f0a44dee0d282f5b8ef")
+    throw new Error("protected-path inventory mismatch");
+  for (const [file, expected] of Object.entries(manifest.currentInputs)) {
+    if (!fs.existsSync(file) || digest(fs.readFileSync(file)) !== expected)
+      throw new Error("protected hash drift: " + file);
   }
   const proceduresList = Object.values(procedures.procedures);
   const authoritativeRecords = matrix.records;
@@ -665,7 +676,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     ["D-04 index-parent join omission", "P-04 index/parent join mismatch"],
     ["D-04 parent output omission", "P-04 index/parent join mismatch"],
     ["D-04 missing parent binding", "record-target binding mismatch"],
-    ["protected hash drift", "protected hash drift: docs/additional-operations-evidence/bg-data.json"],
+    ["protected hash drift", "historical baseline drift"],
+    ["N7 current protected path removed", "protected-path inventory mismatch"],
+    ["N8 historical baseline changed", "historical baseline drift"],
+    ["currentInputs hash drift", "protected hash drift: docs/additional-operations-evidence/bg-data.json"],
     ["swapped object_found output position", "section-specific output order mismatch"],
     ["D-07 activity cross join regression", "activity scope preservation/output order mismatch"],
     ["unknown evidence satisfaction", "unknown or missing diagnostic status"],
@@ -803,6 +817,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     group.identity.parent = "";
   });
   defect("protected hash drift", (a) => { a.manifest.inputs[Object.keys(a.manifest.inputs)[0]] = "0".repeat(64); });
+  defect("N7 current protected path removed", (a) => { delete a.manifest.currentInputs[Object.keys(a.manifest.inputs)[0]]; });
+  defect("N8 historical baseline changed", (a) => { a.manifest.inputs[Object.keys(a.manifest.inputs)[0]] = "1".repeat(64); });
+  defect("currentInputs hash drift", (a) => { a.manifest.currentInputs[Object.keys(a.manifest.inputs)[0]] = "0".repeat(64); });
   defect("swapped object_found output position", (a) => {
     for (const artifact of [a.catalog.diagnostics.find((d) => d.procedureId === "P-02"), a.sectionManifest.sections.find((d) => d.procedureId === "P-02")]) {
       [artifact.outputColumns[0], artifact.outputColumns[3]] = [artifact.outputColumns[3], artifact.outputColumns[0]];

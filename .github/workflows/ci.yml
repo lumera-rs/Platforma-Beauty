@@ -31,9 +31,10 @@ jobs:
   migration-contract:
     name: Migration contract (database-free)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       CI: "true"
+      GIT_OPTIONAL_LOCKS: "0"
       DATABASE_URL: ""
       LUMERA_MIGRATION_DATABASE_URL: ""
       LUMERA_CI_EVENT_NAME: ${{ github.event_name }}
@@ -59,6 +60,10 @@ jobs:
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:migration-contract
       - name: Validate startup DDL removal gate
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run validate:ci:startup-ddl-removal-gate
+      - name: Authenticate reviewed historical objects for shallow checkout
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts run validate:ci:reviewed-history
+      - name: Run complete database-free reconstruction and documentation suites
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts run test:reconstruction:non-db
 
   release-chain:
     name: Release chain (database-free)
@@ -419,6 +424,8 @@ jobs:
               rm -rf "$destination"
             fi
           done < "$run_ids_file"
+      - name: Authenticate reviewed historical objects for shallow checkout
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts run validate:ci:reviewed-history
       - name: Run database checks
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
@@ -459,14 +466,15 @@ jobs:
     timeout-minutes: 30
     env:
       CI: "true"
+      GIT_OPTIONAL_LOCKS: "0"
       NODE_ENV: test
       DATABASE_URL: ""
       LUMERA_MIGRATION_DATABASE_URL: ""
     steps:
       - uses: actions/checkout@v4
         with:
-          # D-1 uses the checked-in, checksum-pinned historical source fixture.
-          # No historical Git objects or archival refs are required.
+          # D-1 retains its checksum-pinned fixture; the reconstructed unit
+          # inventory also authenticates reviewed Git objects below.
           fetch-depth: 1
       - uses: pnpm/action-setup@v4
         with:
@@ -476,6 +484,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Authenticate reviewed historical objects for shallow checkout
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts run validate:ci:reviewed-history
       - name: Run Phase 5 database-free migration inventory
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:migrations:phase5:unit
       - name: Install PostgreSQL 16 binaries

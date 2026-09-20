@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+import { checkStartupDdlRemovalGate } from "../startup-ddl-removal-gate";
 import {
   buildStartupEquivalenceCrosswalk,
   validateStartupEquivalenceCrosswalk,
   type StartupEquivalenceCrosswalk,
 } from "./crosswalk";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Startup equivalence crosswalk tests");
 
 const repositoryCrosswalk = (() => {
   let cached: StartupEquivalenceCrosswalk | undefined;
@@ -115,4 +122,39 @@ test("rejects count-preserving forged narratives and omitted/replaced operations
       migrationCoverage: { ...first.migrationCoverage, replacementRequirement: "No replacement required." },
     }, ...crosswalk.operations.slice(1)],
   }), /pinned repository derivation/u);
+});
+
+test("historical equivalence stays valid while the current-source gate rejects new startup DDL", () => {
+  const historical = repositoryCrosswalk();
+  assert.doesNotThrow(() => validateStartupEquivalenceCrosswalk(historical));
+  const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const rootFile = "artifacts/api-server/src/index.ts";
+  const sources = new Map<string, string>();
+  const collect = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) collect(absolute);
+      else if (/\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/u.test(entry.name)) {
+        const source = readFileSync(absolute, "utf8");
+        sources.set(path.relative(repositoryRoot, absolute).replaceAll(path.sep, "/"), source);
+        sources.set(absolute, source);
+      }
+    }
+  };
+  collect(path.join(repositoryRoot, "artifacts"));
+  collect(path.join(repositoryRoot, "lib"));
+  const options = { repositoryRoot, rootFile, moduleSources: sources };
+  assert.equal(checkStartupDdlRemovalGate(options).pass, true);
+  const injected = `${sources.get(rootFile)!}\nawait pool.query("CREATE TABLE equivalence_current_injection (id integer)");`;
+  sources.set(rootFile, injected);
+  sources.set(path.join(repositoryRoot, rootFile), injected);
+  const rejected = checkStartupDdlRemovalGate(options);
+  assert.equal(rejected.pass, false);
+  assert.ok(rejected.violations.some((violation) =>
+    violation.reason === "inventory-violation" || violation.reason === "unsafe-top-level-evaluation"),
+  JSON.stringify(rejected.violations));
+  assert.deepEqual(buildStartupEquivalenceCrosswalk(), historical);
+  assert.equal(historical.counts.ddlOperationCount, 1_459);
+  assert.equal(historical.counts.additionalOperationCount, 110);
+  assert.equal(checkStartupDdlRemovalGate({ repositoryRoot, rootFile }).pass, true);
 });

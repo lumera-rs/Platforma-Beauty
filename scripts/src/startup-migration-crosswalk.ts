@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { loadReviewedHistoricalSources, reviewedHistoricalSource } from "./reviewed-historical-source";
 import type {
   DdlOperation,
   StartupDdlBaseline,
@@ -225,7 +226,7 @@ export interface CrosswalkValidationOptions {
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 function crosswalkSource(modulePath: string, sourceOverrides?: ReadonlyMap<string, string>): string {
-  return sourceOverrides?.get(modulePath) ?? readFileSync(path.join(REPOSITORY_ROOT, modulePath), "utf8");
+  return sourceOverrides?.get(modulePath) ?? reviewedHistoricalSource(REPOSITORY_ROOT, modulePath);
 }
 
 function normalizedIdentifier(value: string): string {
@@ -829,7 +830,7 @@ const OWNER_MODULES = [
 function triggerParentIndex(): ReadonlyMap<string, { schema: string; name: string }> {
   const candidates = new Map<string, { schema: string; name: string }[]>();
   for (const [, modulePath] of OWNER_MODULES) {
-    const source = readFileSync(path.join(REPOSITORY_ROOT, modulePath), "utf8");
+    const source = crosswalkSource(modulePath);
     const sourceFile = ts.createSourceFile(modulePath, source, ts.ScriptTarget.Latest, true);
     const visit = (node: ts.Node): void => {
       const text = operationText(node);
@@ -1252,13 +1253,14 @@ export function buildStartupMigrationCrosswalk(
   canonicalSql: string,
   canonicalChecksum = CANONICAL_MIGRATION_CHECKSUM,
   additionalOperations: readonly AdditionalStartupOperation[] = ADDITIONAL_STARTUP_OPERATIONS,
+  sourceOverrides: ReadonlyMap<string, string> = loadReviewedHistoricalSources(REPOSITORY_ROOT),
 ): StartupMigrationCrosswalk {
   const actualChecksum = createHash("sha256").update(canonicalSql).digest("hex");
   if (actualChecksum !== canonicalChecksum) {
     throw new Error(`Canonical migration checksum mismatch: expected ${canonicalChecksum}, received ${actualChecksum}`);
   }
 
-  const sourcedOccurrences = expectedOccurrences(baseline);
+  const sourcedOccurrences = expectedOccurrences(baseline, sourceOverrides);
   const grouped = new Map<string, {
     owner: StartupDdlBaseline["owners"][number];
     operation: DdlOperation;
@@ -1324,7 +1326,9 @@ export function buildStartupMigrationCrosswalk(
     mappings,
     additionalOperations: [...additionalOperations].sort((left, right) => left.id.localeCompare(right.id)),
   };
-  validateStartupMigrationCrosswalk(crosswalk, baseline);
+  validateStartupMigrationCrosswalk(crosswalk, baseline, {
+    sourceOverrides,
+  });
   return crosswalk;
 }
 
@@ -1531,7 +1535,9 @@ export function loadRepositoryCrosswalk(): {
     path.join(REPOSITORY_ROOT, "lib/db/migrations/000001_canonical_schema/migration.sql"),
     "utf8",
   );
-  return { baseline, crosswalk: buildStartupMigrationCrosswalk(baseline, canonicalSql) };
+  const sourceOverrides = loadReviewedHistoricalSources(REPOSITORY_ROOT);
+  return { baseline, crosswalk: buildStartupMigrationCrosswalk(baseline, canonicalSql,
+    CANONICAL_MIGRATION_CHECKSUM, ADDITIONAL_STARTUP_OPERATIONS, sourceOverrides) };
 }
 
 function main(): void {

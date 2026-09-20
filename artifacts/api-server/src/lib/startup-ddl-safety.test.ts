@@ -16,6 +16,8 @@ class FakeClient {
   readonly queries: string[] = [];
   readonly calls: Array<{ sql: string; values: readonly unknown[] | undefined }> = [];
   released = false;
+  releaseArg: unknown = undefined;
+  releaseIndex = -1;
 
   constructor(private readonly handler: QueryHandler = () => undefined) {}
 
@@ -28,8 +30,10 @@ class FakeClient {
     return this.handler(sql, values) ?? { rows: [] };
   }
 
-  release(): void {
+  release(arg?: unknown): void {
     this.released = true;
+    this.releaseArg = arg;
+    this.releaseIndex = this.calls.length;
   }
 }
 
@@ -223,8 +227,16 @@ test("booking command rolls back index failure without committing", async () => 
   assert.equal(client.released, true);
 });
 
-function businessGrowthHandler(failure?: Error): QueryHandler {
+function businessGrowthHandler(
+  failure?: Error,
+  options: { rolloutVersion?: number; resetFailure?: Error } = {},
+): QueryHandler {
+  const rolloutVersion = options.rolloutVersion ?? 126;
   return (sql, values) => {
+    if (options.resetFailure
+      && sql.includes("set_config('lumera.snapshot_backfill'") && sql.includes("'off'")) {
+      throw options.resetFailure;
+    }
     if (sql === "SHOW search_path") return { rows: [{ search_path: '"$user", public' }] };
     if (sql === "SHOW lock_timeout") return { rows: [{ lock_timeout: "7s" }] };
     if (sql === "SHOW statement_timeout") return { rows: [{ statement_timeout: "9s" }] };
@@ -232,7 +244,7 @@ function businessGrowthHandler(failure?: Error): QueryHandler {
     if (sql.includes("SELECT to_regclass($1)::text AS relation")) {
       return { rows: [{ relation: "public.business_growth_schema_rollout" }] };
     }
-    if (sql.includes("SELECT version FROM")) return { rows: [{ version: 126 }] };
+    if (sql.includes("SELECT version FROM")) return { rows: [{ version: rolloutVersion }] };
     if (sql.includes("SELECT to_regclass($1) IS NOT NULL AS exists")) {
       return { rows: [{ exists: false }] };
     }
@@ -267,4 +279,80 @@ test("business growth restores previous timeouts after startup failure", async (
   assertPreviousTimeoutsRestored(client);
   assert.equal(includesQuery(client, "pg_advisory_unlock"), true);
   assert.equal(client.released, true);
+});
+
+/**
+ * The rollout opens a session-scoped bypass (`lumera.snapshot_backfill`) that
+ * the commercial-snapshot triggers honour. A pooled client outlives the
+ * rollout, so the bypass must be closed before the connection can serve an
+ * unrelated request -- and when it cannot be closed, the connection must be
+ * destroyed rather than returned to the pool.
+ */
+function bypassIndex(client: FakeClient, state: "on" | "off"): number {
+  return client.calls.findIndex(({ sql }) =>
+    sql.includes("set_config('lumera.snapshot_backfill'") && sql.includes(`'${state}'`));
+}
+
+// A pending rollout (version below the current one) actually opens the bypass;
+// the default handler reports the current version and never enables it.
+const PENDING_ROLLOUT = { rolloutVersion: 90 } as const;
+
+test("business growth opens and then closes the snapshot-backfill bypass", async () => {
+  const client = new FakeClient(businessGrowthHandler(undefined, PENDING_ROLLOUT));
+  await ensureBusinessGrowthSchema("public", fakePool(client));
+  const on = bypassIndex(client, "on");
+  const off = bypassIndex(client, "off");
+  assert.ok(on >= 0, "this rollout must actually open the bypass");
+  assert.ok(off > on, "the bypass must be closed after it was opened");
+});
+
+test("business growth closes the snapshot-backfill bypass before releasing the client", async () => {
+  const client = new FakeClient(businessGrowthHandler(undefined, PENDING_ROLLOUT));
+  await ensureBusinessGrowthSchema("public", fakePool(client));
+  const off = bypassIndex(client, "off");
+  assert.ok(off >= 0);
+  assert.ok(client.releaseIndex >= 0, "the client must be released");
+  assert.ok(off < client.releaseIndex, "the bypass must close before the client is released");
+});
+
+test("business growth closes the snapshot-backfill bypass after a rollout failure", async () => {
+  const primary = new Error("business growth rollout failed");
+  const client = new FakeClient(businessGrowthHandler(primary, PENDING_ROLLOUT));
+  await assert.rejects(
+    ensureBusinessGrowthSchema("public", fakePool(client)),
+    (error) => error === primary,
+  );
+  const off = bypassIndex(client, "off");
+  const unlock = client.calls.findIndex(({ sql }) => sql.includes("pg_advisory_unlock"));
+  assert.ok(off >= 0, "a failed rollout must still close the bypass");
+  assert.ok(unlock > off, "the bypass must close before the advisory lock is released");
+  assert.ok(off < client.releaseIndex, "the bypass must close before the client is released");
+});
+
+test("a failed bypass reset destroys the client instead of returning it to the pool", async () => {
+  const resetFailure = Object.assign(new Error("current transaction is aborted"), { code: "25P02" });
+  const client = new FakeClient(businessGrowthHandler(undefined, { ...PENDING_ROLLOUT, resetFailure }));
+  await assert.rejects(ensureBusinessGrowthSchema("public", fakePool(client)));
+  assert.equal(client.released, true);
+  // pg-pool only removes a client from the pool when release() receives a
+  // truthy argument; a bare release() would pool a bypass-enabled session.
+  assert.ok(client.releaseArg, "release() must receive a truthy argument so pg destroys the client");
+});
+
+test("a failed rollout and a failed reset preserve the rollout error and still destroy the client", async () => {
+  const primary = new Error("business growth rollout failed");
+  const resetFailure = new Error("reset cancelled");
+  const client = new FakeClient(businessGrowthHandler(primary, { ...PENDING_ROLLOUT, resetFailure }));
+  await assert.rejects(
+    ensureBusinessGrowthSchema("public", fakePool(client)),
+    (error) => error === primary,
+  );
+  assert.ok(client.releaseArg, "the connection must still be destroyed when both failures occur");
+});
+
+test("successful cleanup returns the client to the pool for reuse", async () => {
+  const client = new FakeClient(businessGrowthHandler(undefined, PENDING_ROLLOUT));
+  await ensureBusinessGrowthSchema("public", fakePool(client));
+  assert.equal(client.released, true);
+  assert.equal(client.releaseArg, undefined, "a clean rollout must not destroy the connection");
 });

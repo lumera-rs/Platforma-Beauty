@@ -142,12 +142,12 @@ function extractOriginalStartupSql(
 }
 
 async function executeOriginalSupportedSql(pool: pg.Pool): Promise<void> {
-  const reference = extractOriginalStartupSql(600, 4450, (sql) =>
+  const reference = extractOriginalStartupSql(600, 4632, (sql) =>
     /\bINSERT\s+INTO\s+public\.(?:suppliers|beauty_job_platform_settings|beauty_job_categories|shop_settings|b2c_display_settings|aftercare_settings|education_placement_settings|education_b2b_discount_settings)\b/iu.test(sql));
   assert.equal(new Set(reference).size, 8, "reference oracle must contain one literal per admitted table");
-  const plans = extractOriginalStartupSql(4605, 4640, (sql) => /^\s*(?:INSERT|UPDATE)\b/iu.test(sql));
+  const plans = extractOriginalStartupSql(4787, 4822, (sql) => /^\s*(?:INSERT|UPDATE)\b/iu.test(sql));
   assert.ok(plans.length >= 5, "plan oracle must contain the bounded original operations");
-  const cleanup = extractOriginalStartupSql(4384, 4455, (sql) => /^\s*DO\s+\$cleanup\$/iu.test(sql));
+  const cleanup = extractOriginalStartupSql(4566, 4637, (sql) => /^\s*DO\s+\$cleanup\$/iu.test(sql));
   assert.equal(cleanup.length, 1, "cleanup oracle must contain only the known v99 DO");
   const client = await pool.connect();
   try {

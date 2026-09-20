@@ -1,13 +1,17 @@
-import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import assert from "node:assert/strict";
 import test from "node:test";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import {
   checkProductionStartupDdlInventory,
-  checkRealRepositoryProductionStartupDdlInventory,
   EXPECTED_STARTUP_DDL_ROOTS,
   type StartupDdlBaseline,
 } from "./production-startup-ddl-inventory";
+import {
+  checkHistoricalStartupDdlInventory,
+  compareHistoricalInventory,
+  validateAdvisoryLockBoundaries,
+} from "./historical-startup-ddl-inventory";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Production startup DDL inventory tests");
 function fixture(extra: Record<string, string> = {}): Record<string, string> {
@@ -41,14 +45,57 @@ function checkFixture(
   return checkProductionStartupDdlInventory({ moduleSources: modules, rootFile: "index.ts", baseline });
 }
 
-test("real repository startup DDL owners and fingerprints match the reviewed baseline", () => {
-  const baseline = JSON.parse(
-    readFileSync(new URL("./production-startup-ddl-baseline.json", import.meta.url), "utf8"),
-  ) as StartupDdlBaseline;
-  const report = checkRealRepositoryProductionStartupDdlInventory(undefined, baseline);
-  assert.deepEqual(report.violations, []);
-  assert.equal(report.matchesBaseline, true);
-  assert.equal(report.owners.length, EXPECTED_STARTUP_DDL_ROOTS.length);
+test("authenticated historical startup DDL owners and fingerprints match the regenerated baseline", async () => {
+  const report = await checkHistoricalStartupDdlInventory();
+  assert.deepEqual(report.historical.violations, []);
+  assert.deepEqual(report.diagnostics, []);
+  assert.equal(report.baseline.owners.length, EXPECTED_STARTUP_DDL_ROOTS.length);
+  assert.equal(report.counts.operations, report.baseline.owners.reduce((total, owner) => total + owner.operations.length, 0));
+});
+
+test("fixed baseline comparison reports owner and SQL mutations", async () => {
+  const expected = JSON.parse(readFileSync(new URL("./production-startup-ddl-baseline.json", import.meta.url), "utf8")) as StartupDdlBaseline;
+  const observed = await checkHistoricalStartupDdlInventory();
+  const first = observed.historical.owners[0]!;
+  const mutated = {
+    ...observed.historical,
+    owners: observed.historical.owners.map((owner) => owner.ensureName === first.ensureName
+      ? { ...owner, operations: owner.operations.map((operation, index) => index === 0 ? { ...operation, fingerprint: "0".repeat(64) } : operation) }
+      : owner),
+  };
+  const diagnostics = compareHistoricalInventory(
+    { ...observed.historical, owners: expected.owners },
+    mutated,
+    new Map(),
+  );
+  assert.ok(diagnostics.some(({ issue }) => issue === "changedSQL"));
+  const operations = first.operations;
+  const reordered = {
+    ...observed.historical,
+    owners: observed.historical.owners.map((owner) => owner.ensureName === first.ensureName && operations.length > 1
+      ? { ...owner, operations: [operations[operations.length - 1]!, ...operations.slice(1, -1), operations[0]!] }
+      : owner),
+  };
+  assert.ok(compareHistoricalInventory({ ...observed.historical, owners: expected.owners }, reordered, new Map())
+    .some(({ issue }) => issue === "wrongExecutionOrder"));
+  const duplicated = {
+    ...observed.historical,
+    owners: observed.historical.owners.map((owner) => owner.ensureName === first.ensureName
+      ? { ...owner, operations: [...owner.operations, owner.operations[0]!] }
+      : owner),
+  };
+  assert.ok(compareHistoricalInventory({ ...observed.historical, owners: expected.owners }, duplicated, new Map())
+    .some(({ issue }) => issue === "multiplicityChanged"));
+  assert.ok(compareHistoricalInventory(
+    { ...observed.historical, owners: expected.owners },
+    { ...mutated, owners: mutated.owners.slice(1) },
+    new Map(),
+  ).some(({ issue }) => issue === "missingOwner"));
+  assert.ok(compareHistoricalInventory(
+    { ...observed.historical, owners: expected.owners },
+    { ...mutated, owners: [...mutated.owners, { ...first, ensureName: "ensureNewSchema" }] },
+    new Map(),
+  ).some(({ issue }) => issue === "newOwner"));
 });
 
 test("mutation tests reject direct, transitive, barrel, literal dynamic, and nonliteral DDL edges", () => {
@@ -429,4 +476,40 @@ test("module evaluation keeps nested SQL sink traversal without double counting"
     "register({ init: client.query(`CREATE TABLE module_nested_object (id uuid)`) });",
     "module_nested_object",
   );
+});
+
+test("historical validation rejects identical SQL moved before the advisory lock", () => {
+  const sql = "CREATE TABLE IF NOT EXISTS phase_two_inventory (id uuid);";
+  const valid = `export async function ensureBusinessGrowthSchema() {
+    await client.query("SELECT pg_advisory_lock(42)");
+    await client.query(\`${sql}\`);
+    await client.query("SELECT pg_advisory_unlock(42)");
+  }`;
+  const moved = `export async function ensureBusinessGrowthSchema() {
+    await client.query(\`${sql}\`);
+    await client.query("SELECT pg_advisory_lock(42)");
+    await client.query("SELECT pg_advisory_unlock(42)");
+  }`;
+  assert.deepEqual(validateAdvisoryLockBoundaries(valid, "owner.ts", "ensureBusinessGrowthSchema"), []);
+  // A position-stripping comparison sees the same SQL fingerprint in both
+  // functions; the historical validator deliberately checks the source order.
+  assert.deepEqual(
+    validateAdvisoryLockBoundaries(moved, "owner.ts", "ensureBusinessGrowthSchema").map(({ issue }) => issue),
+    ["advisoryLockBoundary"],
+  );
+  const postUnlock = `export async function ensureBusinessGrowthSchema() {
+    await client.query("SELECT pg_advisory_lock(42)");
+    await client.query(\`${sql}\`);
+    await client.query("SELECT pg_advisory_unlock(42)");
+    await client.query(\`${sql}\`);
+  }`;
+  assert.deepEqual(validateAdvisoryLockBoundaries(postUnlock, "owner.ts", "ensureBusinessGrowthSchema").map(({ issue }) => issue), ["advisoryLockBoundary"]);
+  const secondOutside = `export async function ensureBusinessGrowthSchema() {
+    await client.query("SELECT pg_advisory_lock(42)");
+    await client.query(\`${sql}\`);
+    await client.query("SELECT pg_advisory_unlock(42)");
+    await client.query("SELECT pg_advisory_lock(42)");
+    await client.query(\`${sql}\`);
+  }`;
+  assert.deepEqual(validateAdvisoryLockBoundaries(secondOutside, "owner.ts", "ensureBusinessGrowthSchema").map(({ issue }) => issue), ["advisoryLockBoundary"]);
 });
