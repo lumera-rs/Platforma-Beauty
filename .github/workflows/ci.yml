@@ -424,6 +424,8 @@ jobs:
               rm -rf "$destination"
             fi
           done < "$run_ids_file"
+      - name: Authenticate reviewed historical objects for shallow checkout
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts run validate:ci:reviewed-history
       - name: Run database checks
         env:
           CI_TIMING_REPORT_FALLBACK_DIR: ${{ runner.temp }}/lumera-ci-timing-fallback
