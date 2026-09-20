@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 import { loadReviewedHistoricalSources, PINNED_REVIEWED_EVIDENCE_COMMIT } from "./reviewed-historical-source";
 import { prepareCiReviewedHistory } from "./prepare-ci-reviewed-history";
 
@@ -55,7 +56,23 @@ test("history suites stay in existing CI jobs, outside production publish checks
   assert.match(scripts["test:reconstruction:non-db"], /startup-migration-crosswalk\.test\.ts/);
   assert.doesNotMatch(scripts["test:reconstruction:non-db"], /test-name-pattern/);
   const workflow = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  assert.equal(workflow.match(/run validate:ci:reviewed-history/g)?.length, 2);
+  // History preparation belongs only in CI jobs that execute reviewed-object
+  // consumers, and must never reach the production publish path.
+  const parsedWorkflow = parseYaml(workflow) as {
+    jobs?: Record<string, { steps?: Array<{ run?: string }> }>;
+  };
+  const historyJobs = Object.entries(parsedWorkflow.jobs ?? {})
+    .filter(([, job]) => job.steps?.some((step) =>
+      /validate:ci:reviewed-history/.test(step.run ?? "")))
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(historyJobs, [
+    "database",
+    "migration-contract",
+    "phase5-migration-integration",
+  ]);
+  const rootScripts = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).scripts;
+  assert.doesNotMatch(rootScripts["validate:publish"], /reviewed-history|reconstruction:non-db|startup-migration-crosswalk/);
   assert.match(workflow, /run test:reconstruction:non-db/);
   assert.match(workflow, /run validate:ci:startup-ddl-removal-gate/);
 });
