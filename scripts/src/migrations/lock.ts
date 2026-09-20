@@ -5,6 +5,10 @@ export interface AdvisoryLockOptions {
   readonly pollMs?: number;
 }
 
+// Session-lock cleanup relies on the CLI owning a single-connection pool and
+// ending it afterwards. This module cannot destroy a pooled client on unlock
+// failure; a long-lived shared-pool caller must not return that session to its
+// pool (including when an earlier error takes precedence over the unlock error).
 export async function withMigrationAdvisoryLock<T>(
   client: DatabaseClient,
   operation: () => Promise<T>,

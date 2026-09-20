@@ -5162,12 +5162,12 @@ function coverImageDescriptionColumnStatements(s: string, guardMissingTables = f
 }
 
 /**
- * Clients whose session-scoped `lumera.snapshot_backfill` bypass could not be
- * closed. The bypass is honoured by the commercial-snapshot triggers, so a
- * session that still has it enabled must never serve another request. This
- * runner does not own the client's lifecycle -- it is also driven directly by
- * isolated upgrade tests -- so it records the failure here and the owning
- * caller destroys the connection instead of returning it to the pool.
+ * Clients whose session cleanup could not be completed. A connection with an
+ * open `lumera.snapshot_backfill` bypass or rollout advisory lock must never
+ * serve another request. This runner does not own the client's lifecycle -- it
+ * is also driven directly by isolated upgrade tests -- so it records the
+ * failure here and the owning caller destroys the connection instead of
+ * returning it to the pool.
  */
 const clientsWithOpenSnapshotBypass = new WeakMap<PoolClient, unknown>();
 
@@ -5356,7 +5356,14 @@ export async function runBusinessGrowthSchemaDdl(
     if (locked) await client.query(
       "SELECT pg_advisory_unlock($1)",
       [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY],
-    ).catch((error) => { cleanupError ??= error; });
+    ).catch((error) => {
+      cleanupError ??= error;
+      clientsWithOpenSnapshotBypass.set(client, error);
+      logger.error(
+        { err: error, lockKey: BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY },
+        "Business Growth schema advisory lock could not be released cleanly",
+      );
+    });
     if (cleanupError && !rolloutError) throw cleanupError;
   }
 }
@@ -5402,7 +5409,7 @@ export async function ensureBusinessGrowthSchema(schemaName = "public", poolOver
       // the commercial-snapshot triggers.
       logger.error(
         { err: bypassError, schema: schemaName },
-        "Destroying pooled client: lumera.snapshot_backfill bypass could not be closed",
+        "Destroying pooled client after Business Growth session cleanup failure",
       );
       client.release(bypassError instanceof Error ? bypassError : true);
     } else {

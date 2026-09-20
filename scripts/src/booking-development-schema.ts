@@ -452,17 +452,26 @@ export async function ensureBookingDevelopmentSchema(
   quoteSchema(schemaName);
   const client = await pool.connect();
   let locked = false;
+  let schemaError: unknown;
   try {
     await client.query("SELECT pg_advisory_lock(hashtext($1))", [`${LOCK_KEY}:${schemaName}`]);
     locked = true;
     await runBookingDevelopmentSchemaDdl(client, schemaName);
+  } catch (error) {
+    schemaError = error;
+    throw error;
   } finally {
+    let unlockError: unknown;
     if (locked) {
       await client.query(
         "SELECT pg_advisory_unlock(hashtext($1))",
         [`${LOCK_KEY}:${schemaName}`],
-      ).catch(() => undefined);
+      ).catch((error) => {
+        unlockError = error;
+        console.error("Booking development schema advisory lock could not be released cleanly", error);
+      });
     }
-    client.release();
+    client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
+    if (unlockError && !schemaError) throw unlockError;
   }
 }

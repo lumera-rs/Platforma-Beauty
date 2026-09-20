@@ -5,6 +5,7 @@ import {
   educationPlatformSettingsTable,
   pool,
 } from "@workspace/db";
+import { logger } from "./logger";
 
 const EDUCATION_IPS_TEST_LOCK = "education-test-ips-settings";
 
@@ -43,15 +44,26 @@ export async function installTemporaryEducationIpsSettings(
       return {
         settingsId: created.id,
         restore: async () => {
+          let restoreError: unknown;
           try {
             await db.delete(educationPlatformSettingsTable)
               .where(eq(educationPlatformSettingsTable.id, created.id));
+          } catch (error) {
+            restoreError = error;
           } finally {
+            let unlockError: unknown;
             try {
               await client.query("select pg_advisory_unlock(hashtext($1))", [EDUCATION_IPS_TEST_LOCK]);
-            } finally {
-              client.release();
+            } catch (error) {
+              unlockError = error;
+              logger.error(
+                { err: error, lockKey: EDUCATION_IPS_TEST_LOCK },
+                "Education IPS fixture advisory lock could not be released cleanly",
+              );
             }
+            client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
+            if (restoreError) throw restoreError;
+            if (unlockError) throw unlockError;
           }
         },
       };
@@ -67,24 +79,41 @@ export async function installTemporaryEducationIpsSettings(
     return {
       settingsId: existing.id,
       restore: async () => {
+        let restoreError: unknown;
         try {
           await db.update(educationPlatformSettingsTable).set(snapshot)
             .where(eq(educationPlatformSettingsTable.id, existing.id));
+        } catch (error) {
+          restoreError = error;
         } finally {
+          let unlockError: unknown;
           try {
             await client.query("select pg_advisory_unlock(hashtext($1))", [EDUCATION_IPS_TEST_LOCK]);
-          } finally {
-            client.release();
+          } catch (error) {
+            unlockError = error;
+            logger.error(
+              { err: error, lockKey: EDUCATION_IPS_TEST_LOCK },
+              "Education IPS fixture advisory lock could not be released cleanly",
+            );
           }
+          client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
+          if (restoreError) throw restoreError;
+          if (unlockError) throw unlockError;
         }
       },
     };
   } catch (error) {
+    let unlockError: unknown;
     try {
       await client.query("select pg_advisory_unlock(hashtext($1))", [EDUCATION_IPS_TEST_LOCK]);
-    } finally {
-      client.release();
+    } catch (cleanupError) {
+      unlockError = cleanupError;
+      logger.error(
+        { err: cleanupError, lockKey: EDUCATION_IPS_TEST_LOCK },
+        "Education IPS fixture advisory lock could not be released cleanly",
+      );
     }
+    client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
     throw error;
   }
 }

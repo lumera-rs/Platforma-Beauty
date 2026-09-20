@@ -18,7 +18,6 @@
 - [Carousel breakpoint overrides](carousel-breakpoint-overrides.md) — caller widths must override every shared rail breakpoint to preserve intentional desktop overflow.
 - [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.
 - [Education financial serialization](education-financial-serialization.md) — payouts, disputes, and dispute resolutions must serialize by education center before changing escrow.
-- [Database-clock test boundaries](database-clock-test-boundaries.md) — SQL deadline tests must share PostgreSQL’s clock when JavaScript time is overridden.
 - [Appointment contact privacy](appointment-contact-privacy.md) — exact salon details require ownership of a pending, confirmed, or completed appointment.
 - [Partial expression index publishing](partial-expression-index-publishing.md) — use a generated normalized column for nullable participant keys before partial unique indexing.
 - [Immutable gallery media](immutable-gallery-media.md) — browser uploads must land in staging and be promoted before attachment; private media must disable shared caching.
@@ -141,7 +140,6 @@
 - [User-facing timestamp serialization](user-facing-timestamp-serialization.md) — audit both single and batch list DTOs; one invalid database date must degrade only its field.
 - [pnpm workspace config preservation](pnpm-workspace-config-preservation.md) — project-level pnpm config commands can rewrite the workspace manifest and invalidate lockfile catalogs.
 - [GitHub default-branch rulesets](github-default-branch-ruleset.md) — target `~DEFAULT_BRANCH`; merge queue additionally requires an organization-owned repository.
-- [Cross-domain booking fixtures](cross-domain-booking-fixtures.md) — broad HTTP suites must satisfy booking idempotency and canonical location availability, not legacy setup alone.
 - [Required headers in generated clients](required-headers-generated-clients.md) — Orval documents headers but custom-transport calls still need typed wrappers to make them mandatory.
 - [Focused browser release gates](focused-browser-release-gates.md) — narrow shell regressions belong in dedicated specs instead of enrolling unrelated broad suites.
 - [Request-scoped SQL observation](request-scoped-sql-observation.md) — bridge test captures across loopback HTTP with a process-local registered ID, not AsyncLocalStorage alone.
@@ -155,6 +153,4 @@
 - [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
 - [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.
 - [Shallow Git ancestry evidence](shallow-git-ancestry-evidence.md) — incidental local shallow negotiation can mask a wrong fetch anchor; distinguish object presence from ancestry proof.
-- [Lifecycle verification evidence](lifecycle-verification-evidence.md) — lost phase logs prevent causal claims; interrupted suites never count as complete validation.
-- [Browser fixture failure classification](browser-fixture-failure-classification.md) — a rejected mocked identity can cause secondary redirect failures without exercising application authorization.
-- [Disposable PostgreSQL lifecycle](disposable-postgres-lifecycle.md) — bound owned socket paths; pool shutdown can precede server disconnects, so forced cleanup can race.
+- [Database and fixture verification](database-verification-lessons.md) — real session-lock failures, source-position evidence, owned-cluster cleanup, clocks, and fixture failure classification.

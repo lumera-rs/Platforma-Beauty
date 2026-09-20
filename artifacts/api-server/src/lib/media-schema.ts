@@ -106,5 +106,5 @@ export async function ensureMediaSchema(poolOverride?: StartupDdlPool): Promise<
     for (const statement of statements) { await client.query(statement); }
     await client.query("commit"); logger.info("Media database schema is ready");
   } catch (error) { await client.query("rollback").catch(() => {}); throw error; }
-  finally { if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:media-schema:v1"]).catch(() => {}); client.release(); }
+  finally { let unlockError: unknown; if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:media-schema:v1"]).catch((error) => { unlockError = error; logger.error({ err: error }, "Failed to release media schema advisory lock"); }); if (unlockError) client.release(unlockError instanceof Error ? unlockError : true); else client.release(); }
 }

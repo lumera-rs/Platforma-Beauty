@@ -127,7 +127,9 @@ test("media owner destroys a session when a transport blackhole prevents unlock"
       ...config, port: proxyPort, max: 1,
       idleTimeoutMillis: 0, maxLifetimeSeconds: 0, query_timeout: 1000,
     });
-    pool.on("connect", (client) => { ownerPid = client.processID; });
+    pool.on("connect", (client) => {
+      ownerPid = (client as pg.PoolClient & { processID: number }).processID;
+    });
     pool.on("release", (error) => {
       releaseCount++;
       releasedWithError = Boolean(error);

@@ -3,7 +3,7 @@ import type { DatabasePoolClient as PoolClient } from "@workspace/db";
 import { shippingRulesTable } from "@workspace/db/schema";
 import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool";
 import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
-
+import { logger } from "./logger";
 
 
 const SHIPPING_RULES_LOCK_KEY = "lumera:shipping-rules-singleton";
@@ -19,7 +19,7 @@ type ShippingRuleInsert = typeof shippingRulesTable.$inferInsert;
 export async function ensureShippingConfigSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
   quoteSchema(schemaName);
   const client = await (await resolveStartupDdlPool(poolOverride)).connect();
-  let locked = false;
+  let locked = false; let unlockError: unknown;
   try {
     await client.query("begin"); await setLocalStartupDdlTimeouts(client); await client.query("select pg_advisory_lock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY]);
     locked = true;
@@ -32,9 +32,9 @@ export async function ensureShippingConfigSchema(schemaName = "public", poolOver
   } finally {
     if (locked) {
       await client.query("select pg_advisory_unlock(hashtext($1))", [SHIPPING_RULES_LOCK_KEY])
-        .catch(() => {});
+        .catch((error) => { unlockError = error; logger.error({ err: error, schema: schemaName }, "Failed to release shipping configuration schema advisory lock"); });
     }
-    client.release();
+    client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
   }
 }
 
