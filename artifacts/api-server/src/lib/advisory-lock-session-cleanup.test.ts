@@ -7,7 +7,7 @@ import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import pg from "pg";
-import { ensureMediaSchema } from "../../artifacts/api-server/src/lib/media-schema";
+import { ensureMediaSchema } from "./media-schema";
 
 const KEY = "lumera:media-schema:v1";
 
@@ -76,7 +76,7 @@ test("media owner destroys a session when a transport blackhole prevents unlock"
       const upstream = net.connect({ host: "127.0.0.1", port });
       sockets.add(downstream);
       sockets.add(upstream);
-      let pending = Buffer.alloc(0);
+      let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0);
       let startup = true;
       let blackhole = false;
       downstream.on("close", () => {
@@ -98,7 +98,7 @@ test("media owner destroys a session when a transport blackhole prevents unlock"
       upstream.on("data", (chunk) => downstream.write(chunk));
       downstream.on("data", (chunk) => {
         if (blackhole) { droppedBytes += chunk.length; return; }
-        pending = Buffer.concat([pending, chunk]);
+        pending = Buffer.concat([pending, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
         // Parse framing, not TCP chunks: startup has no message-type byte.
         while (pending.length >= (startup ? 4 : 5)) {
           const length = pending.readInt32BE(startup ? 0 : 1) + (startup ? 0 : 1);

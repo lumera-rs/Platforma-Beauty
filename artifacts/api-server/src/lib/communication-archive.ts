@@ -373,7 +373,7 @@ export async function runCommunicationArchiveBatch(
         );
       } catch (error) {
         unlockError = error;
-        logger.warn(
+        logger.error(
           { err: error, lockKey: ARCHIVE_LOCK_KEY },
           "Communication archive advisory lock could not be released cleanly",
         );

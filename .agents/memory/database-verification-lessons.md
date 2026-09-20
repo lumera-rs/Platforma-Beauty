@@ -25,6 +25,21 @@ or weaken assertions to hide it.
 **How to apply:** Compare baseline and edited sources; preserve source positions
 when immutable evidence cannot be updated. Full-file protected hashes are a
 separate restriction: report their drift rather than silently refreshing them.
+When a whole-file pin refresh is explicitly authorized only for an unchanged
+protected segment, establish byte equality, both hashes/lengths, anchor
+uniqueness, and parsed operation counts before refreshing that pin. SQL
+inventory fingerprints and whole-file source pins are different evidence.
+
+Run the publish chain with its normal build environment, not a blanket
+`NODE_ENV=test` inherited from a database-test harness.
+
+**Why:** That override can include development React in a Vite production build,
+creating misleading bundle-budget failures even when application code is
+unchanged.
+
+**How to apply:** Keep disposable database routing explicit while leaving
+NODE_ENV unset for the publish orchestrator; set test mode only for individual
+test commands that require it.
 
 Related verification lessons:
 - [Disposable PostgreSQL lifecycle](disposable-postgres-lifecycle.md): short owned socket paths and asynchronous backend teardown.

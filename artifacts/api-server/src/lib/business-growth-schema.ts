@@ -5394,19 +5394,21 @@ export async function ensureBusinessGrowthSchema(schemaName = "public", poolOver
       { version: BUSINESS_GROWTH_SCHEMA_VERSION, schema: schemaName },
       "Business Growth database schema is ready",
     );
-  } catch (error) { startupError = error; throw error; } finally { let cleanupError: unknown; if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError = error; });
+  } catch (error) { startupError = error; throw error; } finally { let cleanupError: unknown; if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError = error; clientsWithOpenSnapshotBypass.set(client, error); logger.error({ err: error, schema: schemaName }, "Failed to restore Business Growth session timeouts"); });
     // Restore search_path on the pooled client so it does not leak to reuse.
     try {
       if (previousSearchPath) await client.query(`SET search_path TO ${previousSearchPath}`);
     } catch (error) {
       cleanupError ??= error;
+      clientsWithOpenSnapshotBypass.set(client, error);
+      logger.error({ err: error, schema: schemaName }, "Failed to restore Business Growth search path");
     }
     if (clientsWithOpenSnapshotBypass.has(client)) {
       const bypassError = clientsWithOpenSnapshotBypass.get(client);
       clientsWithOpenSnapshotBypass.delete(client);
       // Destroy the connection: pg only removes a client from the pool when
       // release() receives a truthy argument, and this session may still skip
-      // the commercial-snapshot triggers.
+      // the commercial-snapshot triggers or retain unsafe session settings.
       logger.error(
         { err: bypassError, schema: schemaName },
         "Destroying pooled client after Business Growth session cleanup failure",

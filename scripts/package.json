@@ -161,6 +161,7 @@
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "^8.23.0",
+    "pino": "^9.14.0",
     "tsx": "catalog:",
     "yaml": "2.9.0"
   },

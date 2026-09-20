@@ -1,5 +1,6 @@
 import { pool, type DatabasePoolClient as PoolClient } from "@workspace/db";
 import { isProductionOrDeploymentRuntime } from "@workspace/db/destructive-test-runtime";
+import { logger } from "./logger";
 
 const LOCK_KEY = "lumera:booking-development-schema:v1";
 
@@ -468,7 +469,10 @@ export async function ensureBookingDevelopmentSchema(
         [`${LOCK_KEY}:${schemaName}`],
       ).catch((error) => {
         unlockError = error;
-        console.error("Booking development schema advisory lock could not be released cleanly", error);
+        logger.error(
+          { err: error, schema: schemaName },
+          "Booking development schema advisory lock could not be released cleanly",
+        );
       });
     }
     client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
