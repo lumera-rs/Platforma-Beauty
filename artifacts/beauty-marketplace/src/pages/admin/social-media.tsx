@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Facebook, CheckCircle, AlertTriangle, XCircle, ExternalLink, Activity, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { publicSiteUrl } from "@/lib/public-site-url";
 
 export default function AdminSocialMedia() {
   const { data: status, isLoading } = useAdminGetMetaCatalogStatus();
@@ -24,7 +25,7 @@ export default function AdminSocialMedia() {
     });
   };
 
-  const feedUrl = `${window.location.origin}/api/catalog/feed`;
+  const feedUrl = publicSiteUrl("/api/catalog/feed");
   const latestRun = status?.latestRun;
   const validationErrors = latestRun?.validationErrors ?? [];
 

@@ -7,7 +7,11 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createSeoResponse } from './seo-server.mjs';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
+import './seo-policy.test.mjs';
 
+// Existing indexing assertions exercise the explicit launch configuration.
+process.env.PUBLIC_SITE_URL = 'https://lumera.example';
+process.env.SITE_INDEXABLE = 'true';
 const template = '<!doctype html><html><head><title>Placeholder</title><meta name="description" content="placeholder"></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>';
 const indexSource = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('./src/index.css', import.meta.url), 'utf8');
@@ -105,8 +109,8 @@ test('robots links the canonical sitemap and blocks private areas', async () => 
 });
 
 test('a pinned public origin cannot be replaced by forwarded host headers', async () => {
-  const previousOrigin = process.env.LUMERA_PUBLIC_URL;
-  process.env.LUMERA_PUBLIC_URL = 'https://beauty-partner-hub.replit.app';
+  const previousOrigin = process.env.PUBLIC_SITE_URL;
+  process.env.PUBLIC_SITE_URL = 'https://beauty-partner-hub.replit.app';
   try {
     const response = await createSeoResponse({
       url: '/uslovi-koriscenja',
@@ -115,8 +119,8 @@ test('a pinned public origin cannot be replaced by forwarded host headers', asyn
     assert.match(response.body, /href="https:\/\/beauty-partner-hub\.replit\.app\/uslovi-koriscenja"/);
     assert.doesNotMatch(response.body, /attacker\.example/);
   } finally {
-    if (previousOrigin === undefined) delete process.env.LUMERA_PUBLIC_URL;
-    else process.env.LUMERA_PUBLIC_URL = previousOrigin;
+    if (previousOrigin === undefined) delete process.env.PUBLIC_SITE_URL;
+    else process.env.PUBLIC_SITE_URL = previousOrigin;
   }
 });
 
@@ -678,8 +682,8 @@ test('legacy product URL permanently redirects by supplier ID or returns not fou
   try {
     const redirect = await createSeoResponse(request('/proizvodi/p1'), template);
     const unavailable = await createSeoResponse(request('/proizvodi/orphan'), template);
-    assert.equal(redirect.status, 308);
-    assert.equal(redirect.headers.location, '/shop/aurora/proizvod/p1');
+    assert.equal(redirect.status, 301);
+    assert.equal(redirect.headers.location, 'https://lumera.example/shop/aurora/proizvod/p1');
     assert.equal(unavailable.status, 404);
   } finally {
     global.fetch = originalFetch;
@@ -753,10 +757,10 @@ test('legacy Beauty Poslovi public URLs permanently redirect to canonical routes
   try {
     const catalog = await createSeoResponse(request('/beauty-poslovi?category=barberi'), template);
     const detail = await createSeoResponse(request(`/beauty-poslovi/${job.id}`), template);
-    assert.equal(catalog.status, 308);
-    assert.equal(catalog.headers.location, '/poslovi?category=barberi');
-    assert.equal(detail.status, 308);
-    assert.equal(detail.headers.location, `/poslovi/potreban-barber/${job.id}`);
+    assert.equal(catalog.status, 301);
+    assert.equal(catalog.headers.location, 'https://lumera.example/poslovi?category=barberi');
+    assert.equal(detail.status, 301);
+    assert.equal(detail.headers.location, `https://lumera.example/poslovi/potreban-barber/${job.id}`);
   } finally {
     global.fetch = originalFetch;
   }
