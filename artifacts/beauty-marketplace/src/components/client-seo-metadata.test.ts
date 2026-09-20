@@ -95,7 +95,7 @@ test('client metadata publishes verified social image values and never guesses m
     imageHeight: 1280,
     imageType: 'image/png',
     indexable: true,
-  }, 'https://lumera.example');
+  }, 'https://lumera.example', false);
   assert.deepEqual({
     image: verified.openGraph.image,
     width: verified.openGraph.imageWidth,
@@ -113,7 +113,7 @@ test('client metadata publishes verified social image values and never guesses m
     description: 'Opis',
     image: 'https://legacy.example/photo.jpg',
     indexable: true,
-  }, 'https://lumera.example');
+  }, 'https://lumera.example', false);
   assert.equal(legacy.openGraph.imageWidth, undefined);
   assert.equal(legacy.openGraph.imageHeight, undefined);
   assert.equal(legacy.openGraph.imageType, undefined);
@@ -156,7 +156,7 @@ test('client social image alt prefers the owner description and safely falls bac
     image: '/salon.jpg',
     imageAlt: 'Svetao enterijer salona sa dve radne stolice',
     indexable: true,
-  }, 'https://lumera.example');
+  }, 'https://lumera.example', false);
   assert.equal(ownerDescription.imageAlt, 'Svetao enterijer salona sa dve radne stolice');
   assert.equal(ownerDescription.openGraph.imageAlt, ownerDescription.imageAlt);
   assert.equal(ownerDescription.twitter.imageAlt, ownerDescription.imageAlt);
@@ -168,7 +168,7 @@ test('client social image alt prefers the owner description and safely falls bac
       image: '/salon.jpg',
       imageAlt,
       indexable: true,
-    }, 'https://lumera.example');
+    }, 'https://lumera.example', false);
     assert.equal(fallback.imageAlt, 'Studio LUMERA u Beogradu | LUMERA');
   }
 });
@@ -252,11 +252,11 @@ test('client metadata keeps API-produced cover social images paired with owner d
       },
     );
     assert.equal(
-      seoHeadMetadata('/saloni/studio-lumera', salon!, 'https://lumera.example').openGraph.imageAlt,
+      seoHeadMetadata('/saloni/studio-lumera', salon!, 'https://lumera.example', false).openGraph.imageAlt,
       'Enterijer salona sa dve radne stolice',
     );
     assert.equal(
-      seoHeadMetadata('/shop/aurora/proizvod/product-1', product!, 'https://lumera.example').openGraph.image,
+      seoHeadMetadata('/shop/aurora/proizvod/product-1', product!, 'https://lumera.example', false).openGraph.image,
       'https://lumera.example/api/media/images/product-cover?size=large&format=fallback',
     );
   } finally {

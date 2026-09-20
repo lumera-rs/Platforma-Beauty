@@ -58,6 +58,8 @@ import {
   resolveEducationBillingSettingsForChargeInTx,
 } from "./education-billing";
 
+process.env.PUBLIC_SITE_URL = "https://referral-lifecycle.example";
+
 const suffix = randomUUID();
 const createdUserIds: string[] = [];
 const createdSalonIds: string[] = [];

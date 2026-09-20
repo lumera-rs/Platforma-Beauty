@@ -104,7 +104,7 @@ function setOptionalMeta(selector: string, attribute: 'name' | 'property', key: 
   }
   setMeta(selector, attribute, key, String(content));
 }
-export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed = true): SeoHeadMetadata {
+export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed: boolean): SeoHeadMetadata {
   const publicPath = payload.canonicalPath ?? pathname;
   const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
   const canonical = new URL(cleanPublicPath, origin).href;

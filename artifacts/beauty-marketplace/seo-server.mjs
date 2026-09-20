@@ -54,7 +54,7 @@ function latestLastmod(entities) {
   return dates.at(-1);
 }
 
-function requestOrigin(req) {
+function requestOrigin() {
   return publicSiteOrigin();
 }
 
@@ -219,7 +219,7 @@ function beautyJobSchema(job, origin, pathname) {
 }
 
 async function renderPublicPage(req, pathname) {
-  const origin = requestOrigin(req);
+  const origin = requestOrigin();
   const staticPage = staticPages.get(pathname);
   if (staticPage) {
     const { title, description, indexable, heading = title.replace(/\s*\|\s*LUMERA$/, '') } = staticPage;
@@ -705,7 +705,7 @@ function sitemapXml(origin, entries) {
 }
 
 async function buildSitemap(req) {
-  const origin = requestOrigin(req);
+  const origin = requestOrigin();
   const entries = [
     ...[...staticPages.values()].filter((page) => page.indexable).map((page) => page.path),
     ...categoryPages.keys(),
@@ -805,9 +805,9 @@ function notFoundDocument(pathname, origin) {
 }
 
 export async function createSeoResponse(req, template) {
-  const url = new URL(req.url ?? '/', requestOrigin(req));
+  const url = new URL(req.url ?? '/', requestOrigin());
   const pathname = normalizedPublicPath(url.pathname).replace(/\/+$/, '') || '/';
-  const origin = requestOrigin(req);
+  const origin = requestOrigin();
   const redirectLocation = (targetPath) => canonicalRedirect(req, targetPath, url.search, origin) ?? `${targetPath}${url.search}`;
   const legacyProduct = pathname.match(/^\/proizvodi\/([^/]+)$/);
   if (legacyProduct) {

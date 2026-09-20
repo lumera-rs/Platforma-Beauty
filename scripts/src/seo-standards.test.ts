@@ -61,6 +61,8 @@ export function validateStaticSeoPages(value: unknown): asserts value is StaticS
 }
 
 process.env.NODE_ENV = "test";
+process.env.PUBLIC_SITE_URL = "https://lumera.example";
+delete process.env.SITE_INDEXABLE;
 const parsedStaticSeoPages: unknown = JSON.parse(
   read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
 );
@@ -151,6 +153,7 @@ const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
     pathname: string,
     payload: SeoPayload,
     origin: string,
+    siteAllowed: boolean,
   ) => SeoHeadMetadata;
 };
 
@@ -627,6 +630,7 @@ const htmlTemplate = `<!doctype html><html><head>
 async function serverMetadata(pathname: string): Promise<{
   status: number;
   head: ComparableSeoHead;
+  siteAllowed: boolean;
 }> {
   const response = await createSeoResponse({
     url: pathname,
@@ -636,11 +640,14 @@ async function serverMetadata(pathname: string): Promise<{
       "x-forwarded-proto": "https",
     },
   }, htmlTemplate);
-  return { status: response.status, head: ssrHead(response.body) };
+  const siteAllowed = optionalHtmlAttribute(response.body, /<meta name="lumera:site-indexable" content="([^"]*)">/u) === "true";
+  assert.equal(siteAllowed, false, "the parity fixture must exercise staging noindex policy");
+  return { status: response.status, head: ssrHead(response.body), siteAllowed };
 }
 
 async function clientMetadataAfterMount(
   pathname: string,
+  siteAllowed: boolean,
   searchString = "",
 ): Promise<ComparableSeoHead> {
   const queryClient: SeoQueryClient = {
@@ -649,7 +656,7 @@ async function clientMetadataAfterMount(
     fetchQuery: async <T>({ queryFn }: { queryFn: () => Promise<T> }) => queryFn(),
   };
   const payload = await resolvePostMountSeo(pathname, searchString, queryClient);
-  const head = seoHeadMetadata(pathname, payload, seoOrigin);
+  const head = seoHeadMetadata(pathname, payload, seoOrigin, siteAllowed);
   return {
     title: head.title,
     description: head.description,
@@ -665,7 +672,7 @@ try {
     const serverResult = await serverMetadata(pathname);
     assert.equal(serverResult.status, 200, `${pathname} static fixture must server-render`);
     assert.deepEqual(
-      await clientMetadataAfterMount(pathname),
+      await clientMetadataAfterMount(pathname, serverResult.siteAllowed),
       serverResult.head,
       `${pathname} must preserve SSR title, description, canonical, and robots after mount`,
     );
@@ -673,13 +680,13 @@ try {
     const queryPath = `${pathname}?seo-contract=1`;
     const queryResult = await serverMetadata(queryPath);
     assert.equal(queryResult.status, 200, `${pathname} query variant must render safely`);
-    const clientQueryHead = await clientMetadataAfterMount(pathname, "seo-contract=1");
+    const clientQueryHead = await clientMetadataAfterMount(pathname, queryResult.siteAllowed, "seo-contract=1");
     assert.deepEqual(
       clientQueryHead,
       queryResult.head,
       `${pathname} query variant must preserve SSR metadata after mount`,
     );
-    assert.equal(queryResult.head.robots, "noindex, follow");
+    assert.equal(queryResult.head.robots, "noindex, nofollow");
     assert.equal(
       queryResult.head.canonical,
       `${seoOrigin}${pathname}`,
@@ -695,7 +702,7 @@ try {
       `${contract.pattern} valid fixture must server-render`,
     );
     assert.deepEqual(
-      await clientMetadataAfterMount(contract.pathname),
+      await clientMetadataAfterMount(contract.pathname, serverResult.siteAllowed),
       serverResult.head,
       `${contract.pattern} must preserve SSR title, description, canonical, robots, Open Graph, and Twitter metadata after mount`,
     );
@@ -713,7 +720,7 @@ try {
     assert.equal(queryResult.status, 200, `${contract.pattern} query variant must render safely`);
     assert.equal(
       queryResult.head.robots,
-      "noindex, follow",
+      "noindex, nofollow",
       `${contract.pattern} query variant must remain noindex`,
     );
     assert.equal(
@@ -721,7 +728,7 @@ try {
       `${seoOrigin}${contract.pathname}`,
       `${contract.pattern} query canonical must omit the query string`,
     );
-    const clientQueryHead = await clientMetadataAfterMount(contract.pathname, "seo-contract=1");
+    const clientQueryHead = await clientMetadataAfterMount(contract.pathname, queryResult.siteAllowed, "seo-contract=1");
     assert.deepEqual(
       clientQueryHead,
       queryResult.head,
@@ -745,12 +752,12 @@ try {
     );
     assert.equal(
       missingServerResult.head.robots,
-      "noindex, follow",
+      "noindex, nofollow",
       `${contract.pattern} missing fixture must remain noindex in SSR`,
     );
     assert.equal(
-      (await clientMetadataAfterMount(contract.missingPathname)).robots,
-      "noindex, follow",
+      (await clientMetadataAfterMount(contract.missingPathname, missingServerResult.siteAllowed)).robots,
+      "noindex, nofollow",
       `${contract.pattern} missing fixture must remain noindex after mount`,
     );
   }
@@ -800,7 +807,7 @@ try {
     description: "Test",
     image: "/social-card.webp?version=2",
     indexable: true,
-  }, seoOrigin).openGraph;
+  }, seoOrigin, false).openGraph;
   assert.equal(extensionOnlyImage.imageType, undefined);
   assert.equal(extensionOnlyImage.imageWidth, undefined);
   assert.equal(extensionOnlyImage.imageHeight, undefined);
@@ -810,7 +817,7 @@ try {
     description: "Test",
     image: "/api/media/images/11111111-1111-4111-8111-111111111111",
     indexable: true,
-  }, seoOrigin).openGraph;
+  }, seoOrigin, false).openGraph;
   assert.equal(unknownImage.imageType, undefined);
   assert.equal(unknownImage.imageWidth, undefined);
   assert.equal(unknownImage.imageHeight, undefined);
@@ -823,7 +830,7 @@ try {
     imageHeight: 640,
     imageType: "image/webp",
     indexable: true,
-  }, seoOrigin).openGraph;
+  }, seoOrigin, false).openGraph;
   assert.equal(explicitImage.imageWidth, 960);
   assert.equal(explicitImage.imageHeight, 640);
   assert.equal(explicitImage.imageType, "image/webp");
@@ -850,6 +857,7 @@ try {
   };
   const fakeDocument = {
     title: "",
+    querySelector: fakeHead.querySelector,
     head: fakeHead,
     createElement: () => {
       const node: FakeHeadNode = {
@@ -869,9 +877,18 @@ try {
   };
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
+  for (const [name, content] of [
+    ["lumera:public-site-url", seoOrigin],
+    ["lumera:site-indexable", String((await serverMetadata("/")).siteAllowed)],
+  ]) {
+    const node = fakeDocument.createElement();
+    node.setAttribute("name", name);
+    node.content = content;
+    fakeHead.append(node);
+  }
   Object.assign(globalThis, {
     document: fakeDocument,
-    window: { location: { origin: seoOrigin } },
+    window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host } },
   });
   try {
     applySeo("/", {
@@ -907,7 +924,7 @@ try {
 
   const privateQueryResult = await serverMetadata("/admin?seo-contract=1");
   assert.equal(privateQueryResult.status, 200, "private query routes must render the app shell");
-  assert.equal(privateQueryResult.head.robots, "noindex, follow");
+  assert.equal(privateQueryResult.head.robots, "noindex, nofollow");
   assert.equal(privateQueryResult.head.canonical, `${seoOrigin}/admin`);
   assert.deepEqual(
     privateQueryResult.head.openGraph,
