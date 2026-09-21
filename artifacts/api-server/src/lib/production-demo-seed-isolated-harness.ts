@@ -1,12 +1,14 @@
 /**
  * Disposable, database-free harness for the production demo-fixture boundary.
  *
- * This file deliberately does not import @workspace/db.  It bundles app.ts
- * with a virtual in-memory adapter instead.  The adapter records every
- * mutation, so the HTTP assertions can distinguish an actual no-op from a
- * test which merely inspected source text.  DATABASE_URL is removed from the
- * child process before it starts; importing index.ts is also intentionally
- * avoided because index.ts owns startup work.
+ * The child process replaces @workspace/db with a virtual in-memory adapter.
+ * The only value this harness imports from the real package is the query
+ * observation header constant, from a module with no imports of its own that
+ * opens no connection.  The adapter records every mutation, so the HTTP
+ * assertions can distinguish an actual no-op from a test which merely
+ * inspected source text.  DATABASE_URL is removed from the child process
+ * before it starts; importing index.ts is also intentionally avoided because
+ * index.ts owns startup work.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
