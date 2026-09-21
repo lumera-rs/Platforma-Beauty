@@ -13,6 +13,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { build, type Plugin, type PluginBuild } from "esbuild";
+import { databaseQueryObservationHeader } from "@workspace/db/query-observation";
 
 const execFileAsync = promisify(execFile);
 const apiServerRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -483,7 +484,7 @@ const __values = {
   getPoolStatus: async () => ({ total: 0, idle: 0, waiting: 0 }),
   isDatabaseQueryObservationRuntimeAllowed: () => false,
   runWithDatabaseQueryObservation: (_captureId, next) => next(),
-  databaseQueryObservationHeader: "x-lumera-db-observation",
+  databaseQueryObservationHeader: ${JSON.stringify(databaseQueryObservationHeader)},
   assertDestructiveTestRuntimeAllowed: () => {
     if (productionOrDeployment) throw new Error("Destructive test runtime denied by isolated production harness.");
   },
