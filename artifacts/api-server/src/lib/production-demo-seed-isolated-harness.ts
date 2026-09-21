@@ -1,18 +1,21 @@
 /**
  * Disposable, database-free harness for the production demo-fixture boundary.
  *
- * This file deliberately does not import @workspace/db.  It bundles app.ts
- * with a virtual in-memory adapter instead.  The adapter records every
- * mutation, so the HTTP assertions can distinguish an actual no-op from a
- * test which merely inspected source text.  DATABASE_URL is removed from the
- * child process before it starts; importing index.ts is also intentionally
- * avoided because index.ts owns startup work.
+ * The child process replaces @workspace/db with a virtual in-memory adapter.
+ * The only value this harness imports from the real package is the query
+ * observation header constant, from a module with no imports of its own that
+ * opens no connection.  The adapter records every mutation, so the HTTP
+ * assertions can distinguish an actual no-op from a test which merely
+ * inspected source text.  DATABASE_URL is removed from the child process
+ * before it starts; importing index.ts is also intentionally avoided because
+ * index.ts owns startup work.
  */
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { build, type Plugin, type PluginBuild } from "esbuild";
+import { databaseQueryObservationHeader } from "@workspace/db/query-observation";
 
 const execFileAsync = promisify(execFile);
 const apiServerRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -483,7 +486,7 @@ const __values = {
   getPoolStatus: async () => ({ total: 0, idle: 0, waiting: 0 }),
   isDatabaseQueryObservationRuntimeAllowed: () => false,
   runWithDatabaseQueryObservation: (_captureId, next) => next(),
-  databaseQueryObservationHeader: "x-lumera-db-observation",
+  databaseQueryObservationHeader: ${JSON.stringify(databaseQueryObservationHeader)},
   assertDestructiveTestRuntimeAllowed: () => {
     if (productionOrDeployment) throw new Error("Destructive test runtime denied by isolated production harness.");
   },

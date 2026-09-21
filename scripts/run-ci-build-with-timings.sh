@@ -255,6 +255,7 @@ case "$job" in
   build)
     run_phase "build:release" pnpm run build:release
     run_phase "scripts:typecheck" pnpm --filter @workspace/scripts run typecheck
+    run_phase "internal-request-controls" pnpm run test:internal-request-controls
     run_phase "internal-request-control-outputs" pnpm run test:internal-request-control-outputs
     run_phase "beauty-marketplace-typecheck" pnpm run test:beauty-marketplace-typecheck
     run_phase "frontend-generated-typecheck" pnpm run test:frontend-generated-typecheck
@@ -265,6 +266,7 @@ case "$job" in
     run_phase "frontend-standards" pnpm run test:frontend-standards
     run_phase "seo-standards" pnpm run test:seo-standards
     run_phase "frontend-interactions" pnpm run test:frontend-interactions
+    run_phase "rmas" pnpm run test:rmas
     ;;
   database)
     run_phase "database:test:monitoring" pnpm run test:monitoring

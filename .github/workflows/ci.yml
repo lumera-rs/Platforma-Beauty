@@ -30,7 +30,7 @@ permissions:
 jobs:
   migration-contract:
     name: Migration contract (database-free)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       CI: "true"
@@ -68,7 +68,7 @@ jobs:
   release-chain:
     name: Release chain (database-free)
     needs: migration-contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       CI: "true"
@@ -89,7 +89,7 @@ jobs:
   build:
     name: Build and static checks
     needs: release-chain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -285,7 +285,7 @@ jobs:
   database:
     name: Database checks (isolated PostgreSQL)
     needs: release-chain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       CI: "true"
@@ -471,7 +471,7 @@ jobs:
   phase5-migration-integration:
     name: Phase 5 migration integration (owned PostgreSQL 16)
     needs: migration-contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       CI: "true"
@@ -522,7 +522,7 @@ jobs:
       - release-chain
       - build
       - database
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       CI: "true"
@@ -682,7 +682,7 @@ jobs:
   failure-diagnostics-probe:
     name: Failure diagnostics artifact probe
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failure_diagnostics_probe && github.repository == github.event.repository.full_name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       CI: "true"
