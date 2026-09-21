@@ -554,3 +554,22 @@ manifest SHA-256 is
 `git diff --check` passed for these three documentation files. This batch
 changed only the two protected manifests and this provenance document; it ran
 no database tests or connections, servers, workflows, commits, or pushes.
+
+## Public salon address — final CI scheduling audit
+
+After Stage B commit `28ddbea44d8f7b1ba6fcf300255714e062440d95`, the CI
+scheduling changes were audited separately. A fresh complete SHA-256 census
+of all 158 current-tier entries found zero mismatches (`[]`), requiring zero
+new hash amendments and zero cascade updates. Both manifests remain
+byte-identical to that commit; the 11 approved Stage B amendments are preserved.
+
+Both historical tiers (146 entries combined) remain raw-byte-identical to main
+`c760ce098a632263d51160841b7defee85241d6b`. All 146 historical hashes were also
+independently reproduced from pinned `b8f30561` Git file bytes. This audit
+changes only this provenance document and does not run database operations,
+servers, workflows, commits, or pushes.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+ran once after this audit note. Both validators passed (114 diagnostic negative
+cases; 65 execution negative fixtures); all 13 regression tests passed with
+zero failures and zero skipped tests.
