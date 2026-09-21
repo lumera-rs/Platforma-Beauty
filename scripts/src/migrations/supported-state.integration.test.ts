@@ -7,6 +7,7 @@ import ts from "typescript";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 import { ensureLedger, readLedger } from "./ledger";
 import { loadMigrations } from "./files";
 
@@ -243,10 +244,10 @@ test("manifest exposes exactly the supported numbered state migration", { skip }
 test("fresh default pipeline applies 000001 and 000002, then repeats without data drift", { skip }, async () => {
   await withOwnedDisposableDatabase(adminUrl!, async ({ pool }) => {
     const migrations = await loadMigrations();
-    const first = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const first = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(first.applied, ["000001", "000002"]);
     const before = await state(pool);
-    const second = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const second = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.applied, []);
     assert.deepEqual(second.skipped, ["000001", "000002"]);
     assert.deepEqual(await state(pool), before);
@@ -269,7 +270,7 @@ test("existing canonical baseline admits supported data and preserves preexistin
     const before = await withClient(pool, (client) => client.query(
       "SELECT name,price,trial_days,features,limits,audience,active FROM public.subscription_plans WHERE name='Existing salon'",
     ).then((result) => result.rows[0]));
-    const result = await withClient(pool, (client) => applyMigrations(client));
+    const result = await withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(result.applied, ["000002"]);
     const after = await withClient(pool, (client) => client.query(
       "SELECT name,price,trial_days,features,limits,audience,active FROM public.subscription_plans WHERE name='Existing salon'",
@@ -285,7 +286,7 @@ test("existing canonical schema without ledger rejects before creating ledger", 
       await client.query(migrations[0]!.body);
     });
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      () => withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /existing schema without a migration ledger/u,
     );
     await assertNoLedger(pool);
@@ -301,7 +302,7 @@ test("unsupported user rows fail before any ledger or reference write", { skip }
     `));
     const before = await state(pool);
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client)),
+      () => withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /SUPPORTED_STARTUP_(?:UNSUPPORTED_DATA:users|CLEANUP_CANDIDATES_REQUIRE_PROVENANCE)/u,
     );
     assert.deepEqual(await state(pool), before);
@@ -322,7 +323,7 @@ test("category conflicts are rejected without overwriting the existing category"
       "SELECT name,subtype_labels,enabled,feature_flag FROM public.beauty_job_categories WHERE slug='frizeri'",
     ).then((result) => result.rows[0]));
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client)),
+      () => withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /SUPPORTED_STARTUP_CATEGORY_PAYLOAD_CONFLICT/u,
     );
     const after = await withClient(pool, (client) => client.query(
@@ -343,7 +344,7 @@ test("fallback payload and historical plan relationships are fail-closed", { ski
     `));
     const before = await state(pool);
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client)),
+      () => withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /SUPPORTED_STARTUP_FALLBACK_PAYLOAD_CONFLICT:Education Start/u,
     );
     assert.deepEqual(await state(pool), before);
@@ -357,7 +358,7 @@ test("both empty and populated education snapshots with a live relationship reje
       await insertEducationSubscriptionFixture(pool, snapshots);
       const before = await state(pool);
       await assert.rejects(
-        () => withClient(pool, (client) => applyMigrations(client)),
+        () => withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
         /SUPPORTED_STARTUP_(?:CLEANUP_CANDIDATES_REQUIRE_PROVENANCE|UNSUPPORTED_DATA:users|PLAN_RELATIONSHIPS_REQUIRE_RECONCILIATION|HISTORICAL|RELATION)/u,
       );
       assert.deepEqual(await state(pool), before);
@@ -379,7 +380,7 @@ test("adoption creates only the 000001 baseline row; it never adopts 000002", { 
     await withClient(pool, async (client) => {
       const migrations = await loadMigrations();
       await client.query(migrations[0]!.body);
-      const result = await adoptBaseline(client, { migrations });
+      const result = await adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) });
       assert.deepEqual(result.adopted, ["000001"]);
       assert.deepEqual((await readLedger(client)).map((row) => row.id), ["000001"]);
     });
@@ -390,8 +391,8 @@ test("concurrent default applies produce one supported migration and no duplicat
   await withOwnedDisposableDatabase(adminUrl!, async ({ pool }) => {
     await baseline(pool);
     const results = await Promise.all([
-      withClient(pool, (client) => applyMigrations(client)),
-      withClient(pool, (client) => applyMigrations(client)),
+      withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
+      withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) })),
     ]);
     assert.equal(results.filter((result) => result.applied.includes("000002")).length, 1);
     await withClient(pool, async (client) => {
@@ -421,13 +422,13 @@ test("a preexisting ADOPTED 000002 row is rejected rather than treated as data e
     const beforeData = await snapshotComparison(pool);
     const beforeLedger = await withClient(pool, (client) => readLedger(client));
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      () => withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /LEDGER_DATA_MIGRATION_ADOPTED:000002/u,
     );
     assert.deepEqual(await snapshotComparison(pool), beforeData);
     assert.deepEqual(await withClient(pool, (client) => readLedger(client)), beforeLedger);
     await assert.rejects(
-      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /LEDGER_DATA_MIGRATION_ADOPTED:000002/u,
     );
     assert.deepEqual(await snapshotComparison(pool), beforeData);
@@ -445,7 +446,7 @@ test("paired original explicit data steps and 000002 agree on admitted reference
   let replacement: Record<string, unknown[]>;
   await withOwnedDisposableDatabase(adminUrl!, async ({ pool }) => {
     await baseline(pool);
-    await withClient(pool, (client) => applyMigrations(client));
+    await withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     replacement = await snapshotComparison(pool);
   });
   assert.deepEqual(normalizeComparison(replacement!), normalizeComparison(original!));
@@ -469,7 +470,7 @@ test("legitimate existing reference/configuration rows are preserved byte-for-by
     await baseline(pool);
     await insertLegitimateExistingConfiguration(pool);
     replacementBefore = await existingConfiguration(pool);
-    await withClient(pool, (client) => applyMigrations(client));
+    await withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     replacementAfter = await existingConfiguration(pool);
   });
   assert.deepEqual(replacementAfter!, replacementBefore!);
@@ -478,7 +479,7 @@ test("legitimate existing reference/configuration rows are preserved byte-for-by
 
 test("the converged voucher trigger still rejects mutation of immutable snapshot fields", { skip }, async () => {
   await withOwnedDisposableDatabase(adminUrl!, async ({ pool }) => {
-    await withClient(pool, (client) => applyMigrations(client));
+    await withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     const client = await pool.connect();
     try {
       const user = "00000000-0000-4000-8000-0000000000d1";
@@ -538,14 +539,14 @@ test("backend termination after the outer transaction starts leaves no partial 0
           }
           return interrupted.query(sql, params);
         },
-      }));
+      }, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     } finally {
       interrupted.release(true);
     }
     assert.equal(terminated, true);
     await withClient(pool, async (client) => {
       assert.equal(await value(client, "SELECT count(*)::integer FROM public.subscription_plans WHERE audience='education'"), 0);
-      const result = await applyMigrations(client);
+      const result = await applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) });
       assert.deepEqual(result.applied, ["000002"]);
       assert.deepEqual((await readLedger(client)).map((row) => [row.id, row.state]), [
         ["000001", "APPLIED"], ["000002", "APPLIED"],

@@ -17,7 +17,7 @@
 - [Category image delivery](category-image-delivery.md) — client-facing category image references must stay stable while storage access remains short-lived and private.
 - [Carousel breakpoint overrides](carousel-breakpoint-overrides.md) — caller widths must override every shared rail breakpoint to preserve intentional desktop overflow.
 - [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.
-- [Education financial serialization](education-financial-serialization.md) — payouts, disputes, and dispute resolutions must serialize by education center before changing escrow.
+- [Education integrity](education-topics.md) — grouped index of education-domain decisions and detailed topics.
 - [Database-clock test boundaries](database-clock-test-boundaries.md) — SQL deadline tests must share PostgreSQL’s clock when JavaScript time is overridden.
 - [Appointment contact privacy](appointment-contact-privacy.md) — exact salon details require ownership of a pending, confirmed, or completed appointment.
 - [Partial expression index publishing](partial-expression-index-publishing.md) — use a generated normalized column for nullable participant keys before partial unique indexing.
@@ -111,30 +111,11 @@
 - [Product demo identity isolation](product-demo-identity-isolation.md) — authorization regressions use exact-ID marker fixtures and never borrow product-facing demo accounts.
 - [OpenAPI closed-object runtime](openapi-closed-object-runtime.md) — exact request shapes need raw-input checks when generated validators strip unknown keys.
 - [Business relation mutation locks](business-relation-mutation-locks.md) — lock shared resources before participating accounts, and keep read-only planning snapshots free of row locks.
-- [Education placement lifecycle](education-placement-lifecycle.md) — paid slots use scoped targets, bounded holds, immutable terms, and Belgrade calendar-day activation.
-- [Education related-course normalization](education-related-course-normalization.md) — canonical Unicode tag matching must run before global ranking and limiting.
-- [Education course review aggregates](education-course-review-aggregates.md) — single and batch course serializers must share published-review enrichment before contract parsing.
 - [SSR API response shape parity](ssr-api-response-shape-parity.md) — untyped server renderers and fixtures must consume the exact OpenAPI response shape.
-- [Education learner identity boundary](education-learner-identity-boundary.md) — booking purchasers manage seats and payments but never impersonate named learners.
-- [Education group mutation invariant](education-group-reschedule-invariant.md) — reschedule or cancel a multi-seat group together unless finances split atomically per seat.
-- [Education fixed-session compatibility](education-fixed-session-compatibility.md) — legacy fixed sessions remain bookable before educator assignments are backfilled.
-- [Education waitlist payment promotion](education-waitlist-payment-promotion.md) — settled waitlisted seats carry money state but gain learner access only on promotion.
-- [Education completion gate ordering](education-completion-gate-ordering.md) — lessons and attendance reconcile one live completion state regardless of arrival order.
-- [Education recurrence semantics](education-recurrence-semantics.md) — availability grid starts are alternatives; recurrence commits only fixed non-overlapping occurrences.
-- [Education minimum-enrollment scheduler](education-minimum-enrollment-scheduler.md) — recheck future-session eligibility under lock with the database clock before auto-cancellation.
 - [Featured placement payment](featured-placement-payment.md) — salon IPS QR was never historical; future paid placements share one pending-charge/manual-confirmation flow.
-- [Instructor public rating semantics](instructor-public-rating-semantics.md) — instructor ratings are weighted across published reviews of eligible public courses, never averaged course averages.
-- [Education absence assignment invariant](education-absence-assignment-invariant.md) — absences and educator assignments must reject each other under one schedule-lock protocol.
 - [Idempotent outcome analytics](idempotent-outcome-analytics.md) — count an outcome only when the server confirms that request performed the state transition.
 - [Capability-scoped background requests](capability-scoped-background-requests.md) — gate polling, realtime streams, links, and direct routes by the server capability they consume.
 - [Cross-role auth cache replacement](cross-role-auth-cache-replacement.md) — replace cached current-user data before redirecting after login or registration.
-- [Education bundle purchase boundary](education-bundle-purchase-boundary.md) — one immutable parent charge owns bundle finance; course enrollments only project access.
-- [Payment account environments](payment-account-environments.md) — account classification is explicit; production accounts work only in a confirmed published production runtime.
-- [Online education entitlement boundaries](online-education-entitlement-boundaries.md) — snapshot every issuance path and enforce expiry on every private read, write, transfer, and certificate path.
-- [Subscription tier snapshot integrity](subscription-tier-snapshot-integrity.md) — classify and price plan changes from frozen subscriber terms; split shared legacy plans before audience relabeling.
-- [Education trial identity claims](education-trial-identity-claims.md) — trial evidence is append-only and survives account deletion; duplicate signup may continue only without a new trial.
-- [Education explicit reactivation](education-explicit-reactivation-boundary.md) — payment or contract changes never bypass owner course choice and audited super-admin reactivation.
-- [Education finance admin boundary](education-finance-admin-boundary.md) — administrative Education money mutations are SUPER_ADMIN-only before input or entity inspection.
 - [Radix checkbox browser tests](radix-checkbox-browser-tests.md) — exercise role=checkbox buttons with click plus state assertions, not native-input check helpers.
 - [Grouped CAMT transaction identity](grouped-camt-transaction-identity.md) — grouped entries resolve IDs and amounts per transaction detail, never from a shared batch identifier.
 - [Bank API legal-entity scope](bank-api-legal-entity-scope.md) — never infer a Serbian bank API contract from group-level or another country’s developer portal.
@@ -151,7 +132,7 @@
 - [Public social image metadata](public-social-image-metadata.md) — pin OG metadata to an explicit managed variant; URL-only legacy images must never gain inferred dimensions or MIME.
 - [CI timing calibration](ci-timing-calibration.md) — distinguish provisional budgets from phase evidence; preserve the timed contract and newest-first history.
 - [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
-- [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
+- [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; any adoption writes require separately reviewed authorization.
 - [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.
 - [Shallow Git ancestry evidence](shallow-git-ancestry-evidence.md) — incidental local shallow negotiation can mask a wrong fetch anchor; distinguish object presence from ancestry proof.
 - [Lifecycle verification evidence](lifecycle-verification-evidence.md) — lost phase logs prevent causal claims; interrupted suites never count as complete validation.

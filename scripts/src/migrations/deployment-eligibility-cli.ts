@@ -1,4 +1,5 @@
 import pg from "pg";
+import { isDeploymentRuntime } from "./development-runtime";
 import { inspectDeploymentEligibility } from "./deployment-eligibility";
 import { safeErrorText } from "./cli";
 
@@ -13,12 +14,10 @@ export interface DeploymentEligibilityCliOptions {
 }
 
 export function assertEligibilityDevelopmentRuntime(environment: NodeJS.ProcessEnv = process.env): void {
-  if (
-    environment.NODE_ENV === "production"
-    || environment.REPLIT_DEPLOYMENT === "1"
-    || environment.REPLIT_DEPLOYMENT_ID
-    || environment.REPLIT_ENVIRONMENT === "production"
-  ) {
+  // REPLIT_ENVIRONMENT can have a production-like value in an editor
+  // workspace. It is not a deployment indicator by itself; explicit
+  // deployment flags establish the runtime boundary (inspection is read-only).
+  if (isDeploymentRuntime(environment)) {
     throw new Error("Deployment eligibility is development-only; production readiness is not assessed");
   }
 }

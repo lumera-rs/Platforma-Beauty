@@ -21,9 +21,12 @@ import {
   type StartupMigrationMapping,
 } from "../startup-migration-crosswalk";
 
+import { registerDisposableTarget, expectedDisposableTarget } from "../migrations/disposable-target-fixture";
+
 type PoolClient = pg.PoolClient;
 
 export interface DisposableDatabase {
+  readonly expectedTargetIdentity: import("../migrations/target-identity").ExpectedTargetIdentity;
   readonly name: string;
   readonly owner: string;
   readonly pool: pg.Pool;
@@ -208,11 +211,13 @@ export async function withOwnedDisposableDatabase<T>(
     const childTarget = new URL(target.toString());
     childTarget.pathname = `/${encodeURIComponent(childName)}`;
     child = new pg.Pool({ connectionString: childTarget.toString(), password: "", max: 4, connectionTimeoutMillis: 5_000 });
+    await registerDisposableTarget(admin, child, childName);
     const identity = await child.query("SELECT current_database() AS name, current_user AS owner");
     if (identity.rows[0]?.name !== childName || identity.rows[0]?.owner !== owner) {
       throw new Error("Disposable child connection identity mismatch.");
     }
     result = await callback({
+      expectedTargetIdentity: expectedDisposableTarget(child),
       name: childName,
       owner,
       pool: child,
@@ -372,8 +377,15 @@ export function operationCoverage(): OperationCoverage {
   };
 }
 
+// This historical characterization compares the immutable schema-only frontier
+// to legacy startup owners. Full-chain convergence is tested separately; do not
+// silently change this fixture's frontier when a data migration is appended.
+async function baselineCharacterizationMigrations() {
+  return (await loadMigrations()).filter((migration) => migration.id === "000001");
+}
+
 async function executeCanonicalBody(pool: pg.Pool): Promise<void> {
-  const migrations = await loadMigrations();
+  const migrations = await baselineCharacterizationMigrations();
   const canonical = migrations[0];
   if (migrations.length !== 1 || canonical?.id !== "000001") {
     throw new Error("This reconstructed fixture is pinned to the 000001-only migration frontier.");
@@ -391,13 +403,13 @@ async function executeCanonicalBody(pool: pg.Pool): Promise<void> {
 }
 
 async function preflight(pool: pg.Pool): Promise<AdoptionPreflightReport> {
-  return withClient(pool, async (client) => preflightBaselineAdoption(client, await loadMigrations()));
+  return withClient(pool, async (client) => preflightBaselineAdoption(client, await baselineCharacterizationMigrations()));
 }
 
 async function freshApply(pool: pg.Pool): Promise<string> {
-  const migrations = await loadMigrations();
-  const first = await withClient(pool, async (client) => applyMigrations(client, { migrations }));
-  const repeat = await withClient(pool, async (client) => applyMigrations(client, { migrations }));
+  const migrations = await baselineCharacterizationMigrations();
+  const first = await withClient(pool, async (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+  const repeat = await withClient(pool, async (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
   return JSON.stringify({ first, repeat });
 }
 
@@ -405,7 +417,7 @@ async function adopt(pool: pg.Pool): Promise<{
   readonly summary: string;
   readonly fingerprint: CatalogFingerprintResult;
 }> {
-  const result = await withClient(pool, async (client) => adoptBaseline(client, { migrations: await loadMigrations() }));
+  const result = await withClient(pool, async (client) => adoptBaseline(client, { migrations: await baselineCharacterizationMigrations(), expectedTargetIdentity: expectedDisposableTarget(pool) }));
   return {
     summary: JSON.stringify({ adopted: result.adopted }),
     fingerprint: result.fingerprint,
@@ -413,7 +425,7 @@ async function adopt(pool: pg.Pool): Promise<{
 }
 
 async function adoptRepeat(pool: pg.Pool): Promise<string> {
-  const result = await withClient(pool, async (client) => adoptBaseline(client, { migrations: await loadMigrations() }));
+  const result = await withClient(pool, async (client) => adoptBaseline(client, { migrations: await baselineCharacterizationMigrations(), expectedTargetIdentity: expectedDisposableTarget(pool) }));
   return JSON.stringify({ adopted: result.adopted });
 }
 

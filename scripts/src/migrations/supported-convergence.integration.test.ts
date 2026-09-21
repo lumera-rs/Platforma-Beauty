@@ -17,6 +17,7 @@ import { fingerprintSnapshot } from "../schema-drift/fingerprint";
 import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transaction";
 import { ownershipExceptions } from "../schema-drift/ownership";
 import { applyMigrations } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 import { loadMigrations } from "./files";
 import type { LoadedMigration } from "./types";
 
@@ -34,7 +35,7 @@ const CANONICAL = {
 
 if (process.env.DATABASE_URL) throw new Error("This isolated proof must not use ambient DATABASE_URL");
 if (process.env.NODE_ENV !== "test") throw new Error("Run this proof with NODE_ENV=test");
-for (const key of ["REPLIT_DEPLOYMENT", "REPLIT_DEPLOYMENT_ID", "REPLIT_ENVIRONMENT"]) {
+for (const key of ["REPLIT_DEPLOYMENT", "REPLIT_DEPLOYMENT_ID", "REPL_DEPLOYMENT", "REPL_DEPLOYMENT_ID"]) {
   if (process.env[key]) throw new Error(`Deployment flag must be unset: ${key}`);
 }
 
@@ -64,12 +65,12 @@ async function applyBaseline(pool: Pool): Promise<void> {
   const migrations = await loadPlanMigrations();
   const baseline = migrations.filter((migration) => migration.id === "000001");
   assert.equal(baseline.length, 1);
-  await withClient(pool, (client) => applyMigrations(client, { migrations: baseline }));
+  await withClient(pool, (client) => applyMigrations(client, { migrations: baseline, expectedTargetIdentity: expectedDisposableTarget(pool) }));
 }
 
 async function applySupported(pool: Pool): Promise<{ applied: string[]; skipped: string[] }> {
   const migrations = await loadPlanMigrations();
-  return withClient(pool, (client) => applyMigrations(client, { migrations }));
+  return withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
 }
 
 async function fingerprint(pool: Pool): Promise<{
@@ -240,25 +241,27 @@ test("cleanup provenance rejects and zero report timestamp is preserved", { skip
   });
 });
 
-test("production runtime guard rejects before querying a client", async () => {
+test("production runtime guard rejects after identity verification and before mutation", async () => {
   const migrations = await loadPlanMigrations();
   let queryCount = 0;
   const fakeClient = {
     query: async () => {
       queryCount += 1;
-      throw new Error("fake client must not be queried");
+      return { rows: [{ database_name: "fixture", system_identifier: "123", encrypted: false }] };
     },
   };
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
     await assert.rejects(
-      () => applyMigrations(fakeClient, { migrations }),
+      () => applyMigrations(fakeClient, { migrations, expectedTargetIdentity: {
+        databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted",
+      } }),
       /development-only/u,
     );
   } finally {
     process.env.NODE_ENV = previous;
   }
-  assert.equal(queryCount, 0);
-  await log("production guard PASS; fake client query count 0");
+  assert.equal(queryCount, 1);
+  await log("production guard PASS; identity verification only");
 });

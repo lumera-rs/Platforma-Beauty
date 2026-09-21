@@ -28,10 +28,10 @@ are valid catalog states and must not disappear from exact identity evidence.
 definition with quote-aware parsing, hash trigger and function definitions under
 the pinned deparser contract, and enumerate enum types independently of labels.
 
-Baseline adoption is classification-only until a separately reviewed P.2
-architecture restores any write capability. Repository eligibility authority may
-remain intentionally empty; an operator-supplied manifest never establishes
-legacy truth.
+Baseline adoption is classification-only unless a separately reviewed
+authorization design permits a write capability. Repository eligibility
+authority may remain intentionally empty; an operator-supplied manifest never
+establishes legacy truth.
 
 **Why:** The removed adoption path trusted self-authored manifests, lacked
 database/environment identity proof, changed its own fingerprint by creating
@@ -39,7 +39,7 @@ metadata, and used broad catalog/table locks. Its integration path could commit
 against an insufficiently guarded database.
 
 **How to apply:** Keep eligibility transactions read-only and fixed to
-repository-owned authority. Do not restore adoption writes until P.2 defines
-verified database identity, least-privilege roles, immutable ledger semantics,
-backup evidence, migration frontier/convergence, and a bounded serialization
-strategy.
+repository-owned authority. Any future adoption writes require separately
+reviewed authorization covering verified database identity, least-privilege
+roles, immutable ledger semantics, backup evidence, migration
+frontier/convergence, and a bounded serialization strategy.

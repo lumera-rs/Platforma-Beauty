@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import pg from "pg";
 import { phase5DisposableIntegrationSuites } from "./phase5-test-inventory";
+import { isDeploymentRuntime } from "./development-runtime";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const owner = "lumera_phase5_owner";
@@ -56,13 +57,7 @@ interface Options {
 }
 
 export function assertSafeRuntime(environment: NodeJS.ProcessEnv = process.env): void {
-  if (
-    environment.NODE_ENV === "production"
-    || /^(?:1|true)$/iu.test(environment.REPLIT_DEPLOYMENT ?? "")
-    || /^(?:1|true)$/iu.test(environment.REPL_DEPLOYMENT ?? "")
-    || environment.REPLIT_DEPLOYMENT_ID
-    || environment.REPL_DEPLOYMENT_ID
-  ) {
+  if (isDeploymentRuntime(environment)) {
     throw new Error("Phase 5 disposable integration runner refuses production or deployment runtimes.");
   }
   // REPLIT_ENVIRONMENT can have a production-like value in an editor
@@ -207,6 +202,8 @@ function safeEnvironment(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     HOME: process.env.HOME ?? os.tmpdir(),
     LANG: "C.UTF-8",
     NODE_ENV: "test",
+    // Preserve the workspace label: it is explicitly not a deployment marker.
+    REPLIT_ENVIRONMENT: process.env.REPLIT_ENVIRONMENT,
     CI: process.env.CI ?? "true",
     ...extra,
   };
@@ -352,7 +349,13 @@ async function runTestFile(
   const { exitCode, timedOut } = await new Promise<{ exitCode: number; timedOut: boolean }>((resolve, reject) => {
     const child = spawn(tsx, args, {
       cwd: workspaceRoot,
-      env: safeEnvironment({ SESSION_SECRET: "lumera-phase5-disposable-test-session-secret" }),
+      env: {
+        ...safeEnvironment({ SESSION_SECRET: "lumera-phase5-disposable-test-session-secret" }),
+        ...(suite.id === "phase4-migrations" ? {
+          LUMERA_PHASE4_DISPOSABLE_DB: "1",
+          LUMERA_PHASE4_DISPOSABLE_DATABASE_URL: adminUrl,
+        } : {}),
+      },
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });

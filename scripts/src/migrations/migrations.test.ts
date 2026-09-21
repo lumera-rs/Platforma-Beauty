@@ -77,10 +77,15 @@ interface FailureClientOptions {
   readonly failUnlock?: boolean;
 }
 
+const expectedTargetIdentity = { databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted" } as const;
+
 function failureClient(options: FailureClientOptions = {}) {
   const migrationError = options.migrationError ?? new Error("migration SQL failed");
   return {
     async query(sql: string) {
+      if (sql.includes("pg_control_system")) return { rows: [{
+        database_name: "fixture", system_identifier: "123", encrypted: false,
+      }] };
       if (sql.includes("pg_try_advisory_lock")) return { rows: [{ locked: true }] };
       if (sql.includes("pg_advisory_unlock")) {
         if (options.failUnlock) throw new Error("unlock cleanup failed");
@@ -103,7 +108,7 @@ function failureClient(options: FailureClientOptions = {}) {
 test("B3-A preserves the migration error when markFailed succeeds", async () => {
   const migrationError = new Error("primary migration error");
   await assert.rejects(
-    () => applyMigrations(failureClient({ migrationError }), { migrations: [fakeMigration()] }),
+    () => applyMigrations(failureClient({ migrationError }), { migrations: [fakeMigration()], expectedTargetIdentity }),
     (error: unknown) => error === migrationError,
   );
 });
@@ -111,7 +116,7 @@ test("B3-A preserves the migration error when markFailed succeeds", async () => 
 test("B3-B preserves the migration error when markFailed fails", async () => {
   const migrationError = new Error("primary migration error");
   await assert.rejects(
-    () => applyMigrations(failureClient({ migrationError, failMarkFailed: true }), { migrations: [fakeMigration()] }),
+    () => applyMigrations(failureClient({ migrationError, failMarkFailed: true }), { migrations: [fakeMigration()], expectedTargetIdentity }),
     (error: unknown) => error === migrationError,
   );
 });
@@ -119,7 +124,7 @@ test("B3-B preserves the migration error when markFailed fails", async () => {
 test("B3-C preserves the migration error when advisory unlock fails", async () => {
   const migrationError = new Error("primary migration error");
   await assert.rejects(
-    () => applyMigrations(failureClient({ migrationError, failUnlock: true }), { migrations: [fakeMigration()] }),
+    () => applyMigrations(failureClient({ migrationError, failUnlock: true }), { migrations: [fakeMigration()], expectedTargetIdentity }),
     (error: unknown) => error === migrationError,
   );
 });
@@ -127,7 +132,7 @@ test("B3-C preserves the migration error when advisory unlock fails", async () =
 test("B3-D surfaces advisory unlock failure after a successful migration", async () => {
   const migration = { ...fakeMigration(), body: "SELECT migration success" };
   await assert.rejects(
-    () => applyMigrations(failureClient({ failUnlock: true }), { migrations: [migration] }),
+    () => applyMigrations(failureClient({ failUnlock: true }), { migrations: [migration], expectedTargetIdentity }),
     /unlock cleanup failed/u,
   );
 });
@@ -135,7 +140,7 @@ test("B3-D surfaces advisory unlock failure after a successful migration", async
 test("B3-E preserves the migration error when rollback fails", async () => {
   const migrationError = new Error("primary migration error");
   await assert.rejects(
-    () => applyMigrations(failureClient({ migrationError, failRollback: true }), { migrations: [fakeMigration()] }),
+    () => applyMigrations(failureClient({ migrationError, failRollback: true }), { migrations: [fakeMigration()], expectedTargetIdentity }),
     (error: unknown) => error === migrationError,
   );
 });
@@ -187,10 +192,12 @@ test("B5 requires confirmation and accepts an explicit target without contacting
   );
   assert.deepEqual(
     parseMigrationCliOptions(
-      ["adopt-baseline", "--database-url=postgresql://user:password@db.invalid/db", "--confirm"],
+      ["adopt-baseline", "--database-url=postgresql://user:password@db.invalid/db", "--confirm",
+        "--expected-database=db", "--expected-system-identifier=123", "--expected-transport=unencrypted"],
       { DATABASE_URL: "postgresql://ambient.invalid/db" },
     ),
-    { command: "adopt-baseline", databaseUrl: "postgresql://user:password@db.invalid/db" },
+    { command: "adopt-baseline", databaseUrl: "postgresql://user:password@db.invalid/db",
+      expectedTargetIdentity: { databaseName: "db", systemIdentifier: "123", transport: "unencrypted" } },
   );
 });
 

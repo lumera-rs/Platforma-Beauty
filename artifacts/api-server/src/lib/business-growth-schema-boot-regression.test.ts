@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import test from "node:test";
+import type { Pool } from "pg";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema boot regression tests");
@@ -135,9 +136,19 @@ test("actual entrypoint refuses the old business-growth broken state without rep
   await fixtures.withOwnedDisposableDatabase(requireAdminUrl(), async ({
     pool,
     connectionString,
-  }: { pool: { query: (sql: string, values?: unknown[]) => Promise<{ rows: any[] }> }; connectionString: string }) => {
+    expectedTargetIdentity,
+  }: {
+    pool: Pool;
+    connectionString: string;
+    expectedTargetIdentity: { databaseName: string; systemIdentifier: string; transport: "encrypted" | "unencrypted" };
+  }) => {
     const migrations = await migrationFiles.loadMigrations();
-    await migrationRunner.applyMigrations(pool, { migrations });
+    const client = await pool.connect();
+    try {
+      await migrationRunner.applyMigrations(client, { migrations, expectedTargetIdentity });
+    } finally {
+      client.release();
+    }
     await pool.query(`
       ALTER TABLE public.salons DROP COLUMN IF EXISTS cover_image_description;
       ALTER TABLE public.products DROP COLUMN IF EXISTS cover_image_description;

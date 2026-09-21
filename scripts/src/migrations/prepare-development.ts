@@ -1,4 +1,5 @@
 import type { DatabaseClient } from "../backend-standards-database";
+import { isDeploymentRuntime } from "./development-runtime";
 import {
   classifyDeploymentEligibility,
   type DeploymentEligibilityReport,
@@ -14,6 +15,8 @@ export interface DevelopmentPreparationEnvironment {
   readonly NODE_ENV?: string;
   readonly REPLIT_DEPLOYMENT?: string;
   readonly REPLIT_DEPLOYMENT_ID?: string;
+  readonly REPL_DEPLOYMENT?: string;
+  readonly REPL_DEPLOYMENT_ID?: string;
   readonly REPLIT_ENVIRONMENT?: string;
 }
 
@@ -54,12 +57,10 @@ export async function prepareDevelopmentMigrations(
   options: PrepareDevelopmentOptions = {},
 ): Promise<DevelopmentPreparationResult> {
   const environment = options.environment ?? process.env;
-  if (
-    environment.NODE_ENV === "production"
-    || environment.REPLIT_DEPLOYMENT === "1"
-    || environment.REPLIT_DEPLOYMENT_ID
-    || environment.REPLIT_ENVIRONMENT === "production"
-  ) {
+  // REPLIT_ENVIRONMENT can have a production-like value in an editor
+  // workspace. It is not a deployment indicator by itself; explicit
+  // deployment flags and the separately verified target establish the boundary.
+  if (isDeploymentRuntime(environment)) {
     throw new Error("Development migration preparation refuses production or deployment runtimes");
   }
 
