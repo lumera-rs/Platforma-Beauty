@@ -262,6 +262,49 @@ function assertPreviousTimeoutsRestored(client: FakeClient): void {
   assert.deepEqual(client.calls[statementRestore]?.values, ["9s"]);
 }
 
+for (const setting of ["lock_timeout", "statement_timeout", "search_path"]) {
+  for (const failStartup of [false, true]) {
+    test(`business growth destroys session after ${setting} restore failure (startup failure: ${failStartup})`, async () => {
+      const primary = failStartup ? new Error("rollout failed") : undefined;
+      const cleanup = new Error(`${setting} restore failed`);
+      const handler = businessGrowthHandler(primary);
+      const client = new FakeClient((sql, values) => {
+        if (setting === "search_path"
+          ? sql === 'SET search_path TO "$user", public'
+          : sql.includes(`set_config('${setting}'`)) throw cleanup;
+        return handler(sql, values);
+      });
+      await assert.rejects(ensureBusinessGrowthSchema("public", fakePool(client)),
+        (error) => error === (primary ?? cleanup));
+      assert.equal(client.releaseArg, cleanup, "unsafe session must be destroyed");
+      assert.equal(includesQuery(client, "pg_advisory_unlock"), true);
+      assert.equal(includesQuery(client, "SET search_path TO"), true);
+      assert.equal(includesQuery(client, "set_config('statement_timeout'"), true);
+    });
+  }
+}
+
+for (const setting of ["lock_timeout", "statement_timeout"]) {
+  for (const failStartup of [false, true]) {
+    test(`marketplace destroys session after ${setting} restore failure (startup failure: ${failStartup})`, async () => {
+      const primary = failStartup ? new Error("index failed") : undefined;
+      const cleanup = new Error(`${setting} restore failed`);
+      const client = new FakeClient((sql) => {
+        if (sql === "SHOW lock_timeout") return { rows: [{ lock_timeout: "7s" }] };
+        if (sql === "SHOW statement_timeout") return { rows: [{ statement_timeout: "9s" }] };
+        if (primary && sql.startsWith("create index concurrently")) throw primary;
+        if (sql.includes(`set_config('${setting}'`)) throw cleanup;
+        return undefined;
+      });
+      await assert.rejects(ensureMarketplacePerformanceIndexes(fakePool(client)),
+        (error) => error === (primary ?? cleanup));
+      assert.equal(client.releaseArg, cleanup, "unsafe session must be destroyed");
+      assert.equal(includesQuery(client, "pg_advisory_unlock"), true);
+      assert.equal(includesQuery(client, "set_config('statement_timeout'"), true);
+    });
+  }
+}
+
 test("business growth restores previous timeouts after success", async () => {
   const client = new FakeClient(businessGrowthHandler());
   await ensureBusinessGrowthSchema("public", fakePool(client));

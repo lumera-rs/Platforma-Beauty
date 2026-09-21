@@ -22,6 +22,7 @@
     "typecheck:release": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --if-present run typecheck",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:admin-access-configuration": "pnpm --filter @workspace/scripts run test:admin-access-configuration",
+    "test:advisory-lock-session-cleanup": "pnpm --filter @workspace/api-server run test:advisory-lock-session-cleanup",
     "test:admin-authz": "bash scripts/test-admin-authorization.sh",
     "test:admin-input-validation": "bash scripts/test-admin-input-validation.sh",
     "test:api-preflight": "bash scripts/src/api-preflight.test.sh",

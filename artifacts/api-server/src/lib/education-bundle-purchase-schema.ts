@@ -1,4 +1,4 @@
-import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY } from "./business-growth-schema"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY } from "./business-growth-schema"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety"; import { logger } from "./logger";
 
 /** Additive, replay-safe production rollout for parent-only bundle finance. */
 export async function ensureEducationBundlePurchaseSchema(schemaName = "public", poolOverride?: StartupDdlPool): Promise<void> {
@@ -82,5 +82,5 @@ export async function ensureEducationBundlePurchaseSchema(schemaName = "public",
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_charge_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='charge'`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_fee_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='platform_fee'`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS education_bundle_purchase_ledger_reserve_unique ON ${schema}.education_bundle_purchase_ledger_entries(escrow_id) WHERE entry_type='reserve_hold'`);
-    await client.query("commit"); } catch (error) { await client.query("rollback").catch(() => {}); throw error; } finally { try { if (locked) await client.query("SELECT pg_advisory_unlock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]).catch(() => {}); } finally { client.release(); } }
+    await client.query("commit"); } catch (error) { await client.query("rollback").catch(() => {}); throw error; } finally { let unlockError: unknown; try { if (locked) await client.query("SELECT pg_advisory_unlock($1)", [BUSINESS_GROWTH_SCHEMA_ADVISORY_LOCK_KEY]).catch((error) => { unlockError = error; logger.error({ err: error, schema: schemaName }, "Failed to release education bundle purchase schema advisory lock"); }); } finally { if (unlockError) client.release(unlockError instanceof Error ? unlockError : true); else client.release(); } }
 }

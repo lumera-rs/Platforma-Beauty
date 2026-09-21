@@ -1,4 +1,4 @@
-import type { DatabasePoolClient as PoolClient } from "@workspace/db"; import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import type { DatabasePoolClient as PoolClient } from "@workspace/db"; import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety"; import { logger } from "./logger";
 
 const LOCK_KEY = "lumera:web-push-schema:v1";
 
@@ -20,8 +20,13 @@ export async function ensureWebPushSchema(schemaName = "public", poolOverride?: 
     await client.query("rollback").catch(() => {});
     throw error;
   } finally {
-    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [LOCK_KEY]).catch(() => {});
-    client.release();
+    let unlockError: unknown;
+    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", [LOCK_KEY]).catch((error) => {
+      unlockError = error;
+      logger.error({ err: error, schema: schemaName }, "Failed to release web push schema advisory lock");
+    });
+    if (unlockError) client.release(unlockError instanceof Error ? unlockError : true);
+    else client.release();
   }
 }
 

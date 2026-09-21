@@ -1,4 +1,4 @@
-import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import { type StartupDdlPool, resolveStartupDdlPool } from "./startup-ddl-pool"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety"; import { logger } from "./logger";
 
 const LOCK_KEY = 0x42434d44;
 
@@ -31,11 +31,15 @@ export async function ensureBookingCommandSchema(schemaName = "public", poolOver
       CREATE INDEX IF NOT EXISTS booking_command_receipts_actor_created_idx
       ON ${schema}.booking_command_receipts (actor_type, actor_id, created_at)
     `);
-    await client.query("commit"); } catch (error) { await client.query("rollback").catch(() => {}); throw error; } finally {
+    await client.query("commit"); } catch (error) { await client.query("rollback").catch(() => {}); throw error; } finally { let unlockError: unknown;
     try {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [LOCK_KEY]).catch(() => {});
+      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [LOCK_KEY]).catch((error) => {
+        unlockError = error;
+        logger.error({ err: error, schema: schemaName }, "Failed to release booking command schema advisory lock");
+      });
     } finally {
-      client.release();
+      if (unlockError) client.release(unlockError instanceof Error ? unlockError : true);
+      else client.release();
     }
   }
 }

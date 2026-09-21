@@ -364,19 +364,21 @@ export async function runCommunicationArchiveBatch(
     logger.info(summary, "Communication archive batch finished");
     return summary;
   } finally {
+    let unlockError: unknown;
     if (lockAcquired) {
       try {
         await client.query(
           "SELECT pg_advisory_unlock(hashtext($1))",
           [ARCHIVE_LOCK_KEY],
         );
-      } catch (unlockError) {
-        logger.warn(
-          { err: unlockError, lockKey: ARCHIVE_LOCK_KEY },
+      } catch (error) {
+        unlockError = error;
+        logger.error(
+          { err: error, lockKey: ARCHIVE_LOCK_KEY },
           "Communication archive advisory lock could not be released cleanly",
         );
       }
     }
-    client.release();
+    client.release(unlockError instanceof Error ? unlockError : unlockError ? true : undefined);
   }
 }

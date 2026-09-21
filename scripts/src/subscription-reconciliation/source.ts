@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-export const STARTUP_SOURCE_SHA256 = "91c061a8e2e6c16ee01584d5692ad0d3ff29dc29e6b5aa10725ea29f04f84fe8";
+export const STARTUP_SOURCE_SHA256 = "981434746172a7985ce9f63cff2e03e972e6b6c1a2d1f533f3a5194298058597";
 export const OPERATION_NAMES = [
   "clone_shared_plan", "relink_current_education_plan", "relabel_education_only_plan",
   "infer_ranked_limits", "insert_fallback_tiers", "normalize_named_tiers",

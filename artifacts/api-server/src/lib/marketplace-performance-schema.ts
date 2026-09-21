@@ -38,11 +38,19 @@ export async function ensureMarketplacePerformanceIndexes(poolOverride?: Startup
     logger.info("Marketplace performance indexes are ready");
   } catch (error) { startupError = error; throw error; } finally {
     let cleanupError: unknown;
+    let destroyClient = false;
     if (locked) {
-      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => { cleanupError = error; });
+      await client.query("select pg_advisory_unlock($1)", [MARKETPLACE_PERFORMANCE_INDEX_LOCK]).catch((error) => {
+        cleanupError = error;
+        destroyClient = true;
+        logger.error(
+          { err: error, lockKey: MARKETPLACE_PERFORMANCE_INDEX_LOCK },
+          "Marketplace performance advisory lock could not be released cleanly",
+        );
+      });
     }
-    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; });
-    client.release();
+    if (previousTimeouts) await restoreStartupDdlSessionTimeouts(client, previousTimeouts).catch((error) => { cleanupError ??= error; destroyClient = true; logger.error({ err: error }, "Failed to restore marketplace performance session timeouts"); });
+    client.release(destroyClient ? cleanupError instanceof Error ? cleanupError : true : undefined);
     if (cleanupError && !startupError) throw cleanupError;
   }
 }

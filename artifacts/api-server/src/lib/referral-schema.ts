@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety";
+import { pool } from "@workspace/db"; import { setLocalStartupDdlTimeouts } from "./startup-ddl-safety"; import { logger } from "./logger";
 
 /**
  * Additive rollout guard for columns/enums introduced by referral redemption.
@@ -51,7 +51,12 @@ export async function ensureReferralSchema(schemaName = "public"): Promise<void>
     await client.query("rollback").catch(() => {});
     throw error;
   } finally {
-    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:referral-schema"]).catch(() => {});
-    client.release();
+    let unlockError: unknown;
+    if (locked) await client.query("select pg_advisory_unlock(hashtext($1))", ["lumera:referral-schema"]).catch((error) => {
+      unlockError = error;
+      logger.error({ err: error, schema: schemaName }, "Failed to release referral schema advisory lock");
+    });
+    if (unlockError) client.release(unlockError instanceof Error ? unlockError : true);
+    else client.release();
   }
 }
