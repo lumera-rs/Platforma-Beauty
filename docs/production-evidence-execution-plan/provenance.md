@@ -1,5 +1,88 @@
 # Local provenance
 
+## Phase 6: complete current-source amendment census
+
+Compared every current-source entry in both protected-input manifests with
+actual file bytes before this amendment: diagnostic `currentInputs` (73) and
+execution-plan `files` (85). Exactly 18 entries drifted. Every covered file
+differs from main because of this branch's authorized advisory-lock work.
+There were no unrelated/untouched-file drifts.
+
+In the complete pre-amendment table below:
+
+- D = `docs/production-diagnostic-design/protected-input-manifest.json`.
+- E = `docs/production-evidence-execution-plan/protected-input-manifest.json`.
+- API = `artifacts/api-server/src/lib/`.
+- Hashes are full SHA-256 values; "Actual before amendment" preserves the
+  initial census, not an intermediate working-tree edit.
+
+| Manifest | File | Tier | Recorded | Actual before amendment | Branch changed versus main |
+| --- | --- | --- | --- | --- | --- |
+| D | API`media-schema.ts` | currentInputs | `313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0` | `658c07ee3c9cbeb0df1b3df8b20ec05984842939f97ec23dfe00c9f6f53582d3` | Yes |
+| D | API`shipping-config.ts` | currentInputs | `65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b` | `2a8ecd839029b212a9e82a28e6644a26dc04eda6db02d67d73e745ce470ed180` | Yes |
+| D | API`marketplace-performance-schema.ts` | currentInputs | `892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b` | `a3d53d830000822d578547079e9dc9a4723e5cc023522cd57decbd7b322beaa5` | Yes |
+| D | API`referral-schema.ts` | currentInputs | `9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5` | `7824c2a2a7d3a203e5540182bc462d9034c1684be7086640b49b43f79eb4497c` | Yes |
+| D | API`web-push-schema.ts` | currentInputs | `5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051` | `6adce74c8098bcc9c71cc2b348047aff0ad4dd939e4dc56c935a39b35995d752` | Yes |
+| D | API`booking-command-schema.ts` | currentInputs | `c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b` | `46385278f2e67f0e2bcbf5ddcf0e683547ade21c3a5804940ef8378810b845a0` | Yes |
+| D | API`education-bundle-purchase-schema.ts` | currentInputs | `53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017` | `a0da3b7b0ca1985682c00a69ce9c05bb6f5cb8d8fae07b19470080e67901f7ca` | Yes |
+| D | `scripts/src/migrations/lock.ts` | currentInputs | `25427b717e9b10b94a4fde71b11a03f0aa593d7e8592c504555fd3a8223e2f75` | `8a3a45f886d9c4a45c17cf717d70400e286aace47d279e885b2ad8a217402c47` | Yes |
+| E | API`booking-command-schema.ts` | files | `c2609996bf939510960ffb228248cf9463465ad3875b291907c85ba4c6f8566b` | `46385278f2e67f0e2bcbf5ddcf0e683547ade21c3a5804940ef8378810b845a0` | Yes |
+| E | API`business-growth-schema.ts` | files | `91c061a8e2e6c16ee01584d5692ad0d3ff29dc29e6b5aa10725ea29f04f84fe8` | `981434746172a7985ce9f63cff2e03e972e6b6c1a2d1f533f3a5194298058597` | Yes |
+| E | API`education-bundle-purchase-schema.ts` | files | `53cb4b3499f1bb369a9be3a50a45cfda7813d9c2d4a9ad4f481f75d97e8f5017` | `a0da3b7b0ca1985682c00a69ce9c05bb6f5cb8d8fae07b19470080e67901f7ca` | Yes |
+| E | API`marketplace-performance-schema.ts` | files | `892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b` | `a3d53d830000822d578547079e9dc9a4723e5cc023522cd57decbd7b322beaa5` | Yes |
+| E | API`media-schema.ts` | files | `313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0` | `658c07ee3c9cbeb0df1b3df8b20ec05984842939f97ec23dfe00c9f6f53582d3` | Yes |
+| E | API`referral-schema.ts` | files | `9a93ccf452ed78869a970bf5fe3d2878eeacdf878ceace07131efdefa675a9e5` | `7824c2a2a7d3a203e5540182bc462d9034c1684be7086640b49b43f79eb4497c` | Yes |
+| E | API`shipping-config.ts` | files | `65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b` | `2a8ecd839029b212a9e82a28e6644a26dc04eda6db02d67d73e745ce470ed180` | Yes |
+| E | API`web-push-schema.ts` | files | `5a27699abeebda158e129c120fb7380f1f362c16637e602e7d246ffe89efd051` | `6adce74c8098bcc9c71cc2b348047aff0ad4dd939e4dc56c935a39b35995d752` | Yes |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `7d8e97913e4de06eef499f97a4a9bb32ee80470989feebc4578fe80ce19572ac` | `2363a20ac5079ad54edbad0ad9d8176f4b88cdd8ab5f1ee8bdf55b42a768bb6a` | Yes |
+| E | `scripts/src/migrations/lock.ts` | files | `25427b717e9b10b94a4fde71b11a03f0aa593d7e8592c504555fd3a8223e2f75` | `8a3a45f886d9c4a45c17cf717d70400e286aace47d279e885b2ad8a217402c47` | Yes |
+
+### Approved cleanup-code amendments
+
+For each of the 15 API-source entries above, the recorded value is the old
+hash and the actual value is the new hash applied to that exact manifest/tier.
+Media, shipping, referral, web-push, booking-command and education-bundle owners
+now log advisory-unlock failure and destroy their pooled session. Marketplace
+additionally destroys sessions after timeout restoration failure. Business
+Growth carries unlock/reset failures through the existing unsafe-session
+registry and destroys sessions after timeout or search-path restore failure.
+These are the reasons for the corresponding whole-file hash changes.
+
+The Business Growth protected segment remains 4,045 byte-identical bytes,
+SHA-256 `7e8b60a40fd9fa15e27e49387193883ef2b9ca22c33882db9dc96d6a5dae9c48`.
+
+### Supporting amendment: migration-lock comment (not cleanup code)
+
+Both the D `currentInputs` and E `files` entries for
+`scripts/src/migrations/lock.ts` change from
+`25427b717e9b10b94a4fde71b11a03f0aa593d7e8592c504555fd3a8223e2f75` to
+`8a3a45f886d9c4a45c17cf717d70400e286aace47d279e885b2ad8a217402c47`.
+The file changed only to add the authorized warning about caller-owned,
+single-connection pools being ended. This hash amendment is a consequence of
+authorized supporting documentation, not a migration-lock cleanup-code fix.
+
+### Supporting amendment: diagnostic manifest (not cleanup code)
+
+The E `files` entry for
+`docs/production-diagnostic-design/protected-input-manifest.json` changes from
+`7d8e97913e4de06eef499f97a4a9bb32ee80470989feebc4578fe80ce19572ac` to
+`081dcdd849ca69836802ee549e613155001076b4b9f94aaa2445c11e0668c713`.
+The initial census value `2363a20ac5079ad54edbad0ad9d8176f4b88cdd8ab5f1ee8bdf55b42a768bb6a`
+already reflected the earlier approved Phase 6 Business Growth amendment.
+The final value also reflects the eight current-source amendments above.
+This is a consequence of authorized manifest-content changes, not cleanup code.
+The enclosing manifest is hashed only after its current-source edits are complete.
+
+### Historical preservation
+
+The 73-entry diagnostic `inputs` block and the 73-entry execution
+`originalProtectedFiles` block are compared as raw text bytes against main,
+not merely as parsed values. Both remain byte-identical, as do their path lists.
+An intermediate unstaged edit accidentally matched duplicate hashes in the
+diagnostic historical block; it was restored before validation or commit.
+No historical amendments are part of the final diff. No startup-DDL inventory,
+baseline, or runtime source is changed by this hash amendment.
+
 ## Phase 6: approved current-source advisory-lock amendment
 
 The owner authorized this one amendment to the diagnostic manifest's
