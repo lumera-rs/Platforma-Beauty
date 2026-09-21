@@ -17,6 +17,7 @@ import { fingerprintSnapshot } from "../schema-drift/fingerprint";
 import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transaction";
 import { ownershipExceptions } from "../schema-drift/ownership";
 import { applyMigrations } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 import { loadMigrations } from "./files";
 import type { LoadedMigration } from "./types";
 
@@ -34,7 +35,7 @@ const CANONICAL = {
 
 if (process.env.DATABASE_URL) throw new Error("This isolated proof must not use ambient DATABASE_URL");
 if (process.env.NODE_ENV !== "test") throw new Error("Run this proof with NODE_ENV=test");
-for (const key of ["REPLIT_DEPLOYMENT", "REPLIT_DEPLOYMENT_ID", "REPLIT_ENVIRONMENT"]) {
+for (const key of ["REPLIT_DEPLOYMENT", "REPLIT_DEPLOYMENT_ID", "REPL_DEPLOYMENT", "REPL_DEPLOYMENT_ID"]) {
   if (process.env[key]) throw new Error(`Deployment flag must be unset: ${key}`);
 }
 
@@ -69,7 +70,7 @@ async function applyBaseline(pool: Pool): Promise<void> {
 
 async function applySupported(pool: Pool): Promise<{ applied: string[]; skipped: string[] }> {
   const migrations = await loadPlanMigrations();
-  return withClient(pool, (client) => applyMigrations(client, { migrations }));
+  return withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
 }
 
 async function fingerprint(pool: Pool): Promise<{

@@ -4,6 +4,7 @@ import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-t
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startup-equivalence/fixtures";
 import { loadMigrations } from "./files";
 import { adoptBaseline, applyMigrations } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 
 assertDestructiveTestRuntimeAllowed();
 const adminUrl = explicitAdminUrlFromArgs();
@@ -11,6 +12,7 @@ if (!adminUrl) throw new Error("An explicit disposable --admin-url is required")
 
 test("supported adoption and receipt boundaries preserve unsupported state", async () => {
   await withOwnedDisposableDatabase(adminUrl, async ({ pool }) => {
+    const options = { expectedTargetIdentity: expectedDisposableTarget(pool) };
     const client = await pool.connect();
     try {
       const migrations = await loadMigrations();
@@ -20,7 +22,7 @@ test("supported adoption and receipt boundaries preserve unsupported state", asy
         "SELECT to_jsonb(r) AS row FROM public.business_growth_schema_rollout r",
       )).rows;
       const before = await readHistory();
-      await assert.rejects(() => adoptBaseline(client), /SUPPORTED_STARTUP/u);
+      await assert.rejects(() => adoptBaseline(client, options), /SUPPORTED_STARTUP/u);
       assert.equal((await client.query(
         "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
       )).rows[0].ledger, null);
@@ -28,13 +30,13 @@ test("supported adoption and receipt boundaries preserve unsupported state", asy
 
       // Remove only this test's own deliberately unsupported fixture row.
       await client.query("DELETE FROM public.business_growth_schema_rollout WHERE version = 99999");
-      assert.deepEqual((await adoptBaseline(client)).adopted, ["000001"]);
-      assert.deepEqual((await applyMigrations(client)).applied, ["000002"]);
+      assert.deepEqual((await adoptBaseline(client, options)).adopted, ["000001"]);
+      assert.deepEqual((await applyMigrations(client, options)).applied, ["000002"]);
 
       const receiptsBefore = (await client.query(
         "SELECT to_jsonb(r) AS row FROM public.lumera_migration_ledger r ORDER BY migration_id",
       )).rows;
-      assert.deepEqual((await adoptBaseline(client)).adopted, []);
+      assert.deepEqual((await adoptBaseline(client, options)).adopted, []);
       assert.deepEqual((await client.query(
         "SELECT to_jsonb(r) AS row FROM public.lumera_migration_ledger r ORDER BY migration_id",
       )).rows, receiptsBefore);
@@ -46,7 +48,7 @@ test("supported adoption and receipt boundaries preserve unsupported state", asy
       const invalidReceipt = (await client.query(
         "SELECT to_jsonb(r) AS row FROM public.lumera_migration_ledger r ORDER BY migration_id",
       )).rows;
-      await assert.rejects(() => applyMigrations(client), /LEDGER/u);
+      await assert.rejects(() => applyMigrations(client, options), /LEDGER/u);
       assert.deepEqual((await client.query(
         "SELECT to_jsonb(r) AS row FROM public.lumera_migration_ledger r ORDER BY migration_id",
       )).rows, invalidReceipt);

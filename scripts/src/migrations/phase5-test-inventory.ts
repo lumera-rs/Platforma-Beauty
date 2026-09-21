@@ -13,6 +13,8 @@ export interface Phase5TestInventoryEntry {
 }
 
 export const phase5TestInventory: readonly Phase5TestInventoryEntry[] = [
+  { path: "scripts/src/migrations/target-identity.test.ts", declaredTests: 5, execution: "database-free", provenance: "phase5-followup", skipPolicy: "forbidden" },
+  { path: "scripts/src/migrations/target-identity.integration.test.ts", declaredTests: 4, execution: "disposable-integration", provenance: "phase5-followup", skipPolicy: "forbidden" },
   { path: "artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts", declaredTests: 1, execution: "disposable-integration", provenance: "343ea5ae" },
   { path: "lib/db/src/migration-runtime/contract.test.ts", declaredTests: 5, execution: "database-free", provenance: "343ea5ae" },
   { path: "lib/db/src/migration-runtime/namespaces.test.ts", declaredTests: 2, execution: "database-free", provenance: "343ea5ae" },
@@ -47,6 +49,21 @@ export const phase5DatabaseFreeTests = phase5TestInventory
   .map((entry) => entry.path);
 
 export const phase5DisposableIntegrationSuites = [
+  {
+    id: "phase4-migrations",
+    declaredTests: 22,
+    files: ["scripts/src/migrations/migrations.integration.test.ts"],
+  },
+  {
+    id: "equivalence-characterization",
+    declaredTests: 4,
+    files: ["scripts/src/startup-equivalence/fixtures.test.ts"],
+  },
+  {
+    id: "target-identity",
+    declaredTests: 4,
+    files: ["scripts/src/migrations/target-identity.integration.test.ts"],
+  },
   {
     id: "supported-state",
     declaredTests: 15,

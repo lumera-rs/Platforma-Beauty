@@ -17,6 +17,7 @@ import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transac
 import { ownershipExceptions } from "../schema-drift/ownership";
 import { readOnlyQueryLayer } from "../schema-drift/read-only-query";
 import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
+import { registerDisposableTarget, expectedDisposableTarget } from "./disposable-target-fixture";
 import { loadMigration, loadMigrations } from "./files";
 import { ensureLedger, readLedger } from "./ledger";
 import { preflightBaselineAdoption } from "./preflight";
@@ -69,6 +70,7 @@ async function withDatabase<T>(callback: (pool: pg.Pool) => Promise<T>): Promise
     const childUrl = new URL(disposableUrl!);
     childUrl.pathname = `/${name}`;
     child = new pg.Pool({ connectionString: childUrl.toString(), max: 4 });
+    await registerDisposableTarget(admin, child, name);
     return await callback(child);
   } finally {
     try {
@@ -162,12 +164,12 @@ test("fresh apply and rerun are a no-op", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
     assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002"]);
-    const first = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const first = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(first.applied, ["000001", "000002"]);
     assert.deepEqual(first.skipped, []);
     const beforeReceipts = await ledgerReceipts(pool);
     const beforeCatalog = await fingerprint(pool);
-    const second = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const second = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.applied, []);
     assert.deepEqual(second.skipped, ["000001", "000002"]);
     assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
@@ -184,7 +186,7 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
     await executeCanonicalBody(pool);
     const migrations = await loadMigrations();
     const baselineCatalog = await fingerprint(pool);
-    const first = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    const first = await withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(first.adopted, ["000001"]);
     const adoptedCatalog = await fingerprint(pool);
     // Ledger creation adds an excluded bookkeeping entry, not application schema.
@@ -192,7 +194,7 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
     assert.equal(adoptedCatalog.physicalFingerprint, baselineCatalog.physicalFingerprint);
     const beforeReceipts = await ledgerReceipts(pool);
     assert.equal(beforeReceipts.length, 1, "Baseline adoption must not manufacture a data-migration receipt.");
-    const second = await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    const second = await withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.adopted, []);
     assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
     assert.deepEqual(await fingerprint(pool), adoptedCatalog);
@@ -201,7 +203,7 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
         { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" },
       ]);
     // Explicit B1 adoption and data execution are separate operations.
-    const applied = await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    const applied = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(applied.applied, ["000002"]);
     assert.deepEqual(applied.skipped, ["000001"]);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
@@ -223,7 +225,7 @@ test("baseline adoption refuses when its standalone routine is missing", skip, a
     assert.notDeepEqual(after, before);
     await expectUnchangedRefusal(
       pool,
-      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
@@ -247,7 +249,7 @@ test("baseline adoption refuses an added standalone routine", skip, async () => 
     assert.notDeepEqual(added, baseline);
     await expectUnchangedRefusal(
       pool,
-      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
@@ -274,7 +276,7 @@ test("baseline adoption refuses a mutated baseline standalone routine", skip, as
     assert.notDeepEqual(mutated, baseline);
     await expectUnchangedRefusal(
       pool,
-      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
@@ -291,7 +293,7 @@ test("adoption mismatch leaves zero adopted state", skip, async () => {
     const migrations = await loadMigrations();
     await expectUnchangedRefusal(
       pool,
-      () => withClient(pool, (client) => adoptBaseline(client, { migrations })),
+      () => withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       canonicalAdoptionRefusal,
     );
     await withClient(pool, async (client) => {
@@ -436,13 +438,13 @@ test("fresh and adopted databases have equivalent structural and physical finger
   let adopted: { structuralFingerprint: string; physicalFingerprint: string } | undefined;
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
-    await withClient(pool, (client) => applyMigrations(client, { migrations }));
+    await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     fresh = await fingerprint(pool);
   });
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
     await executeCanonicalBody(pool);
-    await withClient(pool, (client) => adoptBaseline(client, { migrations }));
+    await withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     adopted = await fingerprint(pool);
   });
   assert.deepEqual(adopted, fresh);

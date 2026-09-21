@@ -34,6 +34,7 @@ import {
   withOwnedDisposableDatabase,
 } from "../startup-equivalence/fixtures";
 import { applyMigrations } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 import { loadMigrations } from "./files";
 import { inspectDeploymentEligibility } from "./deployment-eligibility";
 import {
@@ -516,7 +517,7 @@ test("fresh and verified existing supported paths boot through the actual entryp
   const actual = await readActualEntrypoint();
   proofRecords.push({ phase: "A_FRESH_APPLY_BOOT", actualSourceSha256: actual.sourceHash });
   await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
-      await withDedicatedClient(pool, (client) => applyMigrations(client));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
       assert.equal(eligibility.path, "SUPPORTED_EXISTING");
       await runBootPath(connectionString, name, pool);
@@ -535,7 +536,7 @@ test("canonical baseline with configured global references admits 000002 and boo
            default_delivery_business_days, seller_company_name)
         VALUES (true, 3, 7, 5, 'Configured Disposable Seller')
       `);
-      const transition = await withDedicatedClient(pool, (client) => applyMigrations(client));
+      const transition = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       assert.deepEqual(transition.applied, ["000002"]);
       const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
       assert.equal(eligibility.path, "SUPPORTED_EXISTING");
@@ -552,7 +553,7 @@ test("canonical baseline with configured global references admits 000002 and boo
     `);
     const definition = await fastFunctionDefinition();
     await pool.query(definition);
-    const transition = await withDedicatedClient(pool, (client) => applyMigrations(client));
+    const transition = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(transition.applied, ["000002"]);
     const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
     assert.equal(eligibility.path, "SUPPORTED_EXISTING");
@@ -570,7 +571,7 @@ test("runtime-populated tracked frontier repeats without bootstrap admission and
   const actual = await readActualEntrypoint();
   proofRecords.push({ phase: "B2_TRACKED_RUNTIME_BOOT", actualSourceSha256: actual.sourceHash });
   await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
-      await withDedicatedClient(pool, (client) => applyMigrations(client));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       await pool.query(`
         INSERT INTO public.users (id, first_name, last_name, email, password_hash, role)
         VALUES
@@ -586,7 +587,7 @@ test("runtime-populated tracked frontier repeats without bootstrap admission and
           ('20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','Tenant Two Salon','tenant-two-salon','Novi Sad','Novi Sad','Two 2','+381600000002','two@disposable.invalid','Two','Two','', '[]')
       `);
       const before = await catalogSignature(pool);
-      const repeat = await withDedicatedClient(pool, (client) => applyMigrations(client));
+      const repeat = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       assert.deepEqual(repeat.applied, []);
       assert.deepEqual(repeat.skipped, ["000001", "000002"]);
       assert.equal(await catalogSignature(pool), before);
@@ -621,7 +622,7 @@ test("missing baseline, unknown catalog and ambiguous history fail before proces
     });
 
     await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
-      await withDedicatedClient(pool, (client) => applyMigrations(client));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       await pool.query("CREATE TABLE public.unexpected_boot_catalog_marker (id integer PRIMARY KEY)");
       const { result: rejection, evidence } = await captureBootLogEvidence(
         pool,

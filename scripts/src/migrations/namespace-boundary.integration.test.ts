@@ -6,6 +6,7 @@ import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "../startu
 import { loadMigrations } from "./files";
 import { classifyDeploymentEligibility } from "./deployment-eligibility";
 import { applyMigrations } from "./runner";
+import { expectedDisposableTarget } from "./disposable-target-fixture";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Migration namespace boundary integration tests");
 const adminUrl = explicitAdminUrlFromArgs();
@@ -30,7 +31,7 @@ test("unsupported namespaces are rejected before ledger creation and at runtime"
       const report = await classifyDeploymentEligibility(client);
       assert.equal(report.path, "UNSUPPORTED");
       assert.deepEqual(report.reasons, ["MIGRATION_NON_PUBLIC_NAMESPACE"]);
-      await assert.rejects(() => applyMigrations(client), /MIGRATION_NON_PUBLIC_NAMESPACE/u);
+      await assert.rejects(() => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }), /MIGRATION_NON_PUBLIC_NAMESPACE/u);
       assert.equal((await client.query(
         "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",
       )).rows[0].ledger, null);
@@ -40,7 +41,7 @@ test("unsupported namespaces are rejected before ledger creation and at runtime"
   await withOwnedDisposableDatabase(adminUrl, async ({ pool }) => {
     const migrations = await loadMigrations();
     await withClient(pool, async (client) => {
-      await applyMigrations(client);
+      await applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) });
       const before = (await client.query(
         "SELECT migration_id, state, checksum FROM public.lumera_migration_ledger ORDER BY migration_id",
       )).rows;

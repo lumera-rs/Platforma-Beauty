@@ -1,4 +1,6 @@
 import type { DatabaseClient } from "../backend-standards-database";
+import { isDeploymentRuntime } from "./development-runtime";
+import { assertTargetIdentity } from "./target-identity";
 import {
   readPostgresFingerprintCompatibility,
   readPostgresSnapshot,
@@ -23,12 +25,10 @@ import { isReviewedPostgresPatch } from "@workspace/db/migration-runtime";
 const BUSINESS_GROWTH_ADVISORY_KEY = 1111949377;
 
 function assertSupportedMigrationDevelopmentOnly(): void {
-  if (
-    process.env.NODE_ENV === "production"
-    || process.env.REPLIT_DEPLOYMENT === "1"
-    || process.env.REPLIT_DEPLOYMENT_ID
-    || process.env.REPLIT_ENVIRONMENT === "production"
-  ) {
+  // REPLIT_ENVIRONMENT can have a production-like value in an editor
+  // workspace. It is not a deployment indicator by itself; explicit
+  // deployment flags and the separately verified target establish the boundary.
+  if (isDeploymentRuntime(process.env)) {
     throw new Error("Supported startup-state migration is development-only and requires separate rollout authorization");
   }
 }
@@ -300,6 +300,7 @@ async function applySupportedMigrations(
   options: MigrationRunnerOptions,
 ): Promise<MigrationRunResult> {
   assertSupportedMigrationDevelopmentOnly();
+  await assertTargetIdentity(client, options.expectedTargetIdentity);
   const admitted = migrations.filter((migration) => migration.admissionContract);
   if (admitted.some((migration) => migration.admissionContract !== "supported-startup-v1")) {
     throw new Error("Unknown migration admission contract");
@@ -513,6 +514,7 @@ export async function adoptBaseline(
   const migrations = options.migrations ?? await loadMigrations();
   if (migrations.some((migration) => migration.admissionContract)) {
     assertSupportedMigrationDevelopmentOnly();
+    await assertTargetIdentity(client, options.expectedTargetIdentity);
     return adoptSupportedBaseline(client, migrations, options);
   }
   return withMigrationAdvisoryLock(client, async () => {

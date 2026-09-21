@@ -187,10 +187,12 @@ test("B5 requires confirmation and accepts an explicit target without contacting
   );
   assert.deepEqual(
     parseMigrationCliOptions(
-      ["adopt-baseline", "--database-url=postgresql://user:password@db.invalid/db", "--confirm"],
+      ["adopt-baseline", "--database-url=postgresql://user:password@db.invalid/db", "--confirm",
+        "--expected-database=db", "--expected-system-identifier=123", "--expected-transport=unencrypted"],
       { DATABASE_URL: "postgresql://ambient.invalid/db" },
     ),
-    { command: "adopt-baseline", databaseUrl: "postgresql://user:password@db.invalid/db" },
+    { command: "adopt-baseline", databaseUrl: "postgresql://user:password@db.invalid/db",
+      expectedTargetIdentity: { databaseName: "db", systemIdentifier: "123", transport: "unencrypted" } },
   );
 });
 

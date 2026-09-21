@@ -174,6 +174,7 @@ test("ledger inspection rejects a finite but reversed completion interval", asyn
 test("supported runner rejects invalid ledger metadata before BEGIN or ledger DDL", async () => {
   const migrations = await loadMigrations();
   const client = fakeClient((sql) => {
+    if (sql.includes("pg_control_system")) return [{ database_name: "fixture", system_identifier: "123", encrypted: false }];
     if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
     if (sql.includes("pg_advisory_unlock")) return [{ unlocked: true }];
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
@@ -199,10 +200,12 @@ test("supported runner rejects invalid ledger metadata before BEGIN or ledger DD
   process.env.NODE_ENV = "test";
   delete process.env.REPLIT_DEPLOYMENT;
   delete process.env.REPLIT_DEPLOYMENT_ID;
-  delete process.env.REPLIT_ENVIRONMENT;
+  process.env.REPLIT_ENVIRONMENT = "production";
   try {
     await assert.rejects(
-      () => applyMigrations(client, { migrations }),
+      () => applyMigrations(client, { migrations, expectedTargetIdentity: {
+        databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted",
+      } }),
       /Unsupported migration ledger/u,
     );
   } finally {

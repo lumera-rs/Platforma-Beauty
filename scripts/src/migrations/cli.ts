@@ -1,6 +1,20 @@
 import pg from "pg";
 import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
 import { loadMigrations } from "./files";
+import { validateExpectedTargetIdentity, type ExpectedTargetIdentity } from "./target-identity";
+
+export function parseExpectedTargetIdentity(argv: readonly string[]): ExpectedTargetIdentity {
+  for (const name of ["expected-database", "expected-system-identifier", "expected-transport"]) {
+    if (argv.filter((item) => item.startsWith(`--${name}=`)).length !== 1) {
+      throw new Error(`Explicit target identity requires exactly one --${name}= value`);
+    }
+  }
+  return validateExpectedTargetIdentity({
+    databaseName: argument(argv, "expected-database"),
+    systemIdentifier: argument(argv, "expected-system-identifier"),
+    transport: argument(argv, "expected-transport"),
+  });
+}
 
 function argument(argv: readonly string[], name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -11,7 +25,8 @@ function argument(argv: readonly string[], name: string): string | undefined {
 function usage(): never {
   throw new Error(
     "Usage: migrations <status|apply|adopt-baseline> "
-    + "[--database-url=DATABASE_URL] [--confirm]",
+    + "[--database-url=DATABASE_URL] [--confirm] "
+    + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted]",
   );
 }
 
@@ -22,6 +37,7 @@ function hasConfirmation(argv: readonly string[]): boolean {
 export interface MigrationCliOptions {
   readonly command: "status" | "apply" | "adopt-baseline";
   readonly databaseUrl: string;
+  readonly expectedTargetIdentity?: ExpectedTargetIdentity;
 }
 
 export function parseMigrationCliOptions(
@@ -40,7 +56,7 @@ export function parseMigrationCliOptions(
   }
   const databaseUrl = explicitDatabaseUrl ?? environment.DATABASE_URL;
   if (!databaseUrl?.trim()) throw new Error("An explicitly supplied DATABASE_URL is required");
-  return { command, databaseUrl };
+  return { command, databaseUrl, ...(mutating ? { expectedTargetIdentity: parseExpectedTargetIdentity(argv) } : {}) };
 }
 
 export function safeErrorText(error: unknown): string {
@@ -49,7 +65,7 @@ export function safeErrorText(error: unknown): string {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
-  const { command, databaseUrl } = parseMigrationCliOptions(argv);
+  const { command, databaseUrl, expectedTargetIdentity } = parseMigrationCliOptions(argv);
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
   try {
     const client = await pool.connect();
@@ -58,9 +74,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       if (command === "status") {
         process.stdout.write(`${JSON.stringify(await migrationStatus(client, migrations), null, 2)}\n`);
       } else if (command === "apply") {
-        process.stdout.write(`${JSON.stringify(await applyMigrations(client, { migrations }), null, 2)}\n`);
+        process.stdout.write(`${JSON.stringify(await applyMigrations(client, { migrations, expectedTargetIdentity }), null, 2)}\n`);
       } else {
-        process.stdout.write(`${JSON.stringify(await adoptBaseline(client, { migrations }), null, 2)}\n`);
+        process.stdout.write(`${JSON.stringify(await adoptBaseline(client, { migrations, expectedTargetIdentity }), null, 2)}\n`);
       }
     } finally {
       client.release();

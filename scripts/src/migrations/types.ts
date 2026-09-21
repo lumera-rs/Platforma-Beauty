@@ -48,6 +48,7 @@ export interface MigrationRunResult {
 }
 
 export interface MigrationRunnerOptions {
+  readonly expectedTargetIdentity?: import("./target-identity").ExpectedTargetIdentity;
   readonly lockTimeoutMs?: number;
   readonly lockPollMs?: number;
   readonly migrations?: readonly LoadedMigration[];

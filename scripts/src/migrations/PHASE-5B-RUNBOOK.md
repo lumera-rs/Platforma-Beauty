@@ -3,6 +3,59 @@
 This document is a plan. It does not authorize production adoption, migration
 apply, deployment, backup deletion, or restore.
 
+## Explicit target identity (Phase 6 guard)
+
+For `apply` or `adopt-baseline`, supply all three operator declarations in
+addition to `--database-url` and `--confirm`:
+
+```text
+--expected-database=<intended database name>
+--expected-system-identifier=<intended decimal PostgreSQL cluster identifier>
+--expected-transport=encrypted
+```
+
+For an intentionally unencrypted owned local disposable instance use
+`--expected-transport=unencrypted`. Development schema preparation takes the same
+three identity arguments. Programmatic callers pass `expectedTargetIdentity:
+{ databaseName, systemIdentifier, transport }`; never populate this object by
+observing an arbitrary candidate migration target. Obtain and independently
+approve the intended identity from the operator's trusted provisioning records.
+The CLI rejects missing, repeated, or malformed identity declarations before
+connecting.
+
+The runner reads `current_database()`, `pg_control_system().system_identifier`
+(as decimal text, not an imprecise JavaScript number), and `pg_stat_ssl.ssl` for
+`pg_backend_pid()` on the dedicated backend that will perform the migration.
+Every admission-contract apply, including no-op replays, and supported baseline
+adoption checks these before any lock, transaction setup, or ledger mutation.
+NULL server address/port values are irrelevant; neither function is used.
+Missing rows, NULL transport evidence, denied function access, and mismatches
+refuse without fallback. Baseline-only historical characterization remains
+schema-only; it is not an alternative supported full-chain adoption command.
+
+`encrypted` means the PostgreSQL backend reports TLS, **not** that its certificate
+or hostname was verified. A proxy's frontend TLS and backend TLS may differ.
+Use independently authenticated endpoints and certificate-verifying driver
+settings as well. System identifiers are cluster identities, not cryptographic
+attestations: physical clones may share them. Database name plus system ID plus
+backend transport is a wrong-target safeguard, not a defense against a malicious
+server impersonating PostgreSQL.
+
+PostgreSQL 16 restricts `pg_control_system()` by default. Hosted Neon roles may
+not have permission; provider-specific privileges/support are not established
+by local disposable tests and no production connection was used to probe them.
+The operator/provider must authorize access to this exact read-only function
+(for example a narrowly scoped EXECUTE grant where supported), and confirm
+own-backend `pg_stat_ssl` visibility. Otherwise this runner cannot proceed:
+do not substitute a URL, address/port, self-declared database setting, or a weaker
+identity. A hosted compatible identity signal would require a separately
+reviewed contract; none is silently selected here.
+
+`REPLIT_ENVIRONMENT=production` alone is an editor workspace label, not deployment
+authorization. All five development guards reject `NODE_ENV=production`,
+case-insensitive `1`/`true` in either deployment flag, and the existence (even an
+empty value) of either deployment ID. This change does not authorize production.
+
 ## Proven repository and platform contract
 
 - The repository configures a public Replit Autoscale deployment target; repository
