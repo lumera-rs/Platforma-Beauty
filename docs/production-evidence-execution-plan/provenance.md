@@ -1,5 +1,96 @@
 # Local provenance
 
+## PR #35: complete current-source amendment census
+
+Authority: the owner's explicit batch amendment instruction, including the
+diagnostic-manifest cascade. This section supplements, without rewriting, the
+existing Phase 6 provenance below.
+
+Before any edits, SHA-256 was independently calculated from every current file's
+bytes for D `currentInputs` (73 entries) and E `files` (85 entries).
+Exactly 12 entries mismatched, covering six files. Each was confirmed changed
+by `git diff --name-only $(git merge-base origin/main HEAD) HEAD`.
+The computed merge base is `44ccaabd1cccf22843bb588249f0e96ce149de73`.
+No drift involved an untouched file, so the stop condition did not trigger.
+
+Before editing, every historical D `inputs` entry (73) and E
+`originalProtectedFiles` entry (73) was independently checked by hashing
+`git show b8f30561:<path>` bytes, not current source bytes. All 146 checks passed.
+The resolved historical commit is `b8f30561d658d7a87d06d520002d4136855e85e1`.
+No historical pin, historical tier, path inventory, SQL, runtime code, or
+validator logic is amended by this batch.
+
+### Complete BEFORE mismatch table and approved source amendments
+
+D = `docs/production-diagnostic-design/protected-input-manifest.json`.
+E = `docs/production-evidence-execution-plan/protected-input-manifest.json`.
+The following rows were generated from the manifests and SHA-256 of file bytes.
+For each of these 12 amendments, **Old hash** is the pre-edit recorded value and
+**Actual before amendment / new hash** is both the independently measured
+pre-edit file hash and the approved replacement. No hashes are shortened.
+Reasons R1–R6 below apply to the corresponding file in both manifests.
+
+| Manifest | File | Tier | Old hash | Actual before amendment / new hash | Branch changed |
+| --- | --- | --- | --- | --- | --- |
+| D | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | currentInputs | `7690186d2b64aa81584c0235d76bc58fc35f32f4bd2b86da97165b6cc029b7ac` | `c052b95ee50525e25e458d51fab68f1bd551c3b6abfba645b805434b271078ec` | Yes |
+| D | `scripts/src/migrations/cli.ts` | currentInputs | `b4d9e0864411268985c19587a1806ecd6384ff677e3ed98c2ffddd52679f214f` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | Yes |
+| D | `scripts/src/migrations/migrations.integration.test.ts` | currentInputs | `cc987accc3877d78735f135bc80c3b547efd4d0cdb360e17390b4a73a574120c` | `c036038e457751b6c0daa37e16c94bb7b63b142daf5c3e06e5abe7655c5c59c3` | Yes |
+| D | `scripts/src/migrations/migrations.test.ts` | currentInputs | `8e999b726d0e1ea30ca09ca3703d30cb8bf8fc1cde7e40e918e0c8b75318b6fb` | `fad1450b48f44120bf3c0edbce24be2a19d5138ef8bba3d0c493557b26e10490` | Yes |
+| D | `scripts/src/migrations/runner.ts` | currentInputs | `2787a118fc7aae4915ecc1a11d61b41b3f9df3a6fa67eb4c95105a3db27da557` | `cd563674d95e0e3eddb87312ef6a6ffc57fbeb6626c864e130c4d8ffaeb2bce5` | Yes |
+| D | `scripts/src/migrations/types.ts` | currentInputs | `a16f325dda15ba696dd869c8b43e717263c34a283485d41e4e7109d8452f467e` | `7f01d8bdea395c225cab03a83c91285f7e76af098cd78811e36b3c3d5de86871` | Yes |
+| E | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | files | `7690186d2b64aa81584c0235d76bc58fc35f32f4bd2b86da97165b6cc029b7ac` | `c052b95ee50525e25e458d51fab68f1bd551c3b6abfba645b805434b271078ec` | Yes |
+| E | `scripts/src/migrations/cli.ts` | files | `b4d9e0864411268985c19587a1806ecd6384ff677e3ed98c2ffddd52679f214f` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | Yes |
+| E | `scripts/src/migrations/migrations.integration.test.ts` | files | `cc987accc3877d78735f135bc80c3b547efd4d0cdb360e17390b4a73a574120c` | `c036038e457751b6c0daa37e16c94bb7b63b142daf5c3e06e5abe7655c5c59c3` | Yes |
+| E | `scripts/src/migrations/migrations.test.ts` | files | `8e999b726d0e1ea30ca09ca3703d30cb8bf8fc1cde7e40e918e0c8b75318b6fb` | `fad1450b48f44120bf3c0edbce24be2a19d5138ef8bba3d0c493557b26e10490` | Yes |
+| E | `scripts/src/migrations/runner.ts` | files | `2787a118fc7aae4915ecc1a11d61b41b3f9df3a6fa67eb4c95105a3db27da557` | `cd563674d95e0e3eddb87312ef6a6ffc57fbeb6626c864e130c4d8ffaeb2bce5` | Yes |
+| E | `scripts/src/migrations/types.ts` | files | `a16f325dda15ba696dd869c8b43e717263c34a283485d41e4e7109d8452f467e` | `7f01d8bdea395c225cab03a83c91285f7e76af098cd78811e36b3c3d5de86871` | Yes |
+
+Approved reasons (existing branch changes, not source edits made by this batch):
+
+- R1 — `PHASE-5B-RUNBOOK.md`: branch-added migration preparation/runbook guidance.
+- R2 — `cli.ts`: explicit expected-target identity parsing and propagation.
+- R3 — `migrations.integration.test.ts`: branch-updated migration integration tests.
+- R4 — `migrations.test.ts`: branch-updated migration unit tests.
+- R5 — `runner.ts`: deployment-runtime boundary and target-identity enforcement.
+- R6 — `types.ts`: expected-target identity option for migration runners.
+
+### Thirteenth amendment: explicitly authorized diagnostic-manifest cascade
+
+The nested D manifest entry was **not** a mismatch in the BEFORE census:
+
+| Manifest | File | Tier | Old hash | Actual before amendment | Branch changed before batch |
+| --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `081dcdd849ca69836802ee549e613155001076b4b9f94aaa2445c11e0668c713` | `081dcdd849ca69836802ee549e613155001076b4b9f94aaa2445c11e0668c713` | No |
+
+After all six D `currentInputs` replacements were final, its final file bytes
+were hashed again. The owner explicitly authorized this dependent amendment:
+
+| Manifest | File | Tier | Old hash | New hash | Branch changed | Reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `081dcdd849ca69836802ee549e613155001076b4b9f94aaa2445c11e0668c713` | `c487ac3398ec51fbdd570bbcb799dd04d6e83e7193b94e9527bac4e47b942308` | Yes, via this authorized working-tree amendment | Cascade from the six finalized D current-source amendments; not a historical-pin update |
+
+This batch therefore amends exactly 13 current-tier hashes: six in D and seven
+in E. The preceding Phase 6 sections remain historical provenance for their
+respective amendments, not assertions of the latest current-source hashes.
+
+### Batch validation
+
+Ran `pnpm --filter @workspace/scripts run test:reconstruction:docs` once after
+the complete batch. Its command runs both validators before the validator
+regression tests. The diagnostic validator passed its 114 exact-rule negative
+cases; the execution validator passed its baseline and rejected all 65 negative
+fixtures with exact errors. The test runner reported 13 passed, zero failed,
+zero skipped.
+
+An independent post-batch byte check confirmed all 158 current-tier entries
+match their files, exactly 13 hash amendments exist, both historical blocks
+remain raw-byte-identical to pre-batch HEAD, and every pre-existing provenance
+section is preserved. Each of the 12 source table rows was programmatically
+matched against the pre-batch manifest and current file digest. The diagnostic
+manifest was unchanged versus the merge base before this authorized cascade.
+`git diff --check` passed. Only the two manifests and this provenance document
+were changed; no database action, workflow, commit, or push was performed.
+
 ## Phase 6: complete current-source amendment census
 
 Compared every current-source entry in both protected-input manifests with
