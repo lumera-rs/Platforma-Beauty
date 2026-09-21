@@ -1,5 +1,22 @@
 # Local provenance
 
+## Phase 6: approved current-source advisory-lock amendment
+
+The owner authorized this one amendment to the diagnostic manifest's
+`currentInputs` tier:
+
+- `artifacts/api-server/src/lib/business-growth-schema.ts`:
+  old `91c061a8e2e6c16ee01584d5692ad0d3ff29dc29e6b5aa10725ea29f04f84fe8`;
+  new `981434746172a7985ce9f63cff2e03e972e6b6c1a2d1f533f3a5194298058597`.
+  The advisory-lock cleanup fix and sibling session-restoration cleanup changed
+  the file. The protected historical segment was proven byte-identical before
+  and after the changes: 4,045 bytes, SHA-256
+  `7e8b60a40fd9fa15e27e49387193883ef2b9ca22c33882db9dc96d6a5dae9c48`.
+
+All 73 historical diagnostic `inputs` and all 73 execution
+`originalProtectedFiles` entries remain byte-identical to main. No other
+manifest entry, startup-DDL inventory, or baseline is amended by this approval.
+
 ## Open Phase 6 item: historical fixture provenance
 
 The fixture source commit `815465404f7e` declared in

@@ -118,7 +118,7 @@
     "scripts/src/startup-migration-crosswalk.ts": "13d30e5971ed5285b799742b004155ce6a483d2cf5527e7950e8a80e91903c73",
     "scripts/src/production-startup-ddl-baseline.json": "a8bcfc8731d8017f901dde01e04d5fd78ad1f930b0562a6a642d980483f465e2",
     "scripts/src/production-startup-ddl-inventory.ts": "181b198363808eaf066cdf9d8acb3d7c32bfd898985ecaf97c1c4a611e18a9e9",
-    "artifacts/api-server/src/lib/business-growth-schema.ts": "91c061a8e2e6c16ee01584d5692ad0d3ff29dc29e6b5aa10725ea29f04f84fe8",
+    "artifacts/api-server/src/lib/business-growth-schema.ts": "981434746172a7985ce9f63cff2e03e972e6b6c1a2d1f533f3a5194298058597",
     "artifacts/api-server/src/lib/media-schema.ts": "313ca81d6c08c7ca75973173d1ffa5b7b7a2fe47877f98a1ded3de0781d7cfe0",
     "artifacts/api-server/src/lib/shipping-config.ts": "65bd907013564ae640dfce6c63c7c093ef42208d3ec262433a38b499c5a1bc1b",
     "artifacts/api-server/src/lib/marketplace-performance-schema.ts": "892f271abcee6b6e20c2fcd4a38c17e53e3c7a78aaa19e363647e485036b890b",
