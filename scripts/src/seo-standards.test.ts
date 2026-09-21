@@ -430,6 +430,7 @@ const product = {
   category: "Nega lica",
   imageUrl: "/glow-serum-cover.jpg",
   images: ["/glow-serum-gallery.jpg"],
+  reviewSummary: { averageRating: 4.876, reviewCount: 3 },
 };
 const salon = {
   id: "glow-salon",
@@ -440,7 +441,11 @@ const salon = {
   imageUrl: "/glow-studio-cover.jpg",
   coverImageDescription: "Enterijer Glow Studija",
   gallery: ["/glow-studio-gallery.jpg"],
-  services: [],
+  rating: 4.876,
+  reviewCount: 2,
+  services: [{ name: "Nega lica", price: 3000, promoPrice: 2500 }],
+  hours: [{ day: "Ponedeljak", open: "09:00", close: "17:00", closed: false }],
+  reviews: [{ authorName: "Ana", rating: 5, text: "Odlična usluga." }],
 };
 const beautyJob = {
   id: "glow-job",
@@ -668,6 +673,98 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  // Fixture-only, initial HTML checks: no API process or database is involved.
+  const structuredRoutes: Array<[string, string[]]> = [
+    ["/", ["Organization", "WebSite"]],
+    ["/saloni/glow-studio", ["HealthAndBeautyBusiness", "OfferCatalog", "AggregateRating", "Review", "BreadcrumbList"]],
+    [`/edukacije/${course.id}`, ["Course", "BreadcrumbList"]],
+    [`/edukacije/instruktori/${instructor.id}`, ["Person", "BreadcrumbList"]],
+    [`/edukacije/centri/${center.id}`, ["EducationalOrganization", "BreadcrumbList"]],
+    [`/edukacije/paketi/${bundle.id}`, ["Product", "Offer", "BreadcrumbList"]],
+    [`/poslovi/${beautyJob.slug}/${beautyJob.id}`, ["JobPosting", "BreadcrumbList"]],
+    [`/shop/${supplier.slug}/proizvod/${product.id}`, ["Product", "Offer", "BreadcrumbList"]],
+    [`/shop/${supplier.slug}`, ["ItemList", "BreadcrumbList"]],
+    [`/shop/${supplier.slug}/${category.path}`, ["ItemList", "BreadcrumbList"]],
+    ["/edukacije/sekcije/nega/lice/hidratacija", ["ItemList", "BreadcrumbList"]],
+    [categoryPaths[0], ["ItemList", "BreadcrumbList"]],
+    ...staticRouteContracts.filter((pathname) => pathname !== "/").map((pathname): [string, string[]] => [pathname, ["BreadcrumbList"]]),
+  ];
+  function inspectSchema(value: unknown, types: Set<string>): void {
+    assert.notEqual(value, null, "JSON-LD must not contain null");
+    if (typeof value === "string") {
+      assert.ok(value.trim(), "JSON-LD must not contain empty strings");
+      assert.doesNotMatch(value, /^(?:undefined|null|placeholder|todo|tbd|n\/a)$/iu);
+    } else if (Array.isArray(value)) {
+      assert.ok(value.length, "JSON-LD must not contain empty arrays");
+      value.forEach((item) => inspectSchema(item, types));
+    } else if (typeof value === "object" && value) {
+      assert.ok(Object.keys(value).length, "JSON-LD must not contain empty objects");
+      for (const [key, item] of Object.entries(value)) {
+        assert.notEqual(key, "sameAs");
+        if (key === "@type" && typeof item === "string") types.add(item);
+        inspectSchema(item, types);
+      }
+    }
+  }
+  for (const [pathname, expectedTypes] of structuredRoutes) {
+    const result = await createSeoResponse({ url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+    assert.equal(result.status, 200, pathname);
+    const scripts = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)];
+    assert.ok(scripts.length, `${pathname} needs initial HTML JSON-LD`);
+    const types = new Set<string>();
+    scripts.forEach((script) => inspectSchema(JSON.parse(script[1]), types));
+    expectedTypes.forEach((type) => assert.ok(types.has(type), `${pathname} needs ${type}`));
+    assert.match(result.body, /name="robots" content="noindex, nofollow"/u, "staging remains noindex");
+    if (pathname === "/") assert.doesNotMatch(scripts[0][1], /"logo":/u);
+    if (pathname === "/saloni/glow-studio") {
+      assert.match(scripts[0][1], /"ratingValue":4.9/u);
+      assert.match(result.body, /<p>Ocena: 4.9 \(2 recenzija\)<\/p>/u);
+      assert.doesNotMatch(result.body, /4\.876/u);
+      assert.match(scripts[0][1], /"reviewCount":2/u);
+      assert.match(scripts[0][1], /"price":2500/u);
+      assert.doesNotMatch(scripts[0][1], /"(?:telephone|geo|streetAddress)":/u);
+    }
+    if (pathname === `/shop/${supplier.slug}/proizvod/${product.id}`) {
+      assert.doesNotMatch(scripts[0][1], /"@type":"AggregateRating"/u, "coarse star icons do not expose an exact numeric average");
+      assert.doesNotMatch(result.body, /<p>Ocena: /u, "do not invent an SSR-only numeric product rating");
+      assert.doesNotMatch(result.body, /4\.876/u);
+    }
+    if (process.env.SEO_FIXTURE_EVIDENCE_DIR && ["/", "/saloni/glow-studio", `/edukacije/${course.id}`].includes(pathname)) {
+      fs.mkdirSync(process.env.SEO_FIXTURE_EVIDENCE_DIR, { recursive: true });
+      const filename = pathname === "/" ? "home" : pathname.startsWith("/saloni/") ? "salon" : "course";
+      fs.writeFileSync(path.join(process.env.SEO_FIXTURE_EVIDENCE_DIR, `${filename}.fixture.html`),
+        `<!-- MOCKED PUBLIC DTO TEST FIXTURE; NOT LIVE DATA; no database access -->\n${result.body}`);
+    }
+  }
+  for (const pathname of ["/admin", "/moj-nalog", "/saloni/nepostojeci-salon"]) {
+    const result = await createSeoResponse({ url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+    assert.doesNotMatch(result.body, /type="application\/ld\+json"/u, "private and missing pages have no entity data");
+  }
+  const originalJobType = beautyJob.type;
+  for (const type of ["space_rental", "equipment_rental", "freelance"]) {
+    beautyJob.type = type;
+    const result = await createSeoResponse({ url: `/poslovi/${beautyJob.slug}/${beautyJob.id}`, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+    assert.doesNotMatch(result.body, /"@type":"JobPosting"/u);
+  }
+  beautyJob.type = originalJobType;
+  beautyJob.intent = "seeking";
+  const seekingResult = await createSeoResponse({ url: `/poslovi/${beautyJob.slug}/${beautyJob.id}`, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.doesNotMatch(seekingResult.body, /"@type":"JobPosting"/u);
+  beautyJob.intent = "offering";
+  // Even an accidentally over-broad future DTO must not reveal private salon
+  // fields. Public permission cannot be inferred from field presence.
+  Object.assign(salon, { address: "PRIVATE_STREET", phone: "PRIVATE_PHONE", latitude: 44.1, longitude: 20.1 });
+  const privateFieldResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.doesNotMatch(privateFieldResult.body, /PRIVATE_STREET|PRIVATE_PHONE|"geo":|"telephone":/u);
+  for (const key of ["address", "phone", "latitude", "longitude"]) Reflect.deleteProperty(salon, key);
+  const savedRating = salon.rating;
+  const savedCount = salon.reviewCount;
+  salon.rating = 0;
+  salon.reviewCount = 0;
+  const unratedResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.doesNotMatch(unratedResult.body, /"@type":"AggregateRating"/u);
+  salon.rating = savedRating;
+  salon.reviewCount = savedCount;
   for (const pathname of staticRouteContracts) {
     const serverResult = await serverMetadata(pathname);
     assert.equal(serverResult.status, 200, `${pathname} static fixture must server-render`);

@@ -6,6 +6,7 @@ import categoryDefinitions from './src/lib/public-category-pages.json' with { ty
 import staticPageDefinitions from './src/lib/static-seo-pages.json' with { type: 'json' };
 import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 import { publicSiteOrigin, siteIndexable, normalizedPublicPath, canonicalRedirect, applySitePolicy } from './seo-policy.mjs';
+import { compactSchema, schemaImage, salonStructuredData } from './structured-data.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
@@ -87,6 +88,14 @@ async function listAll(req, endpoint, pageSize) {
 }
 
 function pageShell(meta, body, origin) {
+  if (meta.pathname !== '/' && !JSON.stringify(meta.schema ?? {}).includes('"BreadcrumbList"')) {
+    const heading = body.match(/<h1>(.*?)<\/h1>/)?.[1];
+    const name = heading ? heading.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : meta.title;
+    const crumbs = [{ name: 'Početna', pathname: '/' }, { name, pathname: meta.pathname }];
+    meta.schema = { '@context': 'https://schema.org', '@graph': [meta.schema, breadcrumbs(origin, crumbs)].filter(Boolean) };
+    body = breadcrumbHtml(crumbs) + body;
+  }
+  meta.schema = compactSchema(meta.schema);
   const canonical = `${origin}${meta.pathname}`;
   const image = asAbsolute(origin, meta.image);
   const robots = meta.indexable ? 'index, follow' : 'noindex, follow';
@@ -181,40 +190,23 @@ function beautyJobSlug(job) {
 }
 
 function beautyJobSchema(job, origin, pathname) {
-  if (job.type === 'job') {
-    const salary = job.priceAmount ? {
-      '@type': 'MonetaryAmount',
-      currency: 'RSD',
-      value: {
-        '@type': 'QuantitativeValue',
-        value: job.priceAmount,
-        unitText: String(job.pricePeriod ?? 'month').toUpperCase(),
-      },
-    } : undefined;
+  if (job.type === 'job' && job.intent === 'offering') {
     return {
       '@context': 'https://schema.org',
       '@type': 'JobPosting',
       title: job.title,
       description: job.description,
-      datePosted: job.createdAt,
-      validThrough: job.expiresAt,
-      hiringOrganization: { '@type': 'Organization', name: job.authorDisplayName || 'LUMERA oglašivač' },
-      jobLocation: { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: job.city, addressRegion: job.region, addressCountry: 'RS' } },
-      baseSalary: salary,
+      hiringOrganization: job.authorDisplayName ? { '@type': 'Organization', name: job.authorDisplayName } : undefined,
+      jobLocation: job.city ? { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: job.city, addressRegion: job.region } } : undefined,
       url: `${origin}${pathname}`,
     };
   }
   return {
     '@context': 'https://schema.org',
-    '@type': 'Offer',
+    '@type': 'WebPage',
     name: job.title,
     description: job.description,
     url: `${origin}${pathname}`,
-    priceCurrency: job.priceAmount ? 'RSD' : undefined,
-    price: job.priceAmount ? String(job.priceAmount) : undefined,
-    areaServed: { '@type': 'AdministrativeArea', name: `${job.city}, ${job.region}` },
-    itemOffered: { '@type': 'Service', name: beautyJobTypeLabel(job.type) },
-    availabilityEnds: job.expiresAt,
   };
 }
 
@@ -236,7 +228,6 @@ async function renderPublicPage(req, pathname) {
               '@id': `${origin}/#organization`,
               name: 'LUMERA',
               url: `${origin}/`,
-              logo: asAbsolute(origin, '/og-lumera.png'),
             },
             {
               '@type': 'WebSite',
@@ -480,15 +471,14 @@ async function renderPublicPage(req, pathname) {
         '@graph': [{
           '@type': 'Product',
           name: product.name,
-          description,
-          image: asAbsolute(origin, product.imageUrl),
+           description: product.description,
+           image: schemaImage(origin, product.imageUrl),
           brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
           category: product.category,
           offers: {
             '@type': 'Offer',
-            priceCurrency: 'RSD',
-            price: String(price),
-            availability: 'https://schema.org/InStock',
+             priceCurrency: price != null ? 'RSD' : undefined,
+             price: price != null ? String(price) : undefined,
             url: `${origin}${canonicalPath}`,
           },
         }, breadcrumbs(origin, crumbs)],
@@ -496,7 +486,7 @@ async function renderPublicPage(req, pathname) {
     });
     return {
       meta,
-      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
+      html: pageShell(meta, `<article>${breadcrumbHtml(crumbs)}<h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p><strong>${price != null ? `Cena: ${escapeHtml(price)} RSD` : 'Cena na upit'}</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><p><a href="/shop/${escapeHtml(encodeURIComponent(supplier.slug))}">Svi proizvodi dobavljača ${escapeHtml(supplier.name)}</a></p></article>`, origin),
     };
   }
 
@@ -585,12 +575,13 @@ async function renderPublicPage(req, pathname) {
     const meta = makeMeta(pathname, `${salon.name} u ${salon.city} | LUMERA`, description, {
       ...socialImageOptions(salon, salon.imageUrl),
       imageAlt: salon.coverImageDescription,
-      schema: { '@context': 'https://schema.org', '@type': 'BeautySalon', name: salon.name, description, image: asAbsolute(origin, salon.socialImage?.url ?? salon.imageUrl), address: { '@type': 'PostalAddress', addressLocality: salon.city, addressCountry: 'RS' }, aggregateRating: salon.rating ? { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount ?? 0 } : undefined },
+      schema: salonStructuredData(salon, origin, pathname, salon.description || salon.shortDescription),
     });
-    const services = (salon.services ?? []).slice(0, 24).map((service) => `<li>${escapeHtml(service.name)}${service.price ? ` — od ${escapeHtml(service.promoPrice ?? service.price)} RSD` : ''}</li>`).join('');
+    const services = (salon.services ?? []).slice(0, 24).map((service) => `<li>${escapeHtml(service.name)}${(service.promoPrice ?? service.price) != null ? ` — od ${escapeHtml(service.promoPrice ?? service.price)} RSD` : ''}</li>`).join('');
+    const publicDetails = `${meta.schema.priceRange ? `<p>Raspon cena: ${escapeHtml(meta.schema.priceRange)}</p>` : ''}${(salon.hours ?? []).length ? `<section><h2>Radno vreme</h2><ul>${salon.hours.map((hour) => `<li>${escapeHtml(hour.day)}: ${hour.closed ? 'Ne radi' : `${escapeHtml(hour.open)} – ${escapeHtml(hour.close)}`}</li>`).join('')}</ul></section>` : ''}${(salon.reviews ?? []).length ? `<section><h2>Recenzije</h2>${salon.reviews.map((review) => `<article><p>${escapeHtml(review.authorName)} · ${escapeHtml(review.rating)}</p>${review.text ? `<p>${escapeHtml(review.text)}</p>` : ''}</article>`).join('')}</section>` : ''}`;
     const heroImage = salon.imageUrl ?? salon.gallery?.[0];
     const heroImageAlt = heroImage === salon.imageUrl ? meta.imageAlt : salon.name;
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}${salon.address ? ` · ${escapeHtml(salon.address)}` : ''}</p><p>Ocena: ${escapeHtml(salon.rating ?? 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section><p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}</p><p>Ocena: ${escapeHtml(typeof salon.rating === 'number' ? salon.rating.toFixed(1) : 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section>${publicDetails}<p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
   }
 
   const courseMatch = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);
@@ -598,7 +589,7 @@ async function renderPublicPage(req, pathname) {
     const course = await getJson(req, `/api/education/public/courses/${encodeURIComponent(courseMatch[1])}`);
     if (!course) return null;
     const description = course.description || `${course.title} — stručna beauty edukacija na LUMERA platformi.`;
-    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { ...socialImageOptions(course, course.imageUrl), imageAlt: course.coverImageDescription, schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description, provider: { '@type': 'Organization', name: course.publisher }, image: asAbsolute(origin, course.socialImage?.url ?? course.imageUrl) } });
+    const meta = makeMeta(pathname, `${course.title} | LUMERA edukacije`, description, { ...socialImageOptions(course, course.imageUrl), imageAlt: course.coverImageDescription, schema: { '@context': 'https://schema.org', '@type': 'Course', name: course.title, description: course.description, provider: course.publisher ? { '@type': 'Organization', name: course.publisher } : undefined, image: schemaImage(origin, course.imageUrl) } });
     const outcomes = (course.learningOutcomes ?? []).slice(0, 10).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(course.title)}</h1><p>${escapeHtml(description)}</p>${course.imageUrl ? `<img src="${escapeHtml(course.imageUrl)}" width="960" height="540" alt="${escapeHtml(meta.imageAlt)}">` : ''}<p>${escapeHtml(course.publisher)} · ${escapeHtml(course.format)} · ${escapeHtml(course.duration)} · ${escapeHtml(course.price)} RSD</p>${outcomes ? `<section><h2>Šta ćete naučiti</h2><ul>${outcomes}</ul></section>` : ''}${course.centerId ? `<p><a href="/edukacije/centri/${escapeHtml(course.centerId)}">Pogledajte edukativni centar</a></p>` : ''}<p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
@@ -614,19 +605,17 @@ async function renderPublicPage(req, pathname) {
         '@context': 'https://schema.org',
         '@type': 'Product',
         name,
-        description,
+        description: bundle.description,
         category: 'Paket beauty edukacija',
         offers: {
           '@type': 'Offer',
           priceCurrency: 'RSD',
-          price: String(bundle.price),
-          availability: 'https://schema.org/InStock',
+           price: bundle.price,
           url: `${origin}${pathname}`,
         },
         hasPart: (bundle.courses ?? []).map((course) => ({
           '@type': 'Course',
           name: course.title,
-          description: course.description,
         })),
       },
     });
@@ -650,13 +639,13 @@ async function renderPublicPage(req, pathname) {
         '@context': 'https://schema.org',
         '@type': 'EducationalOrganization',
         name,
-        description,
-        image: asAbsolute(origin, center.imageUrl),
+        description: center.description,
+        image: schemaImage(origin, center.imageUrl),
         url: `${origin}${pathname}`,
       },
     });
     const courses = (center.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Programi centra</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p>${center.imageUrl ? `<img src="${escapeHtml(center.imageUrl)}" width="960" height="640" alt="${escapeHtml(name)}">` : ''}<section><h2>Programi centra</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
 
   const instructorMatch = pathname.match(/^\/edukacije\/instruktori\/([a-zA-Z0-9-]+)$/);
@@ -671,13 +660,13 @@ async function renderPublicPage(req, pathname) {
         '@context': 'https://schema.org',
         '@type': 'Person',
         name,
-        description,
-        image: asAbsolute(origin, instructor.photoUrl),
+        description: instructor.biography,
+        image: schemaImage(origin, instructor.photoUrl),
         url: `${origin}${pathname}`,
       },
     });
     const courses = (instructor.courses ?? []).map((course) => card({ href: `/edukacije/${course.id}`, title: course.title, description: course.description, image: course.imageUrl })).join('');
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p><section><h2>Edukacije instruktora</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(name)}</h1><p>${escapeHtml(description)}</p>${instructor.photoUrl ? `<img src="${escapeHtml(instructor.photoUrl)}" width="480" height="480" alt="${escapeHtml(name)}">` : ''}<section><h2>Edukacije instruktora</h2><div class="seo-grid">${courses || '<p>Trenutno nema javnih programa.</p>'}</div></section><p><a href="/edukacije">Sve edukacije</a></p></article>`, origin) };
   }
   return null;
 }
