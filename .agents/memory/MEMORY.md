@@ -149,8 +149,7 @@
 - [Static browser config symlinks](static-browser-config-symlinks.md) — validate and consume canonical package exports without changing runner-relative testDir behavior.
 - [Declaration inventory parsing](declaration-inventory-parsing.md) — use the TypeScript AST for declaration shape checks; hand-written scanners cannot safely model nested template substitutions.
 - [Public social image metadata](public-social-image-metadata.md) — pin OG metadata to an explicit managed variant; URL-only legacy images must never gain inferred dimensions or MIME.
-- [CI timing calibration](ci-timing-calibration.md) — pre-instrumentation Actions runs provide provisional job totals, not phase observations; recalibrate after timing artifacts accumulate.
-- [CI history ordering](ci-history-ordering.md) — sort GitHub runs by run_started_at before applying the report history limit.
+- [CI timing calibration](ci-timing-calibration.md) — distinguish provisional budgets from phase evidence; preserve the timed contract and newest-first history.
 - [Gallery media metadata](gallery-media-metadata.md) — key descriptions by media identity and save them atomically with the owning resource.
 - [Authoritative schema migrations](authoritative-schema-migrations.md) — eligibility is read-only; adoption writes stay disabled until reviewed P.2 architecture.
 - [Audit SQL normalization proofs](audit-sql-normalization-proofs.md) — remove syntax only with complete operand, nesting, type, overload, and qualified-identity proof.

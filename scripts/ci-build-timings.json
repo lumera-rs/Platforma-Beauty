@@ -7,6 +7,7 @@
   "baselinesSeconds": {
     "build:release": 105,
     "scripts:typecheck": 25,
+    "internal-request-controls": 4,
     "internal-request-control-outputs": 10,
     "beauty-marketplace-typecheck": 25,
     "frontend-generated-typecheck": 25,
@@ -17,6 +18,7 @@
     "frontend-standards": 10,
     "seo-standards": 10,
     "frontend-interactions": 10,
+    "rmas": 6,
     "validate:ci:build:total": 270,
     "database:test:monitoring": 90,
     "database:test:backend-standards:static": 30,

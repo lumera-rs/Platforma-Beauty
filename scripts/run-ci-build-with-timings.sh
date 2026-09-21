@@ -266,6 +266,7 @@ case "$job" in
     run_phase "frontend-standards" pnpm run test:frontend-standards
     run_phase "seo-standards" pnpm run test:seo-standards
     run_phase "frontend-interactions" pnpm run test:frontend-interactions
+    run_phase "rmas" pnpm run test:rmas
     ;;
   database)
     run_phase "database:test:monitoring" pnpm run test:monitoring
