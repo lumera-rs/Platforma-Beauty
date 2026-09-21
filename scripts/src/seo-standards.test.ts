@@ -437,6 +437,8 @@ const salon = {
   slug: "glow-studio",
   name: "Glow Studio",
   city: "Beograd",
+  address: "Tošin bunar 181",
+  postalCode: "11000",
   description: "Salon za negu lica i kose.",
   imageUrl: "/glow-studio-cover.jpg",
   coverImageDescription: "Enterijer Glow Studija",
@@ -722,7 +724,10 @@ try {
       assert.doesNotMatch(result.body, /4\.876/u);
       assert.match(scripts[0][1], /"reviewCount":2/u);
       assert.match(scripts[0][1], /"price":2500/u);
-      assert.doesNotMatch(scripts[0][1], /"(?:telephone|geo|streetAddress)":/u);
+      assert.doesNotMatch(scripts[0][1], /"(?:telephone|geo)":/u);
+      assert.match(scripts[0][1], /"streetAddress":"Tošin bunar 181"/u);
+      assert.match(scripts[0][1], /"postalCode":"11000"/u);
+      assert.match(result.body, /Tošin bunar 181, 11000 Beograd<\/a>/u);
     }
     if (pathname === `/shop/${supplier.slug}/proizvod/${product.id}`) {
       assert.doesNotMatch(scripts[0][1], /"@type":"AggregateRating"/u, "coarse star icons do not expose an exact numeric average");
@@ -751,11 +756,27 @@ try {
   const seekingResult = await createSeoResponse({ url: `/poslovi/${beautyJob.slug}/${beautyJob.id}`, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
   assert.doesNotMatch(seekingResult.body, /"@type":"JobPosting"/u);
   beautyJob.intent = "offering";
-  // Even an accidentally over-broad future DTO must not reveal private salon
-  // fields. Public permission cannot be inferred from field presence.
+  // Exact address is public; an over-broad DTO must still not leak phone/geo.
   Object.assign(salon, { address: "PRIVATE_STREET", phone: "PRIVATE_PHONE", latitude: 44.1, longitude: 20.1 });
   const privateFieldResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
-  assert.doesNotMatch(privateFieldResult.body, /PRIVATE_STREET|PRIVATE_PHONE|"geo":|"telephone":/u);
+  assert.match(privateFieldResult.body, /PRIVATE_STREET/u);
+  assert.doesNotMatch(privateFieldResult.body, /PRIVATE_PHONE|"geo":|"telephone":/u);
+  assert.match(privateFieldResult.body, /"streetAddress":"PRIVATE_STREET"/u);
+  assert.match(privateFieldResult.body, /"addressCountry":"RS"/u);
+  assert.match(privateFieldResult.body, /target="_blank" rel="noopener noreferrer"/u);
+  assert.doesNotMatch(privateFieldResult.body, /44\.1|20\.1/u);
+  Object.assign(salon, { address: '<img src=x onerror=alert(1)> & "street"', postalCode: "11000" });
+  const escapedAddressResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.match(escapedAddressResult.body, /&lt;img src=x onerror=alert\(1\)&gt; &amp; &quot;street&quot;/u);
+  assert.doesNotMatch(escapedAddressResult.body, /<img src=x/u);
+  for (const [flag, value] of [["active", false], ["published", false], ["hideAddress", true]] as const) {
+    Object.assign(salon, { address: "HIDDEN_STREET", [flag]: value });
+    const hiddenAddressResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+    assert.doesNotMatch(hiddenAddressResult.body, /HIDDEN_STREET|PRIVATE_PHONE|"geo":|"telephone":/u);
+    assert.match(hiddenAddressResult.body, /name="robots" content="noindex, nofollow"/u);
+    Reflect.deleteProperty(salon, flag);
+  }
+  Reflect.deleteProperty(salon, "postalCode");
   for (const key of ["address", "phone", "latitude", "longitude"]) Reflect.deleteProperty(salon, key);
   const savedRating = salon.rating;
   const savedCount = salon.reviewCount;

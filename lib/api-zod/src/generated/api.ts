@@ -1161,6 +1161,8 @@ export const GetSalonResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),
@@ -5934,6 +5936,8 @@ export const CreateSalonLocationResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),
@@ -6034,6 +6038,8 @@ export const CreateSalonLocationResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),

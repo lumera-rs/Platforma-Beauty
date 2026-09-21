@@ -17,6 +17,7 @@
     "bundle-budget": 10,
     "frontend-standards": 10,
     "seo-standards": 10,
+    "public-salon-address": 5,
     "frontend-interactions": 10,
     "rmas": 6,
     "validate:ci:build:total": 270,

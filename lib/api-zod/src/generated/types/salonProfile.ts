@@ -13,6 +13,10 @@ import type { SalonCard } from './salonCard';
 import type { Service } from './service';
 
 export type SalonProfile = SalonCard & ({
+  /** Public street and house number for an eligible salon. */
+  address?: string;
+  /** @nullable */
+  postalCode?: string | null;
   gallery: string[];
   /** @nullable */
   videoUrl: string | null;

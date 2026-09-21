@@ -10987,6 +10987,8 @@ components:
         - $ref: "#/components/schemas/SalonCard"
         - type: object
           properties:
+            address: { type: string, description: Public street and house number for an eligible salon. }
+            postalCode: { type: ["string", "null"] }
             gallery:
               type: array
               items: { type: string }

@@ -7152,6 +7152,8 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       lastBookedRows[0]?.lastBookedAt ? new Date(lastBookedRows[0].lastBookedAt) : null,
     ),
     featured: Boolean(activeFeaturedPlacement),
+    address: salon.address,
+    postalCode: salon.postalCode,
     gallery: salon.gallery,
     socialImage: await publicSocialImage(salon.imageUrl),
     videoUrl: salon.videoUrl,

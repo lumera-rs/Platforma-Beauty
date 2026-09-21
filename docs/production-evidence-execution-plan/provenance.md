@@ -427,3 +427,43 @@ the pre-batch manifest and measured file hash, and all prior provenance remains
 an unchanged prefix. No database operation, workflow, commit, or push was
 performed by this documentation batch. Source tests running concurrently are
 owned by the implementation agent; later source edits require another census.
+
+## Public salon address — Stage A protected-input census
+
+Authority: the public-salon-address instructions in attachments
+`1790022190230` and `1790026199502`, requiring a complete current-source census
+and historical byte preservation for each stage. This audit covers Stage A
+only on `feature/public-salon-address`, before its commit and before Stage B.
+The main baseline and pre-audit HEAD are
+`c760ce098a632263d51160841b7defee85241d6b`.
+
+All 158 current-source entries were independently SHA-256 hashed from file
+bytes: 73 diagnostic `currentInputs` entries and 85 execution-plan `files`
+entries. The complete mismatch list is empty (`[]`): **zero source amendments
+and zero dependent manifest-cascade amendments**. No old/new hash rows exist
+because no protected file drifted. The Stage A source, generated API, test,
+release-chain and timing changes require no protected-input hash replacement.
+Branch eligibility was checked against `git diff --name-only` from the main
+baseline; any drift outside that changed-file set would have stopped the audit.
+
+Both entire protected manifests are byte-identical to their main-baseline
+versions, compared directly with `git show <baseline>:<manifest>`. Both
+historical tiers were also explicitly compared as raw text bytes, not merely
+as parsed objects. Their unchanged block SHA-256 values are:
+
+| Manifest | Historical tier | Entries | Raw-block SHA-256, identical to main |
+| --- | --- | --- | --- |
+| `docs/production-diagnostic-design/protected-input-manifest.json` | inputs | 73 | `c00f5f9f73c32f816674bca87668414560edea564976f769f7d5de9875087680` |
+| `docs/production-evidence-execution-plan/protected-input-manifest.json` | originalProtectedFiles | 73 | `1161b1c0cb6b8e2520e7993f88634e66c039b2d4babad8783ec399361c43ae17` |
+
+Additionally, all 146 historical hashes were independently reproduced from
+their pinned `b8f30561` Git file bytes. No historical pin, manifest entry, SQL,
+runtime source, or validator logic was changed by this audit. Existing
+provenance remains unchanged above.
+
+Validation: ran `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+once after the Stage A census. Both validators passed: diagnostic validation
+included 114 exact-rule negative cases; execution validation rejected all 65
+negative fixtures with exact errors. The regression runner reported 13 passed,
+zero failed, zero skipped. This audit makes no database connections, starts no
+servers or workflows, and performs no commit or push. Stage B was not started.
