@@ -9,6 +9,7 @@ import { assertEligibilityDevelopmentRuntime } from "./deployment-eligibility-cl
 import { assertSafeRuntime } from "./run-phase5-integration";
 import { prepareDevelopmentMigrations } from "./prepare-development";
 import { applyMigrations, adoptBaseline } from "./runner";
+import { loadMigrations } from "./files";
 
 const expected = { databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted" } as const;
 export const markerCases = [
@@ -96,5 +97,30 @@ test("apply and adoption identity refusal happens before any lock or bookkeeping
     statements.length = 0;
     await assert.rejects(() => run(client), /Explicit expected/u);
     assert.deepEqual(statements, []);
+  }
+});
+
+test("narrowed and empty manifests always verify identity before branching or bookkeeping", async () => {
+  const baseline = [(await loadMigrations())[0]!];
+  for (const migrations of [baseline, []]) {
+    for (const run of [applyMigrations, adoptBaseline]) {
+      for (const fault of ["missing", "name", "system", "transport", "denied", "unreadable"]) {
+        const statements: string[] = [];
+        const client = { async query(sql: string) {
+          statements.push(sql);
+          if (fault === "denied") throw new Error("permission denied");
+          return { rows: fault === "unreadable" ? [] : [{
+            database_name: fault === "name" ? "wrong" : "fixture",
+            system_identifier: fault === "system" ? "124" : "123",
+            encrypted: fault === "transport",
+          }] };
+        } };
+        await assert.rejects(() => run(client, {
+          migrations, expectedTargetIdentity: fault === "missing" ? undefined : expected,
+        }), /identity/u);
+        assert.equal(statements.length, fault === "missing" ? 0 : 1);
+        assert.ok(statements.every((sql) => sql.includes("pg_control_system")));
+      }
+    }
   }
 });

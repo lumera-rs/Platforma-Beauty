@@ -221,12 +221,12 @@ test("supported runner rejects invalid ledger metadata before BEGIN or ledger DD
   assert.equal(client.statements.some((sql) => /^(?:BEGIN|CREATE|INSERT|UPDATE|DELETE|ALTER|DROP)\b/i.test(sql.trim())), false);
 });
 
-test("admission-contract adoption refuses deployment runtime before touching the client", async () => {
+test("admission-contract adoption refuses deployment runtime after identity and before mutation", async () => {
   const statements: string[] = [];
   const client = {
     async query(sql: string) {
       statements.push(sql);
-      return { rows: [] };
+      return { rows: [{ database_name: "fixture", system_identifier: "123", encrypted: false }] };
     },
   } as DatabaseClient;
   const previous = {
@@ -238,7 +238,9 @@ test("admission-contract adoption refuses deployment runtime before touching the
   process.env.NODE_ENV = "production";
   try {
     await assert.rejects(
-      () => adoptBaseline(client),
+      () => adoptBaseline(client, { expectedTargetIdentity: {
+        databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted",
+      } }),
       /development-only/u,
     );
   } finally {
@@ -251,7 +253,8 @@ test("admission-contract adoption refuses deployment runtime before touching the
     if (previous.environment === undefined) delete process.env.REPLIT_ENVIRONMENT;
     else process.env.REPLIT_ENVIRONMENT = previous.environment;
   }
-  assert.equal(statements.length, 0);
+  assert.equal(statements.length, 1);
+  assert.match(statements[0]!, /pg_control_system/u);
 });
 /**
  * `adoptBaseline` reaches the development-only gate only while at least one

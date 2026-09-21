@@ -342,7 +342,7 @@ test("ledger checksum mismatch and unknown future migration fail closed", skip, 
     const refuse = async (reason: string): Promise<void> => {
       await expectUnchangedRefusal(
         pool,
-        () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+        () => withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
         `Unsupported migration ledger: ${reason}`,
         true,
       );
@@ -378,9 +378,11 @@ test("concurrent runners serialize without double application", skip, async () =
     const migrations = [migration("000001", "transactional",
       "CREATE TABLE phase4_concurrent_marker (id integer); SELECT pg_sleep(0.2)")];
     const first = withClient(pool, (client) => applyMigrations(client, {
+      expectedTargetIdentity: expectedDisposableTarget(pool),
       migrations, lockTimeoutMs: 10_000, lockPollMs: 20,
     }));
     const second = withClient(pool, (client) => applyMigrations(client, {
+      expectedTargetIdentity: expectedDisposableTarget(pool),
       migrations, lockTimeoutMs: 10_000, lockPollMs: 20,
     }));
     const results = await Promise.all([first, second]);
@@ -394,7 +396,7 @@ test("transactional rollback leaves no partial object or APPLIED state", skip, a
     const migrations = [migration("000001", "transactional",
       "CREATE TABLE phase4_partial_object (id integer); SELECT 1 / 0")];
     await assert.rejects(
-      () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+      () => withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
       /division by zero/u,
     );
     await withClient(pool, async (client) => {
@@ -420,7 +422,7 @@ test("preexisting nontransactional APPLYING halts without rerun", skip, async ()
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await expectUnchangedRefusal(
         pool,
-        () => withClient(pool, (client) => applyMigrations(client, { migrations })),
+        () => withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) })),
         "Unsupported migration ledger: LEDGER_INCOMPLETE:000001",
         true,
       );

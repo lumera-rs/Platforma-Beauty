@@ -529,7 +529,7 @@ test("canonical baseline with configured global references admits 000002 and boo
   proofRecords.push({ phase: "B1_EXISTING_GLOBAL_CONFIGURATION_BOOT", actualSourceSha256: actual.sourceHash });
   await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
       const migrations = await loadMigrations();
-      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!] }));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!], expectedTargetIdentity: expectedDisposableTarget(pool) }));
       await pool.query(`
         INSERT INTO public.shop_settings
           (show_loyalty_points, points_per_100_rsd, low_stock_threshold,
@@ -545,7 +545,7 @@ test("canonical baseline with configured global references admits 000002 and boo
 
   await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
     const migrations = await loadMigrations();
-    await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!] }));
+    await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!], expectedTargetIdentity: expectedDisposableTarget(pool) }));
     await pool.query(`
       UPDATE public.lumera_migration_ledger
       SET state='ADOPTED'
@@ -636,7 +636,7 @@ test("missing baseline, unknown catalog and ambiguous history fail before proces
 
     await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
       const migrations = await loadMigrations();
-      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!] }));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!], expectedTargetIdentity: expectedDisposableTarget(pool) }));
       await pool.query(`
         INSERT INTO public.users (id, first_name, last_name, email, password_hash, role)
         VALUES ('30000000-0000-4000-8000-000000000001','Ambiguous','History','ambiguous@disposable.invalid','x','CUSTOMER')
@@ -654,7 +654,7 @@ test("missing baseline, unknown catalog and ambiguous history fail before proces
 
     await withOwnedDisposableDatabase(requireAdminUrl(), async ({ name, pool, connectionString }) => {
       const migrations = await loadMigrations();
-      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!] }));
+      await withDedicatedClient(pool, (client) => applyMigrations(client, { migrations: [migrations[0]!], expectedTargetIdentity: expectedDisposableTarget(pool) }));
       await pool.query(`
         UPDATE public.lumera_migration_ledger
         SET state='FAILED', error='synthetic interrupted receipt', finished_at=clock_timestamp()

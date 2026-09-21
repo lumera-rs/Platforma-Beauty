@@ -242,6 +242,7 @@ export async function applyMigrations(
   client: MigrationDatabaseClient,
   options: MigrationRunnerOptions = {},
 ): Promise<MigrationRunResult> {
+  await assertTargetIdentity(client, options.expectedTargetIdentity);
   const migrations = options.migrations ?? await loadMigrations();
   if (migrations.some((migration) => migration.admissionContract)) {
     return applySupportedMigrations(client, migrations, options);
@@ -300,7 +301,6 @@ async function applySupportedMigrations(
   options: MigrationRunnerOptions,
 ): Promise<MigrationRunResult> {
   assertSupportedMigrationDevelopmentOnly();
-  await assertTargetIdentity(client, options.expectedTargetIdentity);
   const admitted = migrations.filter((migration) => migration.admissionContract);
   if (admitted.some((migration) => migration.admissionContract !== "supported-startup-v1")) {
     throw new Error("Unknown migration admission contract");
@@ -511,10 +511,10 @@ export async function adoptBaseline(
   client: MigrationDatabaseClient,
   options: MigrationRunnerOptions = {},
 ): Promise<{ readonly adopted: string[]; readonly fingerprint: CatalogFingerprintResult }> {
+  await assertTargetIdentity(client, options.expectedTargetIdentity);
   const migrations = options.migrations ?? await loadMigrations();
   if (migrations.some((migration) => migration.admissionContract)) {
     assertSupportedMigrationDevelopmentOnly();
-    await assertTargetIdentity(client, options.expectedTargetIdentity);
     return adoptSupportedBaseline(client, migrations, options);
   }
   return withMigrationAdvisoryLock(client, async () => {

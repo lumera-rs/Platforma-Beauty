@@ -65,7 +65,7 @@ async function applyBaseline(pool: Pool): Promise<void> {
   const migrations = await loadPlanMigrations();
   const baseline = migrations.filter((migration) => migration.id === "000001");
   assert.equal(baseline.length, 1);
-  await withClient(pool, (client) => applyMigrations(client, { migrations: baseline }));
+  await withClient(pool, (client) => applyMigrations(client, { migrations: baseline, expectedTargetIdentity: expectedDisposableTarget(pool) }));
 }
 
 async function applySupported(pool: Pool): Promise<{ applied: string[]; skipped: string[] }> {
@@ -241,25 +241,27 @@ test("cleanup provenance rejects and zero report timestamp is preserved", { skip
   });
 });
 
-test("production runtime guard rejects before querying a client", async () => {
+test("production runtime guard rejects after identity verification and before mutation", async () => {
   const migrations = await loadPlanMigrations();
   let queryCount = 0;
   const fakeClient = {
     query: async () => {
       queryCount += 1;
-      throw new Error("fake client must not be queried");
+      return { rows: [{ database_name: "fixture", system_identifier: "123", encrypted: false }] };
     },
   };
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
     await assert.rejects(
-      () => applyMigrations(fakeClient, { migrations }),
+      () => applyMigrations(fakeClient, { migrations, expectedTargetIdentity: {
+        databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted",
+      } }),
       /development-only/u,
     );
   } finally {
     process.env.NODE_ENV = previous;
   }
-  assert.equal(queryCount, 0);
-  await log("production guard PASS; fake client query count 0");
+  assert.equal(queryCount, 1);
+  await log("production guard PASS; identity verification only");
 });

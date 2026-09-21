@@ -344,3 +344,86 @@ merge, publish or deploy.
 The final handoff reports a newly read HEAD and complete local status. A
 working-tree addition is not a new implementation commit, and this document
 does not predict future automatic checkpoints.
+
+## PR #35 gap closure: current-source amendment census
+
+This is a new, owner-authorized batch after the earlier PR #35 amendment;
+all previous provenance is retained unchanged. The pre-batch HEAD is
+`4842d7f3c067c854212f531b0ccb7ddbc20dad58`. The computed
+`git merge-base origin/main HEAD` remains
+`44ccaabd1cccf22843bb588249f0e96ce149de73`.
+
+Before any manifest edits, all 158 current-tier entries were rehashed from
+actual working-tree bytes: D `currentInputs` (73), E `files` (85).
+There were exactly eight mismatches, four files in each manifest. Every
+mismatching file is changed against the branch merge base, including the
+pending gap-closure edits; none is unrelated or untouched. Before edits, all
+146 historical entries (73 D `inputs`, 73 E `originalProtectedFiles`) were
+independently reproduced from `git show b8f30561:<path>` bytes, resolving to
+`b8f30561d658d7a87d06d520002d4136855e85e1`. All matched, so neither stop
+condition applied. Historical hashes are not checked against current source.
+
+### Complete BEFORE mismatch table and eight source amendments
+
+D = `docs/production-diagnostic-design/protected-input-manifest.json`.
+E = `docs/production-evidence-execution-plan/protected-input-manifest.json`.
+Rows are derived programmatically from the pre-edit manifests and SHA-256 of
+file bytes. Each actual BEFORE hash is also the approved replacement hash.
+The unchanged 150 current entries were checked too; the nested D entry among
+them requires the separate authorized cascade below.
+
+| Manifest | File | Tier | Old hash | Actual before amendment / new hash | Branch changed |
+| --- | --- | --- | --- | --- | --- |
+| D | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | currentInputs | `c052b95ee50525e25e458d51fab68f1bd551c3b6abfba645b805434b271078ec` | `97c6dfa0503dc4cf4975269a663031c0477d211c48edce91b13102208d19ee5a` | Yes |
+| D | `scripts/src/migrations/migrations.integration.test.ts` | currentInputs | `c036038e457751b6c0daa37e16c94bb7b63b142daf5c3e06e5abe7655c5c59c3` | `6d35f2c94d68be26d51f803fd8a8633cf2137490f7fe41974ed402a9e7455afe` | Yes |
+| D | `scripts/src/migrations/migrations.test.ts` | currentInputs | `fad1450b48f44120bf3c0edbce24be2a19d5138ef8bba3d0c493557b26e10490` | `59fea3cda8dfa52640ccfa0f926c8034fc87d2220b4c877b1a20e9e9dc20d130` | Yes |
+| D | `scripts/src/migrations/runner.ts` | currentInputs | `cd563674d95e0e3eddb87312ef6a6ffc57fbeb6626c864e130c4d8ffaeb2bce5` | `811c486a2d360983da1a387ceea034b139f48fc3c4667708a180708308caad41` | Yes |
+| E | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | files | `c052b95ee50525e25e458d51fab68f1bd551c3b6abfba645b805434b271078ec` | `97c6dfa0503dc4cf4975269a663031c0477d211c48edce91b13102208d19ee5a` | Yes |
+| E | `scripts/src/migrations/migrations.integration.test.ts` | files | `c036038e457751b6c0daa37e16c94bb7b63b142daf5c3e06e5abe7655c5c59c3` | `6d35f2c94d68be26d51f803fd8a8633cf2137490f7fe41974ed402a9e7455afe` | Yes |
+| E | `scripts/src/migrations/migrations.test.ts` | files | `fad1450b48f44120bf3c0edbce24be2a19d5138ef8bba3d0c493557b26e10490` | `59fea3cda8dfa52640ccfa0f926c8034fc87d2220b4c877b1a20e9e9dc20d130` | Yes |
+| E | `scripts/src/migrations/runner.ts` | files | `cd563674d95e0e3eddb87312ef6a6ffc57fbeb6626c864e130c4d8ffaeb2bce5` | `811c486a2d360983da1a387ceea034b139f48fc3c4667708a180708308caad41` | Yes |
+
+Reasons, applying to each corresponding D/E row:
+
+- `PHASE-5B-RUNBOOK.md`: gap-closure migration identity and execution guidance.
+- `migrations.integration.test.ts`: migration identity gap-closure regressions.
+- `migrations.test.ts`: migration identity gap-closure unit regressions.
+- `runner.ts`: unconditional target-identity verification at the top of apply
+  and baseline adoption, including canonical, empty, and replay paths.
+
+These are existing gap-closure source changes owned by the implementation
+agent. This documentation batch changes none of their bytes.
+
+### Ninth amendment: final diagnostic-manifest cascade
+
+The nested diagnostic-manifest entry matched before this batch:
+
+| Manifest | File | Tier | Old hash | Actual before amendment | Branch changed |
+| --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `c487ac3398ec51fbdd570bbcb799dd04d6e83e7193b94e9527bac4e47b942308` | `c487ac3398ec51fbdd570bbcb799dd04d6e83e7193b94e9527bac4e47b942308` | Yes, earlier authorized PR #35 amendment |
+
+Only after all four D current-source changes were final was its file rehashed:
+
+| Manifest | File | Tier | Old hash | New hash | Branch changed | Reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `c487ac3398ec51fbdd570bbcb799dd04d6e83e7193b94e9527bac4e47b942308` | `3cce68d8c934cd5e5fedf707ccb3a222cb29c3c225ac2ab0fe99819102767dc4` | Yes, including this explicitly authorized amendment | Cascade from four final D current-source replacements |
+
+Exactly nine current hashes are amended in this batch: four D and five E.
+Historical tiers, pins, path inventories, SQL, runtime code, validator logic,
+and the parent-owned deployment-runtime memory file are outside this batch.
+
+### Gap-closure documentation validation
+
+Ran `pnpm --filter @workspace/scripts run test:reconstruction:docs` once after
+the final manifest batch. Both validators passed: diagnostic validation
+included 114 exact-rule negative cases; execution validation rejected all 65
+negative fixtures with exact errors. The regression runner reported 13 passed,
+zero failed, zero skipped. `git diff --check` passed.
+
+The independent post-batch check confirmed all 158 current hashes match file
+bytes, exactly nine current-tier values differ from pre-batch HEAD, both
+historical blocks remain raw-byte-identical, every new source-table row matches
+the pre-batch manifest and measured file hash, and all prior provenance remains
+an unchanged prefix. No database operation, workflow, commit, or push was
+performed by this documentation batch. Source tests running concurrently are
+owned by the implementation agent; later source edits require another census.

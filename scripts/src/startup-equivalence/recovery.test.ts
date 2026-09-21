@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { applyMigrations } from "../migrations/runner";
+import { expectedDisposableTarget } from "../migrations/disposable-target-fixture";
 import { readLedger } from "../migrations/ledger";
 import { loadMigrations } from "../migrations/files";
 import { explicitAdminUrlFromArgs, withOwnedDisposableDatabase } from "./fixtures";
@@ -33,7 +34,7 @@ test("terminated transactional baseline rolls back and remains fail-closed witho
           }
           return interrupted.query(sql, params);
         },
-      }, { migrations: [migration] }));
+      }, { migrations: [migration], expectedTargetIdentity: expectedDisposableTarget(pool) }));
     } finally {
       interrupted.release(true);
     }
@@ -47,7 +48,7 @@ test("terminated transactional baseline rolls back and remains fail-closed witho
       // automatic retry expectation predates that reviewed safety boundary.
       for (let attempt = 0; attempt < 2; attempt += 1) {
         await assert.rejects(
-          () => applyMigrations(next, { migrations: [migration] }),
+          () => applyMigrations(next, { migrations: [migration], expectedTargetIdentity: expectedDisposableTarget(pool) }),
           /Unsupported migration ledger: LEDGER_INCOMPLETE:000001/u,
         );
         assert.deepEqual(await readLedger(next), interruptedLedger);

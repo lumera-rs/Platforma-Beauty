@@ -26,12 +26,17 @@ connecting.
 The runner reads `current_database()`, `pg_control_system().system_identifier`
 (as decimal text, not an imprecise JavaScript number), and `pg_stat_ssl.ssl` for
 `pg_backend_pid()` on the dedicated backend that will perform the migration.
-Every admission-contract apply, including no-op replays, and supported baseline
-adoption checks these before any lock, transaction setup, or ledger mutation.
+Every `apply` and `adopt-baseline` call checks these at entry, before manifest
+selection, branching, any lock, transaction setup, or ledger mutation. This
+includes baseline-only `000001`, empty migration sets, and already-applied or
+already-adopted replays; supplied expectations are never ignored.
 NULL server address/port values are irrelevant; neither function is used.
 Missing rows, NULL transport evidence, denied function access, and mismatches
-refuse without fallback. Baseline-only historical characterization remains
-schema-only; it is not an alternative supported full-chain adoption command.
+refuse without fallback. Baseline-only historical characterization must declare
+its owned disposable identity and remains schema-only; it is not an alternative
+supported full-chain adoption command. Identity verification neither grants
+production permission nor relaxes adoption eligibility or the admission-contract
+development-only guard.
 
 `encrypted` means the PostgreSQL backend reports TLS, **not** that its certificate
 or hostname was verified. A proxy's frontend TLS and backend TLS may differ.
