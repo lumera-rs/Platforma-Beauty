@@ -37,6 +37,7 @@ import { useLocation, useSearch } from "wouter";
 import { Link } from "wouter";
 import { parsePeriodSelection, serializePeriodSelection, type StatsPeriod } from "@/lib/campaign-period-url";
 import { getCampaignCancellationWarning } from "@/lib/campaign-cancellation-warning";
+import { publicSiteUrl } from "@/lib/public-site-url";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -951,7 +952,9 @@ export default function OwnerAutomations() {
 
   const statsShareUrl = useMemo(() => {
     const serialized = serializePeriodSelection(searchString, statsPeriod, customRange);
-    if (serialized === null) return window.location.href;
+    if (serialized === null) {
+      return publicSiteUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    }
 
     const params = new URLSearchParams(serialized);
     params.delete("rule");
@@ -961,7 +964,7 @@ export default function OwnerAutomations() {
       if (attributedClientType !== "all") params.set("clients", attributedClientType);
     }
 
-    const url = new URL(window.location.href);
+    const url = new URL(publicSiteUrl(pathname));
     url.pathname = pathname;
     url.search = params.toString() ? `?${params.toString()}` : "";
     return url.toString();

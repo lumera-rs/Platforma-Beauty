@@ -40,25 +40,26 @@ function emailSafe(value: string) {
 }
 
 function configuredAppBaseUrl() {
-  const configured = process.env["APP_BASE_URL"]?.trim().replace(/\/+$/, "");
+  const configured = (process.env["PUBLIC_SITE_URL"]?.trim()
+    || process.env["APP_BASE_URL"]?.trim())?.replace(/\/+$/, "");
   if (!configured) {
-    throw new Error("APP_BASE_URL mora biti podešen pre slanja Beauty Poslovi mejla.");
+    throw new Error("PUBLIC_SITE_URL (ili zastareli APP_BASE_URL) mora biti podešen pre slanja Beauty Poslovi mejla.");
   }
   let url: URL;
   try {
     url = new URL(configured);
   } catch {
-    throw new Error("APP_BASE_URL nije validan apsolutni URL za Beauty Poslovi mejlove.");
+    throw new Error("PUBLIC_SITE_URL nije validan apsolutni HTTPS origin za Beauty Poslovi mejlove.");
   }
-  if (!["http:", "https:"].includes(url.protocol)
-    || (process.env.NODE_ENV === "production" && url.protocol !== "https:")
+  if (url.protocol !== "https:"
     || url.username
     || url.password
+    || url.pathname !== "/"
     || url.search
     || url.hash) {
-    throw new Error("APP_BASE_URL nije bezbedan osnovni URL za Beauty Poslovi mejlove.");
+    throw new Error("PUBLIC_SITE_URL nije bezbedan HTTPS origin za Beauty Poslovi mejlove.");
   }
-  return url.toString().replace(/\/+$/, "");
+  return url.origin;
 }
 
 function beautyJobsDestination(

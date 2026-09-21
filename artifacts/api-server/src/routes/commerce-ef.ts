@@ -66,13 +66,17 @@ async function salonFor(userId: string) {
   return salon ?? null;
 }
 function canonicalOrigin() {
-  const raw = process.env["APP_BASE_URL"]?.trim();
-  if (!raw) throw new Error("APP_BASE_URL is required for canonical catalog URLs.");
-  const url = new URL(raw);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/") {
-    throw new Error("APP_BASE_URL must be a canonical origin without credentials or path.");
+  const raw = process.env["PUBLIC_SITE_URL"]?.trim() || process.env["APP_BASE_URL"]?.trim();
+  if (!raw) throw new Error("PUBLIC_SITE_URL (or legacy APP_BASE_URL) is required for canonical catalog URLs.");
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("PUBLIC_SITE_URL must be a valid absolute HTTPS origin.");
   }
-  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") throw new Error("APP_BASE_URL must use HTTPS in production.");
+  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("PUBLIC_SITE_URL must be a canonical HTTPS origin without credentials, path, query, or fragment.");
+  }
   return url.origin;
 }
 function effectiveStock(product: typeof productsTable.$inferSelect) {

@@ -1,12 +1,2 @@
 User-agent: *
-Allow: /
-Disallow: /admin/
-Disallow: /vlasnik/
-Disallow: /zaposleni/
-Disallow: /moj-nalog
-Disallow: /biznis/
-Disallow: /prijava
-Disallow: /poslovna-
-Disallow: /student/
-Disallow: /widget/
-Sitemap: /sitemap.xml
+Disallow: /

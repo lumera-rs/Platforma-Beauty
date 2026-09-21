@@ -10,6 +10,7 @@ import { Loader2, Search, FileText, Download, Copy, CalendarClock, Store } from 
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
 import { B2bQuote } from "@workspace/api-client-react";
+import { publicSiteUrl } from "@/lib/public-site-url";
 
 export default function AdminB2bQuotes() {
   const [search, setSearch] = useState("");
@@ -24,7 +25,7 @@ export default function AdminB2bQuotes() {
   const money = (n: number, currency: string) => `${n.toLocaleString("sr-RS")} ${currency}`;
 
   const copyLink = (publicId: string) => {
-    const url = `${window.location.origin}/ponuda/${publicId}`;
+    const url = publicSiteUrl(`/ponuda/${publicId}`);
     navigator.clipboard.writeText(url);
     toast.success("Link ponude je kopiran.");
   };

@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+import { publicSiteOrigin, applySitePolicy } from './seo-policy.mjs';
 
 const rawPort = process.env.PORT ?? '3000';
 
@@ -16,10 +17,36 @@ if (Number.isNaN(port) || port <= 0) {
 const basePath = process.env.BASE_PATH ?? '/';
 
 const apiBaseUrl = process.env.LUMERA_API_BASE_URL;
+const configuredPublicOrigin = process.env.PUBLIC_SITE_URL || process.env.LUMERA_PUBLIC_URL
+  ? publicSiteOrigin() : undefined;
 
 export default defineConfig({
   base: basePath,
+  define: {
+    'import.meta.env.VITE_PUBLIC_SITE_URL': JSON.stringify(configuredPublicOrigin ?? ''),
+  },
   plugins: [
+    {
+      name: 'lumera-preview-indexing-safety',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+          if (req.url?.split('?')[0] === '/robots.txt') {
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.end('User-agent: *\nDisallow: /\n');
+            return;
+          }
+          next();
+        });
+      },
+      transformIndexHtml(html) {
+        // Static builds and Vite previews stay closed; the production SEO
+        // server replaces this policy using the actual request host at runtime.
+        return configuredPublicOrigin
+          ? applySitePolicy(html, { headers: {} }, { ...process.env, SITE_INDEXABLE: 'false' })
+          : html;
+      },
+    },
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),

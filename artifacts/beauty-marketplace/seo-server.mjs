@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 import staticPageDefinitions from './src/lib/static-seo-pages.json' with { type: 'json' };
 import legalPages from './src/content/legal-pages.json' with { type: 'json' };
+import { publicSiteOrigin, siteIndexable, normalizedPublicPath, canonicalRedirect, applySitePolicy } from './seo-policy.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
@@ -53,21 +54,8 @@ function latestLastmod(entities) {
   return dates.at(-1);
 }
 
-function requestOrigin(req) {
-  const configured = process.env.LUMERA_PUBLIC_URL;
-  if (configured) {
-    const parsed = new URL(configured);
-    if (parsed.protocol !== 'https:' || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      throw new Error('LUMERA_PUBLIC_URL must be an HTTPS origin without a path, query, or hash.');
-    }
-    return parsed.origin;
-  }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('LUMERA_PUBLIC_URL must be configured in production.');
-  }
-  const proto = String(req.headers['x-forwarded-proto'] ?? 'https').split(',')[0];
-  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost').split(',')[0];
-  return `${proto}://${host}`;
+function requestOrigin() {
+  return publicSiteOrigin();
 }
 
 function apiOrigin(req) {
@@ -231,7 +219,7 @@ function beautyJobSchema(job, origin, pathname) {
 }
 
 async function renderPublicPage(req, pathname) {
-  const origin = requestOrigin(req);
+  const origin = requestOrigin();
   const staticPage = staticPages.get(pathname);
   if (staticPage) {
     const { title, description, indexable, heading = title.replace(/\s*\|\s*LUMERA$/, '') } = staticPage;
@@ -717,7 +705,7 @@ function sitemapXml(origin, entries) {
 }
 
 async function buildSitemap(req) {
-  const origin = requestOrigin(req);
+  const origin = requestOrigin();
   const entries = [
     ...[...staticPages.values()].filter((page) => page.indexable).map((page) => page.path),
     ...categoryPages.keys(),
@@ -817,9 +805,10 @@ function notFoundDocument(pathname, origin) {
 }
 
 export async function createSeoResponse(req, template) {
-  const url = new URL(req.url ?? '/', requestOrigin(req));
-  const pathname = url.pathname.replace(/\/+$/, '') || '/';
-  const origin = requestOrigin(req);
+  const url = new URL(req.url ?? '/', requestOrigin());
+  const pathname = normalizedPublicPath(url.pathname).replace(/\/+$/, '') || '/';
+  const origin = requestOrigin();
+  const redirectLocation = (targetPath) => canonicalRedirect(req, targetPath, url.search, origin) ?? `${targetPath}${url.search}`;
   const legacyProduct = pathname.match(/^\/proizvodi\/([^/]+)$/);
   if (legacyProduct) {
     try {
@@ -830,10 +819,10 @@ export async function createSeoResponse(req, template) {
       const supplier = (suppliers ?? []).find((item) => isPublicRetailSupplier(item) && item.id === product?.supplierId);
       if (product && supplier) {
         return {
-          status: 308,
+          status: 301,
           type: 'text/plain; charset=utf-8',
           body: 'Permanent redirect to the supplier product listing.',
-          headers: { location: `/shop/${encodeURIComponent(supplier.slug)}/proizvod/${encodeURIComponent(product.id)}${url.search}` },
+          headers: { location: redirectLocation(`/shop/${encodeURIComponent(supplier.slug)}/proizvod/${encodeURIComponent(product.id)}`) },
         };
       }
     } catch {
@@ -842,10 +831,10 @@ export async function createSeoResponse(req, template) {
   }
   if (pathname === '/beauty-poslovi') {
     return {
-      status: 308,
+      status: 301,
       type: 'text/plain; charset=utf-8',
       body: 'Permanent redirect to the canonical Beauty Poslovi catalog.',
-      headers: { location: `/poslovi${url.search}` },
+      headers: { location: redirectLocation('/poslovi') },
     };
   }
   const legacyBeautyJob = pathname.match(/^\/beauty-poslovi\/([a-zA-Z0-9-]+)$/);
@@ -854,17 +843,20 @@ export async function createSeoResponse(req, template) {
       const job = await getJson(req, `/api/beauty-jobs/${encodeURIComponent(legacyBeautyJob[1])}`);
       if (job) {
         return {
-          status: 308,
+          status: 301,
           type: 'text/plain; charset=utf-8',
           body: 'Permanent redirect to the canonical Beauty Poslovi listing.',
-          headers: { location: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}${url.search}` },
+          headers: { location: redirectLocation(`/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`) },
         };
       }
     } catch {
       // Private fallback below keeps an unknown legacy identifier non-indexable.
     }
   }
+  const redirect = canonicalRedirect(req, pathname, url.search, origin);
+  if (redirect) return { status: 301, type: 'text/plain; charset=utf-8', body: 'Permanent redirect to the canonical URL.', headers: { location: redirect } };
   if (pathname === '/robots.txt') {
+    if (!siteIndexable(req)) return { status: 200, type: 'text/plain; charset=utf-8', body: 'User-agent: *\nDisallow: /\n', headers: { 'X-Robots-Tag': 'noindex, nofollow' } };
     return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nDisallow: /beauty-poslovi/\nDisallow: /pridruzi-se-\nSitemap: ${origin}/sitemap.xml\n` };
   }
   if (pathname === '/sitemap.xml') {
@@ -881,7 +873,7 @@ export async function createSeoResponse(req, template) {
   try {
     const page = await renderPublicPage(req, pathname);
     if (page && hasQuery) page.meta = { ...page.meta, indexable: false };
-    if (page) return { status: 200, type: 'text/html; charset=utf-8', body: injectDocument(template, page, origin) };
+    if (page) return { status: 200, type: 'text/html; charset=utf-8', body: applySitePolicy(injectDocument(template, page, origin), req) };
   } catch {
     // Fall through to the client app with a non-indexable response. Public API
     // outages must never cause a private-page-looking response to be indexed.
@@ -894,7 +886,7 @@ export async function createSeoResponse(req, template) {
   const html = stripSeoMetadata(template)
     .replace('</head>', `${privateHead}</head>`)
     .replace('<div id="root"></div>', `${fallbackDocument}<div id="root"></div>`);
-  return { status: hasQuery ? 200 : 404, type: 'text/html; charset=utf-8', body: html };
+  return { status: hasQuery ? 200 : 404, type: 'text/html; charset=utf-8', body: applySitePolicy(html, req) };
 }
 
 const mimeTypes = { '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
