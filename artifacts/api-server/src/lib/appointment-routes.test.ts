@@ -581,10 +581,11 @@ async function run(): Promise<void> {
         "a managed salon cover image must expose exact large fallback social metadata",
       );
       assert.equal(parsedPublicProfile.coverImageDescription, "Naslovna fotografija test salona");
-      for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
+      for (const privateField of ["phone", "email", "latitude", "longitude"]) {
         assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
       }
-      assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
+      assert.equal(publicProfile.address, salon!.address, "active public salon profiles expose the street address");
+      assert.equal(publicProfile.postalCode, salon!.postalCode, "active public salon profiles expose postal code");
       assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
       assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
       const publicStaff = publicProfile.staff;
@@ -1094,6 +1095,50 @@ async function run(): Promise<void> {
       null,
       "an unrelated salon profile update must still satisfy the cover-description response contract",
     );
+    const details = {
+      entranceDirections: "ulaz sa bočne strane odmah pored dečijeg tobogana",
+      intercom: "22 enter", floor: "IV sprat", apartment: "22",
+    };
+    const beforeDeniedDetails = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    const deniedDetails = await request(baseUrl, customerSession, "/salon/profile", "PATCH", details);
+    assert.equal(deniedDetails.status, 403, "a non-manager cannot edit salon address details");
+    const afterDeniedDetails = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    for (const key of Object.keys(details)) {
+      assert.equal((afterDeniedDetails.body as Record<string, unknown>)[key], (beforeDeniedDetails.body as Record<string, unknown>)[key],
+        "denied requests do not change the managed salon");
+    }
+    const savedDetails = await request(baseUrl, ownerSession, "/salon/profile", "PATCH",
+      Object.fromEntries(Object.entries(details).map(([key, value]) => [key, `  ${value}  `])));
+    assert.equal(savedDetails.status, 200);
+    for (const [key, value] of Object.entries(details)) assert.equal((savedDetails.body as Record<string, unknown>)[key], value);
+    const reloadedDetails = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(reloadedDetails.status, 200);
+    const anonymousDetails = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
+    assert.equal(anonymousDetails.status, 200);
+    const publicDetails = GetSalonResponse.parse(await anonymousDetails.json());
+    for (const [key, value] of Object.entries(details)) {
+      assert.equal((reloadedDetails.body as Record<string, unknown>)[key], value, "reload preserves details");
+      assert.equal(publicDetails[key as keyof typeof details], value, "anonymous response carries public details");
+    }
+    for (const [key, limit] of Object.entries({ entranceDirections: 500, intercom: 80, floor: 80, apartment: 40 })) {
+      for (const value of ["<b>ulaz</b>", "x".repeat(limit + 1), 22]) {
+        const rejected = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", { [key]: value });
+        assert.equal(rejected.status, 400, `${key} rejects invalid input`);
+      }
+    }
+    const preservedDetails = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", { floor: "prizemlje" });
+    assert.equal(preservedDetails.status, 200);
+    assert.equal((preservedDetails.body as typeof details).intercom, details.intercom, "omitted values stay unchanged");
+    assert.equal((preservedDetails.body as typeof details).floor, "prizemlje", "floor is never Roman-normalized");
+    const clearedDetails = await request(baseUrl, ownerSession, "/salon/profile", "PATCH",
+      { entranceDirections: null, intercom: "", floor: "   ", apartment: null });
+    assert.equal(clearedDetails.status, 200);
+    const reloadedCleared = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    const anonymousCleared = GetSalonResponse.parse(await (await fetch(`${baseUrl}/api/salons/${salon!.slug}`)).json());
+    for (const key of Object.keys(details) as Array<keyof typeof details>) {
+      assert.equal((reloadedCleared.body as Record<string, unknown>)[key], null, "clearing survives reload");
+      assert.equal(anonymousCleared[key], null, "clearing reaches anonymous visitors");
+    }
     const savedCoverDescription = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
       coverImageDescription: "  Enterijer salona sa radnim mestima za tretmane  ",
     });

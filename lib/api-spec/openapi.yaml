@@ -10989,6 +10989,10 @@ components:
           properties:
             address: { type: string, description: Public street and house number for an eligible salon. }
             postalCode: { type: ["string", "null"] }
+            entranceDirections: { type: ["string", "null"] }
+            intercom: { type: ["string", "null"] }
+            floor: { type: ["string", "null"] }
+            apartment: { type: ["string", "null"] }
             gallery:
               type: array
               items: { type: string }
@@ -11026,6 +11030,10 @@ components:
     SalonProfileMedia:
       type: object
       properties:
+        entranceDirections: { type: ["string", "null"] }
+        intercom: { type: ["string", "null"] }
+        floor: { type: ["string", "null"] }
+        apartment: { type: ["string", "null"] }
         id: { type: string }
         name: { type: string }
         slug: { type: string }
@@ -11047,6 +11055,10 @@ components:
     SalonProfileMediaUpdate:
       type: object
       properties:
+        entranceDirections: { type: ["string", "null"], maxLength: 500, pattern: '^[^<>]*$' }
+        intercom: { type: ["string", "null"], maxLength: 80, pattern: '^[^<>]*$' }
+        floor: { type: ["string", "null"], maxLength: 80, pattern: '^[^<>]*$' }
+        apartment: { type: ["string", "null"], maxLength: 40, pattern: '^[^<>]*$' }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
@@ -18012,6 +18024,10 @@ components:
     CreateSalonLocationInput:
       type: object
       properties:
+        entranceDirections: { type: ["string", "null"], maxLength: 500, pattern: '^[^<>]*$' }
+        intercom: { type: ["string", "null"], maxLength: 80, pattern: '^[^<>]*$' }
+        floor: { type: ["string", "null"], maxLength: 80, pattern: '^[^<>]*$' }
+        apartment: { type: ["string", "null"], maxLength: 40, pattern: '^[^<>]*$' }
         idempotencyKey: { type: string, minLength: 1, maxLength: 200 }
         sourceSalonId: { type: ["string", "null"] }
         copyServices: { type: boolean, default: false }

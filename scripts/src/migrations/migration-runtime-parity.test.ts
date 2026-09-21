@@ -10,6 +10,12 @@ test("shared readonly readiness pins match the loaded immutable migration manife
   const loaded = await loadMigrations();
   const loadedBaseline = loaded.find((entry) => entry.id === "000001");
   const loadedData = loaded.find((entry) => entry.id === "000002");
+  const head = loaded.at(-1)!;
+  assert.equal(head.id, "000003");
+  assert.equal(head.checksum, migrationReadinessContract.salonEntranceMigrationChecksum);
+  assert.equal(head.structuralFingerprint, migrationReadinessContract.headStructuralFingerprint);
+  assert.equal(head.physicalFingerprint, migrationReadinessContract.headPhysicalFingerprint);
+  assert.equal(head.normalizedObjectCount, migrationReadinessContract.headNormalizedObjectCount);
   assert.ok(baseline);
   assert.ok(data);
   assert.ok(loadedBaseline);

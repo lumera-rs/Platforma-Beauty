@@ -263,11 +263,19 @@ export async function classifyDeploymentEligibility(
       ledger: ledger.reasons.length ? "INVALID" : "VALID", catalog: "UNKNOWN",
     };
   }
-  const kind = catalogKind(fingerprint, baseline, {
+  const byId = new Map(ledger.rows.map((row) => [row.id, row]));
+  // Adoption eligibility is still baseline-only. Once the data transition is
+  // applied, compare the current catalog to its last completed schema step.
+  const completedFrontier = byId.get(dataMigration.id)?.state === "APPLIED"
+    ? migrations.filter(migration => {
+      const state = byId.get(migration.id)?.state;
+      return state === "APPLIED" || state === "ADOPTED";
+    }).at(-1) ?? baseline
+    : baseline;
+  const kind = catalogKind(fingerprint, completedFrontier, {
     structural: "b8b39c5dfdc9c19dec105cfecef8f6688a4a00982dd25b47847cc3d92a5c8a29",
     physical: "25becc22380e260a6d84f802f8b1c4a948159ac1d1f9266f171cd27d7fb4a048",
   });
-  const byId = new Map(ledger.rows.map((row) => [row.id, row]));
   if (ledger.reasons.length) reasons.push(...ledger.reasons);
   const baselineRow = byId.get("000001");
   const dataRow = byId.get(dataMigration.id);
@@ -288,7 +296,7 @@ export async function classifyDeploymentEligibility(
       path: reasons.length ? "UNSUPPORTED" : "SUPPORTED_EXISTING",
       mode: "INITIAL_TRANSITION",
       reasons: [...new Set(reasons)],
-      pendingMigrationIds: [dataMigration.id],
+      pendingMigrationIds: migrations.filter(migration => !byId.has(migration.id)).map(migration => migration.id),
       productionEligibility: "NOT_ASSESSED",
       ledger: reasons.some((reason) => reason.startsWith("LEDGER_")) ? "INVALID" : "VALID",
       catalog: kind,
@@ -300,7 +308,7 @@ export async function classifyDeploymentEligibility(
     path: reasons.length ? "UNSUPPORTED" : "SUPPORTED_EXISTING",
     mode: "TRACKED_RUNTIME",
     reasons: [...new Set(reasons)],
-    pendingMigrationIds: [],
+    pendingMigrationIds: migrations.filter(migration => !byId.has(migration.id)).map(migration => migration.id),
     productionEligibility: "NOT_ASSESSED",
     ledger: reasons.some((reason) => reason.startsWith("LEDGER_")) ? "INVALID" : "VALID",
     catalog: kind,

@@ -3,10 +3,18 @@ export function publicSalonAddress(salon) {
   if (salon.active === false || salon.published === false || salon.hideAddress === true) return null;
   if (typeof salon.address !== 'string' || !salon.address.trim()) return null;
   const locality = [salon.postalCode, salon.city].filter((value) => typeof value === 'string' && value.trim()).join(' ');
-  const text = [salon.address, locality].filter(Boolean).join(', ');
+  const present = (value) => typeof value === 'string' && value.trim();
+  const text = [
+    salon.address,
+    present(salon.entranceDirections) ? `(${salon.entranceDirections})` : '',
+    present(salon.intercom) ? `interfon ${salon.intercom}` : '',
+    present(salon.floor) ? salon.floor : '',
+    present(salon.apartment) ? `stan ${salon.apartment}` : '',
+    locality,
+  ].filter(Boolean).join(', ');
   return {
     text,
-    href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([text, 'Serbia'].join(', '))}`,
+    href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([salon.address, locality, 'Serbia'].filter(Boolean).join(', '))}`,
     postalAddress: {
       '@type': 'PostalAddress',
       streetAddress: salon.address,

@@ -24,6 +24,23 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = Object.free
     functionCount: 21,
   },
   supportedStartupMigration,
+  {
+    id: "000003",
+    directory: "000003_public_salon_entrance_details",
+    checksum: "9bc21ec9bb74182314b498a91c606445d6564d7b070da4f04a22a43b195395c5",
+    mode: "transactional",
+    description: "Add optional public salon entrance details",
+    structuralFingerprint: "4c65ef9a278fb7a41c2830e3c2c51f2d8f7abee08dadcc076fd4c17ddf255b98",
+    physicalFingerprint: "39821cf3d682003a804326fa279eed957720f3a4b1458622bf91678abe1d824a",
+    fingerprintVersion: 4,
+    formatVersion: 2,
+    postgresMajor: 16,
+    postgresVersionNum: 160010,
+    normalizedObjectCount: 5064,
+    enumCount: 103,
+    triggerCount: 24,
+    functionCount: 21,
+  },
 ]);
 
 export function assertManifestOrder(

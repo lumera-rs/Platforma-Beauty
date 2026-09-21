@@ -745,6 +745,37 @@ try {
     const result = await createSeoResponse({ url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
     assert.doesNotMatch(result.body, /type="application\/ld\+json"/u, "private and missing pages have no entity data");
   }
+  // Anonymous initial HTML evidence from the real SEO response path, with mocked
+  // public DTOs only. No browser/JavaScript execution and no database mutations.
+  const addressDetails = {
+    entranceDirections: "ulaz sa bočne strane odmah pored dečijeg tobogana",
+    intercom: "22 enter", floor: "IV sprat", apartment: "22",
+  };
+  for (const kind of ["main-road", "apartment"] as const) {
+    if (kind === "apartment") Object.assign(salon, addressDetails);
+    const result = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+    const expected = kind === "apartment"
+      ? "Tošin bunar 181, (ulaz sa bočne strane odmah pored dečijeg tobogana), interfon 22 enter, IV sprat, stan 22, 11000 Beograd"
+      : "Tošin bunar 181, 11000 Beograd";
+    assert.ok(result.body.includes(`${expected}</a>`));
+    assert.match(result.body, /name="robots" content="noindex, nofollow"/u);
+    const structured = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)].map((match) => match[1]).join("");
+    assert.match(structured, /"streetAddress":"Tošin bunar 181"/u);
+    assert.doesNotMatch(structured, /ulaz sa bočne|22 enter|IV sprat|"apartment"|"geo"/u);
+    const maps = result.body.match(/href="(https:\/\/www.google.com\/maps\/search\/[^"]+)"/u);
+    assert.ok(maps);
+    assert.equal(new URL(maps[1].replaceAll("&amp;", "&")).searchParams.get("query"), "Tošin bunar 181, 11000 Beograd, Serbia");
+    if (process.env.SEO_FIXTURE_EVIDENCE_DIR) {
+      fs.mkdirSync(process.env.SEO_FIXTURE_EVIDENCE_DIR, { recursive: true });
+      fs.writeFileSync(path.join(process.env.SEO_FIXTURE_EVIDENCE_DIR, `${kind}.fixture.html`),
+        `<!-- MOCKED PUBLIC DTO; anonymous initial server HTML; NOT live data; no JavaScript executed -->\n${result.body}`);
+    }
+  }
+  Object.assign(salon, { entranceDirections: "<img src=x onerror=alert(1)>" });
+  const escapedEntrance = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.match(escapedEntrance.body, /\(&lt;img src=x onerror=alert\(1\)&gt;\)/u);
+  assert.doesNotMatch(escapedEntrance.body, /<img src=x/u);
+  for (const key of Object.keys(addressDetails)) Reflect.deleteProperty(salon, key);
   const originalJobType = beautyJob.type;
   for (const type of ["space_rental", "equipment_rental", "freelance"]) {
     beautyJob.type = type;
@@ -770,12 +801,13 @@ try {
   assert.match(escapedAddressResult.body, /&lt;img src=x onerror=alert\(1\)&gt; &amp; &quot;street&quot;/u);
   assert.doesNotMatch(escapedAddressResult.body, /<img src=x/u);
   for (const [flag, value] of [["active", false], ["published", false], ["hideAddress", true]] as const) {
-    Object.assign(salon, { address: "HIDDEN_STREET", [flag]: value });
+    Object.assign(salon, { address: "HIDDEN_STREET", entranceDirections: "HIDDEN_ENTRANCE", intercom: "HIDDEN_INTERCOM", floor: "HIDDEN_FLOOR", apartment: "HIDDEN_APARTMENT", [flag]: value });
     const hiddenAddressResult = await createSeoResponse({ url: "/saloni/glow-studio", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
-    assert.doesNotMatch(hiddenAddressResult.body, /HIDDEN_STREET|PRIVATE_PHONE|"geo":|"telephone":/u);
+    assert.doesNotMatch(hiddenAddressResult.body, /HIDDEN_STREET|HIDDEN_ENTRANCE|HIDDEN_INTERCOM|HIDDEN_FLOOR|HIDDEN_APARTMENT|PRIVATE_PHONE|"geo":|"telephone":/u);
     assert.match(hiddenAddressResult.body, /name="robots" content="noindex, nofollow"/u);
     Reflect.deleteProperty(salon, flag);
   }
+  for (const key of Object.keys(addressDetails)) Reflect.deleteProperty(salon, key);
   Reflect.deleteProperty(salon, "postalCode");
   for (const key of ["address", "phone", "latitude", "longitude"]) Reflect.deleteProperty(salon, key);
   const savedRating = salon.rating;

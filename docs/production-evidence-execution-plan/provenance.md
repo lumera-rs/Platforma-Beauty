@@ -467,3 +467,90 @@ included 114 exact-rule negative cases; execution validation rejected all 65
 negative fixtures with exact errors. The regression runner reported 13 passed,
 zero failed, zero skipped. This audit makes no database connections, starts no
 servers or workflows, and performs no commit or push. Stage B was not started.
+
+## Public salon address — Stage B protected-input amendments
+
+Authority: the public-salon-address instructions in attachments
+`1790022190230` and `1790026199502`. This batch follows the Stage A commit
+`c2ecfd2f0798bc4e1bc08e7a91e040f2bacd5bd1` and precedes the Stage B commit.
+Branch eligibility and historical preservation are checked against **main**
+`c760ce098a632263d51160841b7defee85241d6b`, not merely the Stage A commit.
+All earlier provenance, including the Stage A zero-drift audit, is retained.
+
+Before editing, independently hashing all 158 current-source entries found
+exactly ten mismatches: five files in diagnostic `currentInputs` and the same
+five in execution-plan `files`. All five files are changed on this branch
+against main; no unrelated-file drift was found. Both historical tiers were
+raw-byte-identical to main, and all 146 historical entries matched file bytes
+at pinned `b8f30561`. Neither stop condition applied.
+
+### Complete BEFORE mismatch table and ten source amendments
+
+D = `docs/production-diagnostic-design/protected-input-manifest.json`.
+E = `docs/production-evidence-execution-plan/protected-input-manifest.json`.
+Each row is derived from manifest values and SHA-256 of actual file bytes.
+The actual BEFORE hash is also the new approved current-source hash.
+
+| Manifest | File | Tier | Old hash | Actual before amendment / new hash | Branch changed versus main |
+| --- | --- | --- | --- | --- | --- |
+| D | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | currentInputs | `97c6dfa0503dc4cf4975269a663031c0477d211c48edce91b13102208d19ee5a` | `b04526547e6e32e00c55dc0241cc18a69eef95235490ded190687ac3fd9fe251` | Yes |
+| D | `scripts/src/migrations/manifest.ts` | currentInputs | `37c6b1ad27dc6b44edc7bb6ad1829f866d64448f2a4f5bf6f7461e4393671c5b` | `c5ced3b9b9fb486cdd4494b5347bd2caf47d8d37612f955b9c59ad765dde298f` | Yes |
+| D | `scripts/src/migrations/migrations.integration.test.ts` | currentInputs | `6d35f2c94d68be26d51f803fd8a8633cf2137490f7fe41974ed402a9e7455afe` | `6418c5ff3ac6050187cc972546788bef8bbc92f97e0274a07f219119d4c3345c` | Yes |
+| D | `scripts/src/migrations/migrations.test.ts` | currentInputs | `59fea3cda8dfa52640ccfa0f926c8034fc87d2220b4c877b1a20e9e9dc20d130` | `7dec6c6505da552438bb64b905d868f75215688575dc8c9a92e1e8811ab7d566` | Yes |
+| D | `scripts/src/migrations/runner.ts` | currentInputs | `811c486a2d360983da1a387ceea034b139f48fc3c4667708a180708308caad41` | `ae6972ada8abb89cb21e0137be268ce3f7f0abdc0790b7cbc5e2f68eea58457f` | Yes |
+| E | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | files | `97c6dfa0503dc4cf4975269a663031c0477d211c48edce91b13102208d19ee5a` | `b04526547e6e32e00c55dc0241cc18a69eef95235490ded190687ac3fd9fe251` | Yes |
+| E | `scripts/src/migrations/manifest.ts` | files | `37c6b1ad27dc6b44edc7bb6ad1829f866d64448f2a4f5bf6f7461e4393671c5b` | `c5ced3b9b9fb486cdd4494b5347bd2caf47d8d37612f955b9c59ad765dde298f` | Yes |
+| E | `scripts/src/migrations/migrations.integration.test.ts` | files | `6d35f2c94d68be26d51f803fd8a8633cf2137490f7fe41974ed402a9e7455afe` | `6418c5ff3ac6050187cc972546788bef8bbc92f97e0274a07f219119d4c3345c` | Yes |
+| E | `scripts/src/migrations/migrations.test.ts` | files | `59fea3cda8dfa52640ccfa0f926c8034fc87d2220b4c877b1a20e9e9dc20d130` | `7dec6c6505da552438bb64b905d868f75215688575dc8c9a92e1e8811ab7d566` | Yes |
+| E | `scripts/src/migrations/runner.ts` | files | `811c486a2d360983da1a387ceea034b139f48fc3c4667708a180708308caad41` | `ae6972ada8abb89cb21e0137be268ce3f7f0abdc0790b7cbc5e2f68eea58457f` | Yes |
+
+Reasons, applying to both manifest rows for each file:
+
+- `PHASE-5B-RUNBOOK.md`: required frontier now includes public salon entrance
+  details migration 000003, without production authorization.
+- `manifest.ts`: explicitly registers 000003 and its computed head metadata.
+- `migrations.integration.test.ts`: Stage B full-chain migration regressions.
+- `migrations.test.ts`: explicit updated manifest expectations for 000003.
+- `runner.ts`: validates the completed catalog frontier for subsequent
+  additive migrations and adoption replay while retaining admitted-transition
+  checks for the supported data migration.
+
+These source edits predate this hash batch and are owned by the implementation
+agent. No source bytes, baseline pins, or migration SQL are edited here.
+
+### Eleventh amendment: final diagnostic-manifest cascade
+
+The nested entry was not a BEFORE mismatch:
+
+| Manifest | File | Tier | Old hash | Actual before amendment | Branch changed before batch |
+| --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `3cce68d8c934cd5e5fedf707ccb3a222cb29c3c225ac2ab0fe99819102767dc4` | `3cce68d8c934cd5e5fedf707ccb3a222cb29c3c225ac2ab0fe99819102767dc4` | No |
+
+After all five diagnostic current-source changes were final, its file bytes
+were rehashed and the explicitly authorized dependent entry amended:
+
+| Manifest | File | Tier | Old hash | New hash | Branch changed | Reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| E | `docs/production-diagnostic-design/protected-input-manifest.json` | files | `3cce68d8c934cd5e5fedf707ccb3a222cb29c3c225ac2ab0fe99819102767dc4` | `cc5ca3028064bd35c6fbf10412f9f16b9853ff0481002f7583b20fd7222c186a` | Yes, via this authorized Stage B amendment | Cascade from five finalized diagnostic current-source replacements |
+
+Exactly 11 current hashes are amended: five diagnostic and six execution-plan
+entries. Historical blocks, their inventories, and historical pins remain
+unchanged. Their raw-block SHA-256 values remain the two main-identical values
+recorded in the Stage A audit above.
+
+### Stage B documentation validation
+
+Ran `pnpm --filter @workspace/scripts run test:reconstruction:docs` once after
+the final manifest batch. Both validators passed: 114 diagnostic exact-rule
+negative cases and 65 execution negative fixtures rejected with exact errors.
+The regression runner reported 13 passed, zero failed, zero skipped.
+
+An independent final check verified all 158 current hashes, exactly 11
+current-tier amendments, both historical blocks byte-identical to main
+`c760ce098a632263d51160841b7defee85241d6b`, all source table rows against
+manifest/file bytes, and unchanged prior provenance. The final execution-plan
+manifest SHA-256 is
+`6c1ccffb4e9538fcd7ac7191b5c20db49b37667a961bfac303a6c351f8509804`.
+`git diff --check` passed for these three documentation files. This batch
+changed only the two protected manifests and this provenance document; it ran
+no database tests or connections, servers, workflows, commits, or pushes.

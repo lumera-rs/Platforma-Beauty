@@ -17,6 +17,14 @@ export type SalonProfile = SalonCard & ({
   address?: string;
   /** @nullable */
   postalCode?: string | null;
+  /** @nullable */
+  entranceDirections?: string | null;
+  /** @nullable */
+  intercom?: string | null;
+  /** @nullable */
+  floor?: string | null;
+  /** @nullable */
+  apartment?: string | null;
   gallery: string[];
   /** @nullable */
   videoUrl: string | null;

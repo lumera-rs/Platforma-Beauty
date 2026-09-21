@@ -938,6 +938,7 @@ exit 0
     "run test:frontend-standards",
     "run test:seo-standards",
     "--filter @workspace/scripts exec tsx --test ./src/public-salon-address.test.ts",
+    "--filter @workspace/scripts run test:salon-address-input",
     "run test:frontend-interactions",
     "run test:rmas",
   ]);
@@ -1260,6 +1261,7 @@ test("branch CI isolates database checks and orders browser journeys after every
     'run_phase "frontend-standards" pnpm run test:frontend-standards',
     'run_phase "seo-standards" pnpm run test:seo-standards',
     'run_phase "public-salon-address" pnpm --filter @workspace/scripts exec tsx --test ./src/public-salon-address.test.ts',
+    'run_phase "salon-address-input" pnpm --filter @workspace/scripts run test:salon-address-input',
     'run_phase "frontend-interactions" pnpm run test:frontend-interactions',
     'run_phase "rmas" pnpm run test:rmas',
   ];

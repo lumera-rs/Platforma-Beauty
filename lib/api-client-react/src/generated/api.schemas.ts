@@ -1585,6 +1585,14 @@ export type SalonProfile = SalonCard & ({
   address?: string;
   /** @nullable */
   postalCode?: string | null;
+  /** @nullable */
+  entranceDirections?: string | null;
+  /** @nullable */
+  intercom?: string | null;
+  /** @nullable */
+  floor?: string | null;
+  /** @nullable */
+  apartment?: string | null;
   gallery: string[];
   /** @nullable */
   videoUrl: string | null;
@@ -1608,6 +1616,14 @@ export type SalonProfile = SalonCard & ({
 });
 
 export interface SalonProfileMedia {
+  /** @nullable */
+  entranceDirections?: string | null;
+  /** @nullable */
+  intercom?: string | null;
+  /** @nullable */
+  floor?: string | null;
+  /** @nullable */
+  apartment?: string | null;
   id: string;
   name: string;
   slug: string;
@@ -1642,6 +1658,30 @@ export interface MediaDescription {
 }
 
 export interface SalonProfileMediaUpdate {
+  /**
+     * @maxLength 500
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  entranceDirections?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  intercom?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  floor?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  apartment?: string | null;
   /** @nullable */
   videoUrl?: string | null;
   acceptsCards?: boolean;
@@ -12431,6 +12471,30 @@ export interface EmployeeLocationAssignment {
 }
 
 export interface CreateSalonLocationInput {
+  /**
+     * @maxLength 500
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  entranceDirections?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  intercom?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  floor?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  apartment?: string | null;
   /**
      * @minLength 1
      * @maxLength 200

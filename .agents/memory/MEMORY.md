@@ -19,7 +19,7 @@
 - [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.
 - [Education integrity](education-topics.md) — grouped index of education-domain decisions and detailed topics.
 - [Database-clock test boundaries](database-clock-test-boundaries.md) — SQL deadline tests must share PostgreSQL’s clock when JavaScript time is overridden.
-- [Appointment contact privacy](appointment-contact-privacy.md) — exact salon details require ownership of a pending, confirmed, or completed appointment.
+- [Salon address and contact privacy](appointment-contact-privacy.md) — active profile addresses are public; phone, email and coordinates retain separate privacy boundaries.
 - [Partial expression index publishing](partial-expression-index-publishing.md) — use a generated normalized column for nullable participant keys before partial unique indexing.
 - [Immutable gallery media](immutable-gallery-media.md) — browser uploads must land in staging and be promoted before attachment; private media must disable shared caching.
 - [Managed image attachment](managed-image-attachment.md) — claim leased image assets in the same transaction as the business reference, using only newly supplied fields.

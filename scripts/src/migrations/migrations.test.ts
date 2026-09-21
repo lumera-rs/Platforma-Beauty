@@ -7,7 +7,7 @@ import { applyMigrations, migrationStatus, splitSqlStatements } from "./runner";
 import type { LoadedMigration } from "./types";
 
 test("the manifest preserves the canonical baseline and pins the guarded data transition", async () => {
-  assert.deepEqual(MIGRATION_MANIFEST.map((entry) => entry.id), ["000001", "000002"]);
+  assert.deepEqual(MIGRATION_MANIFEST.map((entry) => entry.id), ["000001", "000002", "000003"]);
   const migrations = await loadMigrations();
   assert.equal(migrations[0]?.checksum, "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60");
   assert.equal(migrations[0]?.mode, "transactional");
@@ -15,6 +15,11 @@ test("the manifest preserves the canonical baseline and pins the guarded data tr
   assert.equal(migrations[1]?.admissionContract, "supported-startup-v1");
   assert.equal(migrations[1]?.mode, "transactional");
   assert.equal(migrations[1]?.checksum, "a8c910eb9bd60281aa80e343b4b1d6e02a45222293b123ab198fab4315d48e62");
+  assert.equal(migrations[2]?.admissionContract, undefined);
+  assert.equal(migrations[2]?.mode, "transactional");
+  assert.match(migrations[2]!.body.trim(), /^ALTER TABLE public\.salons\s+ADD COLUMN entrance_directions TEXT,\s+ADD COLUMN intercom TEXT,\s+ADD COLUMN floor TEXT,\s+ADD COLUMN apartment TEXT;\s*$/u);
+  assert.equal(migrations[2]?.preconditions.length, 1);
+  assert.equal(migrations[2]?.postconditions.length, 1);
 });
 
 test("status does not create a missing ledger", async () => {

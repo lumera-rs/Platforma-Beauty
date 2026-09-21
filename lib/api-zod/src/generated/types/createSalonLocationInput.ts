@@ -8,6 +8,30 @@
 
 export interface CreateSalonLocationInput {
   /**
+     * @maxLength 500
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  entranceDirections?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  intercom?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  floor?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  apartment?: string | null;
+  /**
      * @minLength 1
      * @maxLength 200
      */

@@ -9,7 +9,9 @@ import {
 } from "./index";
 
 test("migration readiness exposes immutable repository pins", () => {
-  assert.deepEqual(migrationReadinessContract.requiredMigrationIds, ["000001", "000002"]);
+  assert.deepEqual(migrationReadinessContract.requiredMigrationIds, ["000001", "000002", "000003"]);
+  assert.notEqual(migrationReadinessContract.headStructuralFingerprint, migrationReadinessContract.structuralFingerprint);
+  assert.notEqual(migrationReadinessContract.headPhysicalFingerprint, migrationReadinessContract.physicalFingerprint);
   assert.equal(
     migrationReadinessContract.baselineChecksum,
     "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60",
@@ -55,6 +57,16 @@ test("readiness returns a safe failure and does not create a ledger", async () =
   assert.equal(queries.some((query) => /\b(?:CREATE|INSERT|UPDATE|ALTER)\b/i.test(query)), false);
 });
 
+const headLedgerRow = {
+  migration_id: "000003",
+  checksum: migrationReadinessContract.salonEntranceMigrationChecksum,
+  mode: "transactional",
+  state: "APPLIED",
+  error: null,
+  started_at: "2026-01-01T00:00:04Z",
+  finished_at: "2026-01-01T00:00:05Z",
+};
+
 test("readiness leases one dedicated pool client and releases it", async () => {
   const queries: string[] = [];
   let released = 0;
@@ -82,6 +94,7 @@ test("readiness leases one dedicated pool client and releases it", async () => {
               started_at: "2026-01-01T00:00:02Z",
               finished_at: "2026-01-01T00:00:03Z",
             },
+            headLedgerRow,
           ],
         };
       }
@@ -104,15 +117,15 @@ test("readiness leases one dedicated pool client and releases it", async () => {
   const report = await assertDatabaseMigrationReady(
     pool,
     async () => ({
-      structuralFingerprint: migrationReadinessContract.structuralFingerprint,
-      physicalFingerprint: migrationReadinessContract.physicalFingerprint,
+      structuralFingerprint: migrationReadinessContract.headStructuralFingerprint,
+      physicalFingerprint: migrationReadinessContract.headPhysicalFingerprint,
       formatVersion: 2,
       fingerprintVersion: 4,
       schemaFormatVersion: 1,
       postgresServerMajorVersion: 16,
       postgresServerVersionNum: 160010,
       postgresDeparserFormat: "postgresql-16-deparser-v1",
-      normalizedObjectCount: 5060,
+      normalizedObjectCount: migrationReadinessContract.headNormalizedObjectCount,
       enumCount: 103,
       triggerCount: 24,
       functionCount: 21,
@@ -126,15 +139,15 @@ test("readiness leases one dedicated pool client and releases it", async () => {
 
 function canonicalCatalogIdentity(postgresServerVersionNum: number) {
   return {
-    structuralFingerprint: migrationReadinessContract.structuralFingerprint,
-    physicalFingerprint: migrationReadinessContract.physicalFingerprint,
+    structuralFingerprint: migrationReadinessContract.headStructuralFingerprint,
+    physicalFingerprint: migrationReadinessContract.headPhysicalFingerprint,
     formatVersion: 2,
     fingerprintVersion: 4,
     schemaFormatVersion: 1,
     postgresServerMajorVersion: 16,
     postgresServerVersionNum,
     postgresDeparserFormat: "postgresql-16-deparser-v1",
-    normalizedObjectCount: 5060,
+    normalizedObjectCount: migrationReadinessContract.headNormalizedObjectCount,
     enumCount: 103,
     triggerCount: 24,
     functionCount: 21,
@@ -166,6 +179,7 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
                 started_at: "2026-01-01T00:00:02Z",
                 finished_at: "2026-01-01T00:00:03Z",
               },
+              headLedgerRow,
             ],
           };
         }
@@ -179,7 +193,7 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
     assert.deepEqual(report, {
       ready: true,
       reason: null,
-      migrationIds: ["000001", "000002"],
+      migrationIds: ["000001", "000002", "000003"],
       ledger: "VALID",
       catalog: "CANONICAL",
     });
@@ -188,6 +202,12 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
 
 test("readiness rejects schema drift and unsupported PostgreSQL majors", async () => {
   for (const identity of [
+    {
+      ...canonicalCatalogIdentity(160010),
+      structuralFingerprint: migrationReadinessContract.structuralFingerprint,
+      physicalFingerprint: migrationReadinessContract.physicalFingerprint,
+      normalizedObjectCount: 5060,
+    },
     {
       ...canonicalCatalogIdentity(160011),
       structuralFingerprint: "schema-drift",
@@ -221,6 +241,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
                 started_at: "2026-01-01T00:00:02Z",
                 finished_at: "2026-01-01T00:00:03Z",
               },
+              headLedgerRow,
             ],
           };
         }
@@ -231,5 +252,23 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
     assert.equal(report.ready, false);
     assert.equal(report.reason, "MIGRATION_READINESS_CATALOG_DRIFT");
     assert.equal(report.catalog, "DRIFTED");
+  }
+  for (const state of ["ADOPTED", "UNKNOWN"]) {
+    let catalogReads = 0;
+    const client = {
+      async query(sql: string) {
+        return { rows: sql.includes("migration_id, checksum") ? [
+          { ...headLedgerRow, migration_id: "000001", checksum: migrationReadinessContract.baselineChecksum },
+          { ...headLedgerRow, migration_id: "000002", checksum: migrationReadinessContract.supportedStartupMigrationChecksum },
+          { ...headLedgerRow, state },
+        ] : [] };
+      },
+    };
+    const report = await inspectDatabaseMigrationReady(client, async () => {
+      catalogReads += 1;
+      return canonicalCatalogIdentity(160010);
+    });
+    assert.equal(report.ready, false, `000003 ${state} must not satisfy readiness`);
+    assert.equal(catalogReads, 0, "invalid receipt must refuse before the catalog reader");
   }
 });

@@ -537,7 +537,7 @@ test("canonical baseline with configured global references admits 000002 and boo
         VALUES (true, 3, 7, 5, 'Configured Disposable Seller')
       `);
       const transition = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
-      assert.deepEqual(transition.applied, ["000002"]);
+      assert.deepEqual(transition.applied, ["000002", "000003"]);
       const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
       assert.equal(eligibility.path, "SUPPORTED_EXISTING");
       await runBootPath(connectionString, name, pool);
@@ -554,7 +554,7 @@ test("canonical baseline with configured global references admits 000002 and boo
     const definition = await fastFunctionDefinition();
     await pool.query(definition);
     const transition = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(transition.applied, ["000002"]);
+    assert.deepEqual(transition.applied, ["000002", "000003"]);
     const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
     assert.equal(eligibility.path, "SUPPORTED_EXISTING");
     proofRecords.push({
@@ -589,7 +589,7 @@ test("runtime-populated tracked frontier repeats without bootstrap admission and
       const before = await catalogSignature(pool);
       const repeat = await withDedicatedClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
       assert.deepEqual(repeat.applied, []);
-      assert.deepEqual(repeat.skipped, ["000001", "000002"]);
+      assert.deepEqual(repeat.skipped, ["000001", "000002", "000003"]);
       assert.equal(await catalogSignature(pool), before);
       const eligibility = await withDedicatedClient(pool, (client) => inspectDeploymentEligibility(client));
       assert.equal(eligibility.path, "SUPPORTED_EXISTING");

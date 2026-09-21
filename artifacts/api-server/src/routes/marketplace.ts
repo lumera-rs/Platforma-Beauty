@@ -1,3 +1,4 @@
+import { normalizeSalonAddressInput, salonAddressDetailKeys } from "../lib/salon-address-input";
 import 
 {
  Router, type IRouter, type NextFunction, type Request, type Response
@@ -7154,6 +7155,10 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     featured: Boolean(activeFeaturedPlacement),
     address: salon.address,
     postalCode: salon.postalCode,
+    entranceDirections: salon.entranceDirections,
+    intercom: salon.intercom,
+    floor: salon.floor,
+    apartment: salon.apartment,
     gallery: salon.gallery,
     socialImage: await publicSocialImage(salon.imageUrl),
     videoUrl: salon.videoUrl,
@@ -9596,6 +9601,10 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
   ]);
   res.json(GetManagedSalonProfileResponse.parse({
     id: salon.id,
+    entranceDirections: salon.entranceDirections,
+    intercom: salon.intercom,
+    floor: salon.floor,
+    apartment: salon.apartment,
     name: salon.name,
     slug: salon.slug,
     active: salon.active,
@@ -9619,10 +9628,13 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Dostupnost dolaska se podešava kroz aktivne usluge." });
     return;
   }
-  const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
+  const parsed = UpdateManagedSalonProfileBody.safeParse(normalizeSalonAddressInput(req.body));
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (parsed.data.videoUrl !== undefined && !isSafeExternalHttpUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
+  for (const key of salonAddressDetailKeys) {
+    if (parsed.data[key] !== undefined) updates[key] = parsed.data[key];
+  }
   if (parsed.data.coverImageDescription !== undefined) {
     updates.coverImageDescription = normalizedCoverImageDescription(parsed.data.coverImageDescription);
   }
@@ -9731,6 +9743,10 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   void publishCatalogInvalidation(["salons"]);
   res.json(GetManagedSalonProfileResponse.parse({
     id: updated!.id,
+    entranceDirections: updated!.entranceDirections,
+    intercom: updated!.intercom,
+    floor: updated!.floor,
+    apartment: updated!.apartment,
     name: updated!.name,
     slug: updated!.slug,
     active: updated!.active,
@@ -11437,6 +11453,12 @@ function additionalLocationProfile(
 ) {
   return {
     ...card(salon, services, []),
+    address: salon.address,
+    postalCode: salon.postalCode,
+    entranceDirections: salon.entranceDirections,
+    intercom: salon.intercom,
+    floor: salon.floor,
+    apartment: salon.apartment,
     gallery: [],
     videoUrl: null,
     description: salon.description,
@@ -11468,7 +11490,7 @@ function additionalLocationProfile(
 
 router.post("/salon/locations", async (req, res, next): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const parsed = CreateSalonLocationBody.safeParse(req.body);
+  const parsed = CreateSalonLocationBody.safeParse(normalizeSalonAddressInput(req.body));
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message, code: "VALIDATION_ERROR" }); return; }
   const body = parsed.data;
   if ((body.copyServices || body.copyPackages) && !body.sourceSalonId) {
@@ -11509,6 +11531,10 @@ router.post("/salon/locations", async (req, res, next): Promise<void> => {
         ownerId: access.user.id,
         name: body.name, city: body.city, municipality: body.municipality, address: body.address,
         postalCode: body.postalCode ?? null, phone: body.phone, email: body.email,
+        entranceDirections: body.entranceDirections ?? null,
+        intercom: body.intercom ?? null,
+        floor: body.floor ?? null,
+        apartment: body.apartment ?? null,
         shortDescription: body.shortDescription, description: body.description, imageUrl: body.imageUrl,
         // A UUID suffix avoids a read-then-write slug race while retaining a
         // meaningful, stable-looking location URL.
