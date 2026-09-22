@@ -2,37 +2,68 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
-import { eq, inArray, like, sql } from "drizzle-orm";
-import {
+import type { SmsProvider } from "./sms";
+import type { TransactionalEmailTransport } from "./brevo";
+const targetIdentityModulePath = "../../../../scripts/src/migrations/target-identity";
+const {
+  assertTargetIdentity,
+  validateExpectedTargetIdentity,
+} = await import(targetIdentityModulePath);
+
+const expectedTargetIdentity = validateExpectedTargetIdentity({
+  databaseName: process.env["LUMERA_TEST_DATABASE_NAME"],
+  systemIdentifier: process.env["LUMERA_TEST_DATABASE_SYSTEM_IDENTIFIER"],
+  transport: process.env["LUMERA_TEST_DATABASE_TRANSPORT"],
+});
+
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Beauty jobs routes tests");
+
+const databaseModule = await import("@workspace/db");
+const {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
   educationCentersTable, educationFinancialAuditLogTable, educationTrialClaimsTable, employeeLocationAssignmentsTable,
   employeeLocationSchedulesTable, employeeSchedulesTable, employeeServicesTable, employeesTable,
   imageAssetsTable, mediaAssetsTable, mediaVariantsTable, pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
-} from "@workspace/db";
-import { GetBeautyJobResponse } from "@workspace/api-zod";
-import app from "../app";
-import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureBusinessGrowthSchema } from "./business-growth-schema";
-import { createJobPublicationCutoffResolver, resetJobPublicationCutoffForTests, resolveJobPublicationCutoff } from "./job-publication-cutoff";
-import { logger } from "./logger";
-import {
-  sendBeautyJobEmail,
-  setBeautyJobEmailTransportForTests,
-} from "./beauty-jobs-email";
-import {
-  retryFailedRetryableEmails,
-  type TransactionalEmailTransport,
-} from "./brevo";
-import {
-  BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS,
-  runBeautyJobDeliveryFailureAlerts,
-} from "./beauty-jobs-delivery-monitor";
-import type { SmsProvider } from "./sms";
+} = databaseModule;
 
-assertDestructiveTestRuntimeAllowed(process.env, "Beauty jobs routes tests");
+try {
+  const identityClient = await pool.connect();
+  try {
+    await assertTargetIdentity(identityClient, expectedTargetIdentity);
+  } finally {
+    identityClient.release();
+  }
+} catch (error) {
+  await pool.end();
+  throw error;
+}
+
+const [
+  { eq, inArray, like, sql },
+  { GetBeautyJobResponse },
+  { default: app },
+  { createSession, hashPassword, sessionCookieName },
+  { ensureBusinessGrowthSchema },
+  { createJobPublicationCutoffResolver, resetJobPublicationCutoffForTests, resolveJobPublicationCutoff },
+  { logger },
+  { sendBeautyJobEmail, setBeautyJobEmailTransportForTests },
+  { retryFailedRetryableEmails },
+  { BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS, runBeautyJobDeliveryFailureAlerts },
+] = await Promise.all([
+  import("drizzle-orm"),
+  import("@workspace/api-zod"),
+  import("../app"),
+  import("./auth"),
+  import("./business-growth-schema"),
+  import("./job-publication-cutoff"),
+  import("./logger"),
+  import("./beauty-jobs-email"),
+  import("./brevo"),
+  import("./beauty-jobs-delivery-monitor"),
+]);
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
