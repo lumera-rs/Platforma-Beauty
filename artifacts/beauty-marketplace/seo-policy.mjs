@@ -1,5 +1,24 @@
 import staticPages from './src/lib/static-seo-pages.json' with { type: 'json' };
 
+export function listingPage(search = '') {
+  const value = new URLSearchParams(search).get('page');
+  return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 1;
+}
+export function listingCanonical(pathname, search = '') {
+  const params = new URLSearchParams(search);
+  if (!['/saloni', '/edukacije', '/poslovi'].includes(pathname)
+    && !pathname.startsWith('/saloni/kategorija/')
+    && !pathname.startsWith('/edukacije/sekcije/')
+    && !(/^\/shop\/[^/]+(?:\/.*)?$/.test(pathname) && !pathname.includes('/proizvod/'))) return pathname;
+  const page = params.get('page');
+  // Existing filter-only URLs retain their base canonical; pagination retains
+  // filters to avoid canonicalizing distinct result sets to another page.
+  if (!page || !/^[1-9]\d*$/.test(page) || !Number.isSafeInteger(Number(page))) return pathname;
+  params.set('page', String(Number(page)));
+  params.sort();
+  return `${pathname}?${params}`;
+}
+
 export function publicSiteOrigin(env = process.env) {
   const value = env.PUBLIC_SITE_URL || env.LUMERA_PUBLIC_URL;
   if (!value) throw new Error('PUBLIC_SITE_URL must be configured.');

@@ -460,6 +460,7 @@ const beautyJob = {
   region: "Beograd",
   authorDisplayName: "Glow Studio",
   photos: ["/glow-job.jpg"],
+  createdAt: "2026-09-20T10:00:00.000Z",
 };
 const course = {
   id: courseId,
@@ -520,6 +521,7 @@ function responseJson(payload: unknown, status = 200): Response {
 }
 
 const originalFetch = globalThis.fetch;
+const relatedSalons = Array.from({ length: 8 }, (_, i) => ({ ...salon, id: `related-${i}`, slug: `related-${i}`, name: `Javni salon ${i + 1}` }));
 globalThis.fetch = async (input) => {
   const rawUrl = typeof input === "string"
     ? input
@@ -529,8 +531,10 @@ globalThis.fetch = async (input) => {
   const url = new URL(rawUrl, "https://seo-contract.test");
   const requestPath = `${url.pathname}${url.search}`;
 
-  if (requestPath.startsWith("/api/salons?")) return responseJson([salon]);
+  if (requestPath.startsWith("/api/salons?")) return responseJson(url.searchParams.get("pageSize") === "9" ? [salon, ...relatedSalons] : url.searchParams.get("page") === "2" ? relatedSalons.slice(0, 6) : [salon]);
   if (url.pathname === `/api/salons/${salon.slug}`) return responseJson(salon);
+  if (url.pathname === "/api/suppliers") return responseJson([supplier]);
+  if (url.pathname === "/api/beauty-jobs") return responseJson({ items: [beautyJob], total: 1, page: 1, pageSize: 10 });
   if (url.pathname === `/api/beauty-jobs/${beautyJob.id}`) return responseJson(beautyJob);
   if (url.pathname === `/api/suppliers/${supplier.slug}/public-products/${product.id}`) {
     return responseJson(product);
@@ -545,6 +549,9 @@ globalThis.fetch = async (input) => {
   if (url.pathname === "/api/education/public/taxonomy") return responseJson(taxonomy);
   if (url.pathname === `/api/education/public/courses/${course.id}`) return responseJson(course);
   if (url.pathname === "/api/education/public/courses") return responseJson([course]);
+  if (url.pathname === "/api/inspiracija") return responseJson([{ title: "Profesionalna nega lica", imageUrl: "/public-inspiration.jpg", description: "Prikaz javnog tretmana.", salon: { slug: salon.slug, name: salon.name } }]);
+  if (url.pathname === "/api/recnik") return responseJson([{ term: "Balayage", definition: "Tehnika bojenja kose." }]);
+  if (url.pathname === "/api/brendovi") return responseJson([{ name: "Javni beauty brend", description: "Brend iz javnog kataloga." }]);
   if (url.pathname === `/api/education/bundles/${bundle.id}`) return responseJson(bundle);
   if (url.pathname === `/api/education/public/centers/${center.id}`) return responseJson(center);
   if (url.pathname === `/api/education/instructors/${instructor.id}/public`) {
@@ -634,6 +641,14 @@ const htmlTemplate = `<!doctype html><html><head>
   <link rel="canonical" href="${seoOrigin}/">
 </head><body><div id="root"></div></body></html>`;
 
+function assertPublicImageAlts(html: string, pathname: string) {
+  for (const image of html.matchAll(/<img\b[^>]*>/gu)) {
+    const alt = image[0].match(/\balt="([^"]*)"/u)?.[1];
+    assert.ok(alt?.trim(), `${pathname}: every public image requires meaningful nonblank alt`);
+    assert.doesNotMatch(alt, /^(?:undefined|null|image|slika|placeholder)$/iu, `${pathname}: alt cannot be placeholder text`);
+  }
+}
+
 async function serverMetadata(pathname: string): Promise<{
   status: number;
   head: ComparableSeoHead;
@@ -647,6 +662,7 @@ async function serverMetadata(pathname: string): Promise<{
       "x-forwarded-proto": "https",
     },
   }, htmlTemplate);
+  assertPublicImageAlts(response.body, pathname);
   const siteAllowed = optionalHtmlAttribute(response.body, /<meta name="lumera:site-indexable" content="([^"]*)">/u) === "true";
   assert.equal(siteAllowed, false, "the parity fixture must exercise staging noindex policy");
   return { status: response.status, head: ssrHead(response.body), siteAllowed };
@@ -675,6 +691,19 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  const { cityPhrase, cityLocative, publicImageAlt, publicSalonCategories } = await import(moduleUrl("artifacts/beauty-marketplace/seo-text.mjs"));
+  const { buildPageStructuredData } = await import(moduleUrl("artifacts/beauty-marketplace/structured-data.mjs"));
+  for (const [city, locative] of Object.entries({ Beograd: "Beogradu", Kragujevac: "Kragujevcu", Niš: "Nišu", "Novi Sad": "Novom Sadu", Pančevo: "Pančevu", Subotica: "Subotici", Čačak: "Čačku" })) assert.equal(cityPhrase(city), `u ${locative}`);
+  assert.equal(cityLocative("Nepoznat grad"), null);
+  assert.equal(cityPhrase("Nepoznat grad"), "Nepoznat grad");
+  const schemaOptions = { origin: "https://lumera.example", canonical: "/poslovi/frizer/glow-job" };
+  for (const key of ["title", "description", "city", "authorDisplayName", "createdAt"]) assert.equal(buildPageStructuredData("job", { ...beautyJob, [key]: "" }, schemaOptions), null);
+  for (const price of [undefined, null, "", "100", -1, Infinity, NaN]) assert.equal(buildPageStructuredData("product", { ...product, price, discountPrice: undefined }, schemaOptions), null);
+  const paginated = await createSeoResponse({ url: "/saloni?city=Beograd&page=2", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.match(paginated.body, /href="\/saloni\?city=Beograd&amp;page=1"/u);
+  assert.match(paginated.body, /href="\/saloni\?city=Beograd&amp;page=3"/u);
+  assert.match(paginated.body, /rel="canonical" href="https:\/\/lumera.example\/saloni\?city=Beograd&amp;page=2"/u);
+  assert.match(paginated.body, /name="robots" content="noindex, nofollow"/u);
   // Fixture-only, initial HTML checks: no API process or database is involved.
   const structuredRoutes: Array<[string, string[]]> = [
     ["/", ["Organization", "WebSite"]],
@@ -682,7 +711,7 @@ try {
     [`/edukacije/${course.id}`, ["Course", "BreadcrumbList"]],
     [`/edukacije/instruktori/${instructor.id}`, ["Person", "BreadcrumbList"]],
     [`/edukacije/centri/${center.id}`, ["EducationalOrganization", "BreadcrumbList"]],
-    [`/edukacije/paketi/${bundle.id}`, ["Product", "Offer", "BreadcrumbList"]],
+    [`/edukacije/paketi/${bundle.id}`, ["BreadcrumbList"]],
     [`/poslovi/${beautyJob.slug}/${beautyJob.id}`, ["JobPosting", "BreadcrumbList"]],
     [`/shop/${supplier.slug}/proizvod/${product.id}`, ["Product", "Offer", "BreadcrumbList"]],
     [`/shop/${supplier.slug}`, ["ItemList", "BreadcrumbList"]],
@@ -701,6 +730,14 @@ try {
       value.forEach((item) => inspectSchema(item, types));
     } else if (typeof value === "object" && value) {
       assert.ok(Object.keys(value).length, "JSON-LD must not contain empty objects");
+      const node = value as Record<string, unknown>;
+      if (node["@type"] === "JobPosting") {
+        for (const required of ["title", "description", "datePosted", "hiringOrganization", "jobLocation"]) assert.ok(node[required], `JobPosting requires ${required}`);
+      }
+      if (node["@type"] === "Offer" || "priceCurrency" in node) {
+        assert.equal(typeof node.price, "number", "Offers and currency require a finite numeric price");
+        assert.ok(Number.isFinite(node.price) && Number(node.price) >= 0);
+      }
       for (const [key, item] of Object.entries(value)) {
         assert.notEqual(key, "sameAs");
         if (key === "@type" && typeof item === "string") types.add(item);
@@ -711,12 +748,27 @@ try {
   for (const [pathname, expectedTypes] of structuredRoutes) {
     const result = await createSeoResponse({ url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
     assert.equal(result.status, 200, pathname);
-    const scripts = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)];
+    const scripts = [...result.body.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gu)];
     assert.ok(scripts.length, `${pathname} needs initial HTML JSON-LD`);
     const types = new Set<string>();
     scripts.forEach((script) => inspectSchema(JSON.parse(script[1]), types));
     expectedTypes.forEach((type) => assert.ok(types.has(type), `${pathname} needs ${type}`));
     assert.match(result.body, /name="robots" content="noindex, nofollow"/u, "staging remains noindex");
+    assertPublicImageAlts(result.body, pathname);
+    if (["/", "/saloni", "/saloni/glow-studio", "/inspiracija", "/edukacije", `/edukacije/${course.id}`, "/poslovi", `/poslovi/${beautyJob.slug}/${beautyJob.id}`, "/proizvodi", `/shop/${supplier.slug}`, `/shop/${supplier.slug}/${category.path}`, `/shop/${supplier.slug}/proizvod/${product.id}`, categoryPaths[0], "/edukacije/sekcije/nega/lice/hidratacija"].includes(pathname)) {
+      assert.match(result.body, /<img\b/u, `${pathname}: image coverage must not pass vacuously with an empty fixture`);
+    }
+    if (pathname === "/saloni/glow-studio") {
+      assert.match(result.body, /<title>Glow Studio u Beogradu/u);
+      assert.match(result.body, /href="\/saloni\?city=Beograd"/u);
+      for (const related of relatedSalons) assert.ok(result.body.includes(`href="/saloni/${related.slug}"`), "same-city related salon must be a real anchor");
+    }
+    if (pathname === `/edukacije/paketi/${bundle.id}`) assert.doesNotMatch(scripts[0][1], /"@type":"(?:Product|Offer)"/u);
+    if (process.env.SEO_FIXTURE_EVIDENCE_DIR && ["/saloni/glow-studio", `/edukacije/${course.id}`, `/poslovi/${beautyJob.slug}/${beautyJob.id}`].includes(pathname)) {
+      fs.mkdirSync(process.env.SEO_FIXTURE_EVIDENCE_DIR, { recursive: true });
+      const name = pathname.startsWith("/saloni/") ? "salon" : pathname.startsWith("/edukacije/") ? "course" : "job";
+      fs.writeFileSync(path.join(process.env.SEO_FIXTURE_EVIDENCE_DIR, `${name}.fixture.html`), `<!-- TEST PUBLIC DTO; real createSeoResponse initial HTML; NOT live data; no JavaScript executed -->\n${result.body}`);
+    }
     if (pathname === "/") assert.doesNotMatch(scripts[0][1], /"logo":/u);
     if (pathname === "/saloni/glow-studio") {
       assert.match(scripts[0][1], /"ratingValue":4.9/u);
@@ -759,7 +811,7 @@ try {
       : "Tošin bunar 181, 11000 Beograd";
     assert.ok(result.body.includes(`${expected}</a>`));
     assert.match(result.body, /name="robots" content="noindex, nofollow"/u);
-    const structured = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)].map((match) => match[1]).join("");
+    const structured = [...result.body.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gu)].map((match) => match[1]).join("");
     assert.match(structured, /"streetAddress":"Tošin bunar 181"/u);
     assert.doesNotMatch(structured, /ulaz sa bočne|22 enter|IV sprat|"apartment"|"geo"/u);
     const maps = result.body.match(/href="(https:\/\/www.google.com\/maps\/search\/[^"]+)"/u);
@@ -929,9 +981,13 @@ try {
   );
   assert.equal(
     (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt,
-    salon.coverImageDescription,
-    "dynamic social images must prefer the owner's cover description",
+    publicImageAlt({ name: salon.name, category: publicSalonCategories(salon).join(", "), city: salon.city, description: salon.coverImageDescription }),
+    "dynamic social images must retain the owner's semantic detail with the salon name and locative",
   );
+  const contextualAlt = (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt;
+  assert.ok(contextualAlt?.startsWith(salon.name));
+  assert.ok(contextualAlt?.includes("u Beogradu"));
+  assert.ok(contextualAlt?.endsWith(salon.coverImageDescription), "authored semantic detail may not be discarded by either renderer or helper");
   assert.equal(
     (await serverMetadata("/")).head.openGraph.imageAlt,
     "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",

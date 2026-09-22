@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import { buildPageStructuredData, compactSchema } from '../../structured-data.mjs';
+import { cityPhrase, publicImageAlt, publicSalonCategories } from '../../seo-text.mjs';
+import { listingCanonical, listingPage, publicSiteOrigin as configuredSeoOrigin } from '../../seo-policy.mjs';
 import { useLocation, useSearch } from 'wouter';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
+import { customFetch, getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
 import { getPublicCategoryPage } from '@/lib/public-category-pages';
 import staticSeoPages from '@/lib/static-seo-pages.json';
 import { publicSiteOrigin } from '@/lib/public-site-url';
@@ -20,6 +23,10 @@ export type SeoPayload = {
   imageType?: string;
   indexable: boolean;
   canonicalPath?: string;
+  structuredData?: unknown;
+  structuredDataPending?: boolean;
+  breadcrumbs?: { name: string; pathname: string }[];
+  listName?: string;
 };
 
 export type SeoHeadMetadata = {
@@ -170,7 +177,38 @@ export function withQueryIndexability(payload: SeoPayload, searchString: string)
   return { ...payload, indexable: payload.indexable && searchString.length === 0 };
 }
 
-export async function dynamicMetadata(pathname: string, queryClient: QueryClient): Promise<SeoPayload | null> {
+export async function dynamicMetadata(pathname: string, queryClient: QueryClient, origin?: string): Promise<SeoPayload | null> {
+  // Use the same URL keys as the generated public hooks, including their
+  // in-flight promises. Terminal public-detail errors must not cause a second
+  // request merely to populate metadata.
+  const fetch = async (url: string): Promise<Response> => {
+    const queryKey = [url];
+    const state = queryClient.getQueryState(queryKey);
+    if (state?.error && !isRetryableBeautyJobDetailError(state.error)) {
+      return new Response(null, { status: 404 });
+    }
+    try {
+      const cached = state?.fetchStatus === 'fetching' ? undefined : queryClient.getQueryData(queryKey);
+      const data = cached ?? await queryClient.fetchQuery({
+        queryKey,
+        // The visible generated hooks share this cache entry. Preserve their
+        // ApiError contract so a metadata-first 404 still renders "not found",
+        // rather than being misclassified by the UI as a transient failure.
+        queryFn: () => customFetch(url, { method: 'GET', responseType: 'json' }),
+        retry: false,
+      });
+      return new Response(JSON.stringify(data), { status: 200 });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  };
+  const schemaOrigin = () => origin ?? (typeof document === 'undefined' ? configuredSeoOrigin() : publicSiteOrigin());
+  const schema = (type: string, data: any, description?: string, breadcrumbs = [{ name: text(data.name, data.title), pathname }]) => compactSchema(buildPageStructuredData(type, data, {
+    origin: schemaOrigin(),
+    canonical: new URL(breadcrumbs.at(-1)?.pathname ?? pathname, schemaOrigin()).href,
+    description,
+    breadcrumbs,
+  }));
   const supplierProduct = pathname.match(/^\/shop\/([^/]+)\/proizvod\/([^/]+)$/);
   if (supplierProduct) {
     const supplierSlug = decodeURIComponent(supplierProduct[1]);
@@ -190,9 +228,14 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       title: `${name} | ${supplierName}`,
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
       ...socialImagePayload(item, item.imageUrl),
-      imageAlt: item.coverImageDescription,
+      imageAlt: publicImageAlt({ name, category: item.category, description: item.coverImageDescription }),
       indexable: true,
       canonicalPath: `/shop/${encodeURIComponent(canonicalSupplierSlug)}/proizvod/${encodeURIComponent(canonicalProductId)}`,
+      structuredData: schema('product', item, undefined, [
+        { name: 'Proizvodi', pathname: '/proizvodi' },
+        { name: supplierName, pathname: `/shop/${encodeURIComponent(canonicalSupplierSlug)}` },
+        { name, pathname: `/shop/${encodeURIComponent(canonicalSupplierSlug)}/proizvod/${encodeURIComponent(canonicalProductId)}` },
+      ]),
     };
   }
   const supplierShop = pathname.match(/^\/shop\/([^/]+)(?:\/(.+))?$/);
@@ -227,6 +270,12 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       ...socialImagePayload(supplier, supplier.logoUrl),
       indexable: true,
       canonicalPath: `/shop/${encodeURIComponent(canonicalSupplierSlug)}${canonicalCategoryPath}`,
+      listName: category ? `${category.name} — ${supplierName}` : `${supplierName} proizvodi`,
+      breadcrumbs: [
+        { name: 'Proizvodi', pathname: '/proizvodi' },
+        { name: supplierName, pathname: `/shop/${encodeURIComponent(canonicalSupplierSlug)}` },
+        ...(category ? [{ name: category.name, pathname }] : []),
+      ],
     };
   }
   const product = pathname.match(/^\/proizvodi\/([^/]+)$/);
@@ -237,9 +286,10 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     const name = text(item.name, 'Beauty proizvod');
     return {
       title: `${name} | LUMERA proizvodi`,
+      structuredData: schema('product', item),
       description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
       ...socialImagePayload(item, item.imageUrl),
-      imageAlt: item.coverImageDescription,
+      imageAlt: publicImageAlt({ name, category: item.category, description: item.coverImageDescription }),
       indexable: true,
     };
   }
@@ -249,13 +299,14 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Salon');
-    const city = text(item.city, 'Srbiji');
+    const city = cityPhrase(item.city);
     return {
-      title: `${name} u ${city} | LUMERA`,
-      description: text(item.description, text(item.shortDescription, `${name} — salon i beauty tretmani u gradu ${city}.`)),
+      title: `${name} ${city} | LUMERA`,
+      description: text(item.description, text(item.shortDescription, `${name} — salon i beauty tretmani ${city}.`)),
       ...socialImagePayload(item, item.imageUrl),
-      imageAlt: item.coverImageDescription,
+      imageAlt: publicImageAlt({ name, category: publicSalonCategories(item).join(', '), city: item.city, description: item.coverImageDescription }),
       indexable: true,
+      structuredData: schema('salon', item, text(item.description, item.shortDescription)),
     };
   }
   const taxonomyMatch = pathname.match(/^\/edukacije\/sekcije\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
@@ -287,6 +338,12 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       title: `${title} | Edukacije | LUMERA`,
       description,
       indexable: true,
+      breadcrumbs: [
+        { name: 'Edukacije', pathname: '/edukacije' },
+        { name: section.name, pathname: `/edukacije/sekcije/${sectionSlug}` },
+        ...(categorySlug ? [{ name: section.categories.find((item: any) => item.slug === categorySlug).name, pathname: `/edukacije/sekcije/${sectionSlug}/${categorySlug}` }] : []),
+        ...(subcategorySlug ? [{ name: title, pathname }] : []),
+      ],
     };
   }
   const course = pathname.match(/^\/edukacije\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
@@ -297,9 +354,10 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     const title = text(item.title, 'Beauty edukacija');
     return {
       title: `${title} | LUMERA edukacije`,
+      structuredData: schema('course', item),
       description: text(item.description, `${title} — stručna beauty edukacija na LUMERA platformi.`),
       ...socialImagePayload(item, item.imageUrl),
-      imageAlt: item.coverImageDescription,
+      imageAlt: publicImageAlt({ name: title, category: item.category, city: item.city, description: item.coverImageDescription }),
       indexable: true,
     };
   }
@@ -311,6 +369,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     const name = text(item.name, text(item.title, 'Paket edukacija'));
     return {
       title: `${name} | LUMERA edukacije`,
+      structuredData: schema('bundle', item),
       description: text(item.description, `${name} — paket stručnih beauty edukacija na LUMERA platformi.`),
       indexable: true,
     };
@@ -321,7 +380,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Edukativni centar');
-    return { title: `${name} | LUMERA edukacije`, description: text(item.description, `Kursevi i edukacije centra ${name}.`), ...socialImagePayload(item, item.imageUrl), indexable: true };
+    return { title: `${name} | LUMERA edukacije`, description: text(item.description, `Kursevi i edukacije centra ${name}.`), ...socialImagePayload(item, item.imageUrl), indexable: true, structuredData: schema('center', item) };
   }
   const instructor = pathname.match(/^\/edukacije\/instruktori\/([a-zA-Z0-9-]+)$/);
   if (instructor) {
@@ -329,7 +388,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Instruktor');
-    return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), ...socialImagePayload(item, item.photoUrl), indexable: true };
+    return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), ...socialImagePayload(item, item.photoUrl), indexable: true, structuredData: schema('instructor', item) };
   }
   if (pathname === '/poslovi/nalog' || pathname.startsWith('/poslovi/nalog/')) {
     return null;
@@ -338,8 +397,10 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
   if (beautyJob) {
     const listingId = beautyJob[1];
     const queryKey = getGetBeautyJobQueryKey(listingId);
-    const cachedItem = queryClient.getQueryData<Awaited<ReturnType<typeof getBeautyJob>>>(queryKey);
-    const cachedError = queryClient.getQueryState(queryKey)?.error;
+    const queryState = queryClient.getQueryState(queryKey);
+    const cachedItem = queryState?.fetchStatus === 'fetching' ? undefined
+      : queryClient.getQueryData<Awaited<ReturnType<typeof getBeautyJob>>>(queryKey);
+    const cachedError = queryState?.error;
     if (cachedError && !isRetryableBeautyJobDetailError(cachedError)) return null;
 
     const item = cachedItem ?? await queryClient.fetchQuery({
@@ -351,53 +412,223 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     const title = text(item.title, 'Beauty oglas');
     return {
       title: `${title} | LUMERA Poslovi`,
+      structuredData: schema('job', item),
       description: text(item.description, `${title} — beauty oglas na LUMERA platformi.`),
       ...socialImagePayload(item, item.photos?.[0]),
-      imageAlt: item.coverImageDescription,
+      imageAlt: publicImageAlt({ name: title, category: item.categoryName, city: item.city, description: item.coverImageDescription }),
       indexable: true,
     };
   }
   return null;
 }
 
+function listEndpoint(pathname: string): string | undefined {
+  if (pathname === '/saloni' || pathname.startsWith('/saloni/kategorija/')) return '/api/salons';
+  if (pathname === '/edukacije' || pathname.startsWith('/edukacije/sekcije/')) return '/api/education/public/courses';
+  if (pathname === '/poslovi') return '/api/beauty-jobs';
+  if (pathname === '/proizvodi') return '/api/suppliers';
+  if (['/inspiracija', '/recnik', '/brendovi'].includes(pathname)) return `/api${pathname}`;
+  const shop = pathname.match(/^\/shop\/([^/]+)(?:\/(?!proizvod\/).*)?$/);
+  if (shop) return `/api/suppliers/${decodeURIComponent(shop[1])}/public-products`;
+  return undefined;
+}
+
+/** The route's visible detail hook is the request owner, including lazy mounts. */
+function detailEndpoint(pathname: string): string | undefined {
+  const salon = pathname.match(/^\/saloni\/([^/]+)$/);
+  if (salon) return `/api/salons/${decodeURIComponent(salon[1])}`;
+  const course = pathname.match(/^\/edukacije\/([0-9a-f-]{36})$/i);
+  if (course) return `/api/education/public/courses/${course[1]}`;
+  const education = pathname.match(/^\/edukacije\/(paketi|centri|instruktori)\/([^/]+)$/);
+  if (education) return education[1] === 'paketi' ? `/api/education/bundles/${education[2]}`
+    : education[1] === 'centri' ? `/api/education/public/centers/${education[2]}`
+      : `/api/education/instructors/${education[2]}/public`;
+  const job = pathname.match(/^\/poslovi\/(?!nalog\/)[^/]+\/([^/]+)$/);
+  if (job) return `/api/beauty-jobs/${job[1]}`;
+  const product = pathname.match(/^\/proizvodi\/([^/]+)$/);
+  if (product) return `/api/shop/public/products/${product[1]}`;
+  const supplierProduct = pathname.match(/^\/shop\/([^/]+)\/proizvod\/([^/]+)$/);
+  if (supplierProduct) return `/api/suppliers/${supplierProduct[1]}/public-products/${supplierProduct[2]}`;
+  return undefined;
+}
+
+export function visibleDetailReady(client: QueryClient, endpoint: string): boolean {
+  const query = client.getQueryCache().find({ queryKey: [endpoint], exact: true });
+  return Boolean(query?.isActive() && query.state.status !== 'pending' && query.state.fetchStatus === 'idle');
+}
+
+/**
+ * Read the SAME successful query observed by the visible public listing.
+ * Placeholder/keepPreviousData lives on observers, never in the new query's
+ * successful state. No parallel metadata fetch can invent another result set.
+ */
+export function listingMetadataSchema(pathname: string, search: string, payload: SeoPayload, client: QueryClient, origin: string): Partial<SeoPayload> {
+  const endpoint = listEndpoint(pathname);
+  const canonical = payload.canonicalPath ?? listingCanonical(pathname, search);
+  const salonCategory = pathname.startsWith('/saloni/kategorija/') ? getPublicCategoryPage(pathname.split('/')[3]) : undefined;
+  const heading = salonCategory?.h1
+    ?? staticSeoByPath.get(pathname)?.heading ?? payload.title.split(' | ')[0];
+  const listName = payload.listName ?? ({
+    '/saloni': 'LUMERA saloni', '/edukacije': 'LUMERA beauty edukacije',
+    '/poslovi': 'LUMERA Beauty Poslovi', '/proizvodi': 'LUMERA dobavljači beauty proizvoda',
+  } as Record<string, string>)[pathname] ?? heading;
+  const breadcrumbs = payload.breadcrumbs ?? [{ name: heading, pathname: canonical }];
+  if (!endpoint) {
+    if (pathname === '/') return { structuredData: buildPageStructuredData('home', { description: payload.description }, { origin, canonical: '/' }) };
+    if (staticSeoByPath.has(pathname)) return { structuredData: buildPageStructuredData('static', { name: heading }, { origin, canonical, breadcrumbs }) };
+    return {};
+  }
+  const params = new URLSearchParams(search);
+  const expectedCategory = salonCategory?.apiCategory;
+  const scopedFilters: Record<string, unknown> = {};
+  if (pathname.startsWith('/edukacije/sekcije/')) {
+    const [, , , sectionSlug, categorySlug, subcategorySlug] = pathname.split('/');
+    const taxonomy: any = client.getQueryData(['/api/education/public/taxonomy']);
+    const section = taxonomy?.find((item: any) => item.slug === sectionSlug);
+    const category = section?.categories?.find((item: any) => item.slug === categorySlug);
+    const subcategory = category?.subcategories?.find((item: any) => item.slug === subcategorySlug);
+    if (!section || (categorySlug && !category) || (subcategorySlug && !subcategory)) return { structuredDataPending: true };
+    Object.assign(scopedFilters, { sectionId: section.id, categoryId: category?.id, subcategoryId: subcategory?.id });
+  }
+  if (endpoint.endsWith('/public-products')) {
+    const supplierSlug = decodeURIComponent(pathname.split('/')[2]);
+    const categoryPath = pathname.split('/').slice(3).map(decodeURIComponent).join('/');
+    const categories: any = client.getQueryData([`/api/suppliers/${supplierSlug}/categories`]);
+    if (categoryPath) {
+      const category = categories?.find((item: any) => item.path === categoryPath && item.active);
+      if (!category) return { structuredDataPending: true };
+      scopedFilters.categoryId = category.id;
+    }
+  }
+  const candidates = client.getQueryCache?.().findAll({ queryKey: [endpoint] }) ?? [];
+  const current = candidates.find((query) => {
+    if (!query.isActive()) return false;
+    const options = (query.queryKey[1] ?? {}) as Record<string, unknown>;
+    if (options.page !== undefined && Number(options.page) !== listingPage(search)) return false;
+    if (expectedCategory && options.category !== expectedCategory) return false;
+    for (const key of ['city', 'municipality', 'brand', 'q', 'query', 'search', 'region', 'type', 'intent', 'listingMode', 'category', 'minPrice', 'maxPrice', 'priceMax', 'format', 'level', 'language', 'sort', 'sectionId', 'categoryId', 'subcategoryId', 'courseTypeId', 'discountsOnly', 'gender', 'acceptsCards', 'openSunday', 'instantBooking', 'homeService', 'topSalon', 'featured', 'accredited', 'certification', 'minRating', 'minReviewCount', 'availability', 'minDurationMinutes', 'maxDurationMinutes', 'productType', 'needTag']) {
+      if (key === 'category' && expectedCategory) continue;
+      if (key in scopedFilters) {
+        if (options[key] !== scopedFilters[key]) return false;
+        continue;
+      }
+      // Guide search is a local, visible filter with its own observed query.
+      if (key === 'query' && ['/inspiracija', '/recnik', '/brendovi'].includes(pathname)) continue;
+      const requested = params.get(key);
+      if (requested !== null && String(options[key] ?? '') !== requested) return false;
+      if (requested === null && options[key] != null && options[key] !== '' && key !== 'sort') return false;
+    }
+    return true;
+  });
+  if (!current || current.state.status === 'pending' || current.state.fetchStatus === 'fetching') return { structuredDataPending: true };
+  if (current.state.status === 'error') return { structuredData: undefined, indexable: false };
+  const data: any = current.state.data;
+  const rows: any[] = Array.isArray(data) ? data : data?.items ?? data?.products ?? [];
+  const items = rows.filter((item) => endpoint !== '/api/suppliers' || isPublicRetailSupplier(item)).map((item) => {
+    if (endpoint === '/api/salons') return { name: item.name, pathname: `/saloni/${item.slug}` };
+    if (endpoint === '/api/education/public/courses') return { name: item.title, pathname: `/edukacije/${item.id}` };
+    if (endpoint === '/api/beauty-jobs') return { name: item.title, pathname: `/poslovi/${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'oglas'}/${item.id}` };
+    if (endpoint === '/api/suppliers') return { name: item.name, pathname: `/shop/${encodeURIComponent(item.slug)}` };
+    if (endpoint.endsWith('/public-products')) return { name: item.name, pathname: `/shop/${pathname.split('/')[2]}/proizvod/${encodeURIComponent(item.id)}` };
+    return { name: item.title ?? item.term ?? item.name, pathname: item.salon?.slug ? `/saloni/${item.salon.slug}` : undefined };
+  });
+  return { structuredData: buildPageStructuredData(items.length ? 'list' : 'static', { name: listName, items }, { origin, canonical, breadcrumbs }) };
+}
+
 export async function resolvePostMountSeo(
   pathname: string,
   searchString: string,
   queryClient: QueryClient,
+  origin?: string,
 ): Promise<SeoPayload> {
   let payload = staticMetadata(pathname);
   if (!payload) {
     try {
-      payload = await dynamicMetadata(pathname, queryClient);
+      payload = await dynamicMetadata(pathname, queryClient, origin);
     } catch {
       payload = null;
     }
   }
-  return withQueryIndexability(payload ?? {
+  const resolved = withQueryIndexability(payload ?? {
     title: `${APP_NAME} | Privatna stranica`,
     description: defaultDescription,
     indexable: false,
   }, searchString);
+  return {
+    ...resolved,
+    ...(payload ? listingMetadataSchema(pathname, searchString, payload, queryClient, origin ?? (typeof document === 'undefined' ? configuredSeoOrigin() : publicSiteOrigin())) : {}),
+    canonicalPath: resolved.canonicalPath ?? listingCanonical(pathname, searchString),
+  };
 }
 
 export function ClientSeoMetadata() {
   const [pathname] = useLocation();
   const searchString = useSearch();
   const queryClient = useQueryClient();
+  const lastRoute = useRef(`${pathname}?${searchString}`);
+  const preserveInitialSchema = useRef(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let cancelled = false;
-    void resolvePostMountSeo(pathname, searchString, queryClient).then((payload) => {
-      if (!cancelled) applySeo(pathname, payload);
+    let generation = 0;
+    let queued = false;
+    const route = `${pathname}?${searchString}`;
+    if (lastRoute.current !== route) {
+      preserveInitialSchema.current = false;
+      replacePageStructuredData();
+    }
+    lastRoute.current = route;
+    const refresh = () => {
+      const request = ++generation;
+      const detail = detailEndpoint(pathname);
+      // Metadata can mount before the lazy route bundle. Starting its request
+      // then causes the visible hook's refetchOnMount:"always" to issue a second
+      // request. Wait for that hook instead; its completion drives subscription.
+      if (detail && !visibleDetailReady(queryClient, detail)) {
+        if (!preserveInitialSchema.current) replacePageStructuredData();
+        return;
+      }
+      void resolvePostMountSeo(pathname, searchString, queryClient, publicSiteOrigin()).then((payload) => {
+      if (!cancelled && request === generation) {
+        applySeo(pathname, payload);
+        if (!payload.structuredDataPending) {
+          preserveInitialSchema.current = false;
+          replacePageStructuredData(payload.structuredData);
+        } else if (!preserveInitialSchema.current) replacePageStructuredData();
+      }
     }).catch(() => {
-      if (!cancelled) applySeo(pathname, {
+      if (!cancelled && request === generation) {
+        replacePageStructuredData();
+        applySeo(pathname, {
         title: `${APP_NAME} | Privatna stranica`,
         description: defaultDescription,
         indexable: false,
       });
+      }
     });
-    return () => { cancelled = true; };
+    };
+    const endpoint = listEndpoint(pathname) ?? detailEndpoint(pathname);
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (!endpoint || event.query.queryKey[0] !== endpoint || queued) return;
+      queued = true;
+      queueMicrotask(() => { queued = false; if (!cancelled) refresh(); });
+    });
+    refresh();
+    return () => { cancelled = true; unsubscribe(); };
   }, [pathname, queryClient, searchString]);
 
   return null;
+}
+
+/** Remove head AND SSR body scripts before installing the current public DTO. */
+export function replacePageStructuredData(value?: unknown, owner: Document = document) {
+  owner.querySelectorAll('script[data-lumera-structured-data="current-page"], script#lumera-structured-data, #seo-prerender script[type="application/ld+json"]')
+    .forEach((node) => node.remove());
+  const data = compactSchema(value);
+  if (!data) return;
+  const script = owner.createElement('script');
+  script.type = 'application/ld+json';
+  script.dataset.lumeraStructuredData = 'current-page';
+  script.textContent = JSON.stringify(data).replace(/</g, '\\u003c');
+  owner.head.append(script);
 }

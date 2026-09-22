@@ -1,3 +1,4 @@
+import { cityPhrase } from "../../seo-text.mjs";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
@@ -116,7 +117,7 @@ export default function Home() {
       <section className="relative w-full bg-secondary pt-16 pb-20 md:pt-20 md:pb-24 overflow-hidden">
         <img
           src="/hero-bg.jpg"
-          alt=""
+          alt="Beauty i wellness nega — LUMERA"
           width={1024}
           height={1024}
           fetchPriority="high"
@@ -207,7 +208,7 @@ export default function Home() {
           <div className="flex justify-between items-end mb-6">
             <div>
               <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Popularne usluge</h2>
-              <p className="text-muted-foreground text-lg">Ono što se najviše traži {sessionCity ? `u ${sessionCity}` : "ove nedelje"}</p>
+              <p className="text-muted-foreground text-lg">Ono što se najviše traži {sessionCity ? cityPhrase(sessionCity) : "ove nedelje"}</p>
             </div>
           </div>
 
@@ -231,7 +232,7 @@ export default function Home() {
                   >
                     <OptimizedImage
                       src={cat.imageUrl}
-                      alt=""
+                      alt={cat.categoryName}
                       width={400}
                       height={300}
                       className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"

@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { getApiErrorDetails } from '@workspace/api-client-react';
 import { GetPublicSupplierResponse } from '@workspace/api-zod';
-import { dynamicMetadata, seoHeadMetadata, withQueryIndexability } from './client-seo-metadata';
+import { dynamicMetadata as resolveDynamicMetadata, listingMetadataSchema, resolvePostMountSeo, seoHeadMetadata, visibleDetailReady, withQueryIndexability } from './client-seo-metadata';
+const dynamicMetadata = async (pathname: string, queryClient: QueryClient) => {
+  const result = await resolveDynamicMetadata(pathname, queryClient, 'https://lumera.example');
+  if (!result) return result;
+  const { structuredData: _schema, breadcrumbs, ...metadata } = result;
+  if (breadcrumbs) assert.equal(breadcrumbs.at(-1)?.pathname, pathname, 'breadcrumbs must end at the current public route');
+  return metadata;
+};
 import { galleryImageAlt } from './salon-gallery';
 import { canonicalProductImageUrls, productImageDescriptionItems } from '../lib/product-media';
 
@@ -22,6 +30,184 @@ const taxonomy = [{
     }],
   }],
 }];
+
+test('home and public static routes keep current shared schemas after SPA navigation', async () => {
+  const client = new QueryClient();
+  try {
+    const home = await resolvePostMountSeo('/', '', client, 'https://lumera.example');
+    assert.match(JSON.stringify(home.structuredData), /"Organization"/);
+    assert.match(JSON.stringify(home.structuredData), /"WebSite"/);
+    const legal = await resolvePostMountSeo('/politika-privatnosti', '', client, 'https://lumera.example');
+    assert.match(JSON.stringify(legal.structuredData), /"BreadcrumbList"/);
+    assert.doesNotMatch(JSON.stringify(legal.structuredData), /"Organization"/);
+    const unsupported = await resolvePostMountSeo('/unsupported-route', '', client, 'https://lumera.example');
+    assert.equal(unsupported.structuredData, undefined);
+  } finally { client.clear(); }
+});
+
+test('listing schemas use only the active successful current filter/page DTO', async () => {
+  const client = new QueryClient();
+  const observer = new QueryObserver(client, {
+    queryKey: ['/api/salons', { city: 'Beograd', page: 1, pageSize: 6, sort: 'recommended' }],
+    initialData: [{ name: 'Current salon', slug: 'current' }],
+    staleTime: Infinity,
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  const payload = { title: 'Saloni', description: 'Saloni', indexable: true };
+  try {
+    const current = listingMetadataSchema('/saloni', 'city=Beograd&page=1', payload, client, 'https://lumera.example');
+    assert.match(JSON.stringify(current.structuredData), /"ItemList"/);
+    assert.match(JSON.stringify(current.structuredData), /Current salon/);
+    const pending = listingMetadataSchema('/saloni', 'city=Beograd&page=2', payload, client, 'https://lumera.example');
+    assert.equal(pending.structuredDataPending, true);
+    assert.equal(pending.structuredData, undefined);
+    const otherCity = listingMetadataSchema('/saloni', 'city=Niš&page=1', payload, client, 'https://lumera.example');
+    assert.equal(otherCity.structuredDataPending, true);
+    unsubscribe();
+    assert.equal(listingMetadataSchema('/saloni', 'city=Beograd&page=1', payload, client, 'https://lumera.example').structuredDataPending, true);
+  } finally { unsubscribe(); client.clear(); }
+});
+
+test('all public catalogue families build ItemLists from their visible query DTOs', () => {
+  const client = new QueryClient();
+  client.setQueryData(['/api/education/public/taxonomy'], taxonomy);
+  client.setQueryData(['/api/suppliers/supply/categories'], [{ id: 'category-1', path: 'nega', name: 'Nega', active: true }]);
+  const cases = [
+    { path: '/edukacije', endpoint: '/api/education/public/courses', options: { page: 1, pageSize: 24 }, data: [{ id: 'course-1', title: 'Visible course' }], expected: '/edukacije/course-1' },
+    { path: '/edukacije/sekcije/frizerske-obuke/zenske-frizure', endpoint: '/api/education/public/courses', options: { page: 1, sectionId: 'section-1', categoryId: 'category-1' }, data: [{ id: 'course-2', title: 'Visible scoped course' }], expected: '/edukacije/course-2' },
+    { path: '/poslovi', endpoint: '/api/beauty-jobs', options: { page: 1, pageSize: 10, sort: 'newest' }, data: { items: [{ id: 'job-1', title: 'Visible job' }] }, expected: '/poslovi/visible-job/job-1' },
+    { path: '/proizvodi', endpoint: '/api/suppliers', options: {}, data: [{ name: 'Visible supplier', slug: 'supply', active: true, scope: 'B2C' }], expected: '/shop/supply' },
+    { path: '/shop/supply/nega', endpoint: '/api/suppliers/supply/public-products', options: { page: 1, categoryId: 'category-1' }, data: { items: [{ id: 'product-1', name: 'Visible product' }] }, expected: '/shop/supply/proizvod/product-1' },
+    { path: '/brendovi', endpoint: '/api/brendovi', options: { query: 'Visible' }, data: [{ name: 'Visible brand' }], expected: 'Visible brand' },
+    { path: '/inspiracija', endpoint: '/api/inspiracija', options: { query: '' }, data: [{ title: 'Visible inspiration', salon: { slug: 'salon-1' } }], expected: '/saloni/salon-1' },
+    { path: '/recnik', endpoint: '/api/recnik', options: { query: '' }, data: [{ term: 'Visible term' }], expected: 'Visible term' },
+  ];
+  try {
+    for (const scenario of cases) {
+      const observer = new QueryObserver(client, {
+        queryKey: [scenario.endpoint, scenario.options], initialData: scenario.data,
+        staleTime: Infinity,
+      });
+      const unsubscribe = observer.subscribe(() => undefined);
+      try {
+        const result = listingMetadataSchema(scenario.path, '', { title: 'Current catalogue', description: 'Current', indexable: true }, client, 'https://lumera.example');
+        assert.match(JSON.stringify(result.structuredData), /"ItemList"/, scenario.path);
+        assert.ok(JSON.stringify(result.structuredData).includes(scenario.expected), scenario.path);
+      } finally { unsubscribe(); }
+    }
+  } finally { client.clear(); }
+});
+
+test('metadata reuses current public detail cache and shared schema builder without extra fetches', async () => {
+  const client = new QueryClient();
+  const item = {
+    name: 'Javni salon', city: 'Čačak', address: 'Javna ulica 1',
+    description: 'Opis vidljivog salona', services: [], reviews: [], hours: [],
+  };
+  client.setQueryData(['/api/salons/javni'], item);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('Unexpected duplicate request'); };
+  try {
+    const result = await resolveDynamicMetadata('/saloni/javni', client, 'https://lumera.example');
+    assert.match(result!.title, /u Čačku/);
+    assert.match(JSON.stringify(result!.structuredData), /Javni salon/);
+    assert.doesNotMatch(JSON.stringify(result!.structuredData), /telephone/);
+    const graph = (result!.structuredData as { '@graph': Record<string, any>[] })['@graph'];
+    const crumbs = graph.find((node) => node['@type'] === 'BreadcrumbList')!.itemListElement;
+    assert.deepEqual(crumbs.map((crumb: any) => [crumb.name, crumb.item]), [
+      ['Početna', 'https://lumera.example/'],
+      ['Javni salon', 'https://lumera.example/saloni/javni'],
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    client.clear();
+  }
+});
+
+test('terminal public-detail failures never trigger a metadata retry or schema', async () => {
+  const client = new QueryClient();
+  let requests = 0;
+  await client.fetchQuery({
+    queryKey: ['/api/salons/unavailable'],
+    queryFn: async () => { throw Object.assign(new Error('Not public'), { status: 404 }); },
+    retry: false,
+  }).catch(() => undefined);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { requests++; return new Response('{}'); };
+  try {
+    assert.equal(await resolveDynamicMetadata('/saloni/unavailable', client, 'https://lumera.example'), null);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    client.clear();
+  }
+});
+
+test('metadata-first HTTP 404 preserves the generated visible-page error contract', async () => {
+  const client = new QueryClient();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404, headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    assert.equal(await resolveDynamicMetadata('/saloni/missing', client, 'https://lumera.example'), null);
+    assert.equal(getApiErrorDetails(client.getQueryState(['/api/salons/missing'])?.error).status, 404);
+    assert.equal(await resolveDynamicMetadata('/saloni/missing', client, 'https://lumera.example'), null);
+    assert.equal(requests, 1);
+  } finally { globalThis.fetch = originalFetch; client.clear(); }
+});
+
+test('live metadata waits for the lazy visible detail hook rather than prefetching before its forced mount refresh', async () => {
+  const client = new QueryClient();
+  const endpoint = '/api/salons/lazy';
+  let requests = 0;
+  assert.equal(visibleDetailReady(client, endpoint), false);
+  assert.equal(client.getQueryState([endpoint]), undefined);
+  const observer = new QueryObserver(client, {
+    queryKey: [endpoint], refetchOnMount: 'always',
+    queryFn: async () => { requests++; return { name: 'Lazy salon', city: 'Beograd' }; },
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  try {
+    await client.getQueryCache().find({ queryKey: [endpoint] })!.promise;
+    assert.equal(visibleDetailReady(client, endpoint), true);
+    await resolveDynamicMetadata('/saloni/lazy', client, 'https://lumera.example');
+    assert.equal(requests, 1, 'metadata must reuse the completed visible-hook request');
+  } finally { unsubscribe(); client.clear(); }
+});
+
+test('an obsolete visible request cannot become schema-eligible after a delayed completion', async () => {
+  const client = new QueryClient();
+  const endpoint = '/api/salons/obsolete';
+  let complete!: (value: { name: string; city: string }) => void;
+  const delayed = new Promise<{ name: string; city: string }>((resolve) => { complete = resolve; });
+  let aborted = false;
+  const observer = new QueryObserver(client, {
+    queryKey: [endpoint],
+    queryFn: ({ signal }) => {
+      signal.addEventListener('abort', () => { aborted = true; });
+      return delayed;
+    },
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  assert.equal(visibleDetailReady(client, endpoint), false);
+  unsubscribe();
+  try {
+    assert.equal(aborted, true, 'generated-style signal ownership aborts on route unmount');
+    complete({ name: 'Obsolete salon', city: 'Beograd' });
+    await delayed;
+    await Promise.resolve();
+    assert.equal(visibleDetailReady(client, endpoint), false);
+    assert.equal(client.getQueryData([endpoint]), undefined);
+    const current = await resolvePostMountSeo('/', '', client, 'https://lumera.example');
+    assert.match(JSON.stringify(current.structuredData), /"WebSite"/);
+    assert.doesNotMatch(JSON.stringify(current.structuredData), /Obsolete salon/);
+  } finally { client.clear(); }
+});
 
 test('site-wide noindex survives client metadata updates and domain changes', () => {
   const payload = { title: 'Salon', description: 'Salon description', indexable: true };
@@ -227,10 +413,10 @@ test('client metadata keeps API-produced cover social images paired with owner d
     assert.deepEqual(
       salon,
       {
-        title: 'Studio LUMERA u Beograd | LUMERA',
+        title: 'Studio LUMERA u Beogradu | LUMERA',
         description: 'Javni opis salona.',
         image: '/api/media/images/salon-cover?size=large&format=fallback',
-        imageAlt: 'Enterijer salona sa dve radne stolice',
+        imageAlt: 'Studio LUMERA — u Beogradu — Enterijer salona sa dve radne stolice',
         imageWidth: 1920,
         imageHeight: 1280,
         imageType: 'image/jpeg',
@@ -243,7 +429,7 @@ test('client metadata keeps API-produced cover social images paired with owner d
         title: 'Javni serum | Aurora Beauty',
         description: 'Opis proizvoda.',
         image: '/api/media/images/product-cover?size=large&format=fallback',
-        imageAlt: 'Bočica seruma pored cveta kamilice',
+        imageAlt: 'Javni serum — Bočica seruma pored cveta kamilice',
         imageWidth: 1600,
         imageHeight: 1200,
         imageType: 'image/jpeg',
@@ -253,7 +439,7 @@ test('client metadata keeps API-produced cover social images paired with owner d
     );
     assert.equal(
       seoHeadMetadata('/saloni/studio-lumera', salon!, 'https://lumera.example', false).openGraph.imageAlt,
-      'Enterijer salona sa dve radne stolice',
+      'Studio LUMERA — u Beogradu — Enterijer salona sa dve radne stolice',
     );
     assert.equal(
       seoHeadMetadata('/shop/aurora/proizvod/product-1', product!, 'https://lumera.example', false).openGraph.image,
@@ -273,11 +459,11 @@ test('public galleries use the owner description only for the matching cover ima
   };
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/cover.jpg', index: 0, variant: 'main' }),
-    'Enterijer sa dve radne stolice',
+    'Studio LUMERA — Enterijer sa dve radne stolice',
   );
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/cover.jpg', index: 1, variant: 'gallery' }),
-    'Enterijer sa dve radne stolice',
+    'Studio LUMERA — Enterijer sa dve radne stolice',
   );
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'gallery' }),
@@ -285,7 +471,7 @@ test('public galleries use the owner description only for the matching cover ima
   );
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'gallery', altText: '  Balajaž na dugoj kosi  ' }),
-    'Balajaž na dugoj kosi',
+    'Studio LUMERA — Balajaž na dugoj kosi',
   );
   assert.equal(
     galleryImageAlt({ ...shared, mediaUrl: '/gallery.jpg', index: 1, variant: 'thumbnail' }),
@@ -305,13 +491,13 @@ test('public salon and education cover callsites pass owner descriptions to visi
     readFile(new URL('../pages/education-marketplace.tsx', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(salonsSource, /alt=\{salon\.coverImageDescription\?\.trim\(\) \|\| `\$\{salon\.name\} — salon lepote`\}/);
-  assert.match(homeSalonCardSource, /alt=\{salon\.coverImageDescription\?\.trim\(\) \|\| `\$\{salon\.name\} — salon lepote`\}/);
+  assert.match(salonsSource, /alt=\{publicImageAlt\(\{ name: salon\.name, category: salon\.popularServices\?\.join\(', '\), city: salon\.city, description: salon\.coverImageDescription \}\)\}/);
+  assert.match(homeSalonCardSource, /alt=\{publicImageAlt\(\{ name: salon\.name, category: salon\.popularServices\?\.join\(', '\), city: salon\.city, description: salon\.coverImageDescription \}\)\}/);
   assert.match(
     salonProfileSource,
     /coverImageUrl=\{salonData\.imageUrl\}[\s\S]{0,120}coverImageDescription=\{salonData\.coverImageDescription\}/,
   );
-  assert.match(educationSource, /alt=\{course\.coverImageDescription\?\.trim\(\) \|\| course\.title\}/);
+  assert.match(educationSource, /alt=\{publicImageAlt\(\{ name: course\.title, category: course\.category, city: course\.city, description: course\.coverImageDescription \}\)\}/);
   assert.match(
     educationSource,
     /coverImageUrl=\{course\.imageUrl\}[\s\S]{0,120}coverImageDescription=\{course\.coverImageDescription\}/,

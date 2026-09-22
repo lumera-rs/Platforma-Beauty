@@ -573,3 +573,33 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 ran once after this audit note. Both validators passed (114 diagnostic negative
 cases; 65 execution negative fixtures); all 13 regression tests passed with
 zero failures and zero skipped tests.
+
+## SEO part 2 — protected-input and path-scope audit
+
+On `daily/2026-09-22`, the baseline and pre-audit HEAD are main
+`a94abeeea316710c000629d4d78b8ce3c86bb5e8`. A complete SHA-256 census of
+all 158 current-source entries (73 diagnostic `currentInputs`, 85 execution
+`files`) found zero mismatches (`[]`). There are zero new amendments, no
+old/new replacement rows, and no dependent cascade. Both entire manifests are
+byte-identical to this main baseline, preserving the prior 11 amendments.
+
+Both historical tiers were explicitly compared as raw text bytes with
+`git show <main>:<manifest>` and are byte-identical. All 146 historical entries
+were additionally reproduced from pinned `b8f30561` Git file bytes.
+
+The complete tracked diff-name list against this main baseline and the
+untracked-file list were checked directly, independently of tests. No changed
+or new paths exist under `lib/db/` (including schema, migrations and
+migration-runtime), `scripts/src/migrations/`, or `artifacts/api-server/`.
+The same lists contain no path components naming booking, auth,
+authorization, or baseline. This is a file-scope check, not an assertion about
+every expression in changed frontend pages.
+
+Only this audit note is added by the manifest audit. No manifest, source,
+memory file, database, server, workflow, commit, or push is changed or operated
+by this audit.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+ran once. Both validators passed (114 diagnostic negative cases and 65
+execution negative fixtures); the regression runner reported 13 passed,
+zero failed, zero skipped.

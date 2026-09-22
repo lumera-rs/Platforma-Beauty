@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Play, X, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OptimizedImage } from "@/components/optimized-image";
 import { useMediaDescriptions } from "@/lib/media-descriptions";
+import { publicImageAlt } from "../../seo-text.mjs";
 
 export interface MediaItem {
   type: 'video' | 'image';
@@ -37,10 +38,10 @@ export function galleryImageAlt({
   altText?: string | null;
 }) {
   const galleryDescription = altText?.trim();
-  if (galleryDescription) return galleryDescription;
+  if (galleryDescription) return publicImageAlt({ name: salonName, description: galleryDescription });
   const authoredDescription = coverImageDescription?.trim();
   if (authoredDescription && coverImageUrl && mediaUrl === coverImageUrl) {
-    return authoredDescription;
+    return publicImageAlt({ name: salonName, description: authoredDescription });
   }
   if (variant === "main") return `${salonName} — glavna fotografija`;
   if (variant === "thumbnail") return `${salonName} — minijatura ${index + 1}`;

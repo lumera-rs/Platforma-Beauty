@@ -8,6 +8,20 @@ import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
+test("public SEO SPA regression stays in the timed browser release phase without database setup", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const config = await readFile(path.join(workspaceRoot, "scripts/playwright.seo.config.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:client-seo-browser/);
+  assert.match(root.scripts["test:client-seo-browser"], /--filter @workspace\/scripts run test:client-seo-browser/);
+  assert.match(scripts.scripts["test:client-seo-browser"], /playwright test --config playwright\.seo\.config\.ts/);
+  assert.match(config, /client-seo-navigation\.spec\.ts/);
+  assert.match(config, /SITE_INDEXABLE: "false"/);
+  assert.doesNotMatch(config, /DATABASE_URL|run-isolated-browser-suite|SITE_INDEXABLE: "true"/);
+  assert.ok(budgets.baselinesSeconds["browser:release:5-final"] >= 105);
+});
+
 const requiredOtherIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
   "test:education-group-online-consent-browser",

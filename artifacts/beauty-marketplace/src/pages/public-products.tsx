@@ -1,3 +1,4 @@
+import { publicImageAlt } from "../../seo-text.mjs";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { useCountdown } from "@/hooks/use-countdown";
@@ -144,7 +145,7 @@ function PublicProductCard({ product, supplierSlug, isWishlisted, onToggleWishli
       )}
       <Link href={`/shop/${supplierSlug}/proizvod/${product.id}`} className="block flex-1" data-testid={`public-product-link-${product.id}`}>
         <div className="aspect-square overflow-hidden bg-muted relative">
-          <OptimizedImage src={product.imageUrl} alt={product.coverImageDescription?.trim() || product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+          <OptimizedImage src={product.imageUrl} alt={publicImageAlt({ name: product.name, category: product.category, description: product.coverImageDescription })} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
           {product.isBestseller && (
             <div className="absolute top-2 left-2 bg-amber-500 text-white rounded px-2 py-0.5 text-[10px] font-bold z-10 flex items-center gap-1 shadow-sm">
               <Star className="w-3 h-3 fill-current" /> BESTSELLER
@@ -1111,9 +1112,8 @@ export function PublicProductDetailPage() {
   }
 
   const currentHeroImage = activeThumbnail || gallery[0];
-  const currentHeroImageAlt = currentHeroImage === product.imageUrl
-    ? galleryDescriptions[currentHeroImage]?.trim() || product.coverImageDescription?.trim() || product.name
-    : galleryDescriptions[currentHeroImage]?.trim() || product.name;
+  const currentHeroImageAlt = publicImageAlt({ name: product.name, category: product.category,
+    description: galleryDescriptions[currentHeroImage]?.trim() || (currentHeroImage === product.imageUrl ? product.coverImageDescription : undefined) });
   const productDetail = product as any;
   const publicVariants = product.variants ?? [];
   const selectedVariant = publicVariants.find((variant) => variant.value === variantValue);
@@ -1154,7 +1154,7 @@ export function PublicProductDetailPage() {
                     className={`aspect-square rounded-xl overflow-hidden bg-muted border-2 transition-colors [&>picture]:contents ${activeThumbnail === img ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-primary/50"}`}
                     aria-label={`Slika ${i+1}`}
                   >
-                    <OptimizedImage src={img} alt={galleryDescriptions[img]?.trim() || `${product.name} — fotografija ${i + 1}`} className="w-full h-full object-cover" />
+                    <OptimizedImage src={img} alt={publicImageAlt({ name: product.name, category: product.category, description: galleryDescriptions[img]?.trim() || `Fotografija ${i + 1}` })} className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -1232,7 +1232,7 @@ export function PublicProductDetailPage() {
                         <span className="h-6 w-6 rounded-full border shadow-sm" style={{ backgroundColor: variant.swatch.hex }} aria-hidden="true" />
                       )}
                       {variant.swatch?.kind === "IMAGE" && variant.swatch.imageUrl && (
-                        <img src={variant.swatch.imageUrl} alt="" className="h-7 w-7 rounded-md border object-cover" />
+                        <img src={variant.swatch.imageUrl} alt={variant.label} className="h-7 w-7 rounded-md border object-cover" />
                       )}
                       <span>{variant.label}</span>
                     </button>
@@ -1361,7 +1361,7 @@ export function PublicProductDetailPage() {
           <DialogContent className="max-w-[90vw] max-h-[90vh] p-1 bg-transparent border-none shadow-none flex items-center justify-center">
             <DialogTitle className="sr-only">Pregled slike</DialogTitle>
             <div className="relative w-full h-full flex items-center justify-center">
-              <img src={lightboxImage} alt={galleryDescriptions[lightboxImage]?.trim() || (lightboxImage === product.imageUrl ? product.coverImageDescription?.trim() : null) || product.name} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+              <img src={lightboxImage} alt={publicImageAlt({ name: product.name, category: product.category, description: galleryDescriptions[lightboxImage]?.trim() || (lightboxImage === product.imageUrl ? product.coverImageDescription : undefined) })} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
               <Button
                 variant="secondary"
                 size="icon"
