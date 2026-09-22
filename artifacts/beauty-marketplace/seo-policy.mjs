@@ -10,13 +10,42 @@ export function listingCanonical(pathname, search = '') {
     && !pathname.startsWith('/saloni/kategorija/')
     && !pathname.startsWith('/edukacije/sekcije/')
     && !(/^\/shop\/[^/]+(?:\/.*)?$/.test(pathname) && !pathname.includes('/proizvod/'))) return pathname;
-  const page = params.get('page');
-  // Existing filter-only URLs retain their base canonical; pagination retains
-  // filters to avoid canonicalizing distinct result sets to another page.
-  if (!page || !/^[1-9]\d*$/.test(page) || !Number.isSafeInteger(Number(page))) return pathname;
-  params.set('page', String(Number(page)));
+  const pageValue = params.get('page');
+  const page = pageValue && /^[1-9]\d*$/.test(pageValue) && Number.isSafeInteger(Number(pageValue))
+    ? Number(pageValue)
+    : 1;
+
+  if (pathname === '/saloni') {
+    const cities = params.getAll('city').map(city => city.trim()).filter(Boolean);
+    const canonical = new URLSearchParams();
+    if (cities.length === 1) canonical.set('city', cities[0]);
+
+    const filters = new URLSearchParams(params);
+    filters.delete('page');
+    filters.delete('pageSize');
+    const isPlainOrCityOnly = filters.size === 0
+      || (filters.size === 1 && filters.has('city') && cities.length === 1);
+    if (isPlainOrCityOnly && page >= 2) canonical.set('page', String(page));
+    canonical.sort();
+    return canonical.size ? `${pathname}?${canonical}` : pathname;
+  }
+
+  // Page one always folds into the unpaginated parent. Existing page two and
+  // later listing contracts retain their filters.
+  if (page < 2) return pathname;
+  params.set('page', String(page));
   params.sort();
   return `${pathname}?${params}`;
+}
+
+export function listingIndexable(pathname, search = '') {
+  if (pathname !== '/saloni') return search.length === 0;
+  const params = new URLSearchParams(search);
+  params.delete('pageSize');
+  if (params.get('page') === '1') params.delete('page');
+  params.sort();
+  const normalizedRequest = params.size ? `${pathname}?${params}` : pathname;
+  return listingCanonical(pathname, search) === normalizedRequest;
 }
 
 export function publicSiteOrigin(env = process.env) {

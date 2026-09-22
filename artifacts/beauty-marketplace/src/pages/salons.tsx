@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout";
-import { publicImageAlt } from "../../seo-text.mjs";
+import { cityPhrase, publicImageAlt } from "../../seo-text.mjs";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { OptimizedImage } from "@/components/optimized-image";
@@ -26,6 +26,8 @@ export default function Salons() {
   const categoryPage = getPublicCategoryPage(categoryRouteParams?.categorySlug);
   const searchString = useSearch();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const cityValues = searchParams.getAll("city").map((value) => value.trim()).filter(Boolean);
+  const cityHeading = cityValues.length === 1 ? `Saloni ${cityPhrase(cityValues[0])}` : undefined;
 
   const [category, setCategory] = useState(categoryPage?.apiCategory || searchParams.get("category") || "");
   const [city, setCity] = useState(searchParams.get("city") || "");
@@ -140,6 +142,7 @@ export default function Salons() {
   const pageHref = (nextPage: number) => {
     const params = new URLSearchParams(searchParams);
     for (const [key, value] of Object.entries(filterParams)) {
+      if (key === "sort" && value === "recommended" && !searchParams.has("sort")) continue;
       if (value !== undefined) params.set(key, String(value));
       else params.delete(key);
     }
@@ -214,7 +217,7 @@ export default function Salons() {
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div>
             <h1 className="text-3xl md:text-4xl font-serif font-bold text-foreground mb-2">
-              {categoryPage?.h1 || "Istražite salone"}
+              {categoryPage?.h1 || cityHeading || "Istražite salone"}
             </h1>
             <p className="text-muted-foreground text-base max-w-2xl">
               {categoryPage?.intro || "Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini."}

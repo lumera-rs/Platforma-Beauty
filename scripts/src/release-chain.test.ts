@@ -19,7 +19,7 @@ test("public SEO SPA regression stays in the timed browser release phase without
   assert.match(config, /client-seo-navigation\.spec\.ts/);
   assert.match(config, /SITE_INDEXABLE: "false"/);
   assert.doesNotMatch(config, /DATABASE_URL|run-isolated-browser-suite|SITE_INDEXABLE: "true"/);
-  assert.ok(budgets.baselinesSeconds["browser:release:5-final"] >= 105);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 135);
 });
 
 const requiredOtherIsolatedBrowserGateScripts = [

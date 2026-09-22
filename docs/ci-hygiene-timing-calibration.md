@@ -56,3 +56,23 @@ The header fix and Ubuntu pins were retained unchanged. The runner evidence is
 the Build and static checks job at
 https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35568623224/job/106235889746:
 Ubuntu 24.04.5 LTS, image ubuntu-24.04, image version 20260907.300.1.
+
+## Task 2 browser-final calibration
+
+The earlier provisional context above is retained as historical context. For
+Task 2, `browser:release:5-final` is recalibrated from successful CI phase
+measurements, rather than from whole-job durations. The verified artifact
+reports supply these samples, ordered by workflow `startedAt`, newest first:
+
+| Event | Workflow run `startedAt` | Run and source artifact | Report commit | Successful phase duration |
+| --- | --- | --- | --- | --- |
+| pull request | 2026-09-22T07:49:59Z | [run 35701592978](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701592978), [artifact 10684565187](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701592978/artifacts/10684565187) | synthetic merge `0274c931` (parents `a94…` and head `56a71599`) | 135 seconds |
+| push | 2026-09-22T07:49:57Z | [run 35701589972](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701589972), [artifact 10683887999](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701589972/artifacts/10683887999) | head `56a71599` | 130 seconds |
+
+Both ZIP artifact reports were verified by the existing worker. Their
+`browser:release:5-final` phase records—not the 1,908-second and 1,866-second
+browser-total phase durations—are the calibration evidence. Following the
+existing convention, the new baseline is the ceiling of the maximum successful
+phase sample: 135 seconds. The unchanged warning formula gives
+`ceil(max(135 * 1.5, 135 + 30)) = ceil(max(202.5, 165)) = 203` seconds.
+The browser total remains 780 seconds, and no other budget is changed.

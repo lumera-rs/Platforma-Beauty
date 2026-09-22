@@ -14,3 +14,9 @@ For separately lazy-loaded metadata and page components, let the visible detail 
 **Why:** Sharing a key alone does not prevent duplicates when the later visible observer intentionally refetches on mount. A metadata-created plain Error can also turn a cached terminal 404 into the page's transient-error presentation. Once the visible observer owns the request, navigating away may abort it legitimately.
 
 **How to apply:** Resolve metadata from the active current observer's settled DTO/error, excluding placeholder and obsolete query results. Navigation tests must observe obsolete request completion or cancellation rather than require an HTTP response after an abort; retain a separate delayed-result assertion that obsolete work cannot restore old structured data.
+
+Prove downstream stale-result guards with isolated mutation failures, not just a slow HTTP fixture.
+
+**Why:** Upstream query cancellation can prevent the metadata callback from completing at all, letting a browser test pass even when its stale-result guard is removed. An unsupported destination with no current schema also makes the preservation assertion too weak.
+
+**How to apply:** In test-only scheduling, hold the real metadata promise completion, navigate to a page with its own schema, then release it and require that schema to remain unchanged. Separately hold the next page's data and assert old schema removal during that gap. Mutate only scratch copies and verify each missing protection produces its intended failure.

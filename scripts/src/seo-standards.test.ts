@@ -140,6 +140,11 @@ const { createSeoResponse } = await import(moduleUrl(serverPath)) as {
     template: string,
   ) => Promise<{ status: number; body: string }>;
 };
+const { listingIndexable } = await import(
+  moduleUrl("artifacts/beauty-marketplace/seo-policy.mjs")
+) as {
+  listingIndexable: (pathname: string, search?: string) => boolean;
+};
 const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
   moduleUrl("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx")
 ) as {
@@ -531,7 +536,10 @@ globalThis.fetch = async (input) => {
   const url = new URL(rawUrl, "https://seo-contract.test");
   const requestPath = `${url.pathname}${url.search}`;
 
-  if (requestPath.startsWith("/api/salons?")) return responseJson(url.searchParams.get("pageSize") === "9" ? [salon, ...relatedSalons] : url.searchParams.get("page") === "2" ? relatedSalons.slice(0, 6) : [salon]);
+  if (requestPath.startsWith("/api/salons?")) {
+    if (url.searchParams.get("city") === "Niš") return responseJson([]);
+    return responseJson(url.searchParams.get("pageSize") === "9" ? [salon, ...relatedSalons] : url.searchParams.get("page") === "2" ? relatedSalons.slice(0, 6) : [salon]);
+  }
   if (url.pathname === `/api/salons/${salon.slug}`) return responseJson(salon);
   if (url.pathname === "/api/suppliers") return responseJson([supplier]);
   if (url.pathname === "/api/beauty-jobs") return responseJson({ items: [beautyJob], total: 1, page: 1, pageSize: 10 });
@@ -692,6 +700,12 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  for (const search of ["", "?page=1", "?page=2", "?city=Beograd", "?city=Beograd&page=1", "?city=Beograd&page=2"]) {
+    assert.equal(listingIndexable("/saloni", search), true, `${search || "(plain)"} must be directly indexable before deployment policy`);
+  }
+  for (const search of ["?category=Lice", "?city=Beograd&category=Lice"]) {
+    assert.equal(listingIndexable("/saloni", search), false, `${search} must canonicalize to an indexable parent`);
+  }
   const { cityPhrase, cityLocative, publicImageAlt, publicSalonCategories } = await import(moduleUrl("artifacts/beauty-marketplace/seo-text.mjs"));
   const { buildPageStructuredData } = await import(moduleUrl("artifacts/beauty-marketplace/structured-data.mjs"));
   for (const [city, locative] of Object.entries({ Beograd: "Beogradu", Kragujevac: "Kragujevcu", Niš: "Nišu", "Novi Sad": "Novom Sadu", Pančevo: "Pančevu", Subotica: "Subotici", Čačak: "Čačku" })) assert.equal(cityPhrase(city), `u ${locative}`);
@@ -705,6 +719,29 @@ try {
   assert.match(paginated.body, /href="\/saloni\?city=Beograd&amp;page=3"/u);
   assert.match(paginated.body, /rel="canonical" href="https:\/\/lumera.example\/saloni\?city=Beograd&amp;page=2"/u);
   assert.match(paginated.body, /name="robots" content="noindex, nofollow"/u);
+  const cityListingCases = [
+    { route: "/saloni", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?page=1", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?page=2", canonical: "/saloni?page=2", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?city=Beograd", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&page=1", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&page=2", canonical: "/saloni?city=Beograd&page=2", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&category=Lice", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?category=Lice&page=2", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?city=Ni%C5%A1", canonical: "/saloni?city=Ni%C5%A1", title: "Saloni u Nišu | LUMERA", heading: "Saloni u Nišu" },
+    { route: "/saloni?city=Nepoznat+grad", canonical: "/saloni?city=Nepoznat+grad", title: "Saloni Nepoznat grad | LUMERA", heading: "Saloni Nepoznat grad" },
+  ] as const;
+  for (const scenario of cityListingCases) {
+    const result = await createSeoResponse({
+      url: scenario.route,
+      headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+    }, htmlTemplate);
+    const head = ssrHead(result.body);
+    assert.equal(head.canonical, `${seoOrigin}${scenario.canonical.replaceAll("&", "&amp;")}`, `${scenario.route} canonical`);
+    assert.equal(head.title, scenario.title, `${scenario.route} title`);
+    assert.equal(head.robots, "noindex, nofollow", `${scenario.route} staging robots`);
+    assert.ok(result.body.includes(`<h1>${scenario.heading}</h1>`), `${scenario.route} H1`);
+  }
   // Fixture-only, initial HTML checks: no API process or database is involved.
   const structuredRoutes: Array<[string, string[]]> = [
     ["/", ["Organization", "WebSite"]],

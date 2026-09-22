@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { buildPageStructuredData, compactSchema } from '../../structured-data.mjs';
 import { cityPhrase, publicImageAlt, publicSalonCategories } from '../../seo-text.mjs';
-import { listingCanonical, listingPage, publicSiteOrigin as configuredSeoOrigin } from '../../seo-policy.mjs';
+import { listingCanonical, listingIndexable, listingPage, publicSiteOrigin as configuredSeoOrigin } from '../../seo-policy.mjs';
 import { useLocation, useSearch } from 'wouter';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { customFetch, getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
@@ -173,8 +173,8 @@ export function applySeo(pathname: string, payload: SeoPayload) {
   link.href = metadata.canonical;
 }
 
-export function withQueryIndexability(payload: SeoPayload, searchString: string): SeoPayload {
-  return { ...payload, indexable: payload.indexable && searchString.length === 0 };
+export function withQueryIndexability(payload: SeoPayload, searchString: string, pathname?: string): SeoPayload {
+  return { ...payload, indexable: payload.indexable && listingIndexable(pathname ?? '', searchString) };
 }
 
 export async function dynamicMetadata(pathname: string, queryClient: QueryClient, origin?: string): Promise<SeoPayload | null> {
@@ -532,7 +532,10 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
     if (endpoint.endsWith('/public-products')) return { name: item.name, pathname: `/shop/${pathname.split('/')[2]}/proizvod/${encodeURIComponent(item.id)}` };
     return { name: item.title ?? item.term ?? item.name, pathname: item.salon?.slug ? `/saloni/${item.salon.slug}` : undefined };
   });
-  return { structuredData: buildPageStructuredData(items.length ? 'list' : 'static', { name: listName, items }, { origin, canonical, breadcrumbs }) };
+  return {
+    structuredData: buildPageStructuredData(items.length ? 'list' : 'static', { name: listName, items }, { origin, canonical, breadcrumbs }),
+    ...(pathname === '/saloni' && params.has('city') && !items.length ? { indexable: false } : {}),
+  };
 }
 
 export async function resolvePostMountSeo(
@@ -549,11 +552,21 @@ export async function resolvePostMountSeo(
       payload = null;
     }
   }
+  if (payload && pathname === '/saloni') {
+    const cities = new URLSearchParams(searchString).getAll('city').map((city) => city.trim()).filter(Boolean);
+    if (cities.length === 1) {
+      const heading = `Saloni ${cityPhrase(cities[0])}`;
+      payload = {
+        ...payload, title: `${heading} | LUMERA`, listName: heading,
+        breadcrumbs: [{ name: heading, pathname: listingCanonical(pathname, searchString) }],
+      };
+    }
+  }
   const resolved = withQueryIndexability(payload ?? {
     title: `${APP_NAME} | Privatna stranica`,
     description: defaultDescription,
     indexable: false,
-  }, searchString);
+  }, searchString, pathname);
   return {
     ...resolved,
     ...(payload ? listingMetadataSchema(pathname, searchString, payload, queryClient, origin ?? (typeof document === 'undefined' ? configuredSeoOrigin() : publicSiteOrigin())) : {}),

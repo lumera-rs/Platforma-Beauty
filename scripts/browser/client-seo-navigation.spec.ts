@@ -1,7 +1,45 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const courseId = "00000000-0000-4000-8000-000000000003";
 const managed = 'script[data-lumera-structured-data="current-page"]';
+type SeoSchedulingWindow = Window & {
+  __seoHeld: number;
+  __seoFinished: number;
+  __seoHoldResolution: (pathname: string) => Promise<void>;
+  __seoReleaseResolution: () => void;
+  __seoResolutionFinished: (pathname: string) => void;
+};
+
+async function holdRealMetadataResolution(page: Page) {
+  // Test-only scheduling of the REAL resolver promise and its existing guarded
+  // callback. No replacement resolver, production flag, or alternate guard.
+  // HTTP alone cannot test late resolution: the visible hook aborts on unmount.
+  await page.addInitScript(() => {
+    const state = window as unknown as SeoSchedulingWindow;
+    state.__seoHeld = 0;
+    state.__seoFinished = 0;
+    const hold = new Promise<void>((resolve) => { state.__seoReleaseResolution = resolve; });
+    state.__seoHoldResolution = async (pathname) => {
+      if (pathname !== "/saloni/seo-slow") return;
+      state.__seoHeld++;
+      await hold;
+    };
+    state.__seoResolutionFinished = (pathname) => {
+      if (pathname === "/saloni/seo-slow") state.__seoFinished++;
+    };
+  });
+  await page.route("**/src/components/client-seo-metadata.tsx*", async (route) => {
+    const response = await route.fetch();
+    const source = await response.text();
+    const resolver = "resolvePostMountSeo(pathname, searchString, queryClient, publicSiteOrigin()).then";
+    const settlement = "}).catch(() => {";
+    expect(source.split(resolver)).toHaveLength(2);
+    expect(source.split(settlement)).toHaveLength(2);
+    await route.fulfill({ response, body: source
+      .replace(resolver, "resolvePostMountSeo(pathname, searchString, queryClient, publicSiteOrigin()).then(async (payload) => { await window.__seoHoldResolution(pathname); return payload; }).then")
+      .replace(settlement, "}).finally(() => window.__seoResolutionFinished(pathname)).catch(() => {") });
+  });
+}
 async function expectSchemaText(page: Page, text: string, absent = false) {
   // JSON-LD is non-rendered content: read textContent, not Playwright innerText.
   // Negative assertions also require exactly one valid current-page document.
@@ -38,18 +76,24 @@ test("real SPA navigation replaces current JSON-LD and clears unsupported routes
   let finishSlowFixture!: () => void;
   const slowRelease = new Promise<void>((resolve) => { releaseSlowResponse = resolve; });
   const slowFixtureComplete = new Promise<void>((resolve) => { finishSlowFixture = resolve; });
+  let releaseFirstSalon!: () => void;
+  const firstSalonRelease = new Promise<void>((resolve) => { releaseFirstSalon = resolve; });
+  await holdRealMetadataResolution(page);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     requests.set(path, (requests.get(path) ?? 0) + 1);
     let body: unknown = [];
     let status = 200;
-    if (path === "/api/salons/seo-a") body = salon("SEO Salon A", "seo-a");
+    if (path === "/api/salons/seo-a") {
+      await firstSalonRelease;
+      body = salon("SEO Salon A", "seo-a");
+    }
     else if (path === "/api/salons/seo-b") body = salon("SEO Salon B", "seo-b");
     else if (path === "/api/salons") {
       listingRequests.push(route.request().url());
       const params = new URL(route.request().url()).searchParams;
-      body = Number(params.get("page")) > 2 ? [] : params.get("page") === "2"
+      body = params.get("city") === "Prazan Grad" || Number(params.get("page")) > 2 ? [] : params.get("page") === "2"
         ? Array.from({ length: 6 }, (_, index) => salon(index === 0 ? "SEO Page Two" : `SEO Final ${index}`, `seo-final-${index}`))
         : Array.from({ length: 6 }, (_, index) => salon(`SEO List ${index + 1}`, `seo-list-${index + 1}`));
     }
@@ -77,7 +121,15 @@ test("real SPA navigation replaces current JSON-LD and clears unsupported routes
       if (path === "/api/salons/seo-slow") finishSlowFixture();
     }
   });
-  await page.goto("/saloni/seo-a");
+  await page.goto("/");
+  await expectSchemaText(page, '"Organization"');
+  await expectSchemaText(page, '"WebSite"');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
+  const firstRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/salons/seo-a");
+  await navigate(page, "/saloni/seo-a");
+  await firstRequest;
+  await expect(page.locator(managed), "previous home JSON-LD must be gone while new salon data is held").toHaveCount(0);
+  releaseFirstSalon();
   await expect(page.getByRole("heading", { level: 1, name: "SEO Salon A" })).toBeVisible();
   await expect(page.locator(managed)).toHaveCount(1);
   await expectSchemaText(page, "SEO Salon A");
@@ -109,12 +161,17 @@ test("real SPA navigation replaces current JSON-LD and clears unsupported routes
   await expectPublicImageAlts(page);
   await navigate(page, "/saloni?city=Beograd&page=2");
   await expectSchemaText(page, "SEO Page Two");
+  await expect(page).toHaveTitle("Saloni u Beogradu | LUMERA");
+  await expect(page.getByRole("heading", { level: 1, name: "Saloni u Beogradu", exact: true })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://lumera.example/saloni?city=Beograd&page=2");
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
   await expect(page).toHaveURL(/page=2/);
   await expect(page.getByRole("link", { name: "Sledeća", exact: true })).toHaveCount(0);
   await navigate(page, "/saloni?city=Beograd&page=1");
   await expect(page.locator(managed)).toHaveCount(1);
   await expectSchemaText(page, '"ItemList"');
   await expectSchemaText(page, "SEO List 1");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://lumera.example/saloni?city=Beograd");
   await expectSchemaText(page, "SEO Kurs", true);
   await expectPublicImageAlts(page);
   const next = page.getByRole("link", { name: "Sledeća", exact: true });
@@ -139,27 +196,46 @@ test("real SPA navigation replaces current JSON-LD and clears unsupported routes
   await expectSchemaText(page, '"WebSite"');
   await expectSchemaText(page, "SEO Page Two", true);
   await expectPublicImageAlts(page);
-  // The generated visible hook consumes AbortSignal. Leaving its route can
-  // legitimately abort HTTP rather than produce a response event.
-  const slowSettled = new Promise<void>((resolve) => {
-    const settled = (request: Request) => {
-      if (new URL(request.url()).pathname !== "/api/salons/seo-slow") return;
-      page.off("requestfinished", settled);
-      page.off("requestfailed", settled);
-      resolve();
-    };
-    page.on("requestfinished", settled);
-    page.on("requestfailed", settled);
-  });
   const slowRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/salons/seo-slow");
   await navigate(page, "/saloni/seo-slow");
   await slowRequest;
-  await expect(page.locator(managed)).toHaveCount(0);
-  await navigate(page, "/unsupported-seo-route");
-  await expect(page).toHaveURL(/unsupported-seo-route$/);
-  await expect(page.locator(managed)).toHaveCount(0);
+  await expect(page.locator(managed), "previous home JSON-LD must be gone while slow salon data is held").toHaveCount(0);
   releaseSlowResponse();
-  await Promise.all([slowSettled, slowFixtureComplete]);
+  await slowFixtureComplete;
+  await expect.poll(() => page.evaluate(() => (window as unknown as SeoSchedulingWindow).__seoHeld)).toBeGreaterThan(0);
+  // Data is real and loaded; only completion of its real metadata promise is
+  // held. Navigate to a page with its own schema before releasing that promise.
+  await navigate(page, "/");
+  await expectSchemaText(page, '"Organization"');
+  await expectSchemaText(page, '"WebSite"');
+  const currentHomeSchema = await page.locator(managed).evaluate((script) => script.textContent);
+  await page.evaluate(() => (window as unknown as SeoSchedulingWindow).__seoReleaseResolution());
+  await expect.poll(() => page.evaluate(() => {
+    const state = window as unknown as SeoSchedulingWindow;
+    return state.__seoHeld > 0 && state.__seoFinished === state.__seoHeld;
+  })).toBe(true);
+  await expect.poll(() => page.locator(managed).evaluateAll((scripts) => scripts.map((script) => script.textContent)),
+    { message: "late salon resolution must leave the active home JSON-LD byte-identical" }).toEqual([currentHomeSchema]);
+  await expectSchemaText(page, "SEO Slow Salon", true);
+  for (const scenario of [
+    { path: "/saloni", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA" },
+    { path: "/saloni?page=1", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA" },
+    { path: "/saloni?page=2", canonical: "/saloni?page=2", title: "Saloni i beauty tretmani | LUMERA" },
+    { path: "/saloni?city=Beograd", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { path: "/saloni?city=Beograd&brand=Test&page=2", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { path: "/saloni?brand=Test&page=2", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA" },
+    { path: "/saloni?city=Prazan+Grad", canonical: "/saloni?city=Prazan+Grad", title: "Saloni Prazan Grad | LUMERA", heading: "Saloni Prazan Grad", empty: true },
+    { path: "/saloni?city=Atlantida", canonical: "/saloni?city=Atlantida", title: "Saloni Atlantida | LUMERA", heading: "Saloni Atlantida" },
+  ]) {
+    await navigate(page, scenario.path);
+    await expect(page).toHaveTitle(scenario.title);
+    await expectSchemaText(page, scenario.empty ? '"BreadcrumbList"' : '"ItemList"');
+    if (scenario.empty) await expectSchemaText(page, '"ItemList"', true);
+    if (scenario.heading) await expect(page.getByRole("heading", { level: 1, name: scenario.heading, exact: true })).toBeVisible();
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://lumera.example${scenario.canonical}`);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
+  }
+  await navigate(page, "/unsupported-seo-route");
   await expect(page.locator(managed)).toHaveCount(0);
   await navigate(page, "/saloni/seo-missing");
   await expect(page.getByText("Salon nije pronađen.", { exact: true })).toBeVisible();

@@ -8,7 +8,7 @@ import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 import { publicSiteOrigin, siteIndexable, normalizedPublicPath, canonicalRedirect, applySitePolicy } from './seo-policy.mjs';
 import { compactSchema, buildPageStructuredData, breadcrumbStructuredData, publicReviews, publicJobDate, validPrice } from './structured-data.mjs';
 import { cityPhrase, cityLocatives, publicImageAlt, publicSalonCategories, categoryListingHref } from './seo-text.mjs';
-import { listingPage, listingCanonical } from './seo-policy.mjs';
+import { listingPage, listingCanonical, listingIndexable } from './seo-policy.mjs';
 import { publicSalonAddress } from './public-salon-address.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -260,11 +260,18 @@ async function renderPublicPage(req, pathname) {
     }
     if (pathname === '/saloni') {
       const { items: salons, hasNext } = await getListingPage(req, `/api/salons?${listingQuery(6)}`, pageNumber, 6);
-      const meta = makeMeta(pathname, title, description, { schema: buildPageStructuredData('list', { name: 'LUMERA saloni', items: salons.map(salon => ({ name: salon.name, pathname: `/saloni/${salon.slug}` })) }, { origin, canonical: pathname }) });
+      const cities = filterParams.getAll('city').map(city => city.trim()).filter(Boolean);
+      const city = cities.length === 1 ? cities[0] : '';
+      const cityHeading = city ? `Saloni ${cityPhrase(city)}` : heading;
+      const cityTitle = city ? `${cityHeading} | LUMERA` : title;
+      const canonicalPath = listingCanonical(pathname, search);
+      const meta = makeMeta(canonicalPath, cityTitle, description, {
+        indexable: !city || salons.length > 0,
+        schema: buildPageStructuredData('list', { name: city ? cityHeading : 'LUMERA saloni', items: salons.map(salon => ({ name: salon.name, pathname: `/saloni/${salon.slug}` })) }, { origin, canonical: canonicalPath }),
+      });
       const cards = salons.map((salon) => card({ href: `/saloni/${salon.slug}`, title: salon.name, description: salon.shortDescription, image: salon.imageUrl, city: salon.city, category: salon.popularServices?.join(', '), imageDescription: salon.coverImageDescription, detail: `${salon.city} · Ocena ${salon.rating} (${salon.reviewCount} recenzija)` })).join('');
       meta.extraContent = pagination(hasNext);
-      meta.pathname = listingCanonical(pathname, search);
-      return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupni saloni</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona.</p>'}</div></section>`, origin) };
+      return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(cityHeading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupni saloni</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona.</p>'}</div></section>`, origin) };
     }
     if (pathname === '/proizvodi') {
       const suppliers = (await getJson(req, '/api/suppliers') ?? []).filter(isPublicRetailSupplier);
@@ -805,7 +812,14 @@ export async function createSeoResponse(req, template) {
   const hasQuery = url.search.length > 0;
   try {
     const page = await renderPublicPage(req, pathname);
-    if (page && hasQuery) page.meta = { ...page.meta, pathname: listingCanonical(pathname, url.search), indexable: false };
+    if (page && hasQuery) {
+      const canonicalPath = listingCanonical(pathname, url.search);
+      page.meta = {
+        ...page.meta,
+        pathname: canonicalPath,
+        indexable: page.meta.indexable && listingIndexable(pathname, url.search),
+      };
+    }
     if (page) return { status: 200, type: 'text/html; charset=utf-8', body: applySitePolicy(injectDocument(template, page, origin), req) };
   } catch {
     // Fall through to the client app with a non-indexable response. Public API

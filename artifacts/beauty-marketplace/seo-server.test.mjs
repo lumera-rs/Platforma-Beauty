@@ -10,7 +10,7 @@ import categoryDefinitions from './src/lib/public-category-pages.json' with { ty
 import './seo-policy.test.mjs';
 import { cityLocative, cityPhrase, publicImageAlt } from './seo-text.mjs';
 import { buildPageStructuredData, validPrice, publicReviews } from './structured-data.mjs';
-import { listingCanonical } from './seo-policy.mjs';
+import { listingCanonical, listingIndexable } from './seo-policy.mjs';
 
 // Content regressions run under the staging noindex policy.
 process.env.PUBLIC_SITE_URL = 'https://lumera.example';
@@ -45,7 +45,59 @@ test('part 2 shared schema gates reject invalid Google inputs without inventing 
   const reviews = Array.from({ length: 7 }, (_, i) => ({ authorName: 'Javni autor', rating: 5, text: `Iskustvo ${i}`, date: `2026-09-${String(i + 1).padStart(2, '0')}` }));
   assert.deepEqual(publicReviews({ reviews }).map(item => item.date), ['2026-09-07', '2026-09-06', '2026-09-05', '2026-09-04', '2026-09-03']);
   assert.equal(listingCanonical('/saloni', '?city=Novi+Sad&page=2'), '/saloni?city=Novi+Sad&page=2');
-  assert.equal(listingCanonical('/saloni', '?city=Novi+Sad'), '/saloni');
+  assert.equal(listingCanonical('/saloni', '?city=Novi+Sad'), '/saloni?city=Novi+Sad');
+  assert.equal(listingCanonical('/saloni', '?city=Novi+Sad&page=1'), '/saloni?city=Novi+Sad');
+  assert.equal(listingCanonical('/saloni', '?page=1'), '/saloni');
+  assert.equal(listingCanonical('/saloni', '?page=2'), '/saloni?page=2');
+  assert.equal(listingCanonical('/saloni', '?city=Novi+Sad&category=Lice&page=2'), '/saloni?city=Novi+Sad');
+  assert.equal(listingCanonical('/saloni', '?category=Lice&page=2'), '/saloni');
+  for (const search of ['', '?page=1', '?page=2', '?city=Novi+Sad', '?city=Novi+Sad&page=1', '?city=Novi+Sad&page=2']) {
+    assert.equal(listingIndexable('/saloni', search), true, `${search || '(plain)'} is an eligible canonical family member`);
+  }
+  for (const search of ['?category=Lice', '?city=Novi+Sad&category=Lice', '?city=Novi+Sad&page=2&sort=rating']) {
+    assert.equal(listingIndexable('/saloni', search), false, `${search} must use a nearest indexable parent`);
+  }
+  assert.equal(listingIndexable('/edukacije', '?page=2'), false);
+});
+
+test('city listing canonical, title, heading and empty-result policy cover every owner case', async () => {
+  const originalFetch = global.fetch;
+  const activeSalon = { id: 'city-salon', slug: 'city-salon', name: 'Gradski salon', city: 'Beograd' };
+  let emptyCity = false;
+  global.fetch = async input => {
+    const url = new URL(input);
+    if (url.pathname !== '/api/salons') return new Response('{}', { status: 404 });
+    const city = url.searchParams.get('city');
+    return new Response(JSON.stringify(city === 'Niš' || emptyCity ? [] : [activeSalon]), { status: 200 });
+  };
+  const cases = [
+    { route: '/saloni', canonical: '/saloni', title: 'Saloni i beauty tretmani | LUMERA', heading: 'Pronađite salon i tretman koji vam odgovaraju.' },
+    { route: '/saloni?page=1', canonical: '/saloni', title: 'Saloni i beauty tretmani | LUMERA', heading: 'Pronađite salon i tretman koji vam odgovaraju.' },
+    { route: '/saloni?page=2', canonical: '/saloni?page=2', title: 'Saloni i beauty tretmani | LUMERA', heading: 'Pronađite salon i tretman koji vam odgovaraju.' },
+    { route: '/saloni?city=Beograd', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
+    { route: '/saloni?city=Beograd&page=1', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
+    { route: '/saloni?city=Beograd&page=2', canonical: '/saloni?city=Beograd&page=2', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
+    { route: '/saloni?city=Beograd&category=Lice', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
+    { route: '/saloni?category=Lice&page=2', canonical: '/saloni', title: 'Saloni i beauty tretmani | LUMERA', heading: 'Pronađite salon i tretman koji vam odgovaraju.' },
+    { route: '/saloni?city=Nepoznat+grad', canonical: '/saloni?city=Nepoznat+grad', title: 'Saloni Nepoznat grad | LUMERA', heading: 'Saloni Nepoznat grad' },
+    { route: '/saloni?city=Ni%C5%A1', canonical: '/saloni?city=Ni%C5%A1', title: 'Saloni u Nišu | LUMERA', heading: 'Saloni u Nišu' },
+  ];
+  try {
+    for (const scenario of cases) {
+      const response = await createSeoResponse(request(scenario.route), template);
+      assert.equal(response.status, 200, scenario.route);
+      assert.ok(response.body.includes(`<link rel="canonical" href="https://lumera.example${scenario.canonical.replaceAll('&', '&amp;')}">`), scenario.route);
+      assert.ok(response.body.includes(`<title>${scenario.title}</title>`), scenario.route);
+      assert.ok(response.body.includes(`<h1>${scenario.heading}</h1>`), scenario.route);
+      assert.match(response.body, /name="robots" content="noindex, nofollow"/u, `${scenario.route} must remain staging noindex`);
+    }
+    emptyCity = true;
+    const emptyKnownCity = await createSeoResponse(request('/saloni?city=Beograd'), template);
+    assert.match(emptyKnownCity.body, /name="robots" content="noindex, nofollow"/u);
+    assert.match(emptyKnownCity.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni\?city=Beograd"/u);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('part 2 initial HTML contains real pagination, same-city related anchors, and public duration', async () => {
@@ -315,13 +367,13 @@ test('document and app sources preserve zoom, local Inter, LCP priority, and laz
   assert.match(appSource, /const Admin[A-Za-z0-9]+\s*=\s*lazy\(\(\)\s*=>\s*import\(['"]\.\/pages\/admin\//);
 });
 
-test('query variants and protected routes are never indexable', async () => {
+test('filtered query variants and protected routes are never indexable', async () => {
   const queryResponse = await createSeoResponse(request('/saloni?city=Beograd'), template);
   const shopQueryResponse = await createSeoResponse(request('/shop/aurora?brand=Lumera&sort=PRICE_ASC&page=2'), template);
   const productQueryResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1?ref=campaign'), template);
   const privateResponse = await createSeoResponse(request('/vlasnik/kontrolna-tabla'), template);
   assert.match(queryResponse.body, /name="robots" content="noindex, nofollow"/);
-  assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni"/);
+  assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni\?city=Beograd"/);
   assert.match(shopQueryResponse.body, /name="robots" content="noindex, nofollow"/);
   assert.match(shopQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora"/);
   assert.match(productQueryResponse.body, /name="robots" content="noindex, nofollow"/);
@@ -331,7 +383,7 @@ test('query variants and protected routes are never indexable', async () => {
   assert.doesNotMatch(privateResponse.body, /<meta property="og:title"/);
   for (const body of [queryResponse.body, shopQueryResponse.body, productQueryResponse.body]) {
     assert.equal((body.match(/rel="canonical"/g) ?? []).length, 1);
-    assert.doesNotMatch(body, /canonical" href="[^"]*\?/);
+    if (body !== queryResponse.body) assert.doesNotMatch(body, /canonical" href="[^"]*\?/);
   }
 });
 

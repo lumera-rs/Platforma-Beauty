@@ -45,6 +45,44 @@ test('home and public static routes keep current shared schemas after SPA naviga
   } finally { client.clear(); }
 });
 
+test('client city canonicals, titles and empty results share the SSR policy under staging noindex', async () => {
+  const cases = [
+    { search: '', canonical: '/saloni', eligible: true },
+    { search: 'page=1', canonical: '/saloni', eligible: true },
+    { search: 'page=2', canonical: '/saloni?page=2', eligible: true },
+    { search: 'city=Beograd', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', eligible: true },
+    { search: 'city=Beograd&page=1', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', eligible: true },
+    { search: 'city=Beograd&page=2', canonical: '/saloni?city=Beograd&page=2', title: 'Saloni u Beogradu | LUMERA', eligible: true },
+    { search: 'city=Beograd&brand=Test&page=2', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', eligible: false },
+    { search: 'brand=Test&page=2', canonical: '/saloni', eligible: false },
+    { search: 'city=Prazan+Grad', canonical: '/saloni?city=Prazan+Grad', title: 'Saloni Prazan Grad | LUMERA', eligible: false, empty: true },
+    { search: 'city=Atlantida', canonical: '/saloni?city=Atlantida', title: 'Saloni Atlantida | LUMERA', eligible: true },
+  ];
+  for (const scenario of cases) {
+    const client = new QueryClient();
+    const params = new URLSearchParams(scenario.search);
+    const observer = new QueryObserver(client, {
+      queryKey: ['/api/salons', {
+        page: Number(params.get('page') || 1), pageSize: 6, sort: 'recommended',
+        city: params.get('city') ?? undefined, brand: params.get('brand') ?? undefined,
+      }],
+      initialData: scenario.empty ? [] : [{ name: 'Current public salon', slug: 'public-salon' }],
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    try {
+      const payload = await resolvePostMountSeo('/saloni', scenario.search, client, 'https://lumera.example');
+      assert.equal(payload.canonicalPath, scenario.canonical, scenario.search);
+      assert.equal(payload.indexable, scenario.eligible, scenario.search);
+      if (scenario.title) assert.equal(payload.title, scenario.title);
+      const head = seoHeadMetadata('/saloni', payload, 'https://lumera.example', false);
+      assert.equal(head.robots, 'noindex, nofollow', 'staging must never become indexable');
+      assert.equal(head.canonical, `https://lumera.example${scenario.canonical}`);
+      if (scenario.empty) assert.doesNotMatch(JSON.stringify(payload.structuredData), /"ItemList"/);
+    } finally { unsubscribe(); client.clear(); }
+  }
+});
+
 test('listing schemas use only the active successful current filter/page DTO', async () => {
   const client = new QueryClient();
   const observer = new QueryObserver(client, {
@@ -216,7 +254,7 @@ test('site-wide noindex survives client metadata updates and domain changes', ()
   assert.equal(staged.canonical, 'https://new-domain.example/saloni/test');
   assert.equal(staged.openGraph.url, staged.canonical);
   assert.equal(staged.image, 'https://new-domain.example/og-lumera.png');
-  assert.equal(seoHeadMetadata('/saloni/test', payload, 'https://new-domain.example', true).robots, 'index, follow');
+  assert.equal(seoHeadMetadata('/saloni/test', payload, 'https://new-domain.example', false).robots, 'noindex, nofollow');
 });
 
 test('primary-only product media keeps its loaded description on unrelated saves', () => {
