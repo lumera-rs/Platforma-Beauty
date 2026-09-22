@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
 import { eq, inArray, like, sql } from "drizzle-orm";
 import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
@@ -30,6 +31,8 @@ import {
   runBeautyJobDeliveryFailureAlerts,
 } from "./beauty-jobs-delivery-monitor";
 import type { SmsProvider } from "./sms";
+
+assertDestructiveTestRuntimeAllowed(process.env, "Beauty jobs routes tests");
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
