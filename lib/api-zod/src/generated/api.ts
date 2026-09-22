@@ -1236,7 +1236,8 @@ export const GetSalonResponse = zod.union([zod.object({
   "homeServiceRadiusKm": zod.number().min(1).max(getSalonResponseOneTwoHomeServiceRadiusKmMax)
 })),zod.object({
   "name": zod.string(),
-  "active": zod.literal(false)
+  "active": zod.literal(false),
+  "city": zod.string()
 })])
 
 

@@ -477,7 +477,7 @@ paths:
         - $ref: "#/components/parameters/SalonSlug"
       responses:
         "200":
-          description: Active salon profile, or a name-only inactive profile with no booking or location details.
+          description: Active salon profile, or an inactive profile containing exactly name, active=false and public city. Inactive profiles never expose street, entrance, contact, coordinate or booking details.
           content:
             application/json:
               schema:
@@ -485,13 +485,15 @@ paths:
                   - $ref: "#/components/schemas/SalonProfile"
                   - type: object
                     additionalProperties: false
-                    required: [name, active]
+                    required: [name, active, city]
                     properties:
                       name:
                         type: string
                       active:
                         type: boolean
                         enum: [false]
+                      city:
+                        type: string
   /salons/{salonId}/availability:
     get:
       operationId: getSalonAvailability

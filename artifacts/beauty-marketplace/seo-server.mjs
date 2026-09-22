@@ -10,7 +10,6 @@ import { compactSchema, buildPageStructuredData, breadcrumbStructuredData, publi
 import { cityPhrase, cityLocatives, publicImageAlt, publicSalonCategories, categoryListingHref } from './seo-text.mjs';
 import { listingPage, listingCanonical, listingIndexable, normalizeCity } from './seo-policy.mjs';
 import { publicSalonAddress } from './public-salon-address.mjs';
-import { resolveInactiveSalonCity } from './inactive-salon-city.mjs';
 import { createSitemapDiscovery, formatRobots, robotsInventory } from './seo-discovery.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,13 +21,16 @@ const fallbackImageMetadata = { width: 1200, height: 630, type: 'image/png' };
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
 const staticPages = new Map(staticPageDefinitions.map((page) => [page.path, page]));
-const sitemapDiscovery = createSitemapDiscovery({
-  fetchJson: async (pathname, origin) => {
-    const response = await fetch(new URL(pathname, origin), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
-    if (!response.ok) throw new Error(`Sitemap API unavailable (${response.status})`);
-    return response.json();
-  },
-});
+export async function fetchSitemapJson(pathname, origin) {
+  const response = await fetch(new URL(pathname, origin), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
+  if (!response.ok) {
+    const error = new Error(`Sitemap API unavailable (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+const sitemapDiscovery = createSitemapDiscovery({ fetchJson: fetchSitemapJson });
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -81,7 +83,7 @@ function validPublicPayload(endpoint, value) {
     const label = /\/(?:courses|beauty-jobs)\//.test(pathname) ? value.title : /\/bundles\//.test(pathname) ? value.name ?? value.title : value.name;
     if (Array.isArray(value) || typeof label !== 'string' || !label.trim()) return false;
     const salonLookup = /^\/api\/salons\/[^/]+$/.test(pathname);
-    if (salonLookup && value.active === false) return true;
+    if (salonLookup && value.active === false) return typeof value.city === 'string' && Boolean(value.city.trim());
     if (typeof value.id !== 'string' || !value.id.trim()) return false;
     const slugLookup = salonLookup || /^\/api\/suppliers\/[^/]+$/.test(pathname);
     const segments = pathname.split('/');
@@ -558,7 +560,7 @@ async function renderPublicPage(req, pathname, dependencies = {}) {
     if (!salon) return null;
     if (salon.active === false) {
       const description = 'Ovaj salon trenutno nije dostupan za zakazivanje.';
-      const city = await (dependencies.resolveInactiveSalonCity ?? resolveInactiveSalonCity)(decodeURIComponent(salonMatch[1]));
+      const city = salon.city;
       if (typeof city !== 'string' || !city.trim()) throw new Error('Invalid inactive salon city');
       const cityHref = `/saloni?city=${encodeURIComponent(city)}`;
       const meta = makeMeta(pathname, `${salon.name} | LUMERA`, description, { indexable: false });

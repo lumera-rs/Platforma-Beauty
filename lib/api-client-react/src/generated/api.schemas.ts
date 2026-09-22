@@ -15133,6 +15133,7 @@ city?: CityQueryParameter;
 export type GetSalon200 = SalonProfile | {
   name: string;
   active: false;
+  city: string;
 };
 
 export type GetSalonAvailabilityParams = {

@@ -10,4 +10,5 @@ import type { SalonProfile } from './salonProfile';
 export type GetSalon200 = SalonProfile | {
   name: string;
   active: false;
+  city: string;
 };

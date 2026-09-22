@@ -436,6 +436,10 @@ async function characterizeInjectedRollouts(
   if (process.env.DATABASE_URL !== undefined) {
     throw new Error("Disposable rollout characterization refuses an ambient DATABASE_URL.");
   }
+  const previousDisposableDatabase = process.env.LUMERA_DISPOSABLE_DATABASE;
+  // The caller has created and verified this child. Bind its ownership marker
+  // alongside the URL before delayed ORM imports run their destructive guard.
+  process.env.LUMERA_DISPOSABLE_DATABASE = connectionString;
   process.env.DATABASE_URL = connectionString;
   type BusinessGrowthModule = {
     ensureBusinessGrowthSchema: (schema: string, pool: pg.Pool) => Promise<void>;
@@ -521,6 +525,11 @@ async function characterizeInjectedRollouts(
     throw error;
   } finally {
     delete process.env.DATABASE_URL;
+    if (previousDisposableDatabase === undefined) {
+      delete process.env.LUMERA_DISPOSABLE_DATABASE;
+    } else {
+      process.env.LUMERA_DISPOSABLE_DATABASE = previousDisposableDatabase;
+    }
   }
   const passes: RolloutCharacterization[][] = [];
   try {

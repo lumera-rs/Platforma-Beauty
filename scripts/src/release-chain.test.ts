@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -17,7 +18,32 @@ test("job first-publication HTTP lifecycle stays in the timed release chain on a
   assert.equal(root.scripts["test:beauty-jobs"], "pnpm --filter @workspace/scripts run test:beauty-jobs");
   assert.equal(scripts.scripts["test:beauty-jobs"], "tsx ./src/run-job-first-publication.ts");
   assert.match(runner, /beauty-jobs-routes\.test\.ts/);
-  assert.match(runner, /applyMigrations\(client, \{ migrations: await loadMigrations\(\), expectedTargetIdentity \}\)/);
+  const source = ts.createSourceFile("run-job-first-publication.ts", runner, ts.ScriptTarget.Latest, true);
+  const migrationCalls: ts.CallExpression[] = [];
+  const identities: ts.VariableDeclaration[] = [];
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "applyMigrations") {
+      migrationCalls.push(node);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "identity") {
+      identities.push(node);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.equal(migrationCalls.length, 1, "The owned runner must apply the manifest exactly once.");
+  assert.equal(identities.length, 1, "The owned runner must declare one explicit target identity.");
+  const printer = ts.createPrinter({ removeComments: true });
+  const print = (node: ts.Node) => printer.printNode(ts.EmitHint.Unspecified, node, source);
+  assert.equal(print(migrationCalls[0]!), "applyMigrations(client, { migrations: await loadMigrations(), expectedTargetIdentity: identity })");
+  const identity = identities[0]!.initializer;
+  assert.ok(identity && ts.isObjectLiteralExpression(identity), "Target identity must be an explicit object.");
+  assert.deepEqual(identity.properties.map(print), [
+    'databaseName: "postgres"',
+    "systemIdentifier",
+    'transport: "unencrypted" as const',
+  ], "The migration target must declare database name, cluster system identifier, and transport.");
+  assert.match(runner, /const systemIdentifier = \(await client\.query\("SELECT system_identifier::text FROM pg_catalog\.pg_control_system\(\)"\)\)\.rows\[0\]\.system_identifier;/);
   assert.match(runner, /Math\.floor\(version \/ 10000\) !== 16/);
   assert.match(runner, /SITE_INDEXABLE: "false"/);
   assert.doesNotMatch(runner, /process\.env(?:\.DATABASE_URL|\["DATABASE_URL"\])|push-force|drizzle/);

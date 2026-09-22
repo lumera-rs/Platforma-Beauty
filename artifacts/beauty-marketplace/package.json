@@ -84,7 +84,6 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "pg": "^8.23.0",
     "qrcode.react": "^4.2.0"
   }
 }

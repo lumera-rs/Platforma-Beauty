@@ -708,7 +708,7 @@ export default function SalonProfile() {
       <p className="mt-4">Ovaj salon trenutno nije dostupan za zakazivanje.</p>
       {serverLink
         ? <a className="mt-4 inline-block underline" href={serverLink.getAttribute("href") || "/saloni"}>{serverLink.textContent}</a>
-        : <a className="mt-4 inline-block underline" href={`/saloni/${encodeURIComponent(slug || "")}`}>Pogledajte dostupne salone u ovom gradu</a>}
+        : <a className="mt-4 inline-block underline" href="/saloni">Pogledajte dostupne salone</a>}
     </article></Layout>;
   }
 

@@ -15,7 +15,7 @@ import { listingCanonical, listingIndexable } from './seo-policy.mjs';
 
 // Content regressions run under the staging noindex policy.
 process.env.PUBLIC_SITE_URL = 'https://lumera.example';
-delete process.env.SITE_INDEXABLE;
+process.env.SITE_INDEXABLE = 'false';
 const loopbackFetch = global.fetch;
 // Default empty public collections are explicit fixtures, never real API calls.
 global.fetch = async () => new Response('[]', { headers: { 'content-type': 'application/json' } });
@@ -862,34 +862,28 @@ test('entity lookup failure is 503 noindex, never evidence of deletion, with or 
   }
 });
 
-test('inactive salon uses injected city lookup and exposes no inactive private fields', async () => {
+test('inactive salon uses public DTO city and exposes no inactive private fields', async () => {
   const originalFetch = global.fetch;
   const privateMarker = 'PRIVATE-INACTIVE-DO-NOT-PUBLISH';
   global.fetch = supplierCatalogFetch({
     '/api/salons/inactive': {
       id: 'inactive', slug: 'inactive', name: 'Inactive Studio', active: false,
-      city: privateMarker, email: privateMarker, phone: privateMarker,
-      address: privateMarker, description: privateMarker,
+      city: 'Novi Sad', email: privateMarker, phone: privateMarker,
+      address: privateMarker, entrance: privateMarker, latitude: privateMarker, longitude: privateMarker, description: privateMarker,
       services: [{ name: privateMarker }], gallery: [privateMarker],
     },
   });
   try {
     for (const suffix of ['', '?ref=campaign']) {
-      const result = await createSeoResponse(request(`/saloni/inactive${suffix}`), template, {
-        resolveInactiveSalonCity: async (slug) => {
-          assert.equal(slug, 'inactive');
-          return 'Novi Sad';
-        },
-      });
+      const result = await createSeoResponse(request(`/saloni/inactive${suffix}`), template);
       assert.equal(result.status, 200);
       assert.match(result.body, /name="robots" content="noindex/);
       assert.match(result.body, /Inactive Studio/);
       assert.match(result.body, /href="\/saloni\?city=Novi(?:%20|\+)Sad"/);
       assert.doesNotMatch(result.body, /PRIVATE-INACTIVE-DO-NOT-PUBLISH/);
     }
-    const failed = await createSeoResponse(request('/saloni/inactive'), template, {
-      resolveInactiveSalonCity: async () => { throw new Error('fixture unavailable'); },
-    });
+    global.fetch = async () => Response.json({ name: 'Inactive Studio', active: false });
+    const failed = await createSeoResponse(request('/saloni/inactive'), template);
     assert.equal(failed.status, 503);
     assert.match(failed.body, /name="robots" content="noindex/);
   } finally {

@@ -116,6 +116,21 @@ test('policy replaces stale build metadata without duplicate robots tags', () =>
   assert.match(second, /noindex, nofollow/);
 });
 
+test('indexing-enabled production policy is pure and staging still cannot index', () => {
+  const previous = process.env.SITE_INDEXABLE;
+  for (const host of ['lumera.example', 'staging.example']) {
+    for (const userAgent of ['ordinary-client', 'Googlebot']) {
+      const request = { ...req('/saloni/test', host), headers: { ...req('/saloni/test', host).headers, 'user-agent': userAgent } };
+      const output = applySitePolicy(template, request, env);
+      assert.match(output, host === 'lumera.example'
+        ? /name="robots" content="index, follow"/
+        : /name="robots" content="noindex, nofollow"/);
+      assert.equal(siteIndexable(request, env), host === 'lumera.example');
+    }
+  }
+  assert.equal(process.env.SITE_INDEXABLE, previous, 'Pure policy must never enable process indexing');
+});
+
 test('all filter listings drop empty values but retain sorted nonempty parameters', () => {
   for (const pathname of [
     '/shop/aurora', '/shop/aurora/nega/lica',

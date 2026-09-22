@@ -3,9 +3,62 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createSitemapDiscovery, formatRobots, readDiscoveryPages, renderSitemapDocuments, sitemapTypes, discoveryLastmod } from './seo-discovery.mjs';
 import { listingCanonical } from './seo-policy.mjs';
+import { fetchSitemapJson } from './seo-server.mjs';
 
 const origin = 'https://staging.example.test';
 const apiOrigin = 'https://api.example.test';
+
+test('real server fetch helper preserves missing detail status and discovery serves the remaining inventory', async () => {
+  const previousFetch = global.fetch;
+  try {
+    for (const status of [404, 410]) {
+      const mock = fixture({
+        '/api/education/public/courses': [
+          { id: 'course1', centerId: 'missing-center', instructorProfileId: 'missing-instructor' },
+          { id: 'course2', centerId: 'available-center', instructorProfileId: 'available-instructor' },
+        ],
+        '/api/education/public/centers/available-center': { id: 'available-center', name: 'Center', courses: [] },
+        '/api/education/instructors/available-instructor/public': { id: 'available-instructor', name: 'Instructor', courses: [] },
+      });
+      global.fetch = async (url, options) => {
+        assert.equal(options.headers.accept, 'application/json');
+        assert.equal(options.headers.authorization, undefined);
+        assert.ok(options.signal instanceof AbortSignal);
+        const parsed = new URL(url);
+        assert.equal(parsed.origin, apiOrigin);
+        if (parsed.pathname.includes('missing-')) return new Response(null, { status });
+        return Response.json(await mock.fetchJson(parsed.pathname + parsed.search, parsed.origin));
+      };
+      await assert.rejects(fetchSitemapJson('/api/education/public/centers/missing-center', apiOrigin),
+        error => error.status === status);
+      const discovery = createSitemapDiscovery({ fetchJson: fetchSitemapJson });
+      const education = await discovery.get({ origin, apiOrigin, pathname: '/sitemaps/education.xml' });
+      assert.match(education.xml, /edukacije\/course1/);
+      assert.match(education.xml, /edukacije\/course2/);
+      assert.match(education.xml, /centri\/available-center/);
+      assert.match(education.xml, /instruktori\/available-instructor/);
+      assert.doesNotMatch(education.xml, /missing-center|missing-instructor/);
+      assert.equal(education.diagnostics.omitted.length, 2);
+      assert.ok(education.diagnostics.omitted.every(item => item.reason.includes(String(status))));
+      assert.match((await discovery.get({ origin, apiOrigin, pathname: '/sitemaps/salons.xml' })).xml, /salon-a/);
+      assert.match((await discovery.get({ origin, apiOrigin, pathname: '/sitemap.xml' })).xml, /sitemaps\/education.xml/);
+    }
+    for (const status of [401, 403, 429, 500, 503]) {
+      const mock = fixture({
+        '/api/education/public/courses': [{ id: 'course1', centerId: 'unavailable' }],
+      });
+      global.fetch = async url => {
+        const parsed = new URL(url);
+        if (parsed.pathname === '/api/education/public/centers/unavailable') return new Response(null, { status });
+        return Response.json(await mock.fetchJson(parsed.pathname + parsed.search, parsed.origin));
+      };
+      await assert.rejects(createSitemapDiscovery({ fetchJson: fetchSitemapJson }).get({ origin, apiOrigin, pathname: '/sitemap.xml' }),
+        error => error.status === status);
+    }
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
 
 test('documented full robots responses exactly match pure formatter output', async () => {
   const doc = await readFile(new URL('../../docs/seo-discovery-policy.md', import.meta.url), 'utf8');

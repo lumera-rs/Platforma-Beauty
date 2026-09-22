@@ -64,6 +64,7 @@ test("generated public API response preserves street/postal code and strips priv
     phone: "PRIVATE_PHONE", email: "PRIVATE_EMAIL", latitude: 44.12345, longitude: 20.12345,
     companyAddress: "PRIVATE_BILLING", ownerId: "PRIVATE_OWNER",
   });
+  assert.ok("address" in dto, "The parsed response must be the active salon variant");
   assert.equal(dto.address, "Put 1");
   assert.equal(dto.postalCode, "11000");
   assert.equal(publicSalonAddress(dto)?.text, "Put 1, (bočni ulaz), interfon 22 enter, prizemlje, stan 22, 11000 Beograd");

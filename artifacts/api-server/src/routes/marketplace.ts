@@ -7034,11 +7034,11 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     eq(salonsTable.active, true),
   )).limit(1);
   if (!salon) {
-    // Explicit projection: inactive profiles never load or expose location,
-    // contacts, assets, services or booking data through the anonymous API.
-    const [inactive] = await db.select({ name: salonsTable.name }).from(salonsTable)
+    // Only name, inactive state and public city are approved for inactive profiles.
+    // Never expose street/entrance, contacts, coordinates, assets or booking data.
+    const [inactive] = await db.select({ name: salonsTable.name, city: salonsTable.city }).from(salonsTable)
       .where(and(eq(salonsTable.slug, parsed.data.slug), eq(salonsTable.active, false))).limit(1);
-    if (inactive) { res.json({ name: inactive.name, active: false }); return; }
+    if (inactive) { res.json({ name: inactive.name, active: false, city: inactive.city }); return; }
     res.status(404).json({ error: "Salon nije pronađen." }); return;
   }
   const [services, staff, hours, reviews, firstAvailability] = await Promise.all([

@@ -63,7 +63,7 @@ export function validateStaticSeoPages(value: unknown): asserts value is StaticS
 
 process.env.NODE_ENV = "test";
 process.env.PUBLIC_SITE_URL = "https://lumera.example";
-delete process.env.SITE_INDEXABLE;
+process.env.SITE_INDEXABLE = "false";
 const parsedStaticSeoPages: unknown = JSON.parse(
   read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
 );

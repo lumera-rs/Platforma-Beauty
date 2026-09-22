@@ -35,7 +35,11 @@ const explicitAdminUrl = explicitAdminUrlFromArgs();
 test("disposable equivalence characterization requires an explicit child-database admin target", {
   skip: explicitAdminUrl ? false : "Pass --admin-url=postgresql://127.0.0.1:<non-5432-port>/<admin-db> to run disposable characterization.",
 }, async () => {
+  const previousDisposableDatabase = process.env.LUMERA_DISPOSABLE_DATABASE;
   const report = await characterizeDisposableEquivalence(explicitAdminUrl!);
+  assert.equal(process.env.DATABASE_URL, undefined, "owned child URL must not leak after characterization");
+  assert.equal(process.env.LUMERA_DISPOSABLE_DATABASE, previousDisposableDatabase,
+    "owned child marker must be restored after delayed ORM imports");
   const output = process.argv.find((arg) => arg.startsWith("--output="))?.slice("--output=".length);
   if (output) await writeFile(output, `${JSON.stringify(report, (key, value) =>
     key === "structuralPayload" || key === "physicalPayload" ? undefined : value, 2)}\n`);

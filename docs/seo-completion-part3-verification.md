@@ -1,5 +1,13 @@
 # SEO completion, part 3: verification and changed-file map
 
+> **Historical verification — superseded for current architecture and results.**
+> See [PR38 merge-blockers verification](pr38-merge-blockers-verification.md).
+> The inactive-salon SSR database lookup described below has been removed:
+> the public API now returns exactly `name`, `active: false` and `city`, and SSR
+> obtains city only from that DTO. The frontend has no PostgreSQL dependency
+> or direct database connection. Earlier test counts and workflow notes below
+> describe the historical run, not the current verification.
+
 ## Scope and final SEO results
 
 The preceding guard commit was already pushed as
