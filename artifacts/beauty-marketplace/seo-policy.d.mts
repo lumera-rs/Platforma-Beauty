@@ -1,5 +1,6 @@
 export function listingPage(search?: string): number;
 export function normalizedQuery(search?: string): URLSearchParams;
+export function normalizeCity(value?: string): string;
 export function listingCanonical(pathname: string, search?: string): string;
 export function listingIndexable(pathname: string, search?: string): boolean;
 export function publicSiteOrigin(env?: Record<string, string | undefined>): string;

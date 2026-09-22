@@ -56,3 +56,6 @@ Thumbs.db
 
 # Local uploads and working notes must not be added to Git.
 /attached_assets/
+
+# Local SEO browser verification evidence (screenshots, traces, and logs).
+/reports/seo-cover/

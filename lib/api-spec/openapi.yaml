@@ -477,11 +477,21 @@ paths:
         - $ref: "#/components/parameters/SalonSlug"
       responses:
         "200":
-          description: Salon profile
+          description: Active salon profile, or a name-only inactive profile with no booking or location details.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SalonProfile"
+                oneOf:
+                  - $ref: "#/components/schemas/SalonProfile"
+                  - type: object
+                    additionalProperties: false
+                    required: [name, active]
+                    properties:
+                      name:
+                        type: string
+                      active:
+                        type: boolean
+                        enum: [false]
   /salons/{salonId}/availability:
     get:
       operationId: getSalonAvailability
@@ -14048,6 +14058,7 @@ components:
     Course:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         title: { type: string }
         description: { type: string }
@@ -14433,6 +14444,7 @@ components:
     EducationCenterPublic:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         city: { type: string }
@@ -14488,6 +14500,7 @@ components:
     EducationTaxonomyItem:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         slug: { type: string }
@@ -15503,6 +15516,7 @@ components:
     EducationInstructorPublicProfile:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         photoUrl: { type: ["string", "null"] }

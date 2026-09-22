@@ -107,7 +107,8 @@ export default function SalonProfile() {
   const replaceJobseekerSalonInterests = useReplaceJobseekerSalonInterests();
   const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
 
-  const salonData = salon;
+  const inactiveSalon = salon && "active" in salon && salon.active === false ? salon : undefined;
+  const salonData = salon && "id" in salon ? salon : undefined;
 
   const [cart, setCart] = useState<{serviceId: string, employeeId?: string | null}[]>([]);
   const [bookingCart, setBookingCart] = useState<GroupedTreatmentRequest[]>([]);
@@ -695,6 +696,20 @@ export default function SalonProfile() {
         </div>
       </Layout>
     );
+  }
+
+  if (inactiveSalon) {
+    // Only reuse the city link from this exact server-rendered profile. Never
+    // infer a city from private data or a stale profile after SPA navigation.
+    const serverLink = typeof document === "undefined" ? null : Array.from(document.querySelectorAll<HTMLAnchorElement>("[data-inactive-salon-city-link]"))
+      .find(link => link.dataset.inactiveSalonCityLink === `/saloni/${encodeURIComponent(slug || "")}`);
+    return <Layout><article className="container mx-auto px-4 py-12">
+      <h1 className="text-3xl font-bold">{inactiveSalon.name}</h1>
+      <p className="mt-4">Ovaj salon trenutno nije dostupan za zakazivanje.</p>
+      {serverLink
+        ? <a className="mt-4 inline-block underline" href={serverLink.getAttribute("href") || "/saloni"}>{serverLink.textContent}</a>
+        : <a className="mt-4 inline-block underline" href={`/saloni/${encodeURIComponent(slug || "")}`}>Pogledajte dostupne salone u ovom gradu</a>}
+    </article></Layout>;
   }
 
   if (!salonData) {

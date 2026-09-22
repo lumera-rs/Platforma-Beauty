@@ -28,7 +28,7 @@
     "database:release:3-api": 320,
     "validate:ci:database:total": 685,
     "browser:release:4-isolated": 650,
-    "browser:release:5-final": 135,
-    "validate:ci:browser:total": 780
+    "browser:release:5-final": 290,
+    "validate:ci:browser:total": 935
   }
 }

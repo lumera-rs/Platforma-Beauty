@@ -5,13 +5,9 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { SalonProfile } from './salonProfile';
 
-export interface EducationTaxonomyItem {
-  /** @nullable */
-  updatedAt?: Date | null;
-  id: string;
+export type GetSalon200 = SalonProfile | {
   name: string;
-  slug: string;
-  sortOrder: number;
-  active: boolean;
-}
+  active: false;
+};

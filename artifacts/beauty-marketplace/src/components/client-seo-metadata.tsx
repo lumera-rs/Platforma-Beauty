@@ -336,6 +336,12 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     if (!response.ok) return null;
     const item = await response.json();
     const name = text(item.name, 'Salon');
+    if (item.active === false) return {
+      title: `${name} | LUMERA`,
+      description: 'Ovaj salon trenutno nije dostupan za zakazivanje.',
+      indexable: false,
+      structuredData: undefined,
+    };
     const city = cityPhrase(item.city);
     return {
       title: `${name} ${city} | LUMERA`,
@@ -610,7 +616,7 @@ export async function resolvePostMountSeo(
   return {
     ...resolved,
     ...(payload ? listingMetadataSchema(pathname, searchString, payload, queryClient, origin ?? (typeof document === 'undefined' ? configuredSeoOrigin() : publicSiteOrigin())) : {}),
-    canonicalPath: resolved.canonicalPath ?? listingCanonical(pathname, searchString),
+    canonicalPath: listingCanonical(resolved.canonicalPath ?? pathname, searchString),
   };
 }
 

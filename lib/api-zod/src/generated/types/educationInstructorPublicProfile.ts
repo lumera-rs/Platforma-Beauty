@@ -10,6 +10,8 @@ import type { EducationInstructorPublicProfileRatingSource } from './educationIn
 import type { PublicSocialImage } from './publicSocialImage';
 
 export interface EducationInstructorPublicProfile {
+  /** @nullable */
+  updatedAt?: Date | null;
   id: string;
   name: string;
   /** @nullable */

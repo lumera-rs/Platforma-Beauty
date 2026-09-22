@@ -588,6 +588,7 @@ async function run(): Promise<void> {
       assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
       const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
       const parsedPublicProfile = GetSalonResponse.parse(publicProfile);
+      assert.ok("id" in parsedPublicProfile, "active fixture returns the full public profile");
       assert.deepEqual(
         parsedPublicProfile.socialImage,
         managedSalonSocialImage,
@@ -615,6 +616,7 @@ async function run(): Promise<void> {
       const externalProfileResponse = await fetch(`${baseUrl}/api/salons/${foreignSalon!.slug}`);
       assert.equal(externalProfileResponse.status, 200, "a public salon with a legacy external image must remain discoverable");
       const externalProfile = GetSalonResponse.parse(await externalProfileResponse.json());
+      assert.ok("id" in externalProfile, "active fixture returns the full public profile");
       assert.deepEqual(
         externalProfile.socialImage,
         { url: externalSalonImageUrl },
@@ -1154,6 +1156,7 @@ async function run(): Promise<void> {
     const anonymousDetails = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
     assert.equal(anonymousDetails.status, 200);
     const publicDetails = GetSalonResponse.parse(await anonymousDetails.json());
+    assert.ok("id" in publicDetails, "active fixture returns the full public profile");
     for (const [key, value] of Object.entries(details)) {
       assert.equal((reloadedDetails.body as Record<string, unknown>)[key], value, "reload preserves details");
       assert.equal(publicDetails[key as keyof typeof details], value, "anonymous response carries public details");
@@ -1173,6 +1176,7 @@ async function run(): Promise<void> {
     assert.equal(clearedDetails.status, 200);
     const reloadedCleared = await getRequest(baseUrl, ownerSession, "/salon/profile");
     const anonymousCleared = GetSalonResponse.parse(await (await fetch(`${baseUrl}/api/salons/${salon!.slug}`)).json());
+    assert.ok("id" in anonymousCleared, "active fixture returns the full public profile");
     for (const key of Object.keys(details) as Array<keyof typeof details>) {
       assert.equal((reloadedCleared.body as Record<string, unknown>)[key], null, "clearing survives reload");
       assert.equal(anonymousCleared[key], null, "clearing reaches anonymous visitors");

@@ -5,7 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createSeoResponse } from './seo-server.mjs';
+import { createSeoResponse as renderSeoResponse } from './seo-server.mjs';
+import { createSitemapDiscovery } from './seo-discovery.mjs';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 import './seo-policy.test.mjs';
 import { cityLocative, cityPhrase, publicImageAlt } from './seo-text.mjs';
@@ -15,6 +16,21 @@ import { listingCanonical, listingIndexable } from './seo-policy.mjs';
 // Content regressions run under the staging noindex policy.
 process.env.PUBLIC_SITE_URL = 'https://lumera.example';
 delete process.env.SITE_INDEXABLE;
+const loopbackFetch = global.fetch;
+// Default empty public collections are explicit fixtures, never real API calls.
+global.fetch = async () => new Response('[]', { headers: { 'content-type': 'application/json' } });
+function createSeoResponse(req, html, options = {}) {
+  return renderSeoResponse(req, html, {
+    sitemapDiscovery: createSitemapDiscovery({
+      fetchJson: async (endpoint) => {
+        const response = await global.fetch(new URL(endpoint, 'http://fixture.invalid'));
+        if (!response.ok) throw new Error(`Fixture discovery status ${response.status}`);
+        return response.json();
+      },
+    }),
+    ...options,
+  });
+}
 const template = '<!doctype html><html><head><title>Placeholder</title><meta name="description" content="placeholder"></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>';
 const indexSource = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const stylesSource = readFileSync(new URL('./src/index.css', import.meta.url), 'utf8');
@@ -79,7 +95,7 @@ test('city listing canonical, title, heading and empty-result policy cover every
     { route: '/saloni?city=Beograd&page=2', canonical: '/saloni?city=Beograd&page=2', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
     { route: '/saloni?city=Beograd&category=Lice', canonical: '/saloni?city=Beograd', title: 'Saloni u Beogradu | LUMERA', heading: 'Saloni u Beogradu' },
     { route: '/saloni?category=Lice&page=2', canonical: '/saloni', title: 'Saloni i beauty tretmani | LUMERA', heading: 'Pronađite salon i tretman koji vam odgovaraju.' },
-    { route: '/saloni?city=Nepoznat+grad', canonical: '/saloni?city=Nepoznat+grad', title: 'Saloni Nepoznat grad | LUMERA', heading: 'Saloni Nepoznat grad' },
+    { route: '/saloni?city=Nepoznat+grad', canonical: '/saloni?city=Nepoznat+Grad', title: 'Saloni Nepoznat Grad | LUMERA', heading: 'Saloni Nepoznat Grad' },
     { route: '/saloni?city=Ni%C5%A1', canonical: '/saloni?city=Ni%C5%A1', title: 'Saloni u Nišu | LUMERA', heading: 'Saloni u Nišu' },
   ];
   try {
@@ -140,7 +156,7 @@ test('part 2 managed gallery descriptions use anonymous read-only lookup and ret
       return new Response(JSON.stringify({ items: [{ url: image, altText: 'Pristupačan ulaz sa rampom' }] }), { status: 200 });
     }
     return new Response(JSON.stringify(url.pathname === '/api/salons/galerija'
-      ? { slug: 'galerija', name: 'Salon', city: 'Niš', imageUrl: '/cover.jpg', gallery: [image] } : []), { status: 200 });
+      ? { id: 'galerija', slug: 'galerija', name: 'Salon', city: 'Niš', imageUrl: '/cover.jpg', gallery: [image] } : []), { status: 200 });
   };
   try {
     const response = await createSeoResponse(request('/saloni/galerija'), template);
@@ -271,6 +287,8 @@ test('direct entry point serves HTTP on the explicit PORT and shuts down cleanly
       ...process.env,
       NODE_ENV: 'test',
       PORT: String(port),
+      LUMERA_SEO_API_ORIGIN: 'http://127.0.0.1:1',
+      SITE_INDEXABLE: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -289,7 +307,7 @@ test('direct entry point serves HTTP on the explicit PORT and shuts down cleanly
       assert.fail(`SEO server exited before accepting HTTP requests: ${stderr}`);
     }
     try {
-      response = await fetch(`http://127.0.0.1:${port}/uslovi-koriscenja`);
+      response = await loopbackFetch(`http://127.0.0.1:${port}/uslovi-koriscenja`);
       break;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -407,7 +425,7 @@ test('salon query fallback retains shared canonicals during upstream rejection',
   try {
     for (const [route, canonical] of cases) {
       const response = await createSeoResponse(request(route), template);
-      assert.equal(response.status, 200, route);
+      assert.equal(response.status, 503, route);
       assert.match(response.body, /name="robots" content="noindex, nofollow"/u, route);
       assert.ok(response.body.includes(`<link rel="canonical" href="https://lumera.example${canonical.replaceAll('&', '&amp;')}">`), route);
       assert.equal((response.body.match(/rel="canonical"/gu) ?? []).length, 1, route);
@@ -502,9 +520,9 @@ test('education center and instructor detail pages expose entity schema and abso
   global.fetch = async (input) => {
     const url = new URL(input);
     const payload = url.pathname === '/api/education/public/centers/center-1'
-      ? { name: 'Akademija LUMERA', description: 'Centar za stručne edukacije.', imageUrl: '/center.jpg', courses: [] }
+      ? { id: 'center-1', name: 'Akademija LUMERA', description: 'Centar za stručne edukacije.', imageUrl: '/center.jpg', courses: [] }
       : url.pathname === '/api/education/instructors/instructor-1/public'
-        ? { name: 'Ana Edukator', biography: 'Licencirani edukator.', photoUrl: '/ana.jpg', courses: [] }
+        ? { id: 'instructor-1', name: 'Ana Edukator', biography: 'Licencirani edukator.', photoUrl: '/ana.jpg', courses: [] }
         : null;
     return new Response(JSON.stringify(payload), {
       status: payload ? 200 : 404,
@@ -532,6 +550,8 @@ test('server metadata publishes verified social image values without guessing le
     const payload = url.pathname === '/api/salons/managed'
       ? {
           name: 'Managed salon',
+          id: 'managed',
+          slug: 'managed',
           city: 'Beograd',
           description: 'Salon sa upravljanom slikom.',
           imageUrl: '/legacy.jpg',
@@ -547,6 +567,8 @@ test('server metadata publishes verified social image values without guessing le
       : url.pathname === '/api/salons/legacy'
         ? {
             name: 'Legacy salon',
+            id: 'legacy',
+            slug: 'legacy',
             city: 'Beograd',
             description: 'Salon sa legacy slikom.',
             imageUrl: 'https://legacy.example/photo.jpg',
@@ -651,7 +673,7 @@ test('category pages are included in the canonical sitemap', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
   try {
-    const response = await createSeoResponse(request('/sitemap.xml'), template);
+    const response = await createSeoResponse(request('/sitemaps/content.xml'), template);
     assert.equal(response.status, 200);
     for (const category of categoryDefinitions) {
       assert.match(response.body, new RegExp(`https:\\/\\/lumera\\.example${category.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
@@ -661,12 +683,12 @@ test('category pages are included in the canonical sitemap', async () => {
   }
 });
 
-test('sitemap uses the authored legal-page date rather than an invented current date', async () => {
+test('sitemap omits unsupported legal modification dates rather than inventing current dates', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
   try {
-    const response = await createSeoResponse(request('/sitemap.xml'), template);
-    assert.match(response.body, /<loc>https:\/\/lumera\.example\/uslovi-koriscenja<\/loc><lastmod>2026-08-24<\/lastmod>/);
+    const response = await createSeoResponse(request('/sitemaps/content.xml'), template);
+    assert.match(response.body, /<loc>https:\/\/lumera\.example\/uslovi-koriscenja<\/loc>(?:<lastmod>2026-08-24(?:T00:00:00\.000Z)?<\/lastmod>)?<\/url>/);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -688,7 +710,7 @@ test('Lumera Biznis audience pages render unique SSR metadata and enter the site
     assert.match(response.body, new RegExp(`rel="canonical" href="https:\\/\\/lumera\\.example${pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
   }
 
-  const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+  const sitemap = await createSeoResponse(request('/sitemaps/content.xml'), template);
   for (const [pathname] of pages) {
     assert.match(sitemap.body, new RegExp(`https:\\/\\/lumera\\.example${pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   }
@@ -712,7 +734,7 @@ test('education-center registration stays excluded from the sitemap during upstr
     const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
     assert.equal(sitemap.status, 503);
     assert.doesNotMatch(sitemap.body, /pridruzi-se-edukativni-centar/);
-    assert.match(sitemap.body, /https:\/\/lumera\.example\/za-biznise\/edukativni-centri/);
+    assert.doesNotMatch(sitemap.body, /<urlset|<sitemapindex/, 'failed discovery must not publish a partial sitemap');
   } finally {
     global.fetch = originalFetch;
   }
@@ -722,7 +744,9 @@ function supplierCatalogFetch(fixtures) {
   return async (input) => {
     const url = new URL(input);
     const key = `${url.pathname}${url.search}`;
-    const value = fixtures[key] ?? fixtures[url.pathname];
+    const emptyDiscoveryCollections = ['/api/salons', '/api/suppliers', '/api/beauty-jobs',
+      '/api/education/public/courses', '/api/education/public/taxonomy', '/api/education/bundles'];
+    const value = fixtures[key] ?? fixtures[url.pathname] ?? (emptyDiscoveryCollections.includes(url.pathname) ? [] : undefined);
     if (value === undefined) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
     return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
   };
@@ -788,7 +812,7 @@ test('supplier shop and arbitrary-depth category render canonical metadata, brea
   }
 });
 
-test('unknown, inactive, non-retail suppliers and unknown category paths use normal not-found behavior', async () => {
+test('confirmed unknown suppliers/categories are 404 but inactive suppliers remain 200 noindex', async () => {
   const originalFetch = global.fetch;
   const inactive = { id: 's2', slug: 'inactive', name: 'Inactive', scope: 'B2C', active: false };
   global.fetch = supplierCatalogFetch({
@@ -799,8 +823,75 @@ test('unknown, inactive, non-retail suppliers and unknown category paths use nor
   });
   try {
     assert.equal((await createSeoResponse(request('/shop/nepoznat'), template)).status, 404);
-    assert.equal((await createSeoResponse(request('/shop/inactive'), template)).status, 404);
+    const inactiveResponse = await createSeoResponse(request('/shop/inactive'), template);
+    assert.equal(inactiveResponse.status, 200);
+    assert.match(inactiveResponse.body, /name="robots" content="noindex/);
     assert.equal((await createSeoResponse(request('/shop/aurora/nega/nepostojeca'), template)).status, 404);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('entity lookup failure is 503 noindex, never evidence of deletion, with or without query', async () => {
+  const originalFetch = global.fetch;
+  const routes = [
+    '/saloni/aurora', '/poslovi/frizer/job1',
+    '/shop/aurora', '/shop/aurora/proizvod/p1', '/shop/aurora/nega',
+    '/edukacije/11111111-1111-4111-8111-111111111111',
+    '/edukacije/paketi/bundle1', '/edukacije/centri/center1',
+    '/edukacije/instruktori/instructor1', '/edukacije/sekcije/nega',
+  ];
+  try {
+    for (const mode of ['network', '503', 'malformed']) {
+      global.fetch = async () => {
+        if (mode === 'network') throw new Error('fixture-only upstream unavailable');
+        if (mode === 'malformed') return new Response('{invalid-json', { status: 200 });
+        return new Response('upstream unavailable', { status: 503 });
+      };
+      for (const pathname of routes) {
+        for (const suffix of ['', '?ref=campaign&empty=']) {
+          const result = await createSeoResponse(request(pathname + suffix), template);
+          assert.equal(result.status, 503, `${mode} ${pathname}${suffix}: lookup is inconclusive`);
+          assert.match(result.body, /name="robots" content="noindex/);
+          assert.doesNotMatch(result.body, /fixture-only upstream unavailable|invalid-json/);
+        }
+      }
+    }
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('inactive salon uses injected city lookup and exposes no inactive private fields', async () => {
+  const originalFetch = global.fetch;
+  const privateMarker = 'PRIVATE-INACTIVE-DO-NOT-PUBLISH';
+  global.fetch = supplierCatalogFetch({
+    '/api/salons/inactive': {
+      id: 'inactive', slug: 'inactive', name: 'Inactive Studio', active: false,
+      city: privateMarker, email: privateMarker, phone: privateMarker,
+      address: privateMarker, description: privateMarker,
+      services: [{ name: privateMarker }], gallery: [privateMarker],
+    },
+  });
+  try {
+    for (const suffix of ['', '?ref=campaign']) {
+      const result = await createSeoResponse(request(`/saloni/inactive${suffix}`), template, {
+        resolveInactiveSalonCity: async (slug) => {
+          assert.equal(slug, 'inactive');
+          return 'Novi Sad';
+        },
+      });
+      assert.equal(result.status, 200);
+      assert.match(result.body, /name="robots" content="noindex/);
+      assert.match(result.body, /Inactive Studio/);
+      assert.match(result.body, /href="\/saloni\?city=Novi(?:%20|\+)Sad"/);
+      assert.doesNotMatch(result.body, /PRIVATE-INACTIVE-DO-NOT-PUBLISH/);
+    }
+    const failed = await createSeoResponse(request('/saloni/inactive'), template, {
+      resolveInactiveSalonCity: async () => { throw new Error('fixture unavailable'); },
+    });
+    assert.equal(failed.status, 503);
+    assert.match(failed.body, /name="robots" content="noindex/);
   } finally {
     global.fetch = originalFetch;
   }
@@ -858,6 +949,7 @@ test('owner cover descriptions drive social and visible image alt with a title f
       authorDisplayName: 'Studio LUMERA',
     },
     '/api/salons/studio-lumera': {
+      id: 'studio-lumera', slug: 'studio-lumera',
       name: 'Studio LUMERA', city: 'Beograd', description: 'Opis salona.',
       imageUrl: '/salon-cover.jpg', gallery: ['/salon-gallery.jpg'],
       socialImage: {
@@ -869,6 +961,7 @@ test('owner cover descriptions drive social and visible image alt with a title f
       coverImageDescription: 'Enterijer salona sa dve radne stolice',
     },
     '/api/education/public/courses/course-1': {
+      id: 'course-1',
       title: 'Balayage kurs', description: 'Opis kursa.', imageUrl: '/course.jpg',
       coverImageDescription: 'Instruktorka demonstrira balayage tehniku',
       publisher: 'LUMERA Akademija', format: 'in-person', duration: '2 dana', price: 12000,
@@ -921,18 +1014,19 @@ test('sitemap contains only active retail supplier, category, and supplier-quali
   };
   global.fetch = supplierCatalogFetch(fixtures);
   try {
-    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    const sitemap = await createSeoResponse(request('/sitemaps/products.xml'), template);
     assert.equal(sitemap.status, 200);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora<\/loc>/);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka/);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1/);
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora<\/loc><lastmod>2026-08-20<\/lastmod>/);
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka<\/loc><lastmod>2026-08-21<\/lastmod>/);
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1<\/loc><lastmod>2026-08-22<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora<\/loc><lastmod>2026-08-20T12:00:00.000Z<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/nega\/lice\/duboka<\/loc><lastmod>2026-08-21T12:00:00.000Z<\/lastmod>/);
+    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1<\/loc><lastmod>2026-08-22T12:00:00.000Z<\/lastmod>/);
     assert.doesNotMatch(sitemap.body, /\/shop\/(?:pro|off|aurora\/skrivena)|\/proizvodi\/p1/);
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/<\/loc><changefreq>/, 'Home omits lastmod when its salon source has no dated item');
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/proizvodi<\/loc><lastmod>2026-08-20<\/lastmod>/);
-    assert.match(sitemap.body, /<loc>https:\/\/lumera\.example\/brendovi<\/loc><changefreq>/, 'URLs without a real source date omit lastmod');
+    const content = await createSeoResponse(request('/sitemaps/content.xml'), template);
+    for (const pathname of ['/', '/proizvodi', '/brendovi']) {
+      assert.ok(content.body.includes(`<loc>https://lumera.example${pathname}</loc></url>`), 'undated collection pages do not borrow entity dates');
+    }
   } finally {
     global.fetch = originalFetch;
   }
@@ -992,7 +1086,7 @@ test('Beauty Poslovi index, detail metadata and sitemap use only public data', a
     const listing = await createSeoResponse(request('/poslovi'), template);
     const detail = await createSeoResponse(request(`/poslovi/${job.slug}/${job.id}`), template);
     const wrongSlug = await createSeoResponse(request(`/poslovi/pogresan-slug/${job.id}`), template);
-    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    const sitemap = await createSeoResponse(request('/sitemaps/jobs.xml'), template);
     assert.equal(listing.status, 200);
     assert.match(listing.body, /<h1>Beauty poslovi, angažmani i iznajmljivanje<\/h1>/);
     assert.match(listing.body, /Potreban frizer u Beogradu/);
@@ -1080,7 +1174,7 @@ test('Education taxonomy pages render canonical metadata, breadcrumbs, and are i
   };
 
   try {
-    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    const sitemap = await createSeoResponse(request('/sitemaps/education.xml'), template);
     assert.equal(sitemap.status, 200);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke/);
     assert.match(sitemap.body, /https:\/\/lumera\.example\/edukacije\/sekcije\/frizerske-obuke\/zenske-frizure/);

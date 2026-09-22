@@ -36,7 +36,33 @@ test("public SEO SPA regression stays in the timed browser release phase without
   assert.match(config, /client-seo-navigation\.spec\.ts/);
   assert.match(config, /SITE_INDEXABLE: "false"/);
   assert.doesNotMatch(config, /DATABASE_URL|run-isolated-browser-suite|SITE_INDEXABLE: "true"/);
-  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 135);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+});
+
+test("cover descriptions and nonroot owner widget URLs stay in the timed SEO release phase", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const runner = await readFile(path.join(workspaceRoot, "scripts/src/run-cover-image-description-browser.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:owner-widget-url && pnpm run test:client-seo-browser && pnpm run test:cover-image-description-browser/);
+  assert.equal(root.scripts["test:owner-widget-url"], "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/beauty-marketplace/src/lib/owner-widget-url.test.ts");
+  assert.equal(root.scripts["test:cover-image-description-browser"], "pnpm --filter @workspace/scripts run test:cover-image-description-browser");
+  assert.equal(scripts.scripts["test:cover-image-description-browser"], "tsx ./src/run-cover-image-description-browser.ts");
+  assert.match(runner, /specPath: "browser\/cover-image-description-isolation\.spec\.ts"/);
+  assert.doesNotMatch(runner, /SITE_INDEXABLE:\s*"true"/);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+  assert.equal(budgets.baselinesSeconds["validate:ci:browser:total"], 935);
+});
+
+test("SEO discovery and inactive salon regressions stay in the existing timed SEO release command", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const frontend = JSON.parse(await readFile(path.join(workspaceRoot, "artifacts/beauty-marketplace/package.json"), "utf8"));
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(frontend.scripts["test:seo"], /node --test seo-server\.test\.mjs seo-discovery\.test\.mjs inactive-salon-city\.test\.mjs/);
+  assert.equal(root.scripts["test:seo"], "pnpm --filter @workspace/beauty-marketplace run test:seo && NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test src/inactive-salon-contract.test.ts");
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:seo &&/);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+  assert.equal(budgets.baselinesSeconds["validate:ci:browser:total"], 935);
 });
 
 const requiredOtherIsolatedBrowserGateScripts = [

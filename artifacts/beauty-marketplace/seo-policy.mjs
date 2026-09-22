@@ -6,6 +6,12 @@ export function normalizedQuery(search = '') {
   return params;
 }
 
+export function normalizeCity(value = '') {
+  return String(value).normalize('NFC').trim().replace(/\s+/gu, ' ')
+    .toLocaleLowerCase('sr-Latn').replace(/(^|[\s-])(\p{L})/gu,
+      (_, separator, letter) => separator + letter.toLocaleUpperCase('sr-Latn'));
+}
+
 export function listingPage(search = '') {
   const value = new URLSearchParams(search).get('page');
   return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 1;
@@ -22,7 +28,7 @@ export function listingCanonical(pathname, search = '') {
     : 1;
 
   if (pathname === '/saloni') {
-    const cities = params.getAll('city').map(city => city.trim()).filter(Boolean);
+    const cities = params.getAll('city').map(normalizeCity).filter(Boolean);
     const canonical = new URLSearchParams();
     if (cities.length === 1) canonical.set('city', cities[0]);
 
@@ -34,6 +40,11 @@ export function listingCanonical(pathname, search = '') {
     if (isPlainOrCityOnly && page >= 2) canonical.set('page', String(page));
     canonical.sort();
     return canonical.size ? `${pathname}?${canonical}` : pathname;
+  }
+
+  if (pathname.startsWith('/shop/') || pathname.startsWith('/saloni/kategorija/')
+    || pathname.startsWith('/edukacije/sekcije/')) {
+    return params.size ? `${pathname}?${params}` : pathname;
   }
 
   // Page one always folds into the unpaginated parent. Existing page two and

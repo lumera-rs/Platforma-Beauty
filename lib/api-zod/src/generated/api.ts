@@ -1087,56 +1087,56 @@ export const GetSalonParams = zod.object({
   "slug": zod.coerce.string()
 })
 
-export const getSalonResponseOneCoverImageDescriptionMax = 160;
+export const getSalonResponseOneOneCoverImageDescriptionMax = 160;
 
 
 
 
-export const getSalonResponseTwoTopServicesItemPriceMin = 0;
+export const getSalonResponseOneTwoTopServicesItemPriceMin = 0;
 
-export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
-
-
-export const getSalonResponseTwoServicesItemPreProcessingMinutesDefault = 0;
-export const getSalonResponseTwoServicesItemPreProcessingMinutesMin = 0;
-
-export const getSalonResponseTwoServicesItemProcessingMinutesDefault = 0;
-export const getSalonResponseTwoServicesItemProcessingMinutesMin = 0;
-
-export const getSalonResponseTwoServicesItemPostProcessingMinutesDefault = 0;
-export const getSalonResponseTwoServicesItemPostProcessingMinutesMin = 0;
-
-export const getSalonResponseTwoServicesItemBufferMinutesDefault = 0;
-export const getSalonResponseTwoServicesItemBufferMinutesMin = 0;
-
-export const getSalonResponseTwoServicesItemRequiredEmployeeCountDefault = 1;
-export const getSalonResponseTwoServicesItemRequiredEmployeeCountMax = 20;
-
-export const getSalonResponseTwoServicesItemHomeServiceFeeMin = 0;
-
-export const getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin = 0;
-
-export const getSalonResponseTwoServicesItemResourceRequirementsItemQuantityMultipleOf = 1;
-
-export const getSalonResponseTwoReviewsItemRatingMax = 5;
-export const getSalonResponseTwoReviewsItemRatingMultipleOf = 1;
-
-export const getSalonResponseTwoReviewsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
-export const getSalonResponseTwoReturnClientRateMin = 0;
-export const getSalonResponseTwoReturnClientRateMax = 100;
-
-export const getSalonResponseTwoHomeServiceRadiusKmMax = 100;
+export const getSalonResponseOneTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const getSalonResponseOneTwoServicesItemPreProcessingMinutesDefault = 0;
+export const getSalonResponseOneTwoServicesItemPreProcessingMinutesMin = 0;
 
-export const GetSalonResponse = zod.object({
+export const getSalonResponseOneTwoServicesItemProcessingMinutesDefault = 0;
+export const getSalonResponseOneTwoServicesItemProcessingMinutesMin = 0;
+
+export const getSalonResponseOneTwoServicesItemPostProcessingMinutesDefault = 0;
+export const getSalonResponseOneTwoServicesItemPostProcessingMinutesMin = 0;
+
+export const getSalonResponseOneTwoServicesItemBufferMinutesDefault = 0;
+export const getSalonResponseOneTwoServicesItemBufferMinutesMin = 0;
+
+export const getSalonResponseOneTwoServicesItemRequiredEmployeeCountDefault = 1;
+export const getSalonResponseOneTwoServicesItemRequiredEmployeeCountMax = 20;
+
+export const getSalonResponseOneTwoServicesItemHomeServiceFeeMin = 0;
+
+export const getSalonResponseOneTwoServicesItemHomeServiceMinimumOrderMin = 0;
+
+export const getSalonResponseOneTwoServicesItemResourceRequirementsItemQuantityMultipleOf = 1;
+
+export const getSalonResponseOneTwoReviewsItemRatingMax = 5;
+export const getSalonResponseOneTwoReviewsItemRatingMultipleOf = 1;
+
+export const getSalonResponseOneTwoReviewsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getSalonResponseOneTwoReturnClientRateMin = 0;
+export const getSalonResponseOneTwoReturnClientRateMax = 100;
+
+export const getSalonResponseOneTwoHomeServiceRadiusKmMax = 100;
+
+
+
+export const GetSalonResponse = zod.union([zod.object({
   "id": zod.string(),
   "slug": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
   "imageUrl": zod.string(),
-  "coverImageDescription": zod.string().max(getSalonResponseOneCoverImageDescriptionMax).nullable(),
+  "coverImageDescription": zod.string().max(getSalonResponseOneOneCoverImageDescriptionMax).nullable(),
   "socialImage": zod.object({
   "url": zod.string(),
   "width": zod.number().int().min(1).optional(),
@@ -1175,8 +1175,8 @@ export const GetSalonResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number().min(1),
-  "price": zod.number().min(getSalonResponseTwoTopServicesItemPriceMin),
-  "promoPrice": zod.number().min(getSalonResponseTwoTopServicesItemPromoPriceMin).nullable(),
+  "price": zod.number().min(getSalonResponseOneTwoTopServicesItemPriceMin),
+  "promoPrice": zod.number().min(getSalonResponseOneTwoTopServicesItemPromoPriceMin).nullable(),
   "bookingCount": zod.number().min(1)
 })),
   "hours": zod.array(zod.object({
@@ -1203,11 +1203,11 @@ export const GetSalonResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
   "durationMinutes": zod.number(),
-  "preProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPreProcessingMinutesMin).default(getSalonResponseTwoServicesItemPreProcessingMinutesDefault),
-  "processingMinutes": zod.number().min(getSalonResponseTwoServicesItemProcessingMinutesMin).default(getSalonResponseTwoServicesItemProcessingMinutesDefault),
-  "postProcessingMinutes": zod.number().min(getSalonResponseTwoServicesItemPostProcessingMinutesMin).default(getSalonResponseTwoServicesItemPostProcessingMinutesDefault),
-  "bufferMinutes": zod.number().min(getSalonResponseTwoServicesItemBufferMinutesMin).default(getSalonResponseTwoServicesItemBufferMinutesDefault),
-  "requiredEmployeeCount": zod.number().int().min(1).max(getSalonResponseTwoServicesItemRequiredEmployeeCountMax).default(getSalonResponseTwoServicesItemRequiredEmployeeCountDefault),
+  "preProcessingMinutes": zod.number().min(getSalonResponseOneTwoServicesItemPreProcessingMinutesMin).default(getSalonResponseOneTwoServicesItemPreProcessingMinutesDefault),
+  "processingMinutes": zod.number().min(getSalonResponseOneTwoServicesItemProcessingMinutesMin).default(getSalonResponseOneTwoServicesItemProcessingMinutesDefault),
+  "postProcessingMinutes": zod.number().min(getSalonResponseOneTwoServicesItemPostProcessingMinutesMin).default(getSalonResponseOneTwoServicesItemPostProcessingMinutesDefault),
+  "bufferMinutes": zod.number().min(getSalonResponseOneTwoServicesItemBufferMinutesMin).default(getSalonResponseOneTwoServicesItemBufferMinutesDefault),
+  "requiredEmployeeCount": zod.number().int().min(1).max(getSalonResponseOneTwoServicesItemRequiredEmployeeCountMax).default(getSalonResponseOneTwoServicesItemRequiredEmployeeCountDefault),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
   "tags": zod.array(zod.string()).optional(),
@@ -1215,11 +1215,11 @@ export const GetSalonResponse = zod.object({
   "imageUrl": zod.string(),
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
-  "homeServiceFee": zod.number().min(getSalonResponseTwoServicesItemHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin).nullable(),
+  "homeServiceFee": zod.number().min(getSalonResponseOneTwoServicesItemHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(getSalonResponseOneTwoServicesItemHomeServiceMinimumOrderMin).nullable(),
   "resourceRequirements": zod.array(zod.object({
   "resourceId": zod.string(),
-  "quantity": zod.number().min(1).multipleOf(getSalonResponseTwoServicesItemResourceRequirementsItemQuantityMultipleOf)
+  "quantity": zod.number().min(1).multipleOf(getSalonResponseOneTwoServicesItemResourceRequirementsItemQuantityMultipleOf)
 }))
 })),
   "reviews": zod.array(zod.object({
@@ -1227,14 +1227,17 @@ export const GetSalonResponse = zod.object({
   "authorName": zod.string(),
   "avatarUrl": zod.string().nullable(),
   "verifiedBooking": zod.boolean(),
-  "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax).multipleOf(getSalonResponseTwoReviewsItemRatingMultipleOf),
+  "rating": zod.number().min(1).max(getSalonResponseOneTwoReviewsItemRatingMax).multipleOf(getSalonResponseOneTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
-  "date": zod.string().regex(getSalonResponseTwoReviewsItemDateRegExp).nullable(),
+  "date": zod.string().regex(getSalonResponseOneTwoReviewsItemDateRegExp).nullable(),
   "serviceName": zod.string()
 })),
-  "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable(),
-  "homeServiceRadiusKm": zod.number().min(1).max(getSalonResponseTwoHomeServiceRadiusKmMax)
-}))
+  "returnClientRate": zod.number().min(getSalonResponseOneTwoReturnClientRateMin).max(getSalonResponseOneTwoReturnClientRateMax).nullable(),
+  "homeServiceRadiusKm": zod.number().min(1).max(getSalonResponseOneTwoHomeServiceRadiusKmMax)
+})),zod.object({
+  "name": zod.string(),
+  "active": zod.literal(false)
+})])
 
 
 /**
@@ -12636,6 +12639,7 @@ export const listAdminEducationTaxonomyProposalsResponseOneSortOrderMultipleOf =
 
 
 export const ListAdminEducationTaxonomyProposalsResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -12671,6 +12675,7 @@ export const reviewAdminEducationTaxonomyProposalResponseOneSortOrderMultipleOf 
 
 
 export const ReviewAdminEducationTaxonomyProposalResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -12711,6 +12716,7 @@ export const updateAdminEducationTaxonomyResponseSortOrderMultipleOf = 1;
 
 
 export const UpdateAdminEducationTaxonomyResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -12957,6 +12963,7 @@ export const listCoursesResponseEarlyBirdPriceMin = 0;
 
 
 export const ListCoursesResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -13273,6 +13280,7 @@ export const createEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 export const CreateEducationCourseResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -13396,6 +13404,7 @@ export const CreateEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(createEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -13420,6 +13429,7 @@ export const CreateEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(createEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -13650,6 +13660,7 @@ export const getEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 export const GetEducationCourseResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -13773,6 +13784,7 @@ export const GetEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -13797,6 +13809,7 @@ export const GetEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -14144,6 +14157,7 @@ export const updateEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 export const UpdateEducationCourseResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -14267,6 +14281,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(updateEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -14291,6 +14306,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(updateEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -14534,6 +14550,7 @@ export const publishEducationCourseResponseOneTwoReviewsItemRatingMax = 5;
 
 
 export const PublishEducationCourseResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -14657,6 +14674,7 @@ export const PublishEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(publishEducationCourseResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -14681,6 +14699,7 @@ export const PublishEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(publishEducationCourseResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -16389,6 +16408,7 @@ export const proposeEducationCourseTypeResponseOneSortOrderMultipleOf = 1;
 
 
 export const ProposeEducationCourseTypeResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -16802,6 +16822,7 @@ export const GetEducationLmsResponse = zod.object({
 }),zod.null()]).optional()
 }),
   "course": zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -16925,6 +16946,7 @@ export const GetEducationLmsResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -16949,6 +16971,7 @@ export const GetEducationLmsResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -17307,6 +17330,7 @@ export const getPublicInstructorProfileResponseCoursesItemEarlyBirdPriceMin = 0;
 
 
 export const GetPublicInstructorProfileResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "photoUrl": zod.string().nullish(),
@@ -17327,6 +17351,7 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "ratingSource": zod.enum(['published_course_reviews']),
   "participantCount": zod.number(),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -17601,6 +17626,7 @@ export const linkEducationCourseInstructorResponseOneTwoReviewsItemRatingMax = 5
 
 
 export const LinkEducationCourseInstructorResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -17724,6 +17750,7 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -17748,6 +17775,7 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18003,6 +18031,7 @@ export const replaceEducationCourseDaysResponseOneTwoReviewsItemRatingMax = 5;
 
 
 export const ReplaceEducationCourseDaysResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18126,6 +18155,7 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseOneTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -18150,6 +18180,7 @@ export const ReplaceEducationCourseDaysResponse = zod.object({
   "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseOneTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18417,6 +18448,7 @@ export const listPublicEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
 
 export const ListPublicEducationCoursesResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18540,6 +18572,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listPublicEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -18564,6 +18597,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listPublicEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18779,6 +18813,7 @@ export const getPublicEducationCourseResponseTwoReviewsItemRatingMax = 5;
 
 
 export const GetPublicEducationCourseResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -18902,6 +18937,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getPublicEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -18926,6 +18962,7 @@ export const GetPublicEducationCourseResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getPublicEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -19149,6 +19186,7 @@ export const listRelatedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
 
 export const ListRelatedEducationCoursesResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -19272,6 +19310,7 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listRelatedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -19296,6 +19335,7 @@ export const ListRelatedEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listRelatedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -19446,6 +19486,7 @@ export const getPublicEducationTaxonomyResponseTwoCategoriesItemTwoSubcategories
 
 
 export const GetPublicEducationTaxonomyResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -19454,6 +19495,7 @@ export const GetPublicEducationTaxonomyResponseItem = zod.object({
 }).and(zod.object({
   "courseCount": zod.number().min(getPublicEducationTaxonomyResponseTwoCourseCountMin).multipleOf(getPublicEducationTaxonomyResponseTwoCourseCountMultipleOf),
   "categories": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -19462,6 +19504,7 @@ export const GetPublicEducationTaxonomyResponseItem = zod.object({
 }).and(zod.object({
   "courseCount": zod.number().min(getPublicEducationTaxonomyResponseTwoCategoriesItemTwoCourseCountMin).multipleOf(getPublicEducationTaxonomyResponseTwoCategoriesItemTwoCourseCountMultipleOf),
   "subcategories": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -19470,6 +19513,7 @@ export const GetPublicEducationTaxonomyResponseItem = zod.object({
 }).and(zod.object({
   "courseCount": zod.number().min(getPublicEducationTaxonomyResponseTwoCategoriesItemTwoSubcategoriesItemTwoCourseCountMin).multipleOf(getPublicEducationTaxonomyResponseTwoCategoriesItemTwoSubcategoriesItemTwoCourseCountMultipleOf),
   "courseTypes": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -19706,6 +19750,7 @@ export const listPopularEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
 
 export const ListPopularEducationCoursesResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -19829,6 +19874,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listPopularEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -19853,6 +19899,7 @@ export const ListPopularEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listPopularEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -20013,6 +20060,7 @@ export const getPublicEducationCenterResponseCoursesItemEarlyBirdPriceMin = 0;
 
 
 export const GetPublicEducationCenterResponse = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -20037,6 +20085,7 @@ export const GetPublicEducationCenterResponse = zod.object({
   "sortOrder": zod.number().multipleOf(getPublicEducationCenterResponseGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -20399,6 +20448,7 @@ export const ListEducationWishlistResponse = zod.object({
   "id": zod.string(),
   "createdAt": zod.coerce.date().nullable(),
   "course": zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -20522,6 +20572,7 @@ export const ListEducationWishlistResponse = zod.object({
   "sortOrder": zod.number().multipleOf(listEducationWishlistResponseItemsItemCourseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -20546,6 +20597,7 @@ export const ListEducationWishlistResponse = zod.object({
   "sortOrder": zod.number().multipleOf(listEducationWishlistResponseItemsItemCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -20762,6 +20814,7 @@ export const AddEducationWishlistItemResponse = zod.object({
   "id": zod.string(),
   "createdAt": zod.coerce.date().nullable(),
   "course": zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -20885,6 +20938,7 @@ export const AddEducationWishlistItemResponse = zod.object({
   "sortOrder": zod.number().multipleOf(addEducationWishlistItemResponseCourseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -20909,6 +20963,7 @@ export const AddEducationWishlistItemResponse = zod.object({
   "sortOrder": zod.number().multipleOf(addEducationWishlistItemResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -21401,6 +21456,7 @@ export const listFeaturedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
 
 
 export const ListFeaturedEducationCoursesResponseItem = zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),
@@ -21524,6 +21580,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listFeaturedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
 })),
   "center": zod.union([zod.null(),zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
@@ -21548,6 +21605,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "sortOrder": zod.number().multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
 })),
   "courses": zod.array(zod.object({
+  "updatedAt": zod.coerce.date().nullish(),
   "id": zod.string(),
   "title": zod.string(),
   "description": zod.string(),

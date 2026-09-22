@@ -7,6 +7,7 @@ import {
   productCategoriesTable, suppliersTable, subscriptionPlansTable, salonsTable, usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import { publicImageAlt } from "../../artifacts/beauty-marketplace/seo-text.mjs";
 
 const suffix = randomUUID();
 const mobileViewport = process.env.LUMERA_COVER_IMAGE_DESCRIPTION_MOBILE === "1";
@@ -183,7 +184,7 @@ test("salon owner cover description survives save, reload, clear, and public met
     await saveAndWait(page, "/api/salon/profile", /sačuv/i);
     const salon = (await db.select({ slug: salonsTable.slug }).from(salonsTable).where(eq(salonsTable.ownerId, owner.id)))[0]!;
     expect(await publicValue(context, `/api/salons/${salon.slug}`)).toBeNull();
-    await expectSocialAlt(page, `/saloni/${salon.slug}`, `${names.salon} u Beograd | LUMERA`);
+    await expectSocialAlt(page, `/saloni/${salon.slug}`, publicImageAlt({ name: names.salon, city: "Beograd" }));
   } finally { await context.close(); }
 });
 
@@ -209,7 +210,7 @@ test("admin product editor persists and clears its cover description", async ({ 
     await expectSocialAlt(
       page,
       `/shop/cover-regression-${suffix}/proizvod/${ids.products[0]}`,
-      `${names.product} | ${names.supplier}`,
+      publicImageAlt({ name: names.product, category: `${title} products` }),
     );
   } finally { await context.close(); }
 });
@@ -233,7 +234,7 @@ test("education course editor exposes cover description and persists clearing", 
     const response = await context.request.get(`/api/education/public/courses/${ids.courses[0]}`);
     expect(response.ok()).toBe(true);
     expect((await response.json()).coverImageDescription).toBeNull();
-    await expectSocialAlt(page, `/edukacije/${ids.courses[0]}`, `${names.course} | LUMERA edukacije`);
+    await expectSocialAlt(page, `/edukacije/${ids.courses[0]}`, publicImageAlt({ name: names.course, category: "Ostalo", city: "Beograd" }));
   } finally { await context.close(); }
 });
 
@@ -255,6 +256,6 @@ test("salon owner Beauty Jobs form persists and clears its cover description", a
     await saveAndWait(page, `/api/beauty-jobs/${ids.listings[0]}`, "Sačuvaj izmene");
     const listing = ids.listings[0]!;
     expect(await publicValue(context, `/api/beauty-jobs/${listing}`)).toBeNull();
-    await expectSocialAlt(page, `/poslovi/cover-regression/${listing}`, `${names.listing} | LUMERA Poslovi`);
+    await expectSocialAlt(page, `/poslovi/cover-regression/${listing}`, publicImageAlt({ name: names.listing, category: `${title} category`, city: "Beograd" }));
   } finally { await context.close(); }
 });

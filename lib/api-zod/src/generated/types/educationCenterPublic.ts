@@ -10,6 +10,8 @@ import type { EducationMedia } from './educationMedia';
 import type { PublicSocialImage } from './publicSocialImage';
 
 export interface EducationCenterPublic {
+  /** @nullable */
+  updatedAt?: Date | null;
   id: string;
   name: string;
   city: string;

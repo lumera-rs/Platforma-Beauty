@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { createServer, get } from "node:http";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relativePath: string) =>
@@ -141,10 +142,11 @@ const { createSeoResponse } = await import(moduleUrl(serverPath)) as {
     template: string,
   ) => Promise<{ status: number; body: string }>;
 };
-const { listingIndexable } = await import(
+const { listingIndexable, listingCanonical } = await import(
   moduleUrl("artifacts/beauty-marketplace/seo-policy.mjs")
 ) as {
   listingIndexable: (pathname: string, search?: string) => boolean;
+  listingCanonical: (pathname: string, search?: string) => string;
 };
 const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
   moduleUrl("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx")
@@ -529,6 +531,7 @@ function responseJson(payload: unknown, status = 200): Response {
 }
 
 const originalFetch = globalThis.fetch;
+const requestedSalonCities: string[] = [];
 const relatedSalons = Array.from({ length: 8 }, (_, i) => ({ ...salon, id: `related-${i}`, slug: `related-${i}`, name: `Javni salon ${i + 1}` }));
 globalThis.fetch = async (input) => {
   const rawUrl = typeof input === "string"
@@ -540,6 +543,7 @@ globalThis.fetch = async (input) => {
   const requestPath = `${url.pathname}${url.search}`;
 
   if (requestPath.startsWith("/api/salons?")) {
+    if (url.searchParams.has("city")) requestedSalonCities.push(url.searchParams.get("city")!);
     if (url.searchParams.get("city") === "Niš") return responseJson([]);
     return responseJson(url.searchParams.get("pageSize") === "9" ? [salon, ...relatedSalons] : url.searchParams.get("page") === "2" ? relatedSalons.slice(0, 6) : [salon]);
   }
@@ -703,6 +707,92 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  // Exercise real HTTP framing, but never call an application/API listener or
+  // execute JavaScript. The only upstream transport remains the fixture fetch.
+  const fixtureServer = createServer(async (req, res) => {
+    try {
+      const result = await createSeoResponse({
+        url: req.url ?? "/",
+        headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+      }, htmlTemplate);
+      res.writeHead(result.status, { "content-type": "text/html; charset=utf-8" });
+      res.end(result.body);
+    } catch (error) {
+      res.writeHead(500);
+      res.end(String(error));
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    fixtureServer.once("error", reject);
+    fixtureServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = fixtureServer.address();
+  assert.ok(address && typeof address === "object");
+  const httpDocument = (pathname: string) => new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const outgoing = get({ hostname: "127.0.0.1", port: address.port, path: pathname, agent: false }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode ?? 0, body }));
+      response.on("error", reject);
+    });
+    outgoing.on("error", reject);
+  });
+  try {
+    for (const [rawCity, canonicalCity] of [
+      ["  nOvI   sAd  ", "Novi Sad"], [" nis\u030c ", "Niš"], ["BEOGRAD", "Beograd"],
+    ]) {
+      requestedSalonCities.length = 0;
+      const query = new URLSearchParams({ city: rawCity });
+      const response = await httpDocument(`/saloni?${query}`);
+      assert.equal(response.status, 200);
+      assert.equal(ssrHead(response.body).canonical, `${seoOrigin}/saloni?${new URLSearchParams({ city: canonicalCity })}`);
+      assert.match(ssrHead(response.body).robots, /noindex/u);
+      assert.ok(requestedSalonCities.length > 0, "city HTTP fixture must exercise an actual public API lookup");
+      assert.ok(requestedSalonCities.every((city) => city === canonicalCity), "canonical and API city predicate must share NFC/case/spacing normalization");
+    }
+    const entityMarkers: Record<string, string> = {
+      "/": salon.name, "/saloni": salon.name, "/poslovi": beautyJob.title,
+      "/proizvodi": supplier.name, "/inspiracija": "Profesionalna nega lica",
+      "/recnik": "Balayage", "/brendovi": "Javni beauty brend", "/edukacije": course.title,
+      "/saloni/kategorija/frizerski-saloni": salon.name,
+      "/saloni/glow-studio": salon.name, "/poslovi/frizer/glow-job": beautyJob.title,
+      "/shop/glow-supply": supplier.name, "/shop/glow-supply/nega-lica": product.name,
+      "/shop/glow-supply/proizvod/glow-product": product.name,
+      "/edukacije/instruktori/glow-instructor": instructor.name,
+      "/edukacije/centri/glow-center": center.name, "/edukacije/paketi/glow-bundle": bundle.name,
+      [`/edukacije/${courseId}`]: course.title,
+      "/edukacije/sekcije/nega": course.title, "/edukacije/sekcije/nega/lice": course.title,
+      "/edukacije/sekcije/nega/lice/hidratacija": course.title,
+    };
+    for (const pathname of [...staticRouteContracts, ...dynamicRouteContracts.map((entry) => entry.pathname)]) {
+      const response = await httpDocument(pathname);
+      assert.equal(response.status, 200, `${pathname}: plain HTTP must succeed`);
+      const head = ssrHead(response.body);
+      assert.doesNotMatch(head.title, /^(?:Default|Placeholder|LUMERA)$/iu, pathname);
+      assert.ok(head.description.length > 20, `${pathname}: meaningful description`);
+      assert.doesNotMatch(head.description, /^(?:Default|placeholder)$/iu, pathname);
+      assert.equal(head.canonical, `${seoOrigin}${pathname}`, `${pathname}: pinned public canonical`);
+      assert.match(head.robots, /noindex/u, `${pathname}: staging stays noindex`);
+      const content = response.body.replace(/<head>[\s\S]*?<\/head>/u, "")
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gu, "");
+      const h1 = content.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/u)?.[1];
+      assert.ok(h1?.replace(/<[^>]+>/gu, "").trim(), `${pathname}: initial HTML H1, not an app shell`);
+      const marker = entityMarkers[pathname] ?? staticSeoPages.find((entry) => entry.path === pathname)?.title.split(" | ")[0];
+      assert.ok(marker, `${pathname}: explicit public content marker required`);
+      assert.ok(content.includes(marker), `${pathname}: initial HTML must contain ${marker}`);
+      assert.doesNotMatch(content, /<body>\s*<div id="root"><\/div>\s*<\/body>/u, `${pathname}: empty SPA shell`);
+    }
+    for (const { missingPathname } of dynamicRouteContracts) {
+      for (const suffix of ["", "?ref=campaign&empty="]) {
+        const response = await httpDocument(missingPathname + suffix);
+        assert.equal(response.status, 404, `${missingPathname}${suffix}: confirmed absence`);
+        assert.match(ssrHead(response.body).robots, /noindex/u);
+      }
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => fixtureServer.close((error) => error ? reject(error) : resolve()));
+  }
   for (const search of ["", "?page=1", "?page=2", "?city=Beograd", "?city=Beograd&page=1", "?city=Beograd&page=2"]) {
     assert.equal(listingIndexable("/saloni", search), true, `${search || "(plain)"} must be directly indexable before deployment policy`);
   }
@@ -732,7 +822,7 @@ try {
     { route: "/saloni?city=Beograd&category=Lice", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
     { route: "/saloni?category=Lice&page=2", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
     { route: "/saloni?city=Ni%C5%A1", canonical: "/saloni?city=Ni%C5%A1", title: "Saloni u Nišu | LUMERA", heading: "Saloni u Nišu" },
-    { route: "/saloni?city=Nepoznat+grad", canonical: "/saloni?city=Nepoznat+grad", title: "Saloni Nepoznat grad | LUMERA", heading: "Saloni Nepoznat grad" },
+    { route: "/saloni?city=Nepoznat+grad", canonical: "/saloni?city=Nepoznat+Grad", title: "Saloni Nepoznat Grad | LUMERA", heading: "Saloni Nepoznat Grad" },
   ] as const;
   for (const scenario of cityListingCases) {
     const result = await createSeoResponse({
@@ -968,8 +1058,8 @@ try {
     );
     assert.equal(
       queryResult.head.canonical,
-      `${seoOrigin}${contract.pathname}`,
-      `${contract.pattern} query canonical must omit the query string`,
+      `${seoOrigin}${listingCanonical(contract.pathname, "seo-contract=1")}`,
+      `${contract.pattern} query canonical must follow shared listing/detail policy`,
     );
     const clientQueryHead = await clientMetadataAfterMount(contract.pathname, queryResult.siteAllowed, "seo-contract=1");
     assert.deepEqual(
@@ -1238,29 +1328,16 @@ try {
     }
   }
 
-  const privateQueryResult = await serverMetadata("/admin?seo-contract=1");
-  assert.equal(privateQueryResult.status, 200, "private query routes must render the app shell");
-  assert.equal(privateQueryResult.head.robots, "noindex, nofollow");
-  assert.equal(privateQueryResult.head.canonical, `${seoOrigin}/admin`);
-  assert.deepEqual(
-    privateQueryResult.head.openGraph,
-    {
-      title: null,
-      description: null,
-      url: null,
-      image: null,
-      imageAlt: null,
-      imageWidth: undefined,
-      imageHeight: undefined,
-      imageType: undefined,
-    },
-    "private query routes must not receive public Open Graph metadata",
-  );
-  assert.deepEqual(
-    privateQueryResult.head.twitter,
-    { title: null, description: null, url: null, image: null, imageAlt: null },
-    "private query routes must not receive public Twitter metadata",
-  );
+  for (const pathname of ["/admin?seo-contract=1", "/shop/checkout?ref=campaign", "/edukacije/checkout?ref=campaign"]) {
+    const privateQueryResult = await createSeoResponse({
+      url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+    }, htmlTemplate);
+    assert.equal(privateQueryResult.status, 200, "private query routes must preserve client routing");
+    assert.match(privateQueryResult.body, /name="robots" content="noindex, nofollow"/u);
+    assert.doesNotMatch(privateQueryResult.body, /rel="canonical"|property="og:|name="twitter:|application\/ld\+json/u,
+      "private query routes must not receive public canonical, social or entity metadata");
+    assert.match(privateQueryResult.body, /<div id="root"><\/div>/u);
+  }
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -1320,8 +1397,7 @@ assert.match(
   "JSON-LD must be injected into server-rendered documents",
 );
 
-const sitemapSerializer =
-  server.match(/function sitemapXml\([^)]*\)\s*\{([\s\S]*?)\n\}/u)?.[1] ?? "";
+const sitemapSerializer = read("artifacts/beauty-marketplace/seo-discovery.mjs");
 assert.match(sitemapSerializer, /<lastmod>/u, "sitemap entries must include lastmod");
 assert.match(
   sitemapSerializer,

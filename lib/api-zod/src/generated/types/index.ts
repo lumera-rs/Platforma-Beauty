@@ -919,6 +919,7 @@ export * from './getMarketplaceHomeDiscoveryParams';
 export * from './getMediaAssetFormat';
 export * from './getMediaAssetParams';
 export * from './getMediaAssetSize';
+export * from './getSalon200';
 export * from './getSalonAvailabilityParams';
 export * from './getSalonCalendarDayParams';
 export * from './getSalonDashboardParams';

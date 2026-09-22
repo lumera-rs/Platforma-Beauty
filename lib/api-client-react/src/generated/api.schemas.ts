@@ -6278,6 +6278,8 @@ export interface EducationInstructorSummary {
 }
 
 export interface Course {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   title: string;
   description: string;
@@ -6961,6 +6963,8 @@ export interface EducationMedia {
 }
 
 export interface EducationCenterPublic {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   city: string;
@@ -7251,6 +7255,8 @@ export interface EducationGroupEnrollmentResponse {
 }
 
 export interface EducationTaxonomyItem {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   slug: string;
@@ -8822,6 +8828,8 @@ export const EducationInstructorPublicProfileRatingSource = {
 } as const;
 
 export interface EducationInstructorPublicProfile {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   /** @nullable */
@@ -15120,6 +15128,11 @@ export const ListSalonsGender = {
 
 export type GetMarketplaceHomeDiscoveryParams = {
 city?: CityQueryParameter;
+};
+
+export type GetSalon200 = SalonProfile | {
+  name: string;
+  active: false;
 };
 
 export type GetSalonAvailabilityParams = {
