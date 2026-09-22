@@ -1,3 +1,4 @@
+import { publicSalonAddress } from './public-salon-address.mjs';
 // Schema values come only from the public DTO and the accompanying visible SSR
 // content. Do not pass private database records to these helpers.
 export function compactSchema(value) {
@@ -40,9 +41,8 @@ export function salonStructuredData(salon, origin, pathname, description) {
     '@type': 'HealthAndBeautyBusiness',
     name: salon.name, description, url: `${origin}${pathname}`,
     image: schemaImage(origin, salon.imageUrl ?? salon.gallery?.[0]),
-    // Exact street address, coordinates and telephone are deliberately not
-    // public on this page. Never infer permission from mere field presence.
-    address: salon.city ? { '@type': 'PostalAddress', addressLocality: salon.city } : undefined,
+    // Telephone and coordinates remain private; only street/locality are public.
+    address: publicSalonAddress(salon)?.postalAddress ?? (salon.city ? { '@type': 'PostalAddress', addressLocality: salon.city } : undefined),
     openingHoursSpecification: hours,
     priceRange,
     hasOfferCatalog: services.length ? {

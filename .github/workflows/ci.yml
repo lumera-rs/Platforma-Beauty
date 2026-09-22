@@ -5,6 +5,10 @@ on:
   merge_group:
     types: [checks_requested]
   push:
+    branches-ignore:
+      - 'gh-readonly-queue/**'
+    tags:
+      - '**'
   workflow_dispatch:
     inputs:
       run_failure_diagnostics_probe:
@@ -521,7 +525,6 @@ jobs:
     needs:
       - release-chain
       - build
-      - database
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:

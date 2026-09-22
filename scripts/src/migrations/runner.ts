@@ -384,8 +384,17 @@ async function applySupportedMigrations(
         `SELECT pg_catalog.pg_advisory_xact_lock(${BUSINESS_GROWTH_ADVISORY_KEY})`,
       );
       if (hasCanonicalTable) {
-        await lockSupportedStartupTables(client);
-        await assertSupportedStartupState(client);
+        if (pending.some(migration => migration.admissionContract)) {
+          await lockSupportedStartupTables(client);
+          await assertSupportedStartupState(client);
+        } else {
+          // Once the admitted data transition is APPLIED, subsequent additive
+          // schema migrations must accept ordinary tenant rows. Preserve the
+          // exact previous catalog frontier, not the initial seed-state test.
+          const previous = migrations.filter(migration => checked.has(migration.id)).at(-1);
+          if (!previous) throw new Error("Supported migration has no applied predecessor");
+          assertMigrationFingerprint(await readCurrentFingerprint(client), previous);
+        }
       }
       await ensureLedger(client);
       const txRows = validateLedger(await readLedger(client), migrations);
@@ -616,7 +625,11 @@ async function adoptSupportedBaseline(
           throw new Error("Supported adoption requires a completed baseline before the data migration");
         }
         const fingerprint = await readCurrentFingerprint(client);
-        assertMigrationFingerprint(fingerprint, dataMigration);
+        const completedFrontier = migrations.filter(migration => {
+          const state = rows.get(migration.id)?.state;
+          return state === "APPLIED" || state === "ADOPTED";
+        }).at(-1)!;
+        assertMigrationFingerprint(fingerprint, completedFrontier);
         await client.query("COMMIT");
         return { adopted: [], fingerprint };
       }

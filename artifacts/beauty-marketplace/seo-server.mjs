@@ -7,6 +7,7 @@ import staticPageDefinitions from './src/lib/static-seo-pages.json' with { type:
 import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 import { publicSiteOrigin, siteIndexable, normalizedPublicPath, canonicalRedirect, applySitePolicy } from './seo-policy.mjs';
 import { compactSchema, schemaImage, salonStructuredData } from './structured-data.mjs';
+import { publicSalonAddress } from './public-salon-address.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
@@ -571,6 +572,8 @@ async function renderPublicPage(req, pathname) {
   if (salonMatch) {
     const salon = await getJson(req, `/api/salons/${encodeURIComponent(salonMatch[1])}`);
     if (!salon) return null;
+    const address = publicSalonAddress(salon);
+    const addressHtml = address ? `<p><a href="${escapeHtml(address.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(address.text)}</a></p>` : '';
     const description = salon.description || salon.shortDescription || `${salon.name} — salon i beauty tretmani u gradu ${salon.city}.`;
     const meta = makeMeta(pathname, `${salon.name} u ${salon.city} | LUMERA`, description, {
       ...socialImageOptions(salon, salon.imageUrl),
@@ -581,7 +584,7 @@ async function renderPublicPage(req, pathname) {
     const publicDetails = `${meta.schema.priceRange ? `<p>Raspon cena: ${escapeHtml(meta.schema.priceRange)}</p>` : ''}${(salon.hours ?? []).length ? `<section><h2>Radno vreme</h2><ul>${salon.hours.map((hour) => `<li>${escapeHtml(hour.day)}: ${hour.closed ? 'Ne radi' : `${escapeHtml(hour.open)} – ${escapeHtml(hour.close)}`}</li>`).join('')}</ul></section>` : ''}${(salon.reviews ?? []).length ? `<section><h2>Recenzije</h2>${salon.reviews.map((review) => `<article><p>${escapeHtml(review.authorName)} · ${escapeHtml(review.rating)}</p>${review.text ? `<p>${escapeHtml(review.text)}</p>` : ''}</article>`).join('')}</section>` : ''}`;
     const heroImage = salon.imageUrl ?? salon.gallery?.[0];
     const heroImageAlt = heroImage === salon.imageUrl ? meta.imageAlt : salon.name;
-    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}</p><p>Ocena: ${escapeHtml(typeof salon.rating === 'number' ? salon.rating.toFixed(1) : 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section>${publicDetails}<p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
+    return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(salon.name)}</h1><p>${escapeHtml(description)}</p>${heroImage ? `<img src="${escapeHtml(heroImage)}" width="960" height="640" alt="${escapeHtml(heroImageAlt)}">` : ''}<p>${escapeHtml(salon.city ?? '')}</p>${addressHtml}<p>Ocena: ${escapeHtml(typeof salon.rating === 'number' ? salon.rating.toFixed(1) : 'Nema ocenu')} ${salon.reviewCount ? `(${escapeHtml(salon.reviewCount)} recenzija)` : ''}</p><section><h2>Usluge</h2>${services ? `<ul>${services}</ul>` : '<p>Pogledajte dostupne tretmane u aplikaciji.</p>'}</section>${publicDetails}<p><a href="/saloni">Pogledajte sve salone</a></p></article>`, origin) };
   }
 
   const courseMatch = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);

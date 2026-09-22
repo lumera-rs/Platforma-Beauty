@@ -22,6 +22,7 @@ import { loadMigration, loadMigrations } from "./files";
 import { ensureLedger, readLedger } from "./ledger";
 import { preflightBaselineAdoption } from "./preflight";
 import type { LoadedMigration } from "./types";
+import { inspectDatabaseMigrationReady, migrationReadinessContract } from "@workspace/db/migration-runtime";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Migrations integration tests");
 const unitOnly = process.env.LUMERA_PHASE4_UNIT_ONLY === "1";
@@ -163,21 +164,54 @@ const canonicalAdoptionRefusal = "Supported baseline adoption requires the exact
 test("fresh apply and rerun are a no-op", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
-    assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002"]);
+    assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002", "000003"]);
     const first = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(first.applied, ["000001", "000002"]);
+    assert.deepEqual(first.applied, ["000001", "000002", "000003"]);
     assert.deepEqual(first.skipped, []);
     const beforeReceipts = await ledgerReceipts(pool);
     const beforeCatalog = await fingerprint(pool);
+    assert.equal(beforeCatalog.structuralFingerprint, migrationReadinessContract.headStructuralFingerprint);
+    assert.equal(beforeCatalog.physicalFingerprint, migrationReadinessContract.headPhysicalFingerprint);
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
     const second = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.applied, []);
-    assert.deepEqual(second.skipped, ["000001", "000002"]);
+    assert.deepEqual(second.skipped, ["000001", "000002", "000003"]);
     assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
     assert.deepEqual(await fingerprint(pool), beforeCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "APPLIED" }, { id: "000002", state: "APPLIED" },
+        { id: "000001", state: "APPLIED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" },
       ]);
+  });
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const previous = migrations.filter(migration => migration.id !== "000003");
+    await withClient(pool, client => applyMigrations(client, { migrations: previous, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, false);
+    // An ordinary tenant row must not re-trigger 000002's initial-state gate.
+    await pool.query(`INSERT INTO public.users
+      (id,first_name,last_name,email,password_hash,role)
+      VALUES ('10000000-0000-4000-8000-000000000003','Address','Owner','address-owner@disposable.invalid','x','CUSTOMER')`);
+    const before = await fingerprint(pool);
+    const receipts = await ledgerReceipts(pool);
+    const failing = migrations.map(migration => migration.id === "000003"
+      ? { ...migration, postconditions: ["SELECT false"] } : migration);
+    await assert.rejects(
+      () => withClient(pool, client => applyMigrations(client, { migrations: failing, expectedTargetIdentity: expectedDisposableTarget(pool) })),
+      /postcondition failed/u,
+    );
+    assert.deepEqual(await fingerprint(pool), before, "failed postcondition must roll back all four columns");
+    assert.deepEqual(await ledgerReceipts(pool), receipts, "failed transaction must not leave a receipt");
+    const result = await withClient(pool, client => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+    assert.deepEqual(result, { applied: ["000003"], skipped: ["000001", "000002"] });
+    assert.equal((await pool.query("SELECT count(*)::integer AS count FROM public.users WHERE email='address-owner@disposable.invalid'")).rows[0].count, 1);
+    const columns = await pool.query(`SELECT column_name, udt_schema, udt_name, is_nullable, column_default
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='salons'
+      AND column_name IN ('entrance_directions','intercom','floor','apartment') ORDER BY column_name`);
+    assert.deepEqual(columns.rows, ["apartment", "entrance_directions", "floor", "intercom"].map(column_name => ({
+      column_name, udt_schema: "pg_catalog", udt_name: "text", is_nullable: "YES", column_default: null,
+    })));
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
   });
 });
 
@@ -200,15 +234,15 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
     assert.deepEqual(await fingerprint(pool), adoptedCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" },
+        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" },
       ]);
     // Explicit B1 adoption and data execution are separate operations.
     const applied = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(applied.applied, ["000002"]);
+    assert.deepEqual(applied.applied, ["000002", "000003"]);
     assert.deepEqual(applied.skipped, ["000001"]);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "APPLIED" },
+        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" },
       ]);
   });
 });
@@ -447,6 +481,9 @@ test("fresh and adopted databases have equivalent structural and physical finger
     const migrations = await loadMigrations();
     await executeCanonicalBody(pool);
     await withClient(pool, (client) => adoptBaseline(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+    // Adoption itself is baseline-only; compare catalogs at the same HEAD
+    // only after the adopted path has applied all remaining migrations.
+    await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     adopted = await fingerprint(pool);
   });
   assert.deepEqual(adopted, fresh);
@@ -459,7 +496,7 @@ test("status is read-only", skip, async () => {
     await withClient(pool, async (client) => {
       assert.deepEqual((await migrationStatus(client, migrations))
         .map(({ id, state }) => ({ id, state })), [
-          { id: "000001", state: "PENDING" }, { id: "000002", state: "PENDING" },
+          { id: "000001", state: "PENDING" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" },
         ]);
       const relation = await client.query(
         "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",

@@ -1161,6 +1161,12 @@ export const GetSalonResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
+  "entranceDirections": zod.string().nullish(),
+  "intercom": zod.string().nullish(),
+  "floor": zod.string().nullish(),
+  "apartment": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),
@@ -3534,6 +3540,10 @@ export const getManagedSalonProfileResponseCoverImageDescriptionMax = 160;
 
 
 export const GetManagedSalonProfileResponse = zod.object({
+  "entranceDirections": zod.string().nullish(),
+  "intercom": zod.string().nullish(),
+  "floor": zod.string().nullish(),
+  "apartment": zod.string().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -3555,6 +3565,22 @@ export const GetManagedSalonProfileResponse = zod.object({
 /**
  * @summary Update public profile settings for the active owned salon
  */
+export const updateManagedSalonProfileBodyEntranceDirectionsMax = 500;
+
+
+export const updateManagedSalonProfileBodyEntranceDirectionsRegExp = new RegExp('^[^<>]*$');
+export const updateManagedSalonProfileBodyIntercomMax = 80;
+
+
+export const updateManagedSalonProfileBodyIntercomRegExp = new RegExp('^[^<>]*$');
+export const updateManagedSalonProfileBodyFloorMax = 80;
+
+
+export const updateManagedSalonProfileBodyFloorRegExp = new RegExp('^[^<>]*$');
+export const updateManagedSalonProfileBodyApartmentMax = 40;
+
+
+export const updateManagedSalonProfileBodyApartmentRegExp = new RegExp('^[^<>]*$');
 export const updateManagedSalonProfileBodyHomeServiceRadiusKmMax = 100;
 
 
@@ -3571,6 +3597,10 @@ export const updateManagedSalonProfileBodyGalleryDescriptionsMax = 20;
 
 
 export const UpdateManagedSalonProfileBody = zod.object({
+  "entranceDirections": zod.string().max(updateManagedSalonProfileBodyEntranceDirectionsMax).regex(updateManagedSalonProfileBodyEntranceDirectionsRegExp).nullish(),
+  "intercom": zod.string().max(updateManagedSalonProfileBodyIntercomMax).regex(updateManagedSalonProfileBodyIntercomRegExp).nullish(),
+  "floor": zod.string().max(updateManagedSalonProfileBodyFloorMax).regex(updateManagedSalonProfileBodyFloorRegExp).nullish(),
+  "apartment": zod.string().max(updateManagedSalonProfileBodyApartmentMax).regex(updateManagedSalonProfileBodyApartmentRegExp).nullish(),
   "videoUrl": zod.string().nullish(),
   "acceptsCards": zod.boolean().optional(),
   "instantBooking": zod.boolean().optional(),
@@ -3592,6 +3622,10 @@ export const updateManagedSalonProfileResponseCoverImageDescriptionMax = 160;
 
 
 export const UpdateManagedSalonProfileResponse = zod.object({
+  "entranceDirections": zod.string().nullish(),
+  "intercom": zod.string().nullish(),
+  "floor": zod.string().nullish(),
+  "apartment": zod.string().nullish(),
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
@@ -5767,6 +5801,22 @@ export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseIt
 /**
  * @summary Create an additional independently operated location for the current owner
  */
+export const createSalonLocationBodyEntranceDirectionsMax = 500;
+
+
+export const createSalonLocationBodyEntranceDirectionsRegExp = new RegExp('^[^<>]*$');
+export const createSalonLocationBodyIntercomMax = 80;
+
+
+export const createSalonLocationBodyIntercomRegExp = new RegExp('^[^<>]*$');
+export const createSalonLocationBodyFloorMax = 80;
+
+
+export const createSalonLocationBodyFloorRegExp = new RegExp('^[^<>]*$');
+export const createSalonLocationBodyApartmentMax = 40;
+
+
+export const createSalonLocationBodyApartmentRegExp = new RegExp('^[^<>]*$');
 export const createSalonLocationBodyIdempotencyKeyMax = 200;
 
 export const createSalonLocationBodyCopyServicesDefault = false;
@@ -5796,6 +5846,10 @@ export const createSalonLocationBodyImageUrlMax = 2000;
 
 
 export const CreateSalonLocationBody = zod.object({
+  "entranceDirections": zod.string().max(createSalonLocationBodyEntranceDirectionsMax).regex(createSalonLocationBodyEntranceDirectionsRegExp).nullish(),
+  "intercom": zod.string().max(createSalonLocationBodyIntercomMax).regex(createSalonLocationBodyIntercomRegExp).nullish(),
+  "floor": zod.string().max(createSalonLocationBodyFloorMax).regex(createSalonLocationBodyFloorRegExp).nullish(),
+  "apartment": zod.string().max(createSalonLocationBodyApartmentMax).regex(createSalonLocationBodyApartmentRegExp).nullish(),
   "idempotencyKey": zod.string().min(1).max(createSalonLocationBodyIdempotencyKeyMax),
   "sourceSalonId": zod.string().nullish(),
   "copyServices": zod.boolean().default(createSalonLocationBodyCopyServicesDefault),
@@ -5934,6 +5988,12 @@ export const CreateSalonLocationResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
+  "entranceDirections": zod.string().nullish(),
+  "intercom": zod.string().nullish(),
+  "floor": zod.string().nullish(),
+  "apartment": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),
@@ -6034,6 +6094,12 @@ export const CreateSalonLocationResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date().nullable()
 }).and(zod.object({
+  "address": zod.string().optional().describe('Public street and house number for an eligible salon.'),
+  "postalCode": zod.string().nullish(),
+  "entranceDirections": zod.string().nullish(),
+  "intercom": zod.string().nullish(),
+  "floor": zod.string().nullish(),
+  "apartment": zod.string().nullish(),
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),

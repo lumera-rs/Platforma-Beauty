@@ -58,7 +58,9 @@ async function withClient<T>(pool: Pool, callback: (client: Client) => Promise<T
 
 async function loadPlanMigrations(): Promise<LoadedMigration[]> {
   const migrations = await loadMigrations();
-  return migrations;
+  // This oracle proves the immutable baseline + supported-state transition,
+  // not later additive schema migrations or application readiness.
+  return migrations.filter(migration => migration.id === "000001" || migration.id === "000002");
 }
 
 async function applyBaseline(pool: Pool): Promise<void> {

@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, BadgeCheck, CircleAlert, Copy, CreditCard, External
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { OwnerLocationWizard } from "@/components/owner-location-wizard";
+import { SalonAddressDetailFields, emptyAddressDetails } from "@/components/salon-address-detail-fields";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import { publicSiteUrl } from "@/lib/public-site-url";
 import { QRCodeSVG } from "qrcode.react";
 import {
   getGetManagedSalonProfileQueryKey,
+  getGetSalonQueryKey,
   useGetManagedSalonProfile,
   useUpdateManagedSalonProfile,
   useListMyFeaturedPlacements,
@@ -36,6 +38,7 @@ export default function OwnerSalonProfile() {
   const createPlacement = useCreateFeaturedPlacement();
   const trackedQrPlacementIds = useRef(new Set<string>());
   const [videoUrl, setVideoUrl] = useState("");
+  const [addressDetails, setAddressDetails] = useState(emptyAddressDetails);
   const [acceptsCards, setAcceptsCards] = useState(false);
   const [instantBooking, setInstantBooking] = useState(false);
   const [homeServiceRadiusKm, setHomeServiceRadiusKm] = useState(10);
@@ -49,6 +52,12 @@ export default function OwnerSalonProfile() {
   const [widgetColor, setWidgetColor] = useState("#9b6b54");
 
   useEffect(() => {
+    setAddressDetails({
+      entranceDirections: salon?.entranceDirections ?? "",
+      intercom: salon?.intercom ?? "",
+      floor: salon?.floor ?? "",
+      apartment: salon?.apartment ?? "",
+    });
     setVideoUrl(salon?.videoUrl ?? "");
     setAcceptsCards(salon?.acceptsCards ?? false);
     setInstantBooking(salon?.instantBooking ?? false);
@@ -135,6 +144,10 @@ export default function OwnerSalonProfile() {
     updateProfile.mutate(
       {
         data: {
+          entranceDirections: addressDetails.entranceDirections.trim() || null,
+          intercom: addressDetails.intercom.trim() || null,
+          floor: addressDetails.floor.trim() || null,
+          apartment: addressDetails.apartment.trim() || null,
           videoUrl: nextVideoUrl || null,
           acceptsCards,
           instantBooking,
@@ -149,6 +162,7 @@ export default function OwnerSalonProfile() {
       {
         onSuccess: (updated) => {
           queryClient.setQueryData(getGetManagedSalonProfileQueryKey(), updated);
+          void queryClient.invalidateQueries({ queryKey: getGetSalonQueryKey(updated.slug) });
           toast.success("Javni profil i podešavanja pretrage su sačuvani.");
         },
         onError: () => toast.error("Podešavanja javnog profila nisu sačuvana."),
@@ -409,6 +423,8 @@ export default function OwnerSalonProfile() {
                   <SafeExternalLink href={salon.videoUrl} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
                     Pogledajte trenutno postavljeni video <ExternalLink className="h-3.5 w-3.5" />
                   </SafeExternalLink>
+                  <SalonAddressDetailFields value={addressDetails} onChange={setAddressDetails} />
+                  <p className="text-sm text-muted-foreground">Detalji adrese su javno vidljivi. Sprat se prikazuje tačno kako ga unesete.</p>
                   <Button type="submit" disabled={updateProfile.isPending}>
                     {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Sačuvaj podešavanja

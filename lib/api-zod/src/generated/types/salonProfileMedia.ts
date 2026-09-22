@@ -7,6 +7,14 @@
  */
 
 export interface SalonProfileMedia {
+  /** @nullable */
+  entranceDirections?: string | null;
+  /** @nullable */
+  intercom?: string | null;
+  /** @nullable */
+  floor?: string | null;
+  /** @nullable */
+  apartment?: string | null;
   id: string;
   name: string;
   slug: string;

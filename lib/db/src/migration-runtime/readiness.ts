@@ -15,6 +15,11 @@ const SUPPORTED_STARTUP_MIGRATION_CHECKSUM =
   "a8c910eb9bd60281aa80e343b4b1d6e02a45222293b123ab198fab4315d48e62";
 const BASELINE_STRUCTURAL = "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d1642575f5875cad";
 const BASELINE_PHYSICAL = "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f";
+// Baseline pins above remain the immutable catalog after 000001.
+// Readiness instead requires the catalog after the entire required frontier.
+const HEAD_STRUCTURAL = "4c65ef9a278fb7a41c2830e3c2c51f2d8f7abee08dadcc076fd4c17ddf255b98";
+const HEAD_PHYSICAL = "39821cf3d682003a804326fa279eed957720f3a4b1458622bf91678abe1d824a";
+const SALON_ENTRANCE_MIGRATION_CHECKSUM = "9bc21ec9bb74182314b498a91c606445d6564d7b070da4f04a22a43b195395c5";
 const REVIEWED_POSTGRES_MAJOR_VERSION = 16;
 
 export interface DatabaseMigrationReadiness {
@@ -93,6 +98,7 @@ export async function inspectDatabaseMigrationReady(
     const expected = new Map([
       ["000001", { checksum: BASELINE_CHECKSUM, mode: "transactional" }],
       ["000002", { checksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM, mode: "transactional" }],
+      ["000003", { checksum: SALON_ENTRANCE_MIGRATION_CHECKSUM, mode: "transactional" }],
     ]);
     const seen = new Set<string>();
     for (const row of rows) {
@@ -112,14 +118,12 @@ export async function inspectDatabaseMigrationReady(
         throw new Error(`MIGRATION_READINESS_LEDGER_TIMESTAMPS:${id}`);
       }
       if ((id === "000001" && state !== "APPLIED" && state !== "ADOPTED")
-        || (id === "000002" && state !== "APPLIED")
+        || (id !== "000001" && state !== "APPLIED")
         || state === "APPLYING" || state === "FAILED" || row.error != null) {
         throw new Error(`MIGRATION_READINESS_INCOMPLETE_LEDGER:${id}`);
       }
     }
-    const baseline = rows.find((row) => text(row.migration_id) === "000001");
-    const data = rows.find((row) => text(row.migration_id) === "000002");
-    if (!baseline || !data) throw new Error("MIGRATION_READINESS_LEDGER_FRONTIER");
+    if ([...expected.keys()].some(id => !seen.has(id))) throw new Error("MIGRATION_READINESS_LEDGER_FRONTIER");
     const identity = await readCatalogIdentity(readOnly);
     if (!matchesCanonicalCatalog(identity)) {
       throw new Error("MIGRATION_READINESS_CATALOG_DRIFT");
@@ -128,7 +132,7 @@ export async function inspectDatabaseMigrationReady(
     return {
       ready: true,
       reason: null,
-      migrationIds: ["000001", "000002"],
+      migrationIds: ["000001", "000002", "000003"],
       ledger: "VALID",
       catalog: "CANONICAL",
     };
@@ -209,13 +213,13 @@ function timestampMilliseconds(value: unknown): number | null {
 }
 
 function matchesCanonicalCatalog(identity: CatalogIdentity): boolean {
-  return identity.structuralFingerprint === BASELINE_STRUCTURAL
-    && identity.physicalFingerprint === BASELINE_PHYSICAL
+  return identity.structuralFingerprint === HEAD_STRUCTURAL
+    && identity.physicalFingerprint === HEAD_PHYSICAL
     && identity.formatVersion === 2
     && identity.fingerprintVersion === 4
     && identity.schemaFormatVersion === 1
     && isReviewedPostgresPatch(identity)
-    && identity.normalizedObjectCount === 5060
+    && identity.normalizedObjectCount === 5064
     && identity.enumCount === 103
     && identity.triggerCount === 24
     && identity.functionCount === 21;
@@ -247,5 +251,9 @@ export const migrationReadinessContract = Object.freeze({
   supportedStartupMigrationChecksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM,
   structuralFingerprint: BASELINE_STRUCTURAL,
   physicalFingerprint: BASELINE_PHYSICAL,
-  requiredMigrationIds: ["000001", "000002"] as const,
+  headStructuralFingerprint: HEAD_STRUCTURAL,
+  headPhysicalFingerprint: HEAD_PHYSICAL,
+  headNormalizedObjectCount: 5064,
+  salonEntranceMigrationChecksum: SALON_ENTRANCE_MIGRATION_CHECKSUM,
+  requiredMigrationIds: ["000001", "000002", "000003"] as const,
 });

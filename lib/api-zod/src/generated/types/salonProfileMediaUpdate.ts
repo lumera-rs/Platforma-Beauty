@@ -8,6 +8,30 @@
 import type { MediaDescription } from './mediaDescription';
 
 export interface SalonProfileMediaUpdate {
+  /**
+     * @maxLength 500
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  entranceDirections?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  intercom?: string | null;
+  /**
+     * @maxLength 80
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  floor?: string | null;
+  /**
+     * @maxLength 40
+     * @nullable
+     * @pattern ^[^<>]*$
+     */
+  apartment?: string | null;
   /** @nullable */
   videoUrl?: string | null;
   acceptsCards?: boolean;

@@ -621,7 +621,10 @@ test("branch CI runs the database-free release-chain gate before slower work", a
   assert.deepEqual(parsedWorkflow.on?.merge_group, {
     types: ["checks_requested"],
   });
-  assert.ok(parsedWorkflow.on?.push !== undefined);
+  assert.deepEqual(parsedWorkflow.on?.push, {
+    "branches-ignore": ["gh-readonly-queue/**"],
+    tags: ["**"],
+  });
   assert.ok(parsedWorkflow.on?.workflow_dispatch !== undefined);
   assert.match(
     workflow,
@@ -937,6 +940,8 @@ exit 0
     "run test:bundle-budget",
     "run test:frontend-standards",
     "run test:seo-standards",
+    "--filter @workspace/scripts exec tsx --test ./src/public-salon-address.test.ts",
+    "--filter @workspace/scripts run test:salon-address-input",
     "run test:frontend-interactions",
     "run test:rmas",
   ]);
@@ -1258,6 +1263,8 @@ test("branch CI isolates database checks and orders browser journeys after every
     'run_phase "bundle-budget" pnpm run test:bundle-budget',
     'run_phase "frontend-standards" pnpm run test:frontend-standards',
     'run_phase "seo-standards" pnpm run test:seo-standards',
+    'run_phase "public-salon-address" pnpm --filter @workspace/scripts exec tsx --test ./src/public-salon-address.test.ts',
+    'run_phase "salon-address-input" pnpm --filter @workspace/scripts run test:salon-address-input',
     'run_phase "frontend-interactions" pnpm run test:frontend-interactions',
     'run_phase "rmas" pnpm run test:rmas',
   ];
@@ -1343,7 +1350,10 @@ test("branch CI isolates database checks and orders browser journeys after every
   assert.deepEqual(parsedWorkflow.on?.merge_group, {
     types: ["checks_requested"],
   });
-  assert.ok(parsedWorkflow.on?.push !== undefined);
+  assert.deepEqual(parsedWorkflow.on?.push, {
+    "branches-ignore": ["gh-readonly-queue/**"],
+    tags: ["**"],
+  });
 
   const migrationContractJob = parsedWorkflow.jobs?.["migration-contract"];
   assert.ok(migrationContractJob, "The migration-contract job must exist.");
@@ -1566,8 +1576,8 @@ test("branch CI isolates database checks and orders browser journeys after every
   const browserJob = workflow.slice(workflow.indexOf("  browser:"));
   assert.match(
     browserJob,
-    /needs:\n {6}- release-chain\n {6}- build\n {6}- database/,
-    "Browser journeys must wait for the early gate, build, and database checks.",
+    /needs:\n {6}- release-chain\n {6}- build\n {4}runs-on:/,
+    "Browser journeys must wait for the early gate and build, not the independent database checks.",
   );
   assert.match(browserJob, /image: postgres:16/);
   assert.match(browserJob, /POSTGRES_DB: lumera_ci_browser/);

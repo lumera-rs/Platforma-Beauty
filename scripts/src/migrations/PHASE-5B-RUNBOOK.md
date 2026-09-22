@@ -61,6 +61,23 @@ authorization. All five development guards reject `NODE_ENV=production`,
 case-insensitive `1`/`true` in either deployment flag, and the existence (even an
 empty value) of either deployment ID. This change does not authorize production.
 
+## Required frontier after adoption
+
+The required frontier is now `000001`, `000002`, **`000003`**. Migration
+`000003_public_salon_entrance_details` adds only four nullable TEXT columns to
+`public.salons`: `entrance_directions`, `intercom`, `floor`, and `apartment`.
+It is transactional PostgreSQL 16 SQL with pre/postconditions and rollback
+recovery; it has no admission contract. Production will need this migration
+applied after separately authorized baseline adoption and the supported-state
+transition. This statement is NOT production authorization: the existing
+maintenance, restore-point, identity, and deployment gates remain mandatory.
+No startup code applies this or any other migration.
+
+The baseline fingerprint remains the catalog after `000001`. Supported-state
+admission and convergence still use that baseline. Readiness uses separate
+HEAD structural/physical pins and requires every migration in the frontier,
+including the checksum and APPLIED receipt for `000003`.
+
 ## Proven repository and platform contract
 
 - The repository configures a public Replit Autoscale deployment target; repository

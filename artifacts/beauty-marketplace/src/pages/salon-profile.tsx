@@ -1,5 +1,6 @@
 import { BookingWidget, MobileBookingTrigger, MobileBookingDrawer } from "@/components/booking-widget";
 import { Layout } from "@/components/layout";
+import { publicSalonAddress } from "../../public-salon-address.mjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1188,7 +1189,7 @@ export default function SalonProfile() {
                 <div className="h-[400px] rounded-3xl bg-muted/30 border border-dashed flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
                   <MapPin className="w-12 h-12 mb-4 opacity-50" />
                   <p className="font-medium">Salon se nalazi u: {salonData.city}, {salonData.municipality}</p>
-                  <p className="text-sm mt-2 max-w-sm">Tačna adresa, mapa i kontakt podaci prikazuju se u vašim terminima nakon zakazivanja.</p>
+                  {publicSalonAddress(salonData) && <a className="text-sm mt-2 max-w-sm underline text-primary" href={publicSalonAddress(salonData)!.href} target="_blank" rel="noopener noreferrer">{publicSalonAddress(salonData)!.text}</a>}
                 </div>
                <Card className="h-full rounded-3xl border-border/60 shadow-sm bg-card overflow-hidden flex flex-col">
                  <div className="bg-primary/5 p-6 border-b border-border/60">
