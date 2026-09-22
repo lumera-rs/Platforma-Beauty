@@ -1188,6 +1188,43 @@ try {
       indexable: true,
     });
     assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
+
+    // A separate allowed-site document restores positive applySeo coverage.
+    // The original staging document and its meta flags remain untouched.
+    const positiveNodes = new Map<string, FakeHeadNode>();
+    const positiveHead = {
+      querySelector: (selector: string) => positiveNodes.get(selector) ?? null,
+      append: (node: FakeHeadNode) => {
+        positiveNodes.set(node.attributes.name ? `meta[name="${node.attributes.name}"]`
+          : node.attributes.property ? `meta[property="${node.attributes.property}"]` : `link[rel="${node.rel}"]`, node);
+      },
+    };
+    const positiveDocument = {
+      title: "", head: positiveHead, querySelector: positiveHead.querySelector,
+      createElement: () => {
+        const node = fakeDocument.createElement();
+        node.remove = () => { for (const [key, value] of positiveNodes) if (value === node) positiveNodes.delete(key); };
+        return node;
+      },
+    };
+    for (const [name, content] of [["lumera:public-site-url", seoOrigin], ["lumera:site-indexable", "true"], ["robots", "index, follow"]]) {
+      const node = positiveDocument.createElement();
+      node.setAttribute("name", name); node.content = content; positiveHead.append(node);
+    }
+    Object.assign(globalThis, {
+      document: positiveDocument,
+      window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host, pathname: "/edukacije", search: "" } },
+    });
+    const pendingPayload = { title: "Edukacije", description: "Edukacije", indexable: false, successfulPageResponse: false };
+    applySeo("/edukacije", pendingPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow", "applySeo loading must keep genuine server index");
+    positiveNodes.get('meta[name="robots"]')!.content = "noindex, follow";
+    applySeo("/edukacije", pendingPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow", "applySeo must distinguish original SSR from previous DOM robots");
+    applySeo("/edukacije", successfulPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow");
+    assert.equal(nodes.get('meta[name="lumera:site-indexable"]')?.content, "false");
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
   } finally {
     if (originalDocument === undefined) {
       Reflect.deleteProperty(globalThis, "document");

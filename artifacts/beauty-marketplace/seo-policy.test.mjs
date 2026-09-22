@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSeoResponse } from './seo-server.mjs';
-import { publicSiteOrigin, siteIndexable, canonicalRedirect, normalizedPublicPath, applySitePolicy } from './seo-policy.mjs';
+import { publicSiteOrigin, siteIndexable, canonicalRedirect, normalizedPublicPath, normalizedQuery, listingCanonical, applySitePolicy } from './seo-policy.mjs';
 
 const template = '<html><head><meta name="robots" content="index, follow"></head><body><div id="root"></div></body></html>';
 const env = { PUBLIC_SITE_URL: 'https://lumera.example', SITE_INDEXABLE: 'true' };
 const req = (url, host = 'lumera.example', proto = 'https') => ({ url, method: 'GET', headers: { host, 'x-forwarded-proto': proto } });
+
+test('canonical query normalization sorts and removes empty values without folding route identity', () => {
+  assert.equal(String(normalizedQuery('?page=2&city=Beograd&empty=')), 'city=Beograd&page=2');
+  assert.equal(String(normalizedQuery('city=&city=Niš&brand=')), 'city=Ni%C5%A1');
+  assert.equal(listingCanonical('/saloni', 'page=2&city=Beograd&empty='), '/saloni?city=Beograd&page=2');
+  assert.equal(String(normalizedQuery('brand=Test&city=Beograd')), 'brand=Test&city=Beograd');
+  assert.equal(listingCanonical('/saloni', 'brand=Test&city=Beograd'), '/saloni?city=Beograd');
+});
 
 test('indexing requires exact host and explicit true; invalid origins fail closed', () => {
   assert.equal(siteIndexable(req('/'), env), true);

@@ -1,11 +1,18 @@
 import staticPages from './src/lib/static-seo-pages.json' with { type: 'json' };
 
+export function normalizedQuery(search = '') {
+  const params = new URLSearchParams(search);
+  for (const [key, value] of [...params]) if (value === '') params.delete(key, value);
+  params.sort();
+  return params;
+}
+
 export function listingPage(search = '') {
   const value = new URLSearchParams(search).get('page');
   return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 1;
 }
 export function listingCanonical(pathname, search = '') {
-  const params = new URLSearchParams(search);
+  const params = normalizedQuery(search);
   if (!['/saloni', '/edukacije', '/poslovi'].includes(pathname)
     && !pathname.startsWith('/saloni/kategorija/')
     && !pathname.startsWith('/edukacije/sekcije/')
@@ -40,7 +47,7 @@ export function listingCanonical(pathname, search = '') {
 
 export function listingIndexable(pathname, search = '') {
   if (pathname !== '/saloni') return search.length === 0;
-  const params = new URLSearchParams(search);
+  const params = normalizedQuery(search);
   params.delete('pageSize');
   if (params.get('page') === '1') params.delete('page');
   params.sort();

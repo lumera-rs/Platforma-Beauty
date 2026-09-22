@@ -1,99 +1,102 @@
-# Client robots: unavailable current-page responses
+# Client robots: preserve the server decision while waiting
 
-The client requires a successful response matched to the current route before
-relaxing the existing robots directive (initially supplied by SSR). Loading,
-paused requests, errors, absent data, and mismatched/inactive listing queries
-are not successful responses. All listing families fail closed in these states;
-the final head policy also protects static/fallback metadata and preserves
-`nofollow` when no successful response is available. Detail loading tightens
-robots without replacing SSR titles/images. Cached detail errors cannot confer
-successful-response status. The original document's SSR robots are captured
-before any metadata write, independently of the mutable DOM, and remain a
-ceiling for that exact pathname and search string.
+## Corrected rule (supersedes the previous afternoon interpretation)
 
-On an indexing-enabled host, independently of the staging override:
+The earlier instruction and implementation incorrectly tightened initial
+SSR `index, follow` to noindex during loading/error and waited for success to
+recover. **That behavior is superseded.** On the URL rendered by the server,
+loading, errors, paused requests, missing data and malformed bodies preserve
+the original SSR robots **exactly**. A temporary client failure is not evidence
+against the server's result. Only a definitive successful response may tighten
+that decision. Nothing lifts original SSR noindex for that URL.
 
-| City response | Policy | SSR noindex outcome |
-| --- | --- | --- |
-| Successful, at least one salon | indexable | Remains noindex |
-| Successful, empty | noindex | Remains noindex |
-| API error (including stale cached rows) | noindex | Remains noindex |
-| Loading | noindex | Remains noindex |
+The immutable snapshot is captured per Document before any metadata write,
+including the visible-detail wait branch. DOM changes and component remounts
+do not replace it. Different SPA URLs have no server decision: pending/error/
+no-data responses are noindex even when the previous page was indexable.
+Returning to the original URL reuses its server decision.
 
-Pure policy and the applied head are separate: successful populated data is
-indexable by policy, but cannot override the original SSR noindex for that URL.
-Conversely, original SSR index followed by temporary loading noindex can recover
-to index after a successful populated response. A different SPA URL does not
-inherit the original URL's ceiling; without a successful response it still
-cannot relax the current DOM robots. Returning to the original URL reapplies
-its original ceiling. The snapshot is held per Document (not per component
-mount), and URL matching includes city/page search parameters rather than just
-the canonical path. Site-wide staging/disabled-host noindex remains unconditional.
-Static pages without an API response may preserve an existing index directive
-but cannot lift an existing noindex. Missing-page-number query keys mean page 1,
-never permission to reuse page 1 for page 2.
+Route identity uses the shared `normalizedQuery` helper extracted into
+`seo-policy.mjs` and reused by canonical listing logic: URLSearchParams sorting
+and removal of empty values. The route key retains all nonempty filters and
+page numbers; it does **not** use `listingCanonical`, which can fold distinct
+filtered pages to a common parent. No pre-existing standalone sorted/empty-query
+normalizer existed in this checkout, so this helper centralizes that behavior.
 
-## Verification and mutation
+## Applied-head matrix
 
-Existing staging assertions are unchanged. The client suite adds allowed-host
-policy tests for populated/empty/error/loading/no-data/paused/refetch-error,
-general metadata restrictions, active stale city/page data, original-SSR-index
-recovery, and URL-scoped SSR ceilings across navigation and return.
+On an allowed site, for city listings:
 
-- Final client suite: 30/30 passed, including a repeat after mutation.
-- SEO policy: 4/4 passed.
-- SEO build lifecycle: 1/1 passed.
-- SEO server: 44/44 passed on isolated rerun.
-- Marketplace `tsc -p tsconfig.json --noEmit`: passed.
+| Current response | Initial SSR index | Initial SSR noindex | Different SPA URL, from either initial decision |
+| --- | --- | --- | --- |
+| Loading / paused | Exact SSR index | Exact SSR noindex | noindex |
+| Error, including stale cached rows | Exact SSR index | Exact SSR noindex | noindex |
+| No data / malformed body | Exact SSR index | Exact SSR noindex | noindex |
+| Successful, populated | index | noindex | index |
+| Successful, empty | noindex | noindex | noindex |
 
-The initial combined Node invocation ran the build lifecycle (which removes
-`dist`) concurrently with server tests: 48 passed, one failed with `ENOENT`
-opening `dist/public/index.html`. Separate runs above pass; the full initial
-failure is retained rather than presented as an application regression.
+Existing `nofollow` is retained for unverified SPA states; original SSR
+`noindex, nofollow` also remains restrictive after success. Staging/disabled-host
+policy remains unconditionally `noindex, nofollow`. Pure populated-city
+eligibility remains true, separately from the applied SSR restriction.
+An empty education array is a definitive response, but education does not use
+the empty-city exclusion; an absent/non-array education body is **not**
+successful and cannot invent indexability.
 
-Final mutation was confined to `/tmp/lumera-afternoon-robots-final-3USnv8`, copying the
-marketplace source and sharing dependencies only. Changing the listing error
-branch back to `indexable: true` produced exit 1, 28 passes and two failures:
+## Tests and wiring
 
-> AssertionError [ERR_ASSERTION]: city error: policy must require a successful populated current response
-> true !== false
+- The former “recovery after temporary loading noindex” test now requires exact
+  initial SSR index through loading and error.
+- `applySeo` is exercised for the server-index/noindex × loading/error/
+  populated/empty matrix, followed by SPA navigation.
+- An intentionally changed previous DOM robots value differs from the original
+  snapshot, catching argument swapping as well as omitted snapshot wiring.
+- Visible-detail waiting preserves initial SSR index and makes unrelated SPA
+  routes noindex without replacing SSR titles/images.
+- Normalized sorted/empty query variants keep the snapshot; distinct pages and
+  filters sharing a canonical parent do not.
+- Education undefined/null/object/malformed-list bodies exercise the actual
+  `resolvePostMountSeo` → `applySeo` path with both SSR decisions and SPA routing.
+- The original staging standards document remains unchanged. A **second**
+  fake document has site indexing enabled and genuine SSR index, restoring
+  positive `applySeo` integration coverage without toggling staging's flag.
 
-The second failure is the corresponding `city refetch-error` assertion.
-This verifies the underlying policy, not a staging-masked head result; the
-independent head guard remains defense in depth. Repository source was never
-mutated to the unsafe behavior.
+## Local verification
 
-Full local evidence is ignored under `recovery-backups/afternoon-robots/`:
-final proof: `mutation-final-failure.log`, `scratch-final-path.txt`,
-`client-final-ssr-ceiling.log`, `client-final-after-mutation.log`,
-`typecheck-final-ssr-ceiling.log`, `seo-policy-final.log`, `seo-server-final.log`.
-Earlier iteration and build evidence: `mutation-failure.log`, `scratch-path.txt`, `client-tests.log`,
-`client-fixed-after-mutation.log`, `typecheck.log`, `seo-suites.log`,
-`seo-policy.log`, `seo-build.log`, and `seo-server-rerun.log`.
-These are local recovery artifacts, not portable CI attachments. No browser or
-production verification was performed; no staging override was disabled.
-
-## SEO standards harness correction
-
-CI exposed a stale assertion in `scripts/src/seo-standards.test.ts`: after
-applying staging metadata, the harness changed the same document's site-indexable
-flag to true and expected `index, follow`. Runtime correctly returned
-`noindex, nofollow`. The harness now retains staging configuration throughout,
-seeds genuine SSR robots and a complete URL, and asserts that successful
-metadata still leaves the document noindex. Pure helper assertions separately
-cover SSR-index recovery and the SSR-noindex ceiling without enabling the
-staging document. No runtime policy was weakened.
-
+- Client metadata: 33/33 passed, including a final post-mutation run.
 - Exact `pnpm --filter @workspace/scripts run test:seo-standards`: passed
-  (5 public-address tests, 4 address-input tests, 32 public React routes and
+  (5 public-address tests, 4 address-input tests, 32 public React routes,
   16 schema contracts).
-- Client metadata suite: 30/30 passed.
-- Scripts `tsc -p tsconfig.json --noEmit`: passed.
+- Combined SEO policy/server suites: 50/50 passed.
+- Marketplace and scripts `tsc -p tsconfig.json --noEmit`: passed.
 - `git diff --check`: passed.
 
-Local evidence: `seo-standards-correction.log`,
-`client-after-standards-correction.log`, and `scripts-typecheck-correction.log`
-under the same ignored recovery directory. The standards test is listed in the
-protected operation-matrix manifest; its changed source needs the owning
-agent's normal inventory/provenance classification review. No manifest or historical hash
-entries were changed as part of this test correction.
+## Four independent scratch mutations
+
+Each copy starts from the fixed source under
+`/tmp/lumera-robots-preserve-FPSNN1/{loading,swap,omit,education}`. Only the named
+mutation is applied in each copy; dependencies are shared, source is not.
+All four exit 1 under the client suite, including actual `applySeo` assertions:
+
+| Mutation | Pass / fail | Representative exact assertion message |
+| --- | --- | --- |
+| Write noindex instead of returning the initial SSR decision while waiting | 24 / 9 | `applySeo initial index, follow / loading` |
+| Swap previous and server robots arguments in `applySeo` | 30 / 3 | `applySeo must not confuse previous robots with normalized original SSR robots` |
+| Omit server snapshot argument in `applySeo` | 30 / 3 | `applySeo must receive the SSR snapshot during loading` |
+| Restore `data?.items ?? data?.products ?? []` and remove the non-array guard | 32 / 1 | `SPA education no-data must not invent indexability` |
+
+Each message is an `AssertionError [ERR_ASSERTION]`. The first three quoted
+failures have actual `noindex, follow`, expected `index, follow`; the education
+failure has actual `index, follow`, expected `noindex, follow`. Full failures
+(including every additional failing test) and commands/results are retained in
+ignored `recovery-backups/robots-preserve-ssr/`: `mutation-loading.log`,
+`mutation-swap.log`, `mutation-omit.log`, `mutation-education.log`,
+`scratch-root.txt`, `client-final.log`, `standards.log`, `policy-server.log`,
+`client-typecheck.log`, and `scripts-typecheck.log`.
+
+No unsafe mutation was applied to repository source. No browser, database,
+production or deployment validation was performed, and no CI result is claimed.
+Earlier evidence under `recovery-backups/afternoon-robots/` belongs to the
+superseded instruction and is retained only as historical local evidence.
+Timing attribution and protected-hash classification are handled separately;
+this implementation did not amend manifests, provenance or historical tiers.

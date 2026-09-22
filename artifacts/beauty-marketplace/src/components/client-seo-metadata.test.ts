@@ -4,7 +4,7 @@ import test from 'node:test';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { getApiErrorDetails } from '@workspace/api-client-react';
 import { GetPublicSupplierResponse } from '@workspace/api-zod';
-import { documentRobotsForRoute, dynamicMetadata as resolveDynamicMetadata, listingMetadataSchema, resolvePostMountSeo, seoHeadMetadata, visibleDetailReady, withQueryIndexability } from './client-seo-metadata';
+import { applySeo, applyPendingDetailRobots, documentRobotsForRoute, dynamicMetadata as resolveDynamicMetadata, listingMetadataSchema, resolvePostMountSeo, seoHeadMetadata, visibleDetailReady, withQueryIndexability } from './client-seo-metadata';
 const dynamicMetadata = async (pathname: string, queryClient: QueryClient) => {
   const result = await resolveDynamicMetadata(pathname, queryClient, 'https://lumera.example');
   if (!result) return result;
@@ -120,21 +120,123 @@ test('unverified metadata generally cannot loosen SSR robots, independent of sta
       }
     }
     const payload = { title: 'Static', description: 'Static', indexable: true };
-    assert.equal(seoHeadMetadata('/', payload, 'https://lumera.example', true, 'index, follow').robots, 'index, follow');
+    assert.equal(seoHeadMetadata('/', payload, 'https://lumera.example', true, 'index, follow').robots, 'noindex, follow');
   } finally { client.clear(); }
 });
 
-test('original SSR index permits successful recovery after temporary loading noindex', () => {
+test('original SSR index is kept exactly through loading and error until definitive success', () => {
   const meta = { content: 'index, follow' };
   const owner = { querySelector: () => meta } as unknown as Document;
   const route = '/saloni?city=Beograd';
   const initial = documentRobotsForRoute(owner, route);
   const loading = { title: 'Saloni', description: 'Saloni', indexable: false, successfulPageResponse: false };
   meta.content = seoHeadMetadata('/saloni', loading, 'https://lumera.example', true, meta.content, initial).robots;
-  assert.equal(meta.content, 'noindex, follow');
+  assert.equal(meta.content, 'index, follow');
+  assert.equal(seoHeadMetadata('/saloni', loading, 'https://lumera.example', true, 'noindex, follow', initial).robots, 'index, follow', 'error keeps original SSR index even if the mutable DOM differs');
   assert.equal(documentRobotsForRoute(owner, route), 'index, follow', 'client mutation must not replace the genuine SSR snapshot');
   const success = { ...loading, indexable: true, successfulPageResponse: true };
   assert.equal(seoHeadMetadata('/saloni', success, 'https://lumera.example', true, meta.content, documentRobotsForRoute(owner, route)).robots, 'index, follow');
+});
+
+function withRobotsDocument(route: string, robots: string, run: (meta: { content: string }, location: { host: string; pathname: string; search: string }) => Promise<void> | void) {
+  const nodes = new Map<string, any>();
+  const createElement = () => ({
+    content: '', rel: '', href: '', attributes: {} as Record<string, string>,
+    setAttribute(key: string, value: string) { this.attributes[key] = value; },
+    remove() { for (const [key, value] of nodes) if (value === this) nodes.delete(key); },
+  });
+  const head = {
+    querySelector: (selector: string) => nodes.get(selector) ?? null,
+    append: (node: ReturnType<typeof createElement>) => {
+      nodes.set(node.attributes.name ? `meta[name="${node.attributes.name}"]`
+        : node.attributes.property ? `meta[property="${node.attributes.property}"]` : `link[rel="${node.rel}"]`, node);
+    },
+  };
+  for (const [name, content] of [['robots', robots], ['lumera:site-indexable', 'true'], ['lumera:public-site-url', 'https://lumera.example']]) {
+    const node = createElement(); node.setAttribute('name', name); node.content = content; head.append(node);
+  }
+  const url = new URL(route, 'https://lumera.example');
+  const location = { host: url.host, pathname: url.pathname, search: url.search };
+  const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
+  Object.assign(globalThis, { document: { head, querySelector: head.querySelector, createElement, title: '' }, window: { location } });
+  return Promise.resolve().then(() => run(nodes.get('meta[name="robots"]'), location)).finally(() => {
+    if (originalDocument === undefined) Reflect.deleteProperty(globalThis, 'document'); else globalThis.document = originalDocument;
+    if (originalWindow === undefined) Reflect.deleteProperty(globalThis, 'window'); else globalThis.window = originalWindow;
+  });
+}
+
+test('applySeo matrix preserves initial SSR on loading/error and only definitive city data can tighten', async () => {
+  for (const server of ['index, follow', 'noindex, follow', 'noindex, nofollow']) {
+    for (const state of ['loading', 'error', 'populated', 'empty'] as const) {
+      const client = new QueryClient();
+      const key = ['/api/salons', { city: 'Beograd', page: 1 }];
+      const observer = new QueryObserver(client, {
+        queryKey: key, staleTime: Infinity, queryFn: () => new Promise<never>(() => {}),
+        initialData: state === 'populated' ? [{ name: 'Salon', slug: 'salon' }] : state === 'empty' ? [] : undefined,
+      });
+      const unsubscribe = observer.subscribe(() => undefined);
+      if (state === 'error') client.getQueryCache().find({ queryKey: key })!.setState({ status: 'error', error: new Error('API unavailable'), fetchStatus: 'idle' });
+      try {
+        const payload = await resolvePostMountSeo('/saloni', 'city=Beograd', client, 'https://lumera.example');
+        await withRobotsDocument('/saloni?city=Beograd', server, (meta, location) => {
+          applySeo('/saloni', payload);
+          const expected = state === 'empty' && server === 'index, follow' ? 'noindex, follow' : server;
+          assert.equal(meta.content, expected, `applySeo initial ${server} / ${state}`);
+          location.search = '?city=Niš';
+          const spaPayload = state === 'populated' || state === 'empty' ? payload : { ...payload, successfulPageResponse: false };
+          applySeo('/saloni', spaPayload);
+          assert.equal(meta.content, state === 'populated' ? 'index, follow' : server.includes('nofollow') && state !== 'empty' ? 'noindex, nofollow' : 'noindex, follow', `applySeo SPA ${server} / ${state}`);
+        });
+      } finally { unsubscribe(); client.clear(); }
+    }
+  }
+});
+
+test('applySeo uses immutable SSR rather than previous DOM and preserves normalized URL variants', async () => {
+  await withRobotsDocument('/saloni?city=Beograd&page=2&unused=', 'index, follow', (meta, location) => {
+    const pending = { title: 'Saloni', description: 'Saloni', indexable: false };
+    applySeo('/saloni', pending);
+    assert.equal(meta.content, 'index, follow', 'applySeo must receive the SSR snapshot during loading');
+    meta.content = 'noindex, follow';
+    location.search = '?page=2&city=Beograd';
+    applySeo('/saloni', pending);
+    assert.equal(meta.content, 'index, follow', 'applySeo must not confuse previous robots with normalized original SSR robots');
+    applyPendingDetailRobots();
+    assert.equal(meta.content, 'index, follow', 'visible detail wait must preserve SSR index');
+    location.search = '?city=Beograd&page=3';
+    applyPendingDetailRobots();
+    assert.equal(meta.content, 'noindex, follow', 'different page must not share folded canonical-parent SSR');
+  });
+  await withRobotsDocument('/saloni?brand=Test&city=Beograd', 'index, follow', (meta, location) => {
+    applySeo('/saloni', { title: 'Saloni', description: 'Saloni', indexable: false });
+    location.search = '?city=Beograd&brand=Other';
+    applySeo('/saloni', { title: 'Saloni', description: 'Saloni', indexable: false });
+    assert.equal(meta.content, 'noindex, follow', 'different filters with the same canonical parent must not share SSR');
+  });
+});
+
+test('education no-data and malformed bodies are not definitive empty responses', async () => {
+  for (const data of [undefined, null, {}, { items: null }, { items: 'malformed' }]) {
+    const client = new QueryClient();
+    const key = ['/api/education/public/courses'];
+    const observer = new QueryObserver(client, { queryKey: key, initialData: [], staleTime: Infinity });
+    const unsubscribe = observer.subscribe(() => undefined);
+    client.getQueryCache().find({ queryKey: key })!.setState({ status: 'success', fetchStatus: 'idle', data });
+    try {
+      const payload = await resolvePostMountSeo('/edukacije', '', client, 'https://lumera.example');
+      for (const server of ['index, follow', 'noindex, follow']) {
+        await withRobotsDocument('/edukacije', server, (meta, location) => {
+          applySeo('/edukacije', payload);
+          assert.equal(meta.content, server, 'education no-data must preserve genuine SSR robots');
+          location.pathname = '/edukacije/sekcije/drugo';
+          applySeo(location.pathname, payload);
+          assert.equal(meta.content, 'noindex, follow', 'SPA education no-data must not invent indexability');
+        });
+      }
+      assert.equal(payload.successfulPageResponse, false, 'education non-array body must not be a definitive successful response');
+    } finally { unsubscribe(); client.clear(); }
+  }
 });
 
 test('SSR noindex ceiling is scoped to its URL, including city and page, across SPA navigation', () => {

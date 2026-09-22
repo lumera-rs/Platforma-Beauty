@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { buildPageStructuredData, compactSchema } from '../../structured-data.mjs';
 import { cityPhrase, publicImageAlt, publicSalonCategories } from '../../seo-text.mjs';
-import { listingCanonical, listingIndexable, listingPage, publicSiteOrigin as configuredSeoOrigin } from '../../seo-policy.mjs';
+import { listingCanonical, listingIndexable, listingPage, normalizedQuery, publicSiteOrigin as configuredSeoOrigin } from '../../seo-policy.mjs';
 import { useLocation, useSearch } from 'wouter';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { customFetch, getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
@@ -35,7 +35,7 @@ export type SeoHeadMetadata = {
   title: string;
   description: string;
   canonical: string;
-  robots: 'index, follow' | 'noindex, follow' | 'noindex, nofollow';
+  robots: string;
   image: string;
   imageAlt: string;
   openGraph: {
@@ -117,12 +117,33 @@ function setOptionalMeta(selector: string, attribute: 'name' | 'property', key: 
 // scoped to its actual URL, not the (possibly shared) canonical listing URL.
 const initialRobotsByDocument = new WeakMap<Document, { route: string; robots: string }>();
 export function documentRobotsForRoute(owner: Document, route: string): string | undefined {
+  const url = new URL(route, 'https://route.invalid');
+  const params = normalizedQuery(url.search);
+  route = url.pathname + (params.size ? `?${params}` : '');
   let initial = initialRobotsByDocument.get(owner);
   if (!initial) {
     initial = { route, robots: owner.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow' };
     initialRobotsByDocument.set(owner, initial);
   }
   return initial.route === route ? initial.robots : undefined;
+}
+
+export function clientRobots(payload: Pick<SeoPayload, 'indexable' | 'successfulPageResponse'>, siteAllowed: boolean, previousRobots: string, serverRobots?: string): string {
+  if (!siteAllowed) return 'noindex, nofollow';
+  // A temporary client failure is not evidence against the SSR response.
+  if (!payload.successfulPageResponse && serverRobots !== undefined) return serverRobots;
+  if (/\bnofollow\b/i.test(serverRobots ?? '')) return 'noindex, nofollow';
+  if (!payload.successfulPageResponse) return /\bnofollow\b/i.test(previousRobots) ? 'noindex, nofollow' : 'noindex, follow';
+  return payload.indexable && !/\bnoindex\b/i.test(serverRobots ?? '') ? 'index, follow' : 'noindex, follow';
+}
+
+export function applyPendingDetailRobots() {
+  const origin = publicSiteOrigin();
+  const allowed = document.querySelector<HTMLMetaElement>('meta[name="lumera:site-indexable"]')?.content === 'true'
+    && window.location.host.toLowerCase() === new URL(origin).host;
+  const previous = document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow';
+  const server = documentRobotsForRoute(document, window.location.pathname + window.location.search);
+  setMeta('meta[name="robots"]', 'name', 'robots', clientRobots({ indexable: false }, allowed, previous, server));
 }
 
 export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed: boolean, previousRobots = 'noindex, follow', serverRobots?: string): SeoHeadMetadata {
@@ -140,11 +161,7 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
     title,
     description,
     canonical,
-    robots: !siteAllowed ? 'noindex, nofollow'
-      : /\bnofollow\b/i.test(serverRobots ?? '') ? 'noindex, nofollow'
-      : !payload.successfulPageResponse && /\bnofollow\b/i.test(previousRobots) ? 'noindex, nofollow'
-        : payload.indexable && !/\bnoindex\b/i.test(serverRobots ?? '') && (payload.successfulPageResponse || !/\bnoindex\b/i.test(previousRobots))
-          ? 'index, follow' : 'noindex, follow',
+    robots: clientRobots(payload, siteAllowed, previousRobots, serverRobots),
     image,
     imageAlt,
     openGraph: { title, description, url: canonical, image, imageAlt, imageWidth, imageHeight, imageType },
@@ -623,10 +640,9 @@ export function ClientSeoMetadata() {
       // then causes the visible hook's refetchOnMount:"always" to issue a second
       // request. Wait for that hook instead; its completion drives subscription.
       if (detail && !visibleDetailReady(queryClient, detail)) {
-        // Tighten robots immediately without replacing the server's title/image
-        // while the visible detail request is still pending.
-        const previousRobots = document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow';
-        setMeta('meta[name="robots"]', 'name', 'robots', /\bnofollow\b/i.test(previousRobots) ? 'noindex, nofollow' : 'noindex, follow');
+        // Preserve the initial SSR decision; an unrelated SPA detail has no
+        // server response and remains noindex while its visible hook waits.
+        applyPendingDetailRobots();
         if (!preserveInitialSchema.current) replacePageStructuredData();
         return;
       }
