@@ -9,7 +9,7 @@ import {
 } from "./index";
 
 test("migration readiness exposes immutable repository pins", () => {
-  assert.deepEqual(migrationReadinessContract.requiredMigrationIds, ["000001", "000002", "000003"]);
+  assert.deepEqual(migrationReadinessContract.requiredMigrationIds, ["000001", "000002", "000003", "000004"]);
   assert.notEqual(migrationReadinessContract.headStructuralFingerprint, migrationReadinessContract.structuralFingerprint);
   assert.notEqual(migrationReadinessContract.headPhysicalFingerprint, migrationReadinessContract.physicalFingerprint);
   assert.equal(
@@ -58,8 +58,8 @@ test("readiness returns a safe failure and does not create a ledger", async () =
 });
 
 const headLedgerRow = {
-  migration_id: "000003",
-  checksum: migrationReadinessContract.salonEntranceMigrationChecksum,
+  migration_id: "000004",
+  checksum: migrationReadinessContract.jobPublicationMigrationChecksum,
   mode: "transactional",
   state: "APPLIED",
   error: null,
@@ -94,6 +94,7 @@ test("readiness leases one dedicated pool client and releases it", async () => {
               started_at: "2026-01-01T00:00:02Z",
               finished_at: "2026-01-01T00:00:03Z",
             },
+            { ...headLedgerRow, migration_id: "000003", checksum: migrationReadinessContract.salonEntranceMigrationChecksum },
             headLedgerRow,
           ],
         };
@@ -179,6 +180,7 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
                 started_at: "2026-01-01T00:00:02Z",
                 finished_at: "2026-01-01T00:00:03Z",
               },
+              { ...headLedgerRow, migration_id: "000003", checksum: migrationReadinessContract.salonEntranceMigrationChecksum },
               headLedgerRow,
             ],
           };
@@ -193,7 +195,7 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
     assert.deepEqual(report, {
       ready: true,
       reason: null,
-      migrationIds: ["000001", "000002", "000003"],
+      migrationIds: ["000001", "000002", "000003", "000004"],
       ledger: "VALID",
       catalog: "CANONICAL",
     });
@@ -241,6 +243,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
                 started_at: "2026-01-01T00:00:02Z",
                 finished_at: "2026-01-01T00:00:03Z",
               },
+              { ...headLedgerRow, migration_id: "000003", checksum: migrationReadinessContract.salonEntranceMigrationChecksum },
               headLedgerRow,
             ],
           };
@@ -260,6 +263,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
         return { rows: sql.includes("migration_id, checksum") ? [
           { ...headLedgerRow, migration_id: "000001", checksum: migrationReadinessContract.baselineChecksum },
           { ...headLedgerRow, migration_id: "000002", checksum: migrationReadinessContract.supportedStartupMigrationChecksum },
+          { ...headLedgerRow, migration_id: "000003", checksum: migrationReadinessContract.salonEntranceMigrationChecksum },
           { ...headLedgerRow, state },
         ] : [] };
       },
@@ -268,7 +272,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
       catalogReads += 1;
       return canonicalCatalogIdentity(160010);
     });
-    assert.equal(report.ready, false, `000003 ${state} must not satisfy readiness`);
+    assert.equal(report.ready, false, `000004 ${state} must not satisfy readiness`);
     assert.equal(catalogReads, 0, "invalid receipt must refuse before the catalog reader");
   }
 });

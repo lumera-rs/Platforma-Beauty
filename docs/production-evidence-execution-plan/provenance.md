@@ -643,3 +643,50 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 ran once for this task. Both validators passed (114 diagnostic negative cases;
 65 execution negative fixtures), and all 13 regression tests passed with zero
 failures and zero skipped tests.
+
+## Job first publication — current-source hash amendment audit
+
+Authority: the owner's first-publication task and explicit authorization to
+amend changed current-source hashes with the full dependent manifest cascade.
+Pre-audit HEAD is `43e0232770cb8c6d79735d781ab727a95265a808` on
+`daily/2026-09-22`; historical parity uses main
+`a94abeeea316710c000629d4d78b8ce3c86bb5e8`.
+
+A complete direct census of all 158 current entries (73 diagnostic
+`currentInputs`, 85 execution-plan `files`) identified exactly eight source
+hash mismatches: the four branch-changed paths below in both manifests.
+The new `000004` migration legitimately advances HEAD fingerprints/frontier;
+baseline admission pins and previous migration entries are not rebaselined.
+These are current-source amendments, not amendments to historical evidence.
+
+| Changed source (amended in both current tiers) | Previous SHA-256 | Current SHA-256 |
+| --- | --- | --- |
+| `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `b04526547e6e32e00c55dc0241cc18a69eef95235490ded190687ac3fd9fe251` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` |
+| `scripts/src/migrations/manifest.ts` | `c5ced3b9b9fb486cdd4494b5347bd2caf47d8d37612f955b9c59ad765dde298f` | `e6f2ee512bf1938849ee73873ec6bf9809dfa7873823c92ee0a4fb1ac2eb2549` |
+| `scripts/src/migrations/migrations.integration.test.ts` | `6418c5ff3ac6050187cc972546788bef8bbc92f97e0274a07f219119d4c3345c` | `4d7afaf96db9a01b3ac607c2facfd744bea98e64c027a965a46711c618cc4720` |
+| `scripts/src/migrations/migrations.test.ts` | `7dec6c6505da552438bb64b905d868f75215688575dc8c9a92e1e8811ab7d566` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` |
+
+The ninth amendment is the dependent execution-plan `files` entry for
+`docs/production-diagnostic-design/protected-input-manifest.json`:
+`cc5ca3028064bd35c6fbf10412f9f16b9853ff0481002f7583b20fd7222c186a`
+becomes
+`dda1bbabb8f2ad72351a86546f50514f8b7db4437a5cbf28f0d650f403d3c13b`.
+No other current entry is amended. Both immutable historical tiers remain
+raw-byte-identical to main, with all 146 historical hashes independently
+reproduced from pinned `b8f30561` Git bytes.
+
+Final full-census and database-free documentation-validator results are
+retained in ignored `recovery-backups/job-publication/protected-audit.json`
+and `protected-docs-validators.log`. This audit owns only the two protected
+manifests and this provenance note; it performs no application/migration code
+edits, database operations, CI reads, deployments, Git staging, commits or
+pushes.
+
+Final census: all 158 current hashes match, with exactly nine approved
+amendments and no residual drift; all 146 historical hashes match their
+pinned Git bytes. Final execution-plan manifest SHA-256:
+`f6f0a0aeeb493cc69d211d4e2bbbfc14a8623dbebac34656b9ce23cbc79ff99a`.
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+passed all 13 regression tests, zero failures and zero skipped; both validators
+passed their 114 diagnostic negative cases and 65 execution negative fixtures.
+The protected-document diff passes `git diff --check`.

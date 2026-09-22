@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:beauty-jobs": "tsx ./src/run-job-first-publication.ts",
     "hello": "tsx ./src/hello.ts",
     "schema-drift:audit": "tsx ./src/audit-schema-drift.ts",
     "schema-drift:audit:json-file": "tsx ./src/audit-schema-drift.ts --json-file=schema-drift-report.json",

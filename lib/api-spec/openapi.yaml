@@ -18137,6 +18137,11 @@ components:
         moderationStatus: { type: string }
         moderationReason: { type: [string, "null"] }
         moderatedAt: { type: [string, "null"], format: date-time }
+        firstPublishedAt:
+          type: [string, "null"]
+          format: date-time
+          readOnly: true
+          description: First public visibility time, immutable after initial publication. Null legacy rows use createdAt as an approximation.
         contactCount: { type: integer }
         viewCount: { type: integer }
         expiresAt: { type: ["string", "null"], format: date-time }

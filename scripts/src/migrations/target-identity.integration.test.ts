@@ -36,10 +36,10 @@ test("workspace production label permits explicit matching identity and developm
       const result = await prepareDevelopmentMigrations(client, {
         expectedTargetIdentity: expectedDisposableTarget(pool),
       });
-      assert.deepEqual(result.migration.applied, ["000001", "000002", "000003"]);
+      assert.deepEqual(result.migration.applied, ["000001", "000002", "000003", "000004"]);
       assert.deepEqual((await applyMigrations(client, {
         expectedTargetIdentity: expectedDisposableTarget(pool),
-      })).skipped, ["000001", "000002", "000003"]);
+      })).skipped, ["000001", "000002", "000003", "000004"]);
     } finally {
       if (previous === undefined) delete process.env.REPLIT_ENVIRONMENT;
       else process.env.REPLIT_ENVIRONMENT = previous;

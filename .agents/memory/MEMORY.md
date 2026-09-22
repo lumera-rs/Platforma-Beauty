@@ -140,3 +140,4 @@
 - [Disposable PostgreSQL lifecycle](disposable-postgres-lifecycle.md) — bound owned socket paths; pool shutdown can precede server disconnects, so forced cleanup can race.
 - [Database and fixture verification](database-verification-lessons.md) — real session-lock failures, source-position evidence, owned-cluster cleanup, clocks, and fixture failure classification.
 - [SSR robots authority](ssr-robots-authority.md) — transient client failures cannot overturn server indexing evidence; test real wiring separately from staging overrides.
+- [Job publication legacy boundary](job-publication-legacy-boundary.md) — old empty dates remain approximations; later activation must not invent an original publication date.

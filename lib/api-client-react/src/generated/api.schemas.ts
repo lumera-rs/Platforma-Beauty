@@ -12734,6 +12734,11 @@ export interface BeautyJobListing {
   moderationReason: string | null;
   /** @nullable */
   moderatedAt: string | null;
+  /**
+     * First public visibility time, immutable after initial publication. Null legacy rows use createdAt as an approximation.
+     * @nullable
+     */
+  readonly firstPublishedAt?: string | null;
   contactCount: number;
   viewCount: number;
   /** @nullable */

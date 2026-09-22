@@ -81,3 +81,18 @@ total remained 780 seconds. This robots task makes no CI timing budget change.
 Across all of PR 38 compared with main at `a94abeee`, the browser total changed
 from 750 to 780 seconds and
 `browser:release:5-final` changed from 75 to 135 seconds.
+
+## Job first-publication regression calibration
+
+The job publication task adds the existing Beauty Poslovi HTTP lifecycle suite
+to `validate:release:2-backend`, through its owned PostgreSQL 16 runner. Three
+successful local executions of the exact `pnpm run test:beauty-jobs` command,
+with `NODE_ENV=test`, `SITE_INDEXABLE=false` and `DATABASE_URL` unset, took
+27.597, 27.064 and 29.073 seconds (shell elapsed clock, launcher, migrations and
+cleanup included). The ceiling of the maximum is 30 seconds.
+
+This is provisional local evidence, not CI history. The timed database
+phase-2 baseline increases from 320 to 350 seconds and its total from 650 to
+680 seconds. Browser budgets, warning formula and all historical observations
+above remain unchanged. The release-chain test pins the command, isolated
+runner, declared migration identity and these two budget values.

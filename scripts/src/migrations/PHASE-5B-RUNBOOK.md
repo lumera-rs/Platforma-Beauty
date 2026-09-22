@@ -63,7 +63,7 @@ empty value) of either deployment ID. This change does not authorize production.
 
 ## Required frontier after adoption
 
-The required frontier is now `000001`, `000002`, **`000003`**. Migration
+The required frontier is now `000001`, `000002`, `000003`, **`000004`**. Migration
 `000003_public_salon_entrance_details` adds only four nullable TEXT columns to
 `public.salons`: `entrance_directions`, `intercom`, `floor`, and `apartment`.
 It is transactional PostgreSQL 16 SQL with pre/postconditions and rollback
@@ -71,12 +71,17 @@ recovery; it has no admission contract. Production will need this migration
 applied after separately authorized baseline adoption and the supported-state
 transition. This statement is NOT production authorization: the existing
 maintenance, restore-point, identity, and deployment gates remain mandatory.
+Migration `000004_job_first_publication` then adds one nullable
+`TIMESTAMP WITH TIME ZONE` column, `public.beauty_job_listings.first_published_at`,
+with no default and no data backfill. It follows the same transactional
+PostgreSQL 16 precondition/postcondition/rollback discipline and has no admission
+contract. This new frontier likewise grants no production authorization.
 No startup code applies this or any other migration.
 
 The baseline fingerprint remains the catalog after `000001`. Supported-state
 admission and convergence still use that baseline. Readiness uses separate
 HEAD structural/physical pins and requires every migration in the frontier,
-including the checksum and APPLIED receipt for `000003`.
+including the checksums and APPLIED receipts for `000003` and `000004`.
 
 ## Proven repository and platform contract
 

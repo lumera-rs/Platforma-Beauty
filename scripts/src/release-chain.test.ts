@@ -8,6 +8,23 @@ import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
+test("job first-publication HTTP lifecycle stays in the timed release chain on an owned PG16 cluster", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const runner = await readFile(path.join(workspaceRoot, "scripts/src/run-job-first-publication.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:2-backend"], /pnpm run test:beauty-jobs &&/);
+  assert.equal(root.scripts["test:beauty-jobs"], "pnpm --filter @workspace/scripts run test:beauty-jobs");
+  assert.equal(scripts.scripts["test:beauty-jobs"], "tsx ./src/run-job-first-publication.ts");
+  assert.match(runner, /beauty-jobs-routes\.test\.ts/);
+  assert.match(runner, /applyMigrations\(client, \{ migrations: await loadMigrations\(\), expectedTargetIdentity \}\)/);
+  assert.match(runner, /Math\.floor\(version \/ 10000\) !== 16/);
+  assert.match(runner, /SITE_INDEXABLE: "false"/);
+  assert.doesNotMatch(runner, /process\.env(?:\.DATABASE_URL|\["DATABASE_URL"\])|push-force|drizzle/);
+  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 350);
+  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 680);
+});
+
 test("public SEO SPA regression stays in the timed browser release phase without database setup", async () => {
   const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
   const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));

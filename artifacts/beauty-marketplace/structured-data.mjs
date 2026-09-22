@@ -78,7 +78,7 @@ export function validDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value.slice(0, 10) ? value : undefined;
 }
 export function publicJobDate(job) {
-  return validDate(job.publishedAt ?? job.createdAt);
+  return validDate(job.firstPublishedAt ?? job.createdAt);
 }
 export function publicReviews(salon) {
   return [...(salon.reviews ?? [])].sort((a, b) => (Date.parse(validDate(b.date) ?? '') || 0) - (Date.parse(validDate(a.date) ?? '') || 0)).slice(0, 5);

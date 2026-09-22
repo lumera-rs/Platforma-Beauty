@@ -253,7 +253,7 @@ export default function BeautyJobDetailPage() {
             
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-primary" />
-              {publicJobDate(job) && <span>Objavljeno: <time dateTime={publicJobDate(job)}>{formatBeautyJobDate(job.createdAt, "dd.MM.yyyy.")}</time></span>}
+              {publicJobDate(job) && <span>Objavljeno: <time dateTime={publicJobDate(job)}>{formatBeautyJobDate(publicJobDate(job), "dd.MM.yyyy.")}</time></span>}
             </div>
 
             <div className="flex items-center gap-1.5">

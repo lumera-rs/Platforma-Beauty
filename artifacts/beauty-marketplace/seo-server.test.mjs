@@ -9,7 +9,7 @@ import { createSeoResponse } from './seo-server.mjs';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 import './seo-policy.test.mjs';
 import { cityLocative, cityPhrase, publicImageAlt } from './seo-text.mjs';
-import { buildPageStructuredData, validPrice, publicReviews } from './structured-data.mjs';
+import { buildPageStructuredData, validPrice, publicReviews, publicJobDate } from './structured-data.mjs';
 import { listingCanonical, listingIndexable } from './seo-policy.mjs';
 
 // Content regressions run under the staging noindex policy.
@@ -974,6 +974,7 @@ test('Beauty Poslovi index, detail metadata and sitemap use only public data', a
     negotiable: false,
     availabilityPattern: null,
     createdAt: '2026-08-24T10:00:00.000Z',
+    firstPublishedAt: '2026-08-27T11:00:00.000Z',
     updatedAt: '2026-08-24T11:00:00.000Z',
     expiresAt: '2026-09-23T10:00:00.000Z',
     privateApplicantEmail: 'private@example.test',
@@ -997,6 +998,22 @@ test('Beauty Poslovi index, detail metadata and sitemap use only public data', a
     assert.match(listing.body, /Potreban frizer u Beogradu/);
     assert.match(detail.body, /<title>Potreban frizer u Beogradu \| LUMERA Poslovi<\/title>/);
     assert.match(detail.body, /"@type":"JobPosting"/);
+    assert.match(detail.body, /name="robots" content="noindex, nofollow"/);
+    assert.equal(publicJobDate(job), job.firstPublishedAt);
+    assert.ok(detail.body.includes(`"datePosted":"${job.firstPublishedAt}"`));
+    assert.ok(detail.body.includes(`<time datetime="${job.firstPublishedAt}">${job.firstPublishedAt.slice(0, 10)}</time>`), 'visible SSR date and structured datePosted use the same first-publication value');
+    for (const firstPublishedAt of [null, undefined]) {
+      const legacyJob = { ...job, firstPublishedAt };
+      assert.equal(publicJobDate(legacyJob), job.createdAt, 'legacy empty publication time falls back to creation');
+      assert.equal(buildPageStructuredData('job', legacyJob, { origin: 'https://lumera.example', canonical: `/poslovi/${job.slug}/${job.id}` }).datePosted, job.createdAt);
+    }
+    for (const firstPublishedAt of ['', 'not-a-date', '2026-02-30']) {
+      assert.equal(publicJobDate({ ...job, firstPublishedAt }), undefined, 'invalid non-null publication time must not silently fall back to creation');
+    }
+    assert.equal(publicJobDate({ ...job, createdAt: 'not-a-date' }), job.firstPublishedAt, 'a valid publication time does not depend on a valid fallback');
+    const visibleSource = readFileSync(new URL('./src/pages/beauty-jobs-detail.tsx', import.meta.url), 'utf8');
+    assert.match(visibleSource, /dateTime=\{publicJobDate\(job\)\}/);
+    assert.match(visibleSource, /formatBeautyJobDate\(publicJobDate\(job\), "dd\.MM\.yyyy\."\)/, 'client visible label and time attribute share datePosted policy');
     assert.doesNotMatch(detail.body, /private@example\.test/);
     assert.match(wrongSlug.body, new RegExp(`rel="canonical" href="https://lumera\\.example/poslovi/${job.slug}/${job.id}"`));
     assert.match(sitemap.body, new RegExp(`https://lumera\\.example/poslovi/${job.slug}/${job.id}`));

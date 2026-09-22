@@ -31,7 +31,7 @@ test("supported adoption and receipt boundaries preserve unsupported state", asy
       // Remove only this test's own deliberately unsupported fixture row.
       await client.query("DELETE FROM public.business_growth_schema_rollout WHERE version = 99999");
       assert.deepEqual((await adoptBaseline(client, options)).adopted, ["000001"]);
-      assert.deepEqual((await applyMigrations(client, options)).applied, ["000002", "000003"]);
+      assert.deepEqual((await applyMigrations(client, options)).applied, ["000002", "000003", "000004"]);
 
       const receiptsBefore = (await client.query(
         "SELECT to_jsonb(r) AS row FROM public.lumera_migration_ledger r ORDER BY migration_id",

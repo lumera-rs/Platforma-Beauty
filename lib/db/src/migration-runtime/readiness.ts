@@ -17,9 +17,10 @@ const BASELINE_STRUCTURAL = "938c62183adabae9fdab00c5d968c39feb3f216e521b9031d16
 const BASELINE_PHYSICAL = "673f3810d49a4be6899482d44281607dac06d3e1012cd001e8348a45fdf5ea1f";
 // Baseline pins above remain the immutable catalog after 000001.
 // Readiness instead requires the catalog after the entire required frontier.
-const HEAD_STRUCTURAL = "4c65ef9a278fb7a41c2830e3c2c51f2d8f7abee08dadcc076fd4c17ddf255b98";
-const HEAD_PHYSICAL = "39821cf3d682003a804326fa279eed957720f3a4b1458622bf91678abe1d824a";
+const HEAD_STRUCTURAL = "805c6d8d8a375ffd842b92ce018073627a9f82fe40d81537ceed1494f913f7e9";
+const HEAD_PHYSICAL = "60400deed8e8d3521ebf2af5c2e3ae2c491be8dffa0dd654c644fe44930bf3ce";
 const SALON_ENTRANCE_MIGRATION_CHECKSUM = "9bc21ec9bb74182314b498a91c606445d6564d7b070da4f04a22a43b195395c5";
+const JOB_PUBLICATION_MIGRATION_CHECKSUM = "0e2e866fe285d43fb7a8b5508cb60c44df4e7d333961247c31879f2f2cd91083";
 const REVIEWED_POSTGRES_MAJOR_VERSION = 16;
 
 export interface DatabaseMigrationReadiness {
@@ -99,6 +100,7 @@ export async function inspectDatabaseMigrationReady(
       ["000001", { checksum: BASELINE_CHECKSUM, mode: "transactional" }],
       ["000002", { checksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM, mode: "transactional" }],
       ["000003", { checksum: SALON_ENTRANCE_MIGRATION_CHECKSUM, mode: "transactional" }],
+      ["000004", { checksum: JOB_PUBLICATION_MIGRATION_CHECKSUM, mode: "transactional" }],
     ]);
     const seen = new Set<string>();
     for (const row of rows) {
@@ -132,7 +134,7 @@ export async function inspectDatabaseMigrationReady(
     return {
       ready: true,
       reason: null,
-      migrationIds: ["000001", "000002", "000003"],
+      migrationIds: ["000001", "000002", "000003", "000004"],
       ledger: "VALID",
       catalog: "CANONICAL",
     };
@@ -219,7 +221,7 @@ function matchesCanonicalCatalog(identity: CatalogIdentity): boolean {
     && identity.fingerprintVersion === 4
     && identity.schemaFormatVersion === 1
     && isReviewedPostgresPatch(identity)
-    && identity.normalizedObjectCount === 5064
+    && identity.normalizedObjectCount === 5065
     && identity.enumCount === 103
     && identity.triggerCount === 24
     && identity.functionCount === 21;
@@ -253,7 +255,8 @@ export const migrationReadinessContract = Object.freeze({
   physicalFingerprint: BASELINE_PHYSICAL,
   headStructuralFingerprint: HEAD_STRUCTURAL,
   headPhysicalFingerprint: HEAD_PHYSICAL,
-  headNormalizedObjectCount: 5064,
+  headNormalizedObjectCount: 5065,
   salonEntranceMigrationChecksum: SALON_ENTRANCE_MIGRATION_CHECKSUM,
-  requiredMigrationIds: ["000001", "000002", "000003"] as const,
+  jobPublicationMigrationChecksum: JOB_PUBLICATION_MIGRATION_CHECKSUM,
+  requiredMigrationIds: ["000001", "000002", "000003", "000004"] as const,
 });
