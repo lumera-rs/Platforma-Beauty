@@ -75,4 +75,8 @@ browser-total phase durations—are the calibration evidence. Following the
 existing convention, the new baseline is the ceiling of the maximum successful
 phase sample: 135 seconds. The unchanged warning formula gives
 `ceil(max(135 * 1.5, 135 + 30)) = ceil(max(202.5, 165)) = 203` seconds.
-The browser total remains 780 seconds, and no other budget is changed.
+During this task's final-phase increment, `browser:release:5-final` changed
+from 105 to 135 seconds while the browser total remained 780 seconds; no
+other budget changed during this task. Across all of PR 38 compared with main
+at `a94abeee`, the browser total changed from 750 to 780 seconds and
+`browser:release:5-final` changed from 75 to 135 seconds.

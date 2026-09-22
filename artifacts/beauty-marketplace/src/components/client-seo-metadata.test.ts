@@ -4,7 +4,7 @@ import test from 'node:test';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { getApiErrorDetails } from '@workspace/api-client-react';
 import { GetPublicSupplierResponse } from '@workspace/api-zod';
-import { dynamicMetadata as resolveDynamicMetadata, listingMetadataSchema, resolvePostMountSeo, seoHeadMetadata, visibleDetailReady, withQueryIndexability } from './client-seo-metadata';
+import { documentRobotsForRoute, dynamicMetadata as resolveDynamicMetadata, listingMetadataSchema, resolvePostMountSeo, seoHeadMetadata, visibleDetailReady, withQueryIndexability } from './client-seo-metadata';
 const dynamicMetadata = async (pathname: string, queryClient: QueryClient) => {
   const result = await resolveDynamicMetadata(pathname, queryClient, 'https://lumera.example');
   if (!result) return result;
@@ -81,6 +81,93 @@ test('client city canonicals, titles and empty results share the SSR policy unde
       if (scenario.empty) assert.doesNotMatch(JSON.stringify(payload.structuredData), /"ItemList"/);
     } finally { unsubscribe(); client.clear(); }
   }
+});
+
+for (const scenario of ['populated', 'empty', 'error', 'loading', 'no-data', 'refetch-error', 'paused'] as const) {
+  test(`robots policy without staging override: city ${scenario}`, async () => {
+    const client = new QueryClient();
+    const queryKey = ['/api/salons', { city: 'Beograd', page: 1 }];
+    const observer = new QueryObserver(client, {
+      queryKey, staleTime: Infinity, queryFn: () => new Promise<never>(() => {}),
+      initialData: scenario === 'populated' || scenario === 'refetch-error'
+        ? [{ name: 'Current salon', slug: 'current' }] : scenario === 'empty' ? [] : undefined,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    const query = client.getQueryCache().find({ queryKey })!;
+    if (scenario === 'error' || scenario === 'refetch-error') query.setState({ status: 'error', error: new Error('Public listing unavailable'), fetchStatus: 'idle' });
+    if (scenario === 'no-data') query.setState({ status: 'success', data: undefined, fetchStatus: 'idle' });
+    if (scenario === 'paused') query.setState({ fetchStatus: 'paused' });
+    try {
+      const payload = await resolvePostMountSeo('/saloni', 'city=Beograd', client, 'https://lumera.example');
+      assert.equal(payload.indexable, scenario === 'populated', `city ${scenario}: policy must require a successful populated current response`);
+      for (const serverRobots of ['noindex, follow', 'noindex, nofollow']) {
+        const head = seoHeadMetadata('/saloni', payload, 'https://lumera.example', true, serverRobots, serverRobots);
+        assert.equal(head.robots.startsWith('index,'), false, `city ${scenario}: must never loosen the current document's SSR noindex`);
+        assert.equal(head.robots, serverRobots);
+        if (!payload.successfulPageResponse && serverRobots.includes('nofollow')) assert.equal(head.robots, serverRobots);
+      }
+    } finally { unsubscribe(); client.clear(); }
+  });
+}
+
+test('unverified metadata generally cannot loosen SSR robots, independent of staging', async () => {
+  const client = new QueryClient();
+  try {
+    for (const path of ['/', '/o-nama', '/saloni', '/edukacije', '/poslovi', '/proizvodi', '/brendovi', '/recnik', '/inspiracija', '/unsupported-route']) {
+      const payload = await resolvePostMountSeo(path, '', client, 'https://lumera.example');
+      for (const serverRobots of ['noindex, follow', 'noindex, nofollow']) {
+        assert.equal(seoHeadMetadata(path, payload, 'https://lumera.example', true, serverRobots).robots, serverRobots, path);
+      }
+    }
+    const payload = { title: 'Static', description: 'Static', indexable: true };
+    assert.equal(seoHeadMetadata('/', payload, 'https://lumera.example', true, 'index, follow').robots, 'index, follow');
+  } finally { client.clear(); }
+});
+
+test('original SSR index permits successful recovery after temporary loading noindex', () => {
+  const meta = { content: 'index, follow' };
+  const owner = { querySelector: () => meta } as unknown as Document;
+  const route = '/saloni?city=Beograd';
+  const initial = documentRobotsForRoute(owner, route);
+  const loading = { title: 'Saloni', description: 'Saloni', indexable: false, successfulPageResponse: false };
+  meta.content = seoHeadMetadata('/saloni', loading, 'https://lumera.example', true, meta.content, initial).robots;
+  assert.equal(meta.content, 'noindex, follow');
+  assert.equal(documentRobotsForRoute(owner, route), 'index, follow', 'client mutation must not replace the genuine SSR snapshot');
+  const success = { ...loading, indexable: true, successfulPageResponse: true };
+  assert.equal(seoHeadMetadata('/saloni', success, 'https://lumera.example', true, meta.content, documentRobotsForRoute(owner, route)).robots, 'index, follow');
+});
+
+test('SSR noindex ceiling is scoped to its URL, including city and page, across SPA navigation', () => {
+  const meta = { content: 'noindex, nofollow' };
+  const owner = { querySelector: () => meta } as unknown as Document;
+  const original = '/saloni?city=Beograd';
+  assert.equal(documentRobotsForRoute(owner, original), meta.content);
+  const success = { title: 'Saloni', description: 'Saloni', indexable: true, successfulPageResponse: true };
+  for (const route of ['/saloni?city=Niš', '/saloni?city=Beograd&page=2', '/edukacije']) {
+    const ceiling = documentRobotsForRoute(owner, route);
+    assert.equal(ceiling, undefined, 'unrelated SPA URL must not inherit the SSR ceiling');
+    assert.equal(seoHeadMetadata('/saloni', { ...success, successfulPageResponse: false }, 'https://lumera.example', true, meta.content, ceiling).robots, 'noindex, nofollow', 'missing-response navigation still cannot relax current robots');
+    assert.equal(seoHeadMetadata('/saloni', success, 'https://lumera.example', true, meta.content, ceiling).robots, 'index, follow');
+  }
+  meta.content = 'index, follow';
+  assert.equal(seoHeadMetadata('/saloni', success, 'https://lumera.example', true, meta.content, documentRobotsForRoute(owner, original)).robots, 'noindex, nofollow', 'returning to the SSR URL restores its original ceiling');
+});
+
+test('stale active city/page responses never authorize the current route', async () => {
+  const client = new QueryClient();
+  const observer = new QueryObserver(client, {
+    queryKey: ['/api/salons', { city: 'Beograd' }],
+    initialData: [{ name: 'Previous salon', slug: 'previous' }], staleTime: Infinity,
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  try {
+    for (const search of ['city=Niš', 'city=Beograd&page=2']) {
+      const payload = await resolvePostMountSeo('/saloni', search, client, 'https://lumera.example');
+      assert.equal(payload.indexable, false, search);
+      assert.equal(seoHeadMetadata('/saloni', payload, 'https://lumera.example', true, 'noindex, follow').robots, 'noindex, follow');
+      assert.equal(payload.structuredData, undefined);
+    }
+  } finally { unsubscribe(); client.clear(); }
 });
 
 test('listing schemas use only the active successful current filter/page DTO', async () => {

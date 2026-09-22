@@ -22,6 +22,8 @@ export type SeoPayload = {
   imageHeight?: number;
   imageType?: string;
   indexable: boolean;
+  /** Only a successful response matched to this route may relax existing robots. */
+  successfulPageResponse?: boolean;
   canonicalPath?: string;
   structuredData?: unknown;
   structuredDataPending?: boolean;
@@ -111,7 +113,19 @@ function setOptionalMeta(selector: string, attribute: 'name' | 'property', key: 
   }
   setMeta(selector, attribute, key, String(content));
 }
-export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed: boolean): SeoHeadMetadata {
+// Keep the original SSR ceiling independent of transient client writes and
+// scoped to its actual URL, not the (possibly shared) canonical listing URL.
+const initialRobotsByDocument = new WeakMap<Document, { route: string; robots: string }>();
+export function documentRobotsForRoute(owner: Document, route: string): string | undefined {
+  let initial = initialRobotsByDocument.get(owner);
+  if (!initial) {
+    initial = { route, robots: owner.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow' };
+    initialRobotsByDocument.set(owner, initial);
+  }
+  return initial.route === route ? initial.robots : undefined;
+}
+
+export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: string, siteAllowed: boolean, previousRobots = 'noindex, follow', serverRobots?: string): SeoHeadMetadata {
   const publicPath = payload.canonicalPath ?? pathname;
   const cleanPublicPath = publicPath !== '/' ? publicPath.replace(/\/+$/, '') : publicPath;
   const canonical = new URL(cleanPublicPath, origin).href;
@@ -126,7 +140,11 @@ export function seoHeadMetadata(pathname: string, payload: SeoPayload, origin: s
     title,
     description,
     canonical,
-    robots: !siteAllowed ? 'noindex, nofollow' : payload.indexable ? 'index, follow' : 'noindex, follow',
+    robots: !siteAllowed ? 'noindex, nofollow'
+      : /\bnofollow\b/i.test(serverRobots ?? '') ? 'noindex, nofollow'
+      : !payload.successfulPageResponse && /\bnofollow\b/i.test(previousRobots) ? 'noindex, nofollow'
+        : payload.indexable && !/\bnoindex\b/i.test(serverRobots ?? '') && (payload.successfulPageResponse || !/\bnoindex\b/i.test(previousRobots))
+          ? 'index, follow' : 'noindex, follow',
     image,
     imageAlt,
     openGraph: { title, description, url: canonical, image, imageAlt, imageWidth, imageHeight, imageType },
@@ -147,7 +165,9 @@ export function applySeo(pathname: string, payload: SeoPayload) {
   const origin = publicSiteOrigin();
   const allowed = document.querySelector<HTMLMetaElement>('meta[name="lumera:site-indexable"]')?.content === 'true'
     && window.location.host.toLowerCase() === new URL(origin).host;
-  const metadata = seoHeadMetadata(pathname, payload, origin, allowed);
+  const metadata = seoHeadMetadata(pathname, payload, origin, allowed,
+    document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow',
+    documentRobotsForRoute(document, window.location.pathname + window.location.search));
   document.title = metadata.title;
   setMeta('meta[name="description"]', 'name', 'description', metadata.description);
   setMeta('meta[name="robots"]', 'name', 'robots', metadata.robots);
@@ -188,7 +208,7 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
       return new Response(null, { status: 404 });
     }
     try {
-      const cached = state?.fetchStatus === 'fetching' ? undefined : queryClient.getQueryData(queryKey);
+      const cached = state?.status === 'success' && state.fetchStatus === 'idle' ? queryClient.getQueryData(queryKey) : undefined;
       const data = cached ?? await queryClient.fetchQuery({
         queryKey,
         // The visible generated hooks share this cache entry. Preserve their
@@ -398,8 +418,8 @@ export async function dynamicMetadata(pathname: string, queryClient: QueryClient
     const listingId = beautyJob[1];
     const queryKey = getGetBeautyJobQueryKey(listingId);
     const queryState = queryClient.getQueryState(queryKey);
-    const cachedItem = queryState?.fetchStatus === 'fetching' ? undefined
-      : queryClient.getQueryData<Awaited<ReturnType<typeof getBeautyJob>>>(queryKey);
+    const cachedItem = queryState?.status === 'success' && queryState.fetchStatus === 'idle'
+      ? queryClient.getQueryData<Awaited<ReturnType<typeof getBeautyJob>>>(queryKey) : undefined;
     const cachedError = queryState?.error;
     if (cachedError && !isRetryableBeautyJobDetailError(cachedError)) return null;
 
@@ -487,7 +507,7 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
     const section = taxonomy?.find((item: any) => item.slug === sectionSlug);
     const category = section?.categories?.find((item: any) => item.slug === categorySlug);
     const subcategory = category?.subcategories?.find((item: any) => item.slug === subcategorySlug);
-    if (!section || (categorySlug && !category) || (subcategorySlug && !subcategory)) return { structuredDataPending: true };
+    if (!section || (categorySlug && !category) || (subcategorySlug && !subcategory)) return { structuredDataPending: true, indexable: false, successfulPageResponse: false };
     Object.assign(scopedFilters, { sectionId: section.id, categoryId: category?.id, subcategoryId: subcategory?.id });
   }
   if (endpoint.endsWith('/public-products')) {
@@ -496,7 +516,7 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
     const categories: any = client.getQueryData([`/api/suppliers/${supplierSlug}/categories`]);
     if (categoryPath) {
       const category = categories?.find((item: any) => item.path === categoryPath && item.active);
-      if (!category) return { structuredDataPending: true };
+      if (!category) return { structuredDataPending: true, indexable: false, successfulPageResponse: false };
       scopedFilters.categoryId = category.id;
     }
   }
@@ -504,7 +524,7 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
   const current = candidates.find((query) => {
     if (!query.isActive()) return false;
     const options = (query.queryKey[1] ?? {}) as Record<string, unknown>;
-    if (options.page !== undefined && Number(options.page) !== listingPage(search)) return false;
+    if (Number(options.page ?? 1) !== listingPage(search)) return false;
     if (expectedCategory && options.category !== expectedCategory) return false;
     for (const key of ['city', 'municipality', 'brand', 'q', 'query', 'search', 'region', 'type', 'intent', 'listingMode', 'category', 'minPrice', 'maxPrice', 'priceMax', 'format', 'level', 'language', 'sort', 'sectionId', 'categoryId', 'subcategoryId', 'courseTypeId', 'discountsOnly', 'gender', 'acceptsCards', 'openSunday', 'instantBooking', 'homeService', 'topSalon', 'featured', 'accredited', 'certification', 'minRating', 'minReviewCount', 'availability', 'minDurationMinutes', 'maxDurationMinutes', 'productType', 'needTag']) {
       if (key === 'category' && expectedCategory) continue;
@@ -520,10 +540,11 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
     }
     return true;
   });
-  if (!current || current.state.status === 'pending' || current.state.fetchStatus === 'fetching') return { structuredDataPending: true };
-  if (current.state.status === 'error') return { structuredData: undefined, indexable: false };
+  if (!current || current.state.status === 'pending' || current.state.fetchStatus !== 'idle') return { structuredDataPending: true, indexable: false, successfulPageResponse: false };
+  if (current.state.status === 'error') return { structuredData: undefined, indexable: false, successfulPageResponse: false };
   const data: any = current.state.data;
-  const rows: any[] = Array.isArray(data) ? data : data?.items ?? data?.products ?? [];
+  const rows: any[] = Array.isArray(data) ? data : data?.items ?? data?.products;
+  if (!Array.isArray(rows)) return { structuredData: undefined, indexable: false, successfulPageResponse: false };
   const items = rows.filter((item) => endpoint !== '/api/suppliers' || isPublicRetailSupplier(item)).map((item) => {
     if (endpoint === '/api/salons') return { name: item.name, pathname: `/saloni/${item.slug}` };
     if (endpoint === '/api/education/public/courses') return { name: item.title, pathname: `/edukacije/${item.id}` };
@@ -533,6 +554,7 @@ export function listingMetadataSchema(pathname: string, search: string, payload:
     return { name: item.title ?? item.term ?? item.name, pathname: item.salon?.slug ? `/saloni/${item.salon.slug}` : undefined };
   });
   return {
+    successfulPageResponse: true,
     structuredData: buildPageStructuredData(items.length ? 'list' : 'static', { name: listName, items }, { origin, canonical, breadcrumbs }),
     ...(pathname === '/saloni' && params.has('city') && !items.length ? { indexable: false } : {}),
   };
@@ -548,6 +570,7 @@ export async function resolvePostMountSeo(
   if (!payload) {
     try {
       payload = await dynamicMetadata(pathname, queryClient, origin);
+      if (payload) payload = { ...payload, successfulPageResponse: true };
     } catch {
       payload = null;
     }
@@ -582,6 +605,8 @@ export function ClientSeoMetadata() {
   const preserveInitialSchema = useRef(true);
 
   useLayoutEffect(() => {
+    // Capture genuine SSR robots before even the pending-detail branch writes.
+    documentRobotsForRoute(document, window.location.pathname + window.location.search);
     let cancelled = false;
     let generation = 0;
     let queued = false;
@@ -598,6 +623,10 @@ export function ClientSeoMetadata() {
       // then causes the visible hook's refetchOnMount:"always" to issue a second
       // request. Wait for that hook instead; its completion drives subscription.
       if (detail && !visibleDetailReady(queryClient, detail)) {
+        // Tighten robots immediately without replacing the server's title/image
+        // while the visible detail request is still pending.
+        const previousRobots = document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content ?? 'noindex, follow';
+        setMeta('meta[name="robots"]', 'name', 'robots', /\bnofollow\b/i.test(previousRobots) ? 'noindex, nofollow' : 'noindex, follow');
         if (!preserveInitialSchema.current) replacePageStructuredData();
         return;
       }
