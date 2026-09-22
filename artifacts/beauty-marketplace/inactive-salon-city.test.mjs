@@ -4,6 +4,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createSeoResponse, lookupPublicEntity } from './seo-server.mjs';
 import { parseDependencyPackageJson } from '../../lib/api-spec/dependency-package-parser.mjs';
 
+// Content regressions run under the staging noindex policy.
+process.env.PUBLIC_SITE_URL = 'https://lumera.example';
+process.env.SITE_INDEXABLE = 'false';
+
 test('frontend SSR has no database resolver or pg dependency', () => {
   assert.equal(existsSync(new URL('./inactive-salon-city.mjs', import.meta.url)), false);
   const source = readFileSync(new URL('./seo-server.mjs', import.meta.url), 'utf8');
