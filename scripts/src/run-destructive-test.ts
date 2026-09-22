@@ -7,6 +7,7 @@ import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime"
 import { isDeploymentRuntime } from "./migrations/development-runtime";
 import { loadMigrations } from "./migrations/files";
 import { applyMigrations } from "./migrations/runner";
+import { pipeRedactedDatabaseOutput } from "./safe-child-process-output";
 import type { ExpectedTargetIdentity } from "./migrations/target-identity";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../..");
@@ -124,14 +125,15 @@ async function runCommand(environment: NodeJS.ProcessEnv): Promise<number> {
       cwd: workspaceRoot,
       detached: true,
       env: environment,
-      stdio: "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
     childProcessGroupId = child.pid;
+    pipeRedactedDatabaseOutput(child, environment);
     child.once("error", (error) => {
       childProcessGroupId = undefined;
       reject(error);
     });
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
       if (receivedSignal) signalChildGroup("SIGKILL");
       childProcessGroupId = undefined;
       child = undefined;

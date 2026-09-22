@@ -18,6 +18,16 @@ test("job first-publication HTTP lifecycle stays in the timed release chain on a
   assert.equal(root.scripts["test:beauty-jobs"], "pnpm --filter @workspace/scripts run test:beauty-jobs");
   assert.equal(scripts.scripts["test:beauty-jobs"], "tsx ./src/run-job-first-publication.ts");
   assert.match(runner, /beauty-jobs-routes\.test\.ts/);
+  assert.match(
+    runner,
+    /stdio:\s*\["ignore",\s*"pipe",\s*"pipe"\][\s\S]*pipeRedactedDatabaseOutput\(child,\s*childEnvironment\)/,
+    "The database URL child must use piped, redacted output rather than inherited file descriptors.",
+  );
+  assert.doesNotMatch(
+    runner,
+    /stdio:\s*"inherit"/,
+    "The first-publication database child must never inherit stdout or stderr.",
+  );
   const source = ts.createSourceFile("run-job-first-publication.ts", runner, ts.ScriptTarget.Latest, true);
   const migrationCalls: ts.CallExpression[] = [];
   const identities: ts.VariableDeclaration[] = [];

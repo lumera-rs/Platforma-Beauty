@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { createSeoResponse, lookupPublicEntity } from './seo-server.mjs';
+import { parseDependencyPackageJson } from '../../lib/api-spec/dependency-package-parser.mjs';
 
 test('frontend SSR has no database resolver or pg dependency', () => {
   assert.equal(existsSync(new URL('./inactive-salon-city.mjs', import.meta.url)), false);
   const source = readFileSync(new URL('./seo-server.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /DATABASE_URL|resolveInactiveSalonCity|from ['"]pg['"]|import\(['"]pg['"]\)/);
-  const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+  const manifest = parseDependencyPackageJson({
+    contents: readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+    label: 'Frontend package manifest',
+  });
   assert.equal(manifest.dependencies?.pg, undefined);
   assert.equal(manifest.devDependencies?.pg, undefined);
   const importer = readFileSync(new URL('../../pnpm-lock.yaml', import.meta.url), 'utf8')
