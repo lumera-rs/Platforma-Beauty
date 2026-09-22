@@ -100,6 +100,7 @@ type SeoPayload = {
   imageHeight?: number;
   imageType?: string;
   indexable: boolean;
+  successfulPageResponse?: boolean;
   canonicalPath?: string;
 };
 type SeoQueryClient = {
@@ -159,6 +160,8 @@ const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
     payload: SeoPayload,
     origin: string,
     siteAllowed: boolean,
+    previousRobots?: string,
+    serverRobots?: string,
   ) => SeoHeadMetadata;
 };
 
@@ -1079,6 +1082,25 @@ try {
   assert.equal(explicitImage.imageHeight, 640);
   assert.equal(explicitImage.imageType, "image/webp");
 
+  // Exercise allowed-site policy purely: never change the staging document's
+  // site-indexable setting to simulate a deployment inside one document.
+  const successfulPayload: SeoPayload = {
+    title: "LUMERA",
+    description: "LUMERA",
+    indexable: true,
+    successfulPageResponse: true,
+  };
+  assert.equal(
+    seoHeadMetadata("/", successfulPayload, seoOrigin, true, "noindex, follow", "index, follow").robots,
+    "index, follow",
+    "successful current-page data can recover transient client noindex when SSR allowed indexing",
+  );
+  assert.equal(
+    seoHeadMetadata("/", successfulPayload, seoOrigin, true, "index, follow", "noindex, nofollow").robots,
+    "noindex, nofollow",
+    "even successful policy cannot loosen the same document URL's original SSR noindex",
+  );
+
   type FakeHeadNode = {
     content: string;
     href: string;
@@ -1124,6 +1146,7 @@ try {
   for (const [name, content] of [
     ["lumera:public-site-url", seoOrigin],
     ["lumera:site-indexable", String((await serverMetadata("/")).siteAllowed)],
+    ["robots", "noindex, nofollow"],
   ]) {
     const node = fakeDocument.createElement();
     node.setAttribute("name", name);
@@ -1132,7 +1155,7 @@ try {
   }
   Object.assign(globalThis, {
     document: fakeDocument,
-    window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host } },
+    window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host, pathname: "/", search: "" } },
   });
   try {
     applySeo("/", {
@@ -1154,13 +1177,9 @@ try {
     assert.equal(nodes.has('meta[property="og:image:width"]'), false);
     assert.equal(nodes.has('meta[property="og:image:height"]'), false);
     assert.equal(nodes.has('meta[property="og:image:type"]'), false);
-    nodes.get('meta[name="lumera:site-indexable"]')!.content = "true";
-    applySeo("/", {
-      title: "LUMERA",
-      description: "LUMERA",
-      indexable: true,
-    });
-    assert.equal(nodes.get('meta[name="robots"]')?.content, "index, follow");
+    applySeo("/", successfulPayload);
+    assert.equal(nodes.get('meta[name="lumera:site-indexable"]')?.content, "false", "DOM integration remains in staging");
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow", "the same staging document must remain noindex after successful metadata");
 
     Object.assign(globalThis.window.location, { host: "different-host.example" });
     applySeo("/", {

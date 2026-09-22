@@ -72,3 +72,28 @@ Earlier iteration and build evidence: `mutation-failure.log`, `scratch-path.txt`
 `seo-policy.log`, `seo-build.log`, and `seo-server-rerun.log`.
 These are local recovery artifacts, not portable CI attachments. No browser or
 production verification was performed; no staging override was disabled.
+
+## SEO standards harness correction
+
+CI exposed a stale assertion in `scripts/src/seo-standards.test.ts`: after
+applying staging metadata, the harness changed the same document's site-indexable
+flag to true and expected `index, follow`. Runtime correctly returned
+`noindex, nofollow`. The harness now retains staging configuration throughout,
+seeds genuine SSR robots and a complete URL, and asserts that successful
+metadata still leaves the document noindex. Pure helper assertions separately
+cover SSR-index recovery and the SSR-noindex ceiling without enabling the
+staging document. No runtime policy was weakened.
+
+- Exact `pnpm --filter @workspace/scripts run test:seo-standards`: passed
+  (5 public-address tests, 4 address-input tests, 32 public React routes and
+  16 schema contracts).
+- Client metadata suite: 30/30 passed.
+- Scripts `tsc -p tsconfig.json --noEmit`: passed.
+- `git diff --check`: passed.
+
+Local evidence: `seo-standards-correction.log`,
+`client-after-standards-correction.log`, and `scripts-typecheck-correction.log`
+under the same ignored recovery directory. The standards test is listed in the
+protected operation-matrix manifest; its changed source needs the owning
+agent's normal inventory/provenance classification review. No manifest or historical hash
+entries were changed as part of this test correction.
