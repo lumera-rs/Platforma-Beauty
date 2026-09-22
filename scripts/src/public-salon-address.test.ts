@@ -18,9 +18,18 @@ test("Maps and PostalAddress use an explicit street-only allowlist, never phone/
   assert.equal(url.origin, "https://www.google.com");
   assert.equal(url.searchParams.get("api"), "1");
   assert.equal(url.searchParams.get("query"), "Tošin bunar 181, 11000 Beograd, Serbia");
-  assert.deepEqual(result.postalAddress, { "@type": "PostalAddress", streetAddress: source.address, postalCode: "11000", addressLocality: "Beograd", addressCountry: "RS" });
-  assert.doesNotMatch(JSON.stringify({ href: result.href, postalAddress: result.postalAddress }), /PRIVATE_|44\.12345|20\.12345/);
-  assert.doesNotMatch(result.text, /PRIVATE_PHONE|44\.12345|20\.12345/);
+  assert.deepEqual(result, {
+    text: "Tošin bunar 181, (PRIVATE_ENTRANCE), interfon PRIVATE_INTERCOM, PRIVATE_FLOOR, stan PRIVATE_APARTMENT, 11000 Beograd",
+    href: "https://www.google.com/maps/search/?api=1&query=To%C5%A1in%20bunar%20181%2C%2011000%20Beograd%2C%20Serbia",
+    postalAddress: {
+      "@type": "PostalAddress",
+      streetAddress: source.address,
+      postalCode: "11000",
+      addressLocality: "Beograd",
+      addressCountry: "RS",
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_PHONE|44\.12345|20\.12345/);
   for (const state of [{ active: false }, { published: false }, { hideAddress: true }]) {
     assert.equal(publicSalonAddress({ ...source, ...state }), null);
   }

@@ -622,6 +622,27 @@ test("Batch 1 F1 and A-2 regressions stay in the API release phase", async () =>
   );
 });
 
+test("salon address authorization regression stays in the API release phase", async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const scripts = packageJson.scripts ?? {};
+
+  assert.ok(
+    chainedPnpmScripts(scripts["validate:release:3-api"] ?? "").includes("test:appointment-regressions"),
+    "Release phase 3 must retain the appointment regression gate.",
+  );
+  assert.ok(
+    chainedPnpmScripts(scripts["test:appointment-regressions"] ?? "").includes("test:appointment-concurrency"),
+    "The appointment regression gate must retain its database-backed concurrency suite.",
+  );
+  assert.equal(
+    scripts["test:appointment-concurrency"]?.match(/\.\.\/artifacts\/api-server\/src\/lib\/appointment-routes\.test\.ts/g)?.length,
+    1,
+    "The appointment concurrency suite must run appointment-routes.test.ts exactly once.",
+  );
+});
+
 test("branch CI runs the database-free release-chain gate before slower work", async () => {
   const workflow = await readFile(branchCiPath, "utf8");
   const parsedWorkflow = parseWorkflow(workflow);

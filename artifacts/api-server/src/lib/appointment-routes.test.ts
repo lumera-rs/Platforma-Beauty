@@ -218,11 +218,19 @@ async function run(): Promise<void> {
   let server: ReturnType<typeof app.listen> | undefined;
 
   try {
-    const [owner, customer, otherCustomer, employeeUser, admin] = await db.insert(usersTable).values([
+    const [owner, ownerB, customer, otherCustomer, employeeUser, admin] = await db.insert(usersTable).values([
       {
         firstName: "Vlasnik",
         lastName: "HTTP test",
         email: fixtureEmail("owner"),
+        passwordHash,
+        passwordSetAt: new Date(),
+        role: "SALON_OWNER",
+      },
+      {
+        firstName: "Vlasnik B",
+        lastName: "HTTP test",
+        email: fixtureEmail("owner-b"),
         passwordHash,
         passwordSetAt: new Date(),
         role: "SALON_OWNER",
@@ -260,7 +268,7 @@ async function run(): Promise<void> {
         role: "ADMIN",
       },
     ]).returning();
-    createdUserIds.push(owner!.id, customer!.id, otherCustomer!.id, employeeUser!.id, admin!.id);
+    createdUserIds.push(owner!.id, ownerB!.id, customer!.id, otherCustomer!.id, employeeUser!.id, admin!.id);
 
     const [salon, foreignSalon] = await db.insert(salonsTable).values([
       {
@@ -286,7 +294,7 @@ async function run(): Promise<void> {
         topSalon: true,
       },
       {
-        ownerId: owner!.id,
+        ownerId: ownerB!.id,
         name: `Drugi HTTP salon ${suffix}`,
         slug: `foreign-http-appointment-salon-${suffix}`,
         city: "Novi Sad",
@@ -306,6 +314,7 @@ async function run(): Promise<void> {
       },
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
+    await db.update(usersTable).set({ activeSalonId: foreignSalon!.id }).where(eq(usersTable.id, ownerB!.id));
 
     const managedSalonImageAssetId = randomUUID();
     const managedSalonImageHash = "b".repeat(64);
@@ -521,8 +530,9 @@ async function run(): Promise<void> {
       },
     ]).returning();
 
-    const [ownerSession, customerSession, otherCustomerSession, employeeSession, adminSession] = await Promise.all([
+    const [ownerSession, ownerBSession, customerSession, otherCustomerSession, employeeSession, adminSession] = await Promise.all([
       createSession(owner!.id),
+      createSession(ownerB!.id),
       createSession(customer!.id),
       createSession(otherCustomer!.id),
       createSession(employeeUser!.id),
@@ -1099,6 +1109,31 @@ async function run(): Promise<void> {
       entranceDirections: "ulaz sa bočne strane odmah pored dečijeg tobogana",
       intercom: "22 enter", floor: "IV sprat", apartment: "22",
     };
+    const [beforeForeignOwnerDetails] = await db.select({
+      entranceDirections: salonsTable.entranceDirections,
+      intercom: salonsTable.intercom,
+      floor: salonsTable.floor,
+      apartment: salonsTable.apartment,
+    }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
+    const foreignOwnerDetails = await request(
+      baseUrl,
+      ownerBSession,
+      `/admin/salons/${salon!.id}`,
+      "PATCH",
+      details,
+    );
+    assert.equal(foreignOwnerDetails.status, 403, "the owner of salon B cannot edit salon A address details");
+    const [afterForeignOwnerDetails] = await db.select({
+      entranceDirections: salonsTable.entranceDirections,
+      intercom: salonsTable.intercom,
+      floor: salonsTable.floor,
+      apartment: salonsTable.apartment,
+    }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
+    assert.deepEqual(
+      afterForeignOwnerDetails,
+      beforeForeignOwnerDetails,
+      "a refused address update from the owner of salon B leaves salon A unchanged",
+    );
     const beforeDeniedDetails = await getRequest(baseUrl, ownerSession, "/salon/profile");
     const deniedDetails = await request(baseUrl, customerSession, "/salon/profile", "PATCH", details);
     assert.equal(deniedDetails.status, 403, "a non-manager cannot edit salon address details");

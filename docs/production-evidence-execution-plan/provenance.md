@@ -557,7 +557,7 @@ no database tests or connections, servers, workflows, commits, or pushes.
 
 ## Public salon address — final CI scheduling audit
 
-After Stage B commit `28ddbea44d8f7b1ba6fcf300255714e062440d95`, the CI
+After Stage B commit `67bb260d409e70ca01b773ddfe9d65fd564021e7`, the CI
 scheduling changes were audited separately. A fresh complete SHA-256 census
 of all 158 current-tier entries found zero mismatches (`[]`), requiring zero
 new hash amendments and zero cascade updates. Both manifests remain
@@ -603,3 +603,43 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 ran once. Both validators passed (114 diagnostic negative cases and 65
 execution negative fixtures); the regression runner reported 13 passed,
 zero failed, zero skipped.
+
+## Daily task 2 — city canonical and address-test follow-up audit
+
+Authority: attachment `1790067612505`, with separate city-canonical/browser/
+timing and address-test/provenance commits. The pre-audit HEAD is
+`56a71599f41ccb5c378523e5b8f4e74319fcd3d6`; eligibility and historical parity
+use main `a94abeeea316710c000629d4d78b8ce3c86bb5e8`.
+
+A complete direct SHA-256 census checked all 158 current-source entries:
+73 diagnostic `currentInputs` and 85 execution-plan `files`. The full drift
+list is empty (`[]`): zero new current-hash amendments, zero old/new hash rows,
+and zero manifest-cascade changes. Neither the canonical/browser/timing files
+nor the two address-test files require a protected hash replacement. There is
+therefore no first-commit hash subset to stage; this audit note accompanies
+the second commit's existing Stage B provenance-reference correction.
+
+Both entire manifests, including their historical tiers, remain byte-identical
+to main a94. The 146 historical entries were also independently verified
+against their pinned `b8f30561` Git file bytes. Prior approved hash amendments
+are preserved without any manifest changes.
+
+Direct inspection of all diff paths against main and all untracked paths found
+no changes under `lib/db/` or `scripts/src/migrations/`. The only changed API
+path is `artifacts/api-server/src/lib/appointment-routes.test.ts`, the expressly
+authorized cross-salon-owner authorization regression test. No API
+implementation, authentication/authorization engine, booking engine, database
+schema, migration, or migration-runtime file is changed in those scopes.
+`scripts/src/public-salon-address.test.ts` is the authorized whole-helper-result
+test follow-up. This records file-scope evidence, not a substitute for the
+implementation agent's test results.
+
+This audit edits only this provenance document, preserving the worker's
+correction to the real Stage B commit `67bb260d409e70ca01b773ddfe9d65fd564021e7`.
+It performs no source/test edits, database operations, servers, workflows,
+commits, or pushes.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+ran once for this task. Both validators passed (114 diagnostic negative cases;
+65 execution negative fixtures), and all 13 regression tests passed with zero
+failures and zero skipped tests.
