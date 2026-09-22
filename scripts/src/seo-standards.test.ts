@@ -644,6 +644,7 @@ const htmlTemplate = `<!doctype html><html><head>
 function assertPublicImageAlts(html: string, pathname: string) {
   for (const image of html.matchAll(/<img\b[^>]*>/gu)) {
     const alt = image[0].match(/\balt="([^"]*)"/u)?.[1];
+    assert.ok(typeof alt === "string", `${pathname}: every public image requires an alt attribute`);
     assert.ok(alt?.trim(), `${pathname}: every public image requires meaningful nonblank alt`);
     assert.doesNotMatch(alt, /^(?:undefined|null|image|slika|placeholder)$/iu, `${pathname}: alt cannot be placeholder text`);
   }
