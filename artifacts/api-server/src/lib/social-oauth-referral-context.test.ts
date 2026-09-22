@@ -9,8 +9,11 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import {
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Social OAuth referral-context tests");
+
+const { and, eq, inArray, sql } = await import("drizzle-orm");
+const {
   db,
   integrationSettingsTable,
   oauthIdentitiesTable,
@@ -21,10 +24,10 @@ import {
   salonsTable,
   educationCentersTable,
   usersTable,
-} from "@workspace/db";
-import app from "../app";
-import { ensureReferralCode } from "./referral-service";
-import { ensureReferralSchema } from "./referral-schema";
+} = await import("@workspace/db");
+const { default: app } = await import("../app");
+const { ensureReferralCode } = await import("./referral-service");
+const { ensureReferralSchema } = await import("./referral-schema");
 
 const suffix = randomUUID();
 const origin = `https://oauth-referral-${suffix}.example.test`;

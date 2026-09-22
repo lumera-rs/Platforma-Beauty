@@ -44,6 +44,7 @@ try {
       SITE_INDEXABLE: "false",
       PUBLIC_SITE_URL: "",
       DATABASE_URL: databaseUrl,
+      LUMERA_DISPOSABLE_DATABASE: databaseUrl,
       LUMERA_TEST_DATABASE_URL: databaseUrl,
       LUMERA_TEST_DATABASE_NAME: expectedTargetIdentity.databaseName,
       LUMERA_TEST_DATABASE_SYSTEM_IDENTIFIER: expectedTargetIdentity.systemIdentifier,

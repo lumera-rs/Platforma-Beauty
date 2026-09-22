@@ -16,8 +16,11 @@ import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import {
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Education sessions tests");
+
+const { and, asc, eq, inArray, sql } = await import("drizzle-orm");
+const {
   courseEnrollmentsTable,
   courseSessionsTable,
   coursesTable,
@@ -42,15 +45,15 @@ import {
   pool,
   subscriptionPlansTable,
   usersTable,
-} from "@workspace/db";
-import app from "../app";
-import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { initializeDevelopmentTestFixtures } from "./seed";
-import {
+} = await import("@workspace/db");
+const { default: app } = await import("../app");
+const { createSession, hashPassword, sessionCookieName } = await import("./auth");
+const { initializeDevelopmentTestFixtures } = await import("./seed");
+const {
   VALID_TEST_IPS_SETTINGS,
   buildValidOnlineEducationCourse,
   buildValidOnlineEducationEnrollmentRequest,
-} from "./education-test-fixtures";
+} = await import("./education-test-fixtures");
 
 const suffix = randomUUID();
 const password = "education-sessions-test-password";

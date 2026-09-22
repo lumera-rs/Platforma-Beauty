@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
-import { assertDestructiveTestRuntimeAllowed } from "./src/destructive-test-runtime";
+import {
+  assertDestructiveTestRuntimeAllowed,
+  playwrightDisposableDatabaseNamePatterns,
+} from "./src/destructive-test-runtime";
 import { runBrowserSpecTypeCheck } from "./src/check-browser-spec-types";
 
 assertDestructiveTestRuntimeAllowed(process.env, "Browser tests");
@@ -36,6 +39,8 @@ const isolatedBeautyJobsBrowserTest =
 const isolatedEducationGroupOnlineConsentBrowserTest =
   process.env.LUMERA_ISOLATED_EDUCATION_GROUP_ONLINE_CONSENT_BROWSER_TEST ===
   "1";
+const isolatedEducationGalleryBrowserTest =
+  process.env.LUMERA_ISOLATED_EDUCATION_GALLERY_BROWSER_TEST === "1";
 const isolatedBookingSettingsBrowserTest =
   process.env.LUMERA_ISOLATED_BOOKING_SETTINGS_BROWSER_TEST === "1";
 const isolatedCoverImageDescriptionBrowserTest =
@@ -74,6 +79,7 @@ const isolatedBrowserTest =
   isolatedInfobipRegistrationBrowserTest ||
   isolatedBeautyJobsBrowserTest ||
   isolatedEducationGroupOnlineConsentBrowserTest ||
+  isolatedEducationGalleryBrowserTest ||
   isolatedBookingSettingsBrowserTest ||
   isolatedCoverImageDescriptionBrowserTest;
 
@@ -87,6 +93,7 @@ if (
     isolatedInfobipRegistrationBrowserTest,
     isolatedBeautyJobsBrowserTest,
     isolatedEducationGroupOnlineConsentBrowserTest,
+    isolatedEducationGalleryBrowserTest,
     isolatedBookingSettingsBrowserTest,
     isolatedCoverImageDescriptionBrowserTest,
   ].filter(Boolean).length > 1
@@ -97,24 +104,26 @@ if (
 if (isolatedBrowserTest) {
   const testDatabaseUrl = process.env.LUMERA_TEST_DATABASE_URL;
   const databaseNamePattern = isolatedAdminBrowserTest
-    ? /^lumera_admin_browser_\d+_[a-f0-9]{32}$/
+    ? playwrightDisposableDatabaseNamePatterns.admin
     : isolatedAdminFormResilienceBrowserTest
-      ? /^lumera_form_browser_\d+_[a-f0-9]{32}$/
+      ? playwrightDisposableDatabaseNamePatterns.adminFormResilience
       : isolatedSalonNotificationBrowserTest
-        ? /^lumera_alert_browser_\d+_[a-f0-9]{32}$/
+        ? playwrightDisposableDatabaseNamePatterns.salonNotification
         : isolatedRetailCheckoutBrowserTest
-          ? /^lumera_retail_browser_\d+_[a-f0-9]{32}$/
+          ? playwrightDisposableDatabaseNamePatterns.retailCheckout
           : isolatedRetentionPreviewBrowserTest
-            ? /^(?:lumera_retention_estimate_browser_|lumera_retention_exact_browser_|lumera_retention_stratified_browser_)\d+_[a-f0-9]{32}$/
+            ? playwrightDisposableDatabaseNamePatterns.retentionPreview
             : isolatedInfobipRegistrationBrowserTest
-              ? /^lumera_infobip_registration_browser_\d+_[a-f0-9]{32}$/
+              ? playwrightDisposableDatabaseNamePatterns.infobipRegistration
               : isolatedBeautyJobsBrowserTest
-                ? /^lumera_bjobs_\d+_[a-f0-9]{32}$/
+                ? playwrightDisposableDatabaseNamePatterns.beautyJobs
                 : isolatedEducationGroupOnlineConsentBrowserTest
-                  ? /^lumera_education_group_browser_\d+_[a-f0-9]{32}$/
+                  ? playwrightDisposableDatabaseNamePatterns.educationGroupOnlineConsent
+                : isolatedEducationGalleryBrowserTest
+                  ? playwrightDisposableDatabaseNamePatterns.educationGallery
                   : isolatedCoverImageDescriptionBrowserTest
-                    ? /^lumera_cover_\d+_[a-f0-9]{32}$/
-                    : /^lumera_booking_settings_browser_\d+_[a-f0-9]{32}$/;
+                    ? playwrightDisposableDatabaseNamePatterns.coverImageDescription
+                    : playwrightDisposableDatabaseNamePatterns.bookingSettings;
   if (
     !testDatabaseUrl
     || process.env.DATABASE_URL !== testDatabaseUrl

@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
-import {
+import type { ReferralChannel } from "./referral-domain";
+import type { ReferralWalletScope } from "./referral-service";
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Referral lifecycle tests");
+
+const { and, eq, inArray, or, sql } = await import("drizzle-orm");
+const {
   appointmentsTable,
   courseEnrollmentsTable,
   coursesTable,
@@ -28,14 +33,14 @@ import {
   subscriptionPlansTable,
   subscriptionsTable,
   usersTable,
-} from "@workspace/db";
-import app from "../app";
-import { createSession, sessionCookieName } from "./auth";
-import { ensureBusinessGrowthSchema } from "./business-growth-schema";
-import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
-import { qualificationWindow, referralIdempotencyKey, type ReferralChannel } from "./referral-domain";
-import { ensureReferralSchema } from "./referral-schema";
-import {
+} = await import("@workspace/db");
+const { default: app } = await import("../app");
+const { createSession, sessionCookieName } = await import("./auth");
+const { ensureBusinessGrowthSchema } = await import("./business-growth-schema");
+const { assertNoPgBusyClientWarnings } = await import("./pg-busy-client.test-support");
+const { qualificationWindow, referralIdempotencyKey } = await import("./referral-domain");
+const { ensureReferralSchema } = await import("./referral-schema");
+const {
   allocateReferralCreditInTx,
   applySalonReferralSubscriptionReduction,
   compensateInvalidatedReferralSourcesInTx,
@@ -51,12 +56,11 @@ import {
   restoreReferralCreditForOrderInTx,
   ReferralChannelContextError,
   runReferralMaintenance,
-  type ReferralWalletScope,
-} from "./referral-service";
-import {
+} = await import("./referral-service");
+const {
   lockEducationCenterFinancials,
   resolveEducationBillingSettingsForChargeInTx,
-} from "./education-billing";
+} = await import("./education-billing");
 
 process.env.PUBLIC_SITE_URL = "https://referral-lifecycle.example";
 

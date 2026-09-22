@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { GetSalonResponse } from "@workspace/api-zod";
-import {
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Appointment routes tests");
+
+const { and, eq, inArray, sql } = await import("drizzle-orm");
+const { GetSalonResponse } = await import("@workspace/api-zod");
+const {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
   appointmentStatusHistoryTable,
@@ -32,13 +35,13 @@ import {
   servicesTable,
   treatmentPackagesTable,
   usersTable,
-} from "@workspace/db";
-import app from "../app";
-import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { lockAppointmentResources } from "./appointment-locks";
-import { ensureBusinessGrowthSchema } from "./business-growth-schema";
-import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
-import { initializeDevelopmentTestFixtures } from "./seed";
+} = await import("@workspace/db");
+const { default: app } = await import("../app");
+const { createSession, hashPassword, sessionCookieName } = await import("./auth");
+const { lockAppointmentResources } = await import("./appointment-locks");
+const { ensureBusinessGrowthSchema } = await import("./business-growth-schema");
+const { assertNoPgBusyClientWarnings } = await import("./pg-busy-client.test-support");
+const { initializeDevelopmentTestFixtures } = await import("./seed");
 
 const suffix = randomUUID();
 const customerPhone = `+3816${(
