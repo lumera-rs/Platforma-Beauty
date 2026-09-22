@@ -15,6 +15,8 @@ import { GetBeautyJobResponse } from "@workspace/api-zod";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
+import { createJobPublicationCutoffResolver, resetJobPublicationCutoffForTests, resolveJobPublicationCutoff } from "./job-publication-cutoff";
+import { logger } from "./logger";
 import {
   sendBeautyJobEmail,
   setBeautyJobEmailTransportForTests,
@@ -1647,16 +1649,138 @@ async function run(): Promise<void> {
     const approvedLegacy = await request(base, `/admin/beauty-jobs/${legacyPending.id}/moderation`, admin.token, "POST", { action: "approve" });
     assert.equal(approvedLegacy.status, 200);
     assert.equal(approvedLegacy.body.firstPublishedAt, null, "all pre-migration NULL rows retain the documented legacy approximation");
-    const missingBoundary = await insertApproved(hairCategory.id, customer.user.id, `Missing publication boundary ${suffix}`, { moderationStatus: "pending" });
+    // Resolver mechanics use a real, already verified receipt as the fixture.
+    let resolverReads = 0;
+    let temporarilyUnavailable = true;
+    const resolverWarnings: string[] = [];
+    const isolatedResolver = createJobPublicationCutoffResolver({
+      read: async () => {
+        resolverReads++;
+        await Promise.resolve();
+        if (temporarilyUnavailable) throw Object.assign(new Error("temporary read failure"), { code: "42P01" });
+        return [{ mode: "transactional", state: "APPLIED", chronological: true, finished_at: new Date(publicationBoundary) }];
+      },
+      warn: (reason) => { resolverWarnings.push(reason); },
+    });
+    assert.deepEqual(await Promise.all([isolatedResolver(), isolatedResolver(), isolatedResolver()]), [null, null, null]);
+    assert.equal(resolverReads, 1, "concurrent failed reads are deduplicated");
+    assert.deepEqual(resolverWarnings, ["ledger_missing"]);
+    temporarilyUnavailable = false;
+    const resolvedCopies = await Promise.all([isolatedResolver(), isolatedResolver(), isolatedResolver()]);
+    assert.equal(resolverReads, 2, "a failed read is not cached; concurrent recovery shares one read");
+    resolvedCopies[0]!.setTime(0);
+    assert.equal((await isolatedResolver())!.getTime(), Date.parse(publicationBoundary), "callers cannot mutate the cached cutoff");
+    assert.equal(resolverReads, 2, "validated cutoff is read once per process cache");
+
+    const warnings: Array<{ event?: string; reason?: string; code?: string }> = [];
+    const originalWarn = logger.warn.bind(logger);
+    logger.warn = ((record: object, message: string) => {
+      warnings.push(record);
+      originalWarn(record, message);
+    }) as typeof logger.warn;
+    const previousConnectionOptions = pool.options.options;
+    const switchPoolRole = async (limited: boolean) => {
+      // Cover both existing connections and replacement connections opened
+      // after pg discards a client whose standalone ledger query failed.
+      pool.options.options = limited ? "-c role=job_publication_limited" : previousConnectionOptions;
+      const clients = await Promise.all(Array.from({ length: pool.options.max! }, () => pool.connect()));
+      try {
+        await Promise.all(clients.map((client) => client.query(limited ? "SET ROLE job_publication_limited" : "RESET ROLE")));
+      } finally {
+        for (const client of clients) client.release();
+      }
+    };
+    const transition = async (operation: "single" | "bulk" | "renew", listingId: string) => operation === "single"
+      ? request(base, `/admin/beauty-jobs/${listingId}/moderation`, admin.token, "POST", { action: "approve" })
+      : operation === "bulk"
+        ? request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", { listingIds: [listingId], action: "approve" })
+        : request(base, `/beauty-jobs/${listingId}/renew`, customer.token, "POST", {});
     try {
-      // Only this suite's owned disposable cluster is ever used; restore the
-      // exact timestamp, including sub-millisecond precision, in finally.
-      await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=NULL WHERE migration_id='000004'");
-      const missingBoundaryApproval = await request(base, `/admin/beauty-jobs/${missingBoundary.id}/moderation`, admin.token, "POST", { action: "approve" });
-      assert.equal(missingBoundaryApproval.status, 200);
-      assert.equal(missingBoundaryApproval.body.firstPublishedAt, null, "missing authoritative cutoff fails closed instead of inventing a date");
+      for (const failure of ["ledger_missing", "ledger_select_denied", "migration_row_missing"] as const) {
+        if (failure === "ledger_missing") {
+          await pool.query("ALTER TABLE public.lumera_migration_ledger RENAME TO publication_cutoff_ledger_fixture");
+        } else if (failure === "migration_row_missing") {
+          await pool.query("UPDATE public.lumera_migration_ledger SET migration_id='cutoff_fixture_000004' WHERE migration_id='000004'");
+        } else {
+          await pool.query(`
+            CREATE ROLE job_publication_limited NOSUPERUSER NOCREATEDB NOCREATEROLE NOLOGIN;
+            GRANT USAGE ON SCHEMA public TO job_publication_limited;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO job_publication_limited;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO job_publication_limited;
+            REVOKE SELECT ON public.lumera_migration_ledger FROM job_publication_limited;
+          `);
+          await switchPoolRole(true);
+          const role = (await pool.query("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser, has_table_privilege(current_user, 'public.lumera_migration_ledger', 'SELECT') AS ledger_select")).rows[0];
+          assert.equal(role.current_user, "job_publication_limited");
+          assert.equal(role.superuser, false, "permission regression really uses a non-superuser");
+          assert.equal(role.ledger_select, false, "ledger SELECT is actually revoked");
+        }
+        try {
+          for (const operation of ["single", "bulk", "renew"] as const) {
+            for (const knownDate of [null, new Date(Date.now() - 1000)]) {
+              const listing = await insertApproved(hairCategory.id, customer.user.id, `${failure} ${operation} ${suffix}`, {
+                moderationStatus: operation === "renew" ? "approved" : "pending",
+                expiresAt: new Date(Date.now() + (operation === "renew" ? -86400000 : 86400000)),
+                firstPublishedAt: knownDate,
+              });
+              resetJobPublicationCutoffForTests();
+              const before = warnings.length;
+              const result = await transition(operation, listing.id);
+              assert.equal(result.status, 200, `${failure} / ${operation} / ${knownDate ? "known" : "unset"}: transition must succeed despite unavailable publication cutoff`);
+              const visible = await request(base, `/beauty-jobs/${listing.id}`);
+              assert.equal(visible.status, 200, `${failure} / ${operation}: normal public visibility is preserved`);
+              assert.equal(visible.body.firstPublishedAt, knownDate?.toISOString() ?? null, `${failure} / ${operation}: preserve existing date or leave NULL`);
+              const diagnostic = warnings.slice(before).find((item) => item.event === "job-publication-cutoff-unavailable");
+              assert.equal(diagnostic?.reason, failure, `${failure} / ${operation}: diagnostic identifies the actual cause`);
+              if (failure !== "migration_row_missing") assert.equal(diagnostic?.code, failure === "ledger_missing" ? "42P01" : "42501");
+              if (operation !== "renew") {
+                const audit = await db.select().from(beautyJobModerationAuditTable).where(eq(beautyJobModerationAuditTable.listingId, listing.id));
+                assert.ok(audit.length > 0, `${failure} / ${operation}: moderation transaction and audit commit normally`);
+              }
+            }
+          }
+        } finally {
+          if (failure === "ledger_missing") await pool.query("ALTER TABLE public.publication_cutoff_ledger_fixture RENAME TO lumera_migration_ledger");
+          else if (failure === "migration_row_missing") await pool.query("UPDATE public.lumera_migration_ledger SET migration_id='000004' WHERE migration_id='cutoff_fixture_000004'");
+          else {
+            await switchPoolRole(false);
+            await pool.query("DROP OWNED BY job_publication_limited; DROP ROLE job_publication_limited");
+          }
+        }
+        assert.equal((await resolveJobPublicationCutoff())!.getTime(), Date.parse(publicationBoundary), `${failure}: restored evidence recovers without restarting`);
+      }
+
+      // The restored successful receipt is cached. Removing the table again
+      // must not affect stamping or produce another warning on any path.
+      const warmWarningCount = warnings.length;
+      await pool.query("ALTER TABLE public.lumera_migration_ledger RENAME TO publication_cutoff_ledger_fixture");
+      try {
+        for (const operation of ["single", "bulk", "renew"] as const) {
+          const listing = await insertApproved(hairCategory.id, customer.user.id, `Warm cache ${operation} ${suffix}`, {
+            moderationStatus: operation === "renew" ? "approved" : "pending",
+            expiresAt: new Date(Date.now() + (operation === "renew" ? -86400000 : 86400000)),
+          });
+          assert.equal((await transition(operation, listing.id)).status, 200, `cached cutoff / ${operation}: ledger is not read again`);
+          assert.equal(typeof (await request(base, `/beauty-jobs/${listing.id}`)).body.firstPublishedAt, "string", `cached cutoff / ${operation}: valid evidence still stamps first publication`);
+        }
+        assert.equal(warnings.length, warmWarningCount, "warm cache needs no further ledger reads or warnings");
+      } finally {
+        await pool.query("ALTER TABLE public.publication_cutoff_ledger_fixture RENAME TO lumera_migration_ledger");
+      }
+
+      resetJobPublicationCutoffForTests();
+      try {
+        await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=NULL WHERE migration_id='000004'");
+        assert.equal(await resolveJobPublicationCutoff(), null, "invalid receipt is not cached or used");
+        assert.equal(warnings.at(-1)?.reason, "migration_receipt_invalid");
+      } finally {
+        await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=$1 WHERE migration_id='000004'", [publicationBoundary]);
+      }
+      assert.equal((await resolveJobPublicationCutoff())!.getTime(), Date.parse(publicationBoundary));
     } finally {
-      await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=$1 WHERE migration_id='000004'", [publicationBoundary]);
+      logger.warn = originalWarn;
+      pool.options.options = previousConnectionOptions;
+      resetJobPublicationCutoffForTests();
     }
   } finally {
     if (originalAppBaseUrl === undefined) delete process.env["APP_BASE_URL"];

@@ -21,8 +21,8 @@ test("job first-publication HTTP lifecycle stays in the timed release chain on a
   assert.match(runner, /Math\.floor\(version \/ 10000\) !== 16/);
   assert.match(runner, /SITE_INDEXABLE: "false"/);
   assert.doesNotMatch(runner, /process\.env(?:\.DATABASE_URL|\["DATABASE_URL"\])|push-force|drizzle/);
-  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 350);
-  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 680);
+  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 355);
+  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 685);
 });
 
 test("public SEO SPA regression stays in the timed browser release phase without database setup", async () => {

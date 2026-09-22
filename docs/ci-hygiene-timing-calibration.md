@@ -86,13 +86,18 @@ from 750 to 780 seconds and
 
 The job publication task adds the existing Beauty Poslovi HTTP lifecycle suite
 to `validate:release:2-backend`, through its owned PostgreSQL 16 runner. Three
-successful local executions of the exact `pnpm run test:beauty-jobs` command,
-with `NODE_ENV=test`, `SITE_INDEXABLE=false` and `DATABASE_URL` unset, took
-27.597, 27.064 and 29.073 seconds (shell elapsed clock, launcher, migrations and
-cleanup included). The ceiling of the maximum is 30 seconds.
+successful prior warm local executions of the exact
+`pnpm run test:beauty-jobs` command, with `NODE_ENV=test`,
+`SITE_INDEXABLE=false` and `DATABASE_URL` unset, took 27.597, 27.064 and
+29.073 seconds (shell elapsed clock, launcher, migrations and cleanup
+included). Those samples do not include the independent cold-start measurement
+of 30.7 seconds reported by the user; that cold-start value was not locally
+remeasured.
 
-This is provisional local evidence, not CI history. The timed database
-phase-2 baseline increases from 320 to 350 seconds and its total from 650 to
-680 seconds. Browser budgets, warning formula and all historical observations
-above remain unchanged. The release-chain test pins the command, isolated
-runner, declared migration identity and these two budget values.
+The timed database phase-2 baseline therefore increases from 350 to 355
+seconds: the new publication step is budgeted at 35 seconds, a conservative
+rounding above the reported 30.7-second cold start. Its database total feeds
+through from 680 to 685 seconds. Browser budgets, warning formula and all
+historical observations above remain unchanged. The release-chain test pins the
+command, isolated runner, declared migration identity and these two budget
+values.

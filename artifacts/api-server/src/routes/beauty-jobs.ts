@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { resolveJobPublicationCutoff } from "../lib/job-publication-cutoff";
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable,
@@ -263,9 +264,9 @@ function salonOwnerListingVisibility(salonId: string) {
 // Evaluate against the locked/current row inside the transition UPDATE, never
 // against a stale request snapshot. Existing publication evidence is immutable.
 // Pre-migration rows keep their documented approximation: a later activation
-// cannot establish their original publication. The uncorrelated scalar uses
-// the same authoritative ledger already read by application readiness.
-function firstPublicationOnVisibility(next: {
+// cannot establish their original publication. Resolve ledger evidence before
+// beginning moderation transactions; this UPDATE only receives a bound value.
+function firstPublicationOnVisibility(cutoff: Date | null, next: {
   status?: string;
   moderationStatus?: string;
   expiresAt?: Date;
@@ -273,11 +274,7 @@ function firstPublicationOnVisibility(next: {
   const listing = beautyJobListingsTable;
   return sql`case
     when ${listing.firstPublishedAt} is null
-      and ${listing.createdAt} >= (
-        select finished_at from public.lumera_migration_ledger
-        where migration_id = '000004' and mode = 'transactional'
-          and state = 'APPLIED' and finished_at >= started_at
-      )
+      and ${listing.createdAt} >= ${cutoff?.toISOString() ?? null}::timestamptz
       and not (${listing.status} = 'active' and ${listing.moderationStatus} = 'approved' and ${listing.expiresAt} > now())
       and ${next.status ?? listing.status} = 'active'
       and ${next.moderationStatus ?? listing.moderationStatus} = 'approved'
@@ -700,9 +697,10 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
 router.post("/beauty-jobs/:listingId/renew", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const p = RenewBeautyJobParams.safeParse(req.params); if (!p.success) return bad(res); const [l] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1); if (!l || !(await canManage(user, l))) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" }); const cfg = await settings();
   const expiresAt = new Date(Date.now() + cfg.listingExpiryDays * 86400000);
+  const publicationCutoff = await resolveJobPublicationCutoff();
   const [u] = await db.update(beautyJobListingsTable).set({
     status: "active", expiresAt,
-    firstPublishedAt: firstPublicationOnVisibility({ status: "active", expiresAt }),
+    firstPublishedAt: firstPublicationOnVisibility(publicationCutoff, { status: "active", expiresAt }),
     updatedAt: new Date(),
   }).where(eq(beautyJobListingsTable.id, l.id)).returning(); await notification(user.id, "renewed", "Oglas je obnovljen", u!.title, u!.id); const salon = await ownerSalon(user); const [row] = await listingQuery({ id: user.id, salonId: salon?.id }).where(eq(beautyJobListingsTable.id, l.id)).limit(1); res.json(RenewBeautyJobResponse.parse(view({ ...row!.listing, ...row! })));
 } catch (e) { next(e); } });
@@ -1256,6 +1254,7 @@ router.post("/admin/beauty-jobs/bulk-moderation", async (req, res, next) => { tr
   if (!listingIds.every((id) => uuid.test(id)) || new Set(listingIds).size !== listingIds.length || (action === "reject" && !reason)) {
     return bad(res, action === "reject" && !reason ? "Razlog odbijanja je obavezan." : "Neispravan zahtev za grupsku moderaciju.");
   }
+  const publicationCutoff = action === "approve" ? await resolveJobPublicationCutoff() : null;
   const results = await db.transaction(async (tx) => {
     const batchResults: Array<{ id: string; status: "processed" | "not_found"; eventKey: string | null }> = [];
     // A stable lock order prevents two overlapping batches from deadlocking.
@@ -1280,7 +1279,7 @@ router.post("/admin/beauty-jobs/bulk-moderation", async (req, res, next) => { tr
         continue;
       }
       const [listing] = await tx.update(beautyJobListingsTable).set(action === "approve"
-        ? { moderationStatus: "approved", status: "active", firstPublishedAt: firstPublicationOnVisibility({ status: "active", moderationStatus: "approved" }), moderationReason: null, moderationInternalNote: internalNote, moderatedAt: new Date(), updatedAt: new Date() }
+        ? { moderationStatus: "approved", status: "active", firstPublishedAt: firstPublicationOnVisibility(publicationCutoff, { status: "active", moderationStatus: "approved" }), moderationReason: null, moderationInternalNote: internalNote, moderatedAt: new Date(), updatedAt: new Date() }
         : { moderationStatus: "rejected", status: "rejected", moderationReason: reason, moderationInternalNote: internalNote, moderatedAt: new Date(), updatedAt: new Date() },
       ).where(eq(beautyJobListingsTable.id, listingId)).returning();
       await tx.insert(beautyJobModerationAuditTable).values({ listingId, actingAdminUserId: user.id, action: action === "approve" ? "bulk_approve" : "bulk_reject", publicReason: action === "reject" ? reason : null, internalNote });
@@ -1315,6 +1314,7 @@ router.post("/admin/beauty-jobs/:listingId/moderation", async (req, res, next) =
   const internalNote = typeof rawBody.internalNote === "string" ? rawBody.internalNote.trim() || null : rawBody.internalNote === undefined ? null : undefined;
   if (!p.success || !b.success || internalNote === undefined || (internalNote && internalNote.length > 2000)) return bad(res);
   if (b.data.action === "reject" && !b.data.reason?.trim()) return res.status(400).json({ error: "Razlog odbijanja je obavezan.", code: "REJECTION_REASON_REQUIRED" });
+  const publicationCutoff = b.data.action === "approve" || b.data.action === "reactivate" ? await resolveJobPublicationCutoff() : null;
   const moderationResult = await db.transaction(async (tx) => {
     await lockBeautyJobEvent(tx, p.data.listingId);
     const [existing] = await tx.select().from(beautyJobListingsTable)
@@ -1335,7 +1335,7 @@ router.post("/admin/beauty-jobs/:listingId/moderation", async (req, res, next) =
         : existing.status !== "closed";
     const [listing] = await tx.update(beautyJobListingsTable)
       .set({ ...values, ...(b.data.action === "approve" || b.data.action === "reactivate"
-        ? { firstPublishedAt: firstPublicationOnVisibility({ status: "active", moderationStatus: "approved" }) } : {}), updatedAt: new Date() })
+        ? { firstPublishedAt: firstPublicationOnVisibility(publicationCutoff, { status: "active", moderationStatus: "approved" }) } : {}), updatedAt: new Date() })
       .where(eq(beautyJobListingsTable.id, p.data.listingId))
       .returning();
     await tx.insert(beautyJobModerationAuditTable).values({
