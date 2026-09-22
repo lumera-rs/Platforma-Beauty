@@ -1,8 +1,7 @@
 import staticPages from './src/lib/static-seo-pages.json' with { type: 'json' };
 
 export function normalizedQuery(search = '') {
-  const params = new URLSearchParams(search);
-  for (const [key, value] of [...params]) if (value === '') params.delete(key, value);
+  const params = new URLSearchParams([...new URLSearchParams(search)].filter(([, value]) => value !== ''));
   params.sort();
   return params;
 }
@@ -46,8 +45,8 @@ export function listingCanonical(pathname, search = '') {
 }
 
 export function listingIndexable(pathname, search = '') {
-  if (pathname !== '/saloni') return search.length === 0;
   const params = normalizedQuery(search);
+  if (pathname !== '/saloni') return params.size === 0;
   params.delete('pageSize');
   if (params.get('page') === '1') params.delete('page');
   params.sort();
