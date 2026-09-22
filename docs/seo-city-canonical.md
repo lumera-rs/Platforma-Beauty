@@ -18,6 +18,10 @@ non-indexable. Deployment policy remains authoritative: staging and any host
 without the exact indexability opt-in always emits `noindex, nofollow`,
 including in all SEO tests.
 
+If the public listing API is unavailable, query responses remain non-indexable
+but retain the same shared canonical decision, including city parents and
+normalized page-one/page-two URLs.
+
 ## Client navigation guard proof — 22 September 2026
 
 The existing `scripts/browser/client-seo-navigation.spec.ts` now starts on home

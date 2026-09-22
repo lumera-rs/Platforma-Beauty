@@ -368,22 +368,52 @@ test('document and app sources preserve zoom, local Inter, LCP priority, and laz
 });
 
 test('filtered query variants and protected routes are never indexable', async () => {
-  const queryResponse = await createSeoResponse(request('/saloni?city=Beograd'), template);
-  const shopQueryResponse = await createSeoResponse(request('/shop/aurora?brand=Lumera&sort=PRICE_ASC&page=2'), template);
-  const productQueryResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1?ref=campaign'), template);
-  const privateResponse = await createSeoResponse(request('/vlasnik/kontrolna-tabla'), template);
-  assert.match(queryResponse.body, /name="robots" content="noindex, nofollow"/);
-  assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni\?city=Beograd"/);
-  assert.match(shopQueryResponse.body, /name="robots" content="noindex, nofollow"/);
-  assert.match(shopQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora"/);
-  assert.match(productQueryResponse.body, /name="robots" content="noindex, nofollow"/);
-  assert.match(productQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1"/);
-  assert.match(privateResponse.body, /name="robots" content="noindex, nofollow"/);
-  assert.doesNotMatch(privateResponse.body, /rel="canonical"/);
-  assert.doesNotMatch(privateResponse.body, /<meta property="og:title"/);
-  for (const body of [queryResponse.body, shopQueryResponse.body, productQueryResponse.body]) {
-    assert.equal((body.match(/rel="canonical"/g) ?? []).length, 1);
-    if (body !== queryResponse.body) assert.doesNotMatch(body, /canonical" href="[^"]*\?/);
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('deterministic upstream outage'); };
+  try {
+    const queryResponse = await createSeoResponse(request('/saloni?city=Beograd'), template);
+    const shopQueryResponse = await createSeoResponse(request('/shop/aurora?brand=Lumera&sort=PRICE_ASC&page=2'), template);
+    const productQueryResponse = await createSeoResponse(request('/shop/aurora/proizvod/p1?ref=campaign'), template);
+    const privateResponse = await createSeoResponse(request('/vlasnik/kontrolna-tabla'), template);
+    assert.match(queryResponse.body, /name="robots" content="noindex, nofollow"/);
+    assert.match(queryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni\?city=Beograd"/);
+    assert.match(shopQueryResponse.body, /name="robots" content="noindex, nofollow"/);
+    assert.match(shopQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\?brand=Lumera&amp;page=2&amp;sort=PRICE_ASC"/);
+    assert.match(productQueryResponse.body, /name="robots" content="noindex, nofollow"/);
+    assert.match(productQueryResponse.body, /rel="canonical" href="https:\/\/lumera\.example\/shop\/aurora\/proizvod\/p1"/);
+    assert.match(privateResponse.body, /name="robots" content="noindex, nofollow"/);
+    assert.doesNotMatch(privateResponse.body, /rel="canonical"/);
+    assert.doesNotMatch(privateResponse.body, /<meta property="og:title"/);
+    for (const body of [queryResponse.body, shopQueryResponse.body, productQueryResponse.body]) {
+      assert.equal((body.match(/rel="canonical"/g) ?? []).length, 1);
+    }
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('salon query fallback retains shared canonicals during upstream rejection', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('deterministic upstream outage'); };
+  const cases = [
+    ['/saloni?page=1', '/saloni'],
+    ['/saloni?page=2', '/saloni?page=2'],
+    ['/saloni?city=Beograd', '/saloni?city=Beograd'],
+    ['/saloni?city=Beograd&page=1', '/saloni?city=Beograd'],
+    ['/saloni?city=Beograd&page=2', '/saloni?city=Beograd&page=2'],
+    ['/saloni?city=Beograd&category=Lice&page=2', '/saloni?city=Beograd'],
+    ['/saloni?category=Lice&page=2', '/saloni'],
+  ];
+  try {
+    for (const [route, canonical] of cases) {
+      const response = await createSeoResponse(request(route), template);
+      assert.equal(response.status, 200, route);
+      assert.match(response.body, /name="robots" content="noindex, nofollow"/u, route);
+      assert.ok(response.body.includes(`<link rel="canonical" href="https://lumera.example${canonical.replaceAll('&', '&amp;')}">`), route);
+      assert.equal((response.body.match(/rel="canonical"/gu) ?? []).length, 1, route);
+    }
+  } finally {
+    global.fetch = originalFetch;
   }
 });
 

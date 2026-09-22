@@ -826,7 +826,7 @@ export async function createSeoResponse(req, template) {
     // outages must never cause a private-page-looking response to be indexed.
   }
   const queryCanonical = hasQuery
-    ? `<link rel="canonical" href="${escapeHtml(`${origin}${pathname}`)}">`
+    ? `<link rel="canonical" href="${escapeHtml(`${origin}${listingCanonical(pathname, url.search)}`)}">`
     : '';
   const privateHead = `<title>LUMERA | Privatna stranica</title><meta name="description" content="${escapeHtml(fallbackDescription)}"><meta name="robots" content="noindex, follow">${queryCanonical}`;
   const fallbackDocument = hasQuery ? privateDocument(pathname, origin) : notFoundDocument(pathname, origin);
