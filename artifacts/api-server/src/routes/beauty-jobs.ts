@@ -274,11 +274,11 @@ function firstPublicationOnVisibility(cutoff: Date | null, next: {
   const listing = beautyJobListingsTable;
   return sql`case
     when ${listing.firstPublishedAt} is null
-      and ${listing.createdAt} >= ${cutoff?.toISOString() ?? null}::timestamptz
+      and ${listing.createdAt} >= ${safeIsoTimestamp(cutoff)}::timestamptz
       and not (${listing.status} = 'active' and ${listing.moderationStatus} = 'approved' and ${listing.expiresAt} > now())
       and ${next.status ?? listing.status} = 'active'
       and ${next.moderationStatus ?? listing.moderationStatus} = 'approved'
-      and ${next.expiresAt?.toISOString() ?? listing.expiresAt} > now()
+      and ${safeIsoTimestamp(next.expiresAt) ?? listing.expiresAt} > now()
     then now()
     else ${listing.firstPublishedAt}
   end`;
