@@ -1,5 +1,9 @@
 # Neon branch identity verification
 
+Historical evidence for the initial tenant/timeline implementation. The
+[follow-up report](follow-up-verification.md) supersedes its contract with
+required project/branch IDs and an optional timeline pin.
+
 Date: 2026-09-23. Branch: phase7/target-identity-neon-branch, based on current main f6e113e5.
 
 External connections were limited to the two owner-authorized test branches, inside read-only transactions. No development or production database was accessed, and no writes or migrations were run against either external branch. Regression tests created and migrated only runner-owned local disposable PostgreSQL fixtures. No deployment or publication was performed. Credential URLs are intentionally absent.

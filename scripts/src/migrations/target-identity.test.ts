@@ -12,19 +12,23 @@ import { applyMigrations, adoptBaseline } from "./runner";
 import { loadMigrations } from "./files";
 
 const expected = { databaseName: "fixture", systemIdentifier: "123", transport: "unencrypted" } as const;
-const tenantId = "0123456789abcdef0123456789abcdef";
+const projectId = "quiet-river-12345678";
+const branchId = "br-little-field-a1b2c3d4";
 const timelineId = "fedcba9876543210fedcba9876543210";
-const expectedNeon = { ...expected, neon: { tenantId, timelineId } } as const;
+const expectedNeon = { ...expected, neon: { projectId, branchId } } as const;
+const expectedNeonTimeline = { ...expected, neon: { projectId, branchId, timelineId } } as const;
 const nonNeonRow = {
   database_name: "fixture",
   system_identifier: "123",
   encrypted: false,
-  neon_tenant_id: null,
+  neon_project_id: null,
+  neon_branch_id: null,
   neon_timeline_id: null,
 };
 const neonRow = {
   ...nonNeonRow,
-  neon_tenant_id: tenantId,
+  neon_project_id: projectId,
+  neon_branch_id: branchId,
   neon_timeline_id: timelineId,
 };
 export const markerCases = [
@@ -76,26 +80,28 @@ test("identity is explicitly validated, never inferred from a URL or environment
     { ...expected, systemIdentifier: "18446744073709551616" },
     { ...expected, systemIdentifier: "1e2" }, { ...expected, transport: "verify-full" },
     { ...expected, neon: null }, { ...expected, neon: {} },
-    { ...expected, neon: { tenantId } }, { ...expected, neon: { timelineId } },
-    { ...expected, neon: { tenantId: "", timelineId } },
-    { ...expected, neon: { tenantId: tenantId.toUpperCase(), timelineId } },
-    { ...expected, neon: { tenantId, timelineId: `${timelineId}0` } }]) {
+    { ...expected, neon: { projectId } }, { ...expected, neon: { branchId } },
+    { ...expected, neon: { projectId: "", branchId } },
+    { ...expected, neon: { projectId: projectId.toUpperCase(), branchId } },
+    { ...expected, neon: { projectId, branchId: "main" } },
+    { ...expected, neon: { projectId, branchId, timelineId: `${timelineId}0` } },
+    { ...expected, neon: { projectId, branchId, tenantId: timelineId } }]) {
     assert.throws(() => validateExpectedTargetIdentity(value), /Explicit expected/u);
   }
   assert.throws(
-    () => validateExpectedTargetIdentity({ ...expected, neon: { tenantId } }),
-    /neon\.timelineId.*lowercase 32hex/u,
+    () => validateExpectedTargetIdentity({ ...expected, neon: { projectId } }),
+    /neon\.branchId/u,
   );
   assert.throws(
-    () => validateExpectedTargetIdentity({ ...expected, neon: { timelineId } }),
-    /neon\.tenantId.*lowercase 32hex/u,
+    () => validateExpectedTargetIdentity({ ...expected, neon: { branchId } }),
+    /neon\.projectId/u,
   );
   assert.throws(
-    () => validateExpectedTargetIdentity({ ...expected, neon: { tenantId: "bad", timelineId } }),
-    /neon\.tenantId.*lowercase 32hex/u,
+    () => validateExpectedTargetIdentity({ ...expected, neon: { projectId: "bad", branchId } }),
+    /neon\.projectId/u,
   );
   assert.throws(
-    () => validateExpectedTargetIdentity({ ...expected, neon: { tenantId, timelineId: "bad" } }),
+    () => validateExpectedTargetIdentity({ ...expected, neon: { projectId, branchId, timelineId: "bad" } }),
     /neon\.timelineId.*lowercase 32hex/u,
   );
   assert.throws(() => parseMigrationCliOptions(["apply", "--database-url=postgres://local/db", "--confirm"]), /Explicit target identity/u);
@@ -106,21 +112,32 @@ test("identity is explicitly validated, never inferred from a URL or environment
 
 test("Neon CLI identity flags are paired, validated, and reject duplicates", () => {
   const args = ["--expected-database=fixture", "--expected-system-identifier=123", "--expected-transport=unencrypted"];
-  const tenantFlag = `--expected-neon-tenant-id=${tenantId}`;
+  const projectFlag = `--expected-neon-project-id=${projectId}`;
+  const branchFlag = `--expected-neon-branch-id=${branchId}`;
   const timelineFlag = `--expected-neon-timeline-id=${timelineId}`;
-  assert.deepEqual(parseExpectedTargetIdentity([...args, tenantFlag, timelineFlag]), expectedNeon);
-  for (const flag of ["--expected-neon-tenant-id", "--expected-neon-timeline-id"]) {
+  assert.deepEqual(parseExpectedTargetIdentity([...args, projectFlag, branchFlag]), expectedNeon);
+  assert.deepEqual(parseExpectedTargetIdentity([...args, projectFlag, branchFlag, timelineFlag]), expectedNeonTimeline);
+  for (const flag of ["--expected-neon-project-id", "--expected-neon-branch-id", "--expected-neon-timeline-id"]) {
     assert.throws(() => parseExpectedTargetIdentity([...args, flag]), /=VALUE syntax/u);
     assert.throws(() => parseMigrationCliOptions(["status", "--database-url=postgres://local/db", flag]), /status does not verify/u);
   }
-  assert.throws(() => parseMigrationCliOptions(["status", "--database-url=postgres://local/db", tenantFlag, timelineFlag]), /status does not verify/u);
-  assert.throws(() => parseExpectedTargetIdentity([...args, tenantFlag]), /both .*tenant.*timeline/iu);
-  assert.throws(() => parseExpectedTargetIdentity([...args, timelineFlag]), /both .*tenant.*timeline/iu);
-  assert.throws(() => parseExpectedTargetIdentity([...args, tenantFlag, tenantFlag, timelineFlag]), /at most one/iu);
-  assert.throws(() => parseExpectedTargetIdentity([...args, tenantFlag, timelineFlag, timelineFlag]), /at most one/iu);
+  assert.throws(() => parseMigrationCliOptions(["status", "--database-url=postgres://local/db", projectFlag, branchFlag]), /status does not verify/u);
+  assert.throws(() => parseExpectedTargetIdentity([...args, projectFlag]), /both .*project.*branch/iu);
+  assert.throws(() => parseExpectedTargetIdentity([...args, branchFlag]), /both .*project.*branch/iu);
+  assert.throws(() => parseExpectedTargetIdentity([...args, timelineFlag]), /project and branch/iu);
+  assert.throws(() => parseExpectedTargetIdentity([...args, projectFlag, projectFlag, branchFlag]), /at most one/iu);
+  assert.throws(() => parseExpectedTargetIdentity([...args, projectFlag, branchFlag, branchFlag]), /at most one/iu);
+  assert.throws(() => parseExpectedTargetIdentity([...args, projectFlag, branchFlag, timelineFlag, timelineFlag]), /at most one/iu);
   assert.throws(() => parseExpectedTargetIdentity([
-    ...args, "--expected-neon-tenant-id=ABC", timelineFlag,
-  ]), /neon\.tenantId.*lowercase 32hex/u);
+    ...args, "--expected-neon-project-id=ABC", branchFlag,
+  ]), /neon\.projectId/u);
+  for (const oldTenantFlag of ["--expected-neon-tenant-id", `--expected-neon-tenant-id=${timelineId}`]) {
+    assert.throws(() => parseExpectedTargetIdentity([...args, oldTenantFlag]), /no longer supported/u);
+    assert.throws(
+      () => parseMigrationCliOptions(["status", "--database-url=postgres://local/db", oldTenantFlag]),
+      /status does not verify/u,
+    );
+  }
 });
 
 test("identity evidence fails closed on every mismatch and unavailable backend evidence", async () => {
@@ -138,42 +155,55 @@ test("identity evidence fails closed on every mismatch and unavailable backend e
   await assert.rejects(() => assertTargetIdentity({ async query() { throw new Error("permission denied"); } }, expected), /indeterminate/u);
 });
 
-test("Neon identity requires and matches the canonical tenant and timeline pair", async () => {
+test("Neon identity requires project and branch while timeline is optional", async () => {
   await assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, expectedNeon);
+  await assertTargetIdentity({ async query() {
+    return { rows: [{ ...neonRow, neon_timeline_id: null }] };
+  } }, expectedNeon);
+  await assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, expectedNeonTimeline);
   await assert.rejects(
     () => assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, expected),
-    /mismatch: neon\.tenantId.*required/u,
+    /mismatch: neon\.projectId.*required/u,
   );
   await assert.rejects(
     () => assertTargetIdentity({ async query() { return { rows: [nonNeonRow] }; } }, expectedNeon),
-    /mismatch: neon\.tenantId/u,
+    /mismatch: neon\.projectId/u,
   );
   await assert.rejects(
     () => assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, {
-      ...expectedNeon, neon: { tenantId, timelineId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      ...expectedNeon, neon: { projectId, branchId, timelineId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
     }),
     /mismatch: neon\.timelineId/u,
   );
   await assert.rejects(
     () => assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, {
-      ...expectedNeon, neon: { tenantId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", timelineId },
+      ...expectedNeon, neon: { projectId: "other-project-12345678", branchId },
     }),
-    /mismatch: neon\.tenantId/u,
+    /mismatch: neon\.projectId/u,
+  );
+  await assert.rejects(
+    () => assertTargetIdentity({ async query() { return { rows: [neonRow] }; } }, {
+      ...expectedNeon, neon: { projectId, branchId: "br-other-field-a1b2c3d4" },
+    }),
+    /mismatch: neon\.branchId/u,
   );
 });
 
 test("incomplete, malformed, or absent Neon backend evidence is field-specifically indeterminate", async () => {
-  for (const [row, field] of [
-    [{ ...neonRow, neon_tenant_id: null }, "tenantId"],
-    [{ ...neonRow, neon_tenant_id: undefined }, "tenantId"],
-    [{ ...neonRow, neon_tenant_id: tenantId.toUpperCase() }, "tenantId"],
-    [{ ...neonRow, neon_timeline_id: null }, "timelineId"],
-    [{ ...neonRow, neon_timeline_id: undefined }, "timelineId"],
-    [{ ...neonRow, neon_timeline_id: "short" }, "timelineId"],
-    [{ database_name: "fixture", system_identifier: "123", encrypted: false }, "tenantId"],
+  for (const [row, field, declaration] of [
+    [{ ...neonRow, neon_project_id: null }, "projectId", expectedNeon],
+    [{ ...neonRow, neon_project_id: undefined }, "projectId", expectedNeon],
+    [{ ...neonRow, neon_project_id: projectId.toUpperCase() }, "projectId", expectedNeon],
+    [{ ...neonRow, neon_branch_id: null }, "branchId", expectedNeon],
+    [{ ...neonRow, neon_branch_id: undefined }, "branchId", expectedNeon],
+    [{ ...neonRow, neon_branch_id: "main" }, "branchId", expectedNeon],
+    [{ ...neonRow, neon_timeline_id: null }, "timelineId", expectedNeonTimeline],
+    [{ ...neonRow, neon_timeline_id: undefined }, "timelineId", expectedNeon],
+    [{ ...neonRow, neon_timeline_id: "short" }, "timelineId", expectedNeon],
+    [{ database_name: "fixture", system_identifier: "123", encrypted: false }, "projectId", expectedNeon],
   ] as const) {
     await assert.rejects(
-      () => assertTargetIdentity({ async query() { return { rows: [row] }; } }, expectedNeon),
+      () => assertTargetIdentity({ async query() { return { rows: [row] }; } }, declaration),
       new RegExp(`indeterminate: .*neon\\.${field}`, "u"),
     );
   }
@@ -187,8 +217,11 @@ test("identity verification performs exactly one read-only SELECT", async () => 
   } }, expectedNeon);
   assert.equal(statements.length, 1);
   assert.match(statements[0]!, /^\s*SELECT\b/u);
-  assert.match(statements[0]!, /current_setting\('neon\.tenant_id', true\)/u);
+  assert.match(statements[0]!, /current_setting\('neon\.project_id', true\)/u);
+  assert.match(statements[0]!, /current_setting\('neon\.branch_id', true\)/u);
   assert.match(statements[0]!, /current_setting\('neon\.timeline_id', true\)/u);
+  assert.equal(statements[0]!.match(/current_setting\(/gu)?.length, 3);
+  assert.doesNotMatch(statements[0]!, /neon\.tenant_id/u);
   assert.doesNotMatch(statements[0]!, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|LOCK|BEGIN)\b/u);
 });
 
@@ -198,7 +231,7 @@ test("apply and adoption identity refusal happens before any lock or bookkeeping
       [{ ...nonNeonRow, database_name: "other" }, expected],
       [nonNeonRow, expectedNeon],
       [neonRow, expected],
-      [neonRow, { ...expectedNeon, neon: { tenantId, timelineId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } }],
+      [neonRow, { ...expectedNeon, neon: { projectId, branchId: "br-other-field-a1b2c3d4" } }],
     ] as const) {
     const statements: string[] = [];
     const client = { async query(sql: string) {
@@ -232,7 +265,8 @@ test("narrowed and empty manifests always verify identity before branching or bo
             database_name: fault === "name" ? "wrong" : "fixture",
             system_identifier: fault === "system" ? "124" : "123",
             encrypted: fault === "transport",
-            neon_tenant_id: null,
+            neon_project_id: null,
+            neon_branch_id: null,
             neon_timeline_id: null,
           }] };
         } };

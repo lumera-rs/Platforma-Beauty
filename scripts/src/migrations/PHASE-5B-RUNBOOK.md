@@ -62,39 +62,69 @@ Neon branches can share all three declarations above. For a Neon-hosted target,
 also supply both of these explicitly approved declarations:
 
 ```text
---expected-neon-tenant-id=<32 lowercase hexadecimal characters>
---expected-neon-timeline-id=<32 lowercase hexadecimal characters>
+--expected-neon-project-id=<approved project id>
+--expected-neon-branch-id=<approved br-... branch id>
 ```
 
 The additive programmatic shape is
-`{ databaseName, systemIdentifier, transport, neon: { tenantId, timelineId } }`.
-The tenant and timeline come from the actual `neon.tenant_id` and
-`neon.timeline_id` settings. The observed provider also exposes `neon.branch_id`;
-its console branch identifier is distinct from the timeline value. The chosen
-tenant/timeline pair identifies the storage timeline, not a compute endpoint.
-Approve the intended pair independently before a migration; reading whichever
-candidate URL was supplied and automatically trusting its pair would defeat the
-wrong-target safeguard.
+`{ databaseName, systemIdentifier, transport, neon: { projectId, branchId, timelineId? } }`.
+The required pair is checked against `neon.project_id` and `neon.branch_id`.
+An optional `--expected-neon-timeline-id=<32 lowercase hexadecimal characters>`
+adds an exact timeline check; omitting it does not require a timeline match.
+The old tenant flag is not a substitute for the required pair.
 
-The existing single identity SELECT reads both values using
+Obtain the expected project and branch IDs independently of the target SQL
+connection, using an authenticated Neon control-plane account:
+
+- Console URL: open the intended project and branch. The project route contains
+  `/app/projects/<project_id>` and its branch route contains
+  `/branches/<branch_id>`. Copy IDs, not display names or compute endpoint IDs.
+- Console branch page: select the intended project, open **Branches**, and
+  confirm the selected branch's ID and project before approving the target.
+- API: authenticated `GET https://console.neon.tech/api/v2/projects` lists project
+  IDs; `GET https://console.neon.tech/api/v2/projects/<project_id>/branches`
+  returns branch objects whose `id` is the required `br-...` identifier.
+- CLI: `neonctl projects list` and
+  `neonctl branches list --project-id <project_id> --output json` provide the
+  same independent identifiers. Current Neon CLI documentation uses the
+  `neon` executable name for these commands; use the installed CLI's name.
+
+Approve and record these values before connecting the migration runner. Reading
+whichever candidate SQL URL was supplied and automatically trusting its pair
+would defeat the wrong-target safeguard. A same-connection observation in a
+regression proof is deliberately a test fixture, not an operator approval flow.
+
+A point-in-time restore of an existing branch keeps that branch's ID. The backup
+branch Neon creates has a different branch ID and is rejected by the original
+declaration. The underlying timeline can change: if an optional timeline pin
+was approved, a restore can invalidate it and requires a separately approved
+replacement. Do not silently recapture it from a candidate target.
+See [instant restore](https://neon.com/docs/introduction/branch-restore),
+[CLI branches](https://neon.com/docs/cli/branches), and
+[branching API](https://neon.com/docs/guides/branching-neon-api).
+
+The existing single identity SELECT reads the required pair and optional timeline using
 `pg_catalog.current_setting('<setting name>', true)` on the same connected
 backend. There is no additional round trip, schema object, or migration.
-If both values are NULL, the target retains the existing non-Neon checks and
+If all queried Neon values are NULL, the target retains the existing non-Neon checks and
 must not receive a supplied Neon discriminator. This preserves the non-Neon
-Replit/Helium and disposable PostgreSQL paths. If either value is present, both
-must be valid and both must exactly match the caller's supplied pair. Missing,
+Replit/Helium and disposable PostgreSQL paths. If Neon evidence is present, both
+required values must be valid and exactly match the caller's supplied pair. Missing,
 partial, malformed, or mismatched evidence fails closed with the affected
-`neon.tenantId` or `neon.timelineId` named in the error. Supplied declarations
+`neon.projectId`, `neon.branchId`, or the optional `neon.timelineId` named in the error. Supplied declarations
 are never ignored.
 
-Read-only tests on two externally owned Neon branches confirmed equal database
-names and system identifiers but different timelines. The first branch accepted
-its own pair and rejected the second branch's pair without changing connections.
-The [verification report](../../../docs/neon-target-identity/verification.md)
-contains the complete observed settings and test evidence.
+The [original verification report](../../../docs/neon-target-identity/verification.md)
+preserves the historical tenant/timeline implementation evidence.
+The [follow-up verification report](../../../docs/neon-target-identity/follow-up-verification.md)
+records project/branch evidence, setting context/source, override attempts,
+and direct/pooled identity proofs for the operator-verifiable contract.
 
 This discriminator is not cryptographic server authentication and does not
 replace verified transport or independently trusted provisioning evidence.
+On non-Neon PostgreSQL, a database owner can define custom `neon.*` values;
+those strings prove nothing about provider identity there. Do not treat
+Neon-shaped settings on an arbitrary server as proof that the server is Neon.
 **This change does not authorize a Neon-hosted database for production.**
 That requires a separate decision and all existing authorization gates.
 

@@ -251,7 +251,7 @@ test("production runtime guard rejects after identity verification and before mu
       queryCount += 1;
       return { rows: [{
         database_name: "fixture", system_identifier: "123", encrypted: false,
-        neon_tenant_id: null, neon_timeline_id: null,
+        neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
       }] };
     },
   };

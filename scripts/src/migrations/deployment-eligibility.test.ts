@@ -176,7 +176,7 @@ test("supported runner rejects invalid ledger metadata before BEGIN or ledger DD
   const client = fakeClient((sql) => {
     if (sql.includes("pg_control_system")) return [{
       database_name: "fixture", system_identifier: "123", encrypted: false,
-      neon_tenant_id: null, neon_timeline_id: null,
+      neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
     }];
     if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
     if (sql.includes("pg_advisory_unlock")) return [{ unlocked: true }];
@@ -231,7 +231,7 @@ test("admission-contract adoption refuses deployment runtime after identity and 
       statements.push(sql);
       return { rows: [{
         database_name: "fixture", system_identifier: "123", encrypted: false,
-        neon_tenant_id: null, neon_timeline_id: null,
+        neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
       }] };
     },
   } as DatabaseClient;

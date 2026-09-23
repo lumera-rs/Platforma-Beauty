@@ -97,7 +97,7 @@ function failureClient(options: FailureClientOptions = {}) {
     async query(sql: string) {
       if (sql.includes("pg_control_system")) return { rows: [{
         database_name: "fixture", system_identifier: "123", encrypted: false,
-        neon_tenant_id: null, neon_timeline_id: null,
+        neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
       }] };
       if (sql.includes("pg_try_advisory_lock")) return { rows: [{ locked: true }] };
       if (sql.includes("pg_advisory_unlock")) {
