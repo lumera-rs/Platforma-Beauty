@@ -142,3 +142,4 @@
 - [SSR robots authority](ssr-robots-authority.md) — transient client failures cannot overturn server indexing evidence; test real wiring separately from staging overrides.
 - [Job publication legacy boundary](job-publication-legacy-boundary.md) — old empty dates remain approximations; later activation must not invent an original publication date.
 - [Cover-description browser triage](cover-description-browser-triage.md) — use visible form prerequisites, reload round-trips, managed media, and moderation before public metadata checks.
+- [Browser storage stub isolation](browser-storage-stub-isolation.md) — absent storage settings do not mean the local sidecar port is free; browser-signed uploads also require preflight CORS.

@@ -33,7 +33,10 @@ export class ReplitObjectStorage implements ObjectStorage {
 
   private async sign(storagePath: string, method: "DELETE" | "GET" | "PUT", ttlSeconds: number): Promise<string> {
     const { bucketName, objectName } = rawObjectParts(privateObjectPath(storagePath, this.environment));
-    const response = await this.fetchImplementation("http://127.0.0.1:1106/object-storage/signed-object-url", {
+    const sidecar = this.environment.NODE_ENV === "test" && this.environment.LUMERA_DISPOSABLE_DATABASE
+      ? this.environment.LUMERA_TEST_OBJECT_STORAGE_STUB_URL ?? "http://127.0.0.1:1106"
+      : "http://127.0.0.1:1106";
+    const response = await this.fetchImplementation(`${sidecar}/object-storage/signed-object-url`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

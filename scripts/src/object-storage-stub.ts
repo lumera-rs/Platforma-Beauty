@@ -14,10 +14,11 @@
  * Replit-only.
  *
  * Deliberate boundaries:
- *  - lives entirely in scripts/ (test/CI infrastructure); no production file
- *    imports it and no production code path, URL or configuration changes
- *  - starts only when nothing is already listening on the sidecar port, so a
- *    real Replit sidecar always wins and Replit runs are untouched
+ *  - lives entirely in scripts/ (test/CI infrastructure); production code
+ *    never imports it, and the sidecar override is limited to disposable tests
+ *  - uses the real sidecar when storage is configured; if configuration is
+ *    absent but the sidecar port is occupied, binds an ephemeral local port
+ *    and tells only disposable test servers to use it
  *  - never sets PRIVATE_OBJECT_DIR when the environment already provides one
  *  - stores real bytes and serves them back, so request -> upload -> finalize
  *    runs for real: the application still validates the upload ticket, image
@@ -34,6 +35,7 @@ import { randomUUID } from "node:crypto";
 export const OBJECT_STORAGE_SIDECAR_PORT = 1106;
 const SIDECAR_HOST = "127.0.0.1";
 const BLOB_PREFIX = "/__stub-object/";
+const STUB_URL_ENVIRONMENT_KEY = "LUMERA_TEST_OBJECT_STORAGE_STUB_URL";
 
 type StoredObject = { bytes: Buffer; contentType: string };
 type SignedGrant = { key: string; method: string; expiresAt: number };
@@ -68,13 +70,13 @@ function readBody(request: import("node:http").IncomingMessage): Promise<Buffer>
   });
 }
 
-function createStubServer(): Server {
+function createStubServer(port: () => number): Server {
   const objects = new Map<string, StoredObject>();
   const grants = new Map<string, SignedGrant>();
 
   return createServer((request, response) => {
     void (async () => {
-      const url = new URL(request.url ?? "/", `http://${SIDECAR_HOST}:${OBJECT_STORAGE_SIDECAR_PORT}`);
+      const url = new URL(request.url ?? "/", `http://${SIDECAR_HOST}:${port()}`);
 
       // 1. The signing contract the application calls.
       if (request.method === "POST" && url.pathname === "/object-storage/signed-object-url") {
@@ -97,12 +99,25 @@ function createStubServer(): Server {
           expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 60_000,
         });
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ signed_url: `http://${SIDECAR_HOST}:${OBJECT_STORAGE_SIDECAR_PORT}${BLOB_PREFIX}${token}` }));
+        response.end(JSON.stringify({ signed_url: `http://${SIDECAR_HOST}:${port()}${BLOB_PREFIX}${token}` }));
         return;
       }
 
       // 2. The signed URL itself. Only a matching, unexpired grant is honoured.
       if (url.pathname.startsWith(BLOB_PREFIX)) {
+        // Browser uploads use a cross-origin PUT, so Chromium preflights the
+        // signed URL before it can send any image bytes.
+        const corsHeaders = {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "PUT, GET, DELETE, OPTIONS",
+          "access-control-allow-headers": "Content-Type",
+          "access-control-allow-private-network": "true",
+        };
+        if (request.method === "OPTIONS") {
+          response.writeHead(204, corsHeaders).end();
+          return;
+        }
+        for (const [name, value] of Object.entries(corsHeaders)) response.setHeader(name, value);
         const grant = grants.get(url.pathname.slice(BLOB_PREFIX.length));
         if (!grant) {
           response.writeHead(403).end("unknown or already-consumed signature");
@@ -156,32 +171,40 @@ function createStubServer(): Server {
 }
 
 /**
- * Starts the stub only when no App Storage sidecar is already listening.
+ * Starts the stub only when configured real App Storage is unavailable.
  *
- * On Replit the real sidecar answers on this port, so this is a no-op and the
- * suite keeps talking to real App Storage with the platform's own
- * PRIVATE_OBJECT_DIR.
+ * On Replit the configured real sidecar remains untouched. A CI-like test run
+ * with storage settings removed can still use this stub even if the Replit
+ * sidecar is running: the test server alone receives its alternate URL.
  */
 export async function startObjectStorageStubIfAbsent(): Promise<ObjectStorageStub> {
-  if (await isPortListening(OBJECT_STORAGE_SIDECAR_PORT, SIDECAR_HOST)) {
+  const sidecarPresent = await isPortListening(OBJECT_STORAGE_SIDECAR_PORT, SIDECAR_HOST);
+  if (sidecarPresent && process.env.PRIVATE_OBJECT_DIR) {
     return { environment: {}, started: false, close: async () => {} };
   }
 
-  const server = createStubServer();
+  let port = sidecarPresent ? 0 : OBJECT_STORAGE_SIDECAR_PORT;
+  const server = createStubServer(() => port);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(OBJECT_STORAGE_SIDECAR_PORT, SIDECAR_HOST, resolve);
+    server.listen(port, SIDECAR_HOST, resolve);
   });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Could not determine the object storage stub port.");
+  }
+  port = address.port;
   console.log(
-    `App Storage sidecar stub listening on ${SIDECAR_HOST}:${OBJECT_STORAGE_SIDECAR_PORT} ` +
-      "(no real sidecar found; media assertions run against our own integration contract).",
+    `App Storage sidecar stub listening on ${SIDECAR_HOST}:${port} ` +
+      "(real storage is unavailable to this test; media assertions use the stub).",
   );
 
   return {
-    // Only supplied because no real App Storage is present; never overrides one.
-    environment: process.env.PRIVATE_OBJECT_DIR
-      ? {}
-      : { PRIVATE_OBJECT_DIR: "/lumera-ci-object-storage/private" },
+    environment: {
+      [STUB_URL_ENVIRONMENT_KEY]: `http://${SIDECAR_HOST}:${port}`,
+      ...(process.env.PRIVATE_OBJECT_DIR ? {} : { PRIVATE_OBJECT_DIR: "/lumera-ci-object-storage/private" }),
+    },
     started: true,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
