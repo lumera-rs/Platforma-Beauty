@@ -847,3 +847,69 @@ were modified.
 Validation passed all 13 documentation tests and both documentation validators.
 The final census matches all 158 current hashes, and both historical object
 blocks remain raw-byte-identical to `origin/main`. `git diff --check` passed.
+
+## Task 4 external database — protected current-source amendments
+
+Authority: the owner's explicit Task 4 instruction to complete the full
+protected-document census, amend only branch-changed current-source entries,
+carry the nested manifest cascade, and preserve historical bytes. Source was
+declared frozen before this census. The branch is `phase7/external-database`;
+the pre-amendment HEAD and `origin/main` comparison point are both
+`397670ef781e9a21d7f63cbac2881c857ce07d38`.
+
+Before manifest edits, every current entry was independently SHA-256 hashed:
+all 73 diagnostic `currentInputs` entries and all 85 execution-plan `files`
+entries. Exactly four entries drifted, representing the same two protected
+source files in both manifests. Both files differ from `origin/main`; no
+unchanged-file drift was present.
+
+### Complete source-amendment table
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `currentInputs` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` | `ac91ce554de4001c6572f46220684b1b7df44e573f86349fe77ff957731b6faf` |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `711a76f7f2c5b028f3f9fcf4f151d32a9a1b33db2e5eb28d905982e318842470` | `52aca56792e3d608f64a53a5e3dbdab6d02f887c1dea3bc3170ecd8cd9754722` |
+| Execution | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `files` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` | `ac91ce554de4001c6572f46220684b1b7df44e573f86349fe77ff957731b6faf` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `711a76f7f2c5b028f3f9fcf4f151d32a9a1b33db2e5eb28d905982e318842470` | `52aca56792e3d608f64a53a5e3dbdab6d02f887c1dea3bc3170ecd8cd9754722` |
+
+The runbook change limits the previously recorded restore observation to the
+Neon root branch and states that child branches do not support point-in-time
+restore. The CLI change rejects unrecognized `--expected-*` target-identity
+flags. These are already-frozen branch source changes; this documentation batch
+does not edit their bytes.
+
+### Dependent diagnostic-manifest cascade
+
+The execution-plan entry for the diagnostic manifest matched before this batch.
+After both diagnostic current-source replacements were final, the diagnostic
+manifest was rehashed and the authorized enclosing entry was amended:
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `f3cc0da821e992ce133aa14227bd739bd3c5fb7a3a05a8aa5d5cea85c8980c42` | `33dba74c15c296eb85aa55fe0684dc493fa36dfa2f1a46216924fe35b130912e` |
+
+This batch therefore amends exactly five current-tier hashes: two diagnostic,
+the same two execution source entries, and one execution cascade entry.
+
+Both complete 73-entry historical objects were extracted as raw bytes and
+compared directly with `git show origin/main:...`; both are byte-identical.
+Each object is 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`.
+All 146 historical values were also checked against the corresponding file
+bytes at pinned commit `b8f30561`. No historical hash, path inventory, pin,
+SQL, validator, source file, database, secret, deployment, or workflow is
+amended by this documentation batch.
+
+The final complete census has zero residual drift across all 158 current
+entries. Final manifest SHA-256 values are
+`33dba74c15c296eb85aa55fe0684dc493fa36dfa2f1a46216924fe35b130912e`
+for the diagnostic manifest and
+`7ab6e77bff13725c3dc42302ccb91804337e1205ec497577f5eb80d5c4a764a6`
+for the execution-plan manifest.
+
+After the final root-script freeze, documentation validation passed both
+validators: 114 diagnostic exact-rule negative cases and 65 execution negative
+fixtures. All 13 regression tests passed with zero failures, cancellations, or
+skips. `git diff --check` passed for the owned documentation files. The new root
+integration script and the final duplicate-`?host=` runtime fix are outside the
+protected inventories and required no additional manifest amendment.
