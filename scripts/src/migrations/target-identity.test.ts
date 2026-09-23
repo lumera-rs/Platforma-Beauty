@@ -140,6 +140,46 @@ test("Neon CLI identity flags are paired, validated, and reject duplicates", () 
   }
 });
 
+test("Neon CLI identity flags accept only their exact bare or equals forms", () => {
+  const args = ["--expected-database=fixture", "--expected-system-identifier=123", "--expected-transport=unencrypted"];
+  const validFlags = [
+    `--expected-neon-project-id=${projectId}`,
+    `--expected-neon-branch-id=${branchId}`,
+    `--expected-neon-timeline-id=${timelineId}`,
+  ];
+  assert.deepEqual(parseExpectedTargetIdentity([...args, ...validFlags]), expectedNeonTimeline);
+
+  const sentinel = "RECOGNIZABLE-SENTINEL";
+  for (const flag of [
+    "--expected-neon-project-id",
+    "--expected-neon-branch-id",
+    "--expected-neon-timeline-id",
+    "--expected-neon-tenant-id",
+  ]) {
+    for (const suffix of [
+      `:${sentinel}`,
+      `,${sentinel}`,
+      `@${sentinel}`,
+      `/${sentinel}`,
+      `-suffix=${sentinel}`,
+    ]) {
+      const malformed = `${flag}${suffix}`;
+      for (const [parse, position] of [
+        [() => parseExpectedTargetIdentity([...args, malformed]), 4],
+        [() => parseMigrationCliOptions(["status", "--database-url=postgres://local/db", malformed], {}), 3],
+      ] as const) {
+        assert.throws(parse, (error: unknown) => {
+          assert(error instanceof Error);
+          assert.equal(error.message, `Unrecognised --expected- argument at position ${position}`);
+          assert.doesNotMatch(error.message, new RegExp(sentinel));
+          assert.doesNotMatch(error.message, /--expected-neon/u);
+          return true;
+        });
+      }
+    }
+  }
+});
+
 test("unknown expected identity diagnostics never echo any part of the argument", () => {
   const sentinel = "RECOGNIZABLE-SENTINEL";
   for (const unknown of [

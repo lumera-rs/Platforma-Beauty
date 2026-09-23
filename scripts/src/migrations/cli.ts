@@ -16,8 +16,10 @@ const expectedTargetIdentityFlags = new Set([
 function rejectUnknownExpectedTargetIdentityFlags(argv: readonly string[]): void {
   for (const [index, item] of argv.entries()) {
     if (!item.startsWith("--expected-")) continue;
-    const flag = item.split(/[=:]/u, 1)[0]!;
-    if (!expectedTargetIdentityFlags.has(flag)) {
+    const recognised = [...expectedTargetIdentityFlags].some(
+      (flag) => item === flag || item.startsWith(`${flag}=`),
+    );
+    if (!recognised) {
       throw new Error(`Unrecognised --expected- argument at position ${index + 1}`);
     }
   }

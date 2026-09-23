@@ -16,3 +16,15 @@ New CI checks must enter the timed-phase contract, not run as unprotected siblin
 **How to apply:** Add the phase, its expected command, and its budget together without weakening existing assertions. When no runner samples exist, label measured local calibration as provisional rather than claiming historical CI evidence.
 
 Related: [CI history ordering](ci-history-ordering.md) explains why history must be sorted before applying the report limit.
+
+For measured additive checks, use the largest successful sample for each command across the cited runs, round each upward, then sum the additions.
+
+**Why:** Picking only one run understated the new checks' cost; a failed aggregate job does not invalidate earlier successful command measurements, but is not a successful whole-phase sample.
+
+**How to apply:** Cite both raw per-command samples and distinguish them from aggregate phase status.
+
+CI compatibility evidence must cover the entire changed job in a clean CI-equivalent environment, not only the originally failing test.
+
+**Why:** Earlier failures masked later lifecycle registry failures; workspace-only fixture markers concealed CI differences.
+
+**How to apply:** Preserve every step result and cleanup evidence; an interrupted run is not a complete-job pass.

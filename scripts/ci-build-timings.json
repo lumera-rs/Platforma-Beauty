@@ -24,9 +24,9 @@
     "validate:ci:build:total": 270,
     "database:test:monitoring": 90,
     "database:test:backend-standards:static": 30,
-    "database:release:2-backend": 366,
+    "database:release:2-backend": 368,
     "database:release:3-api": 320,
-    "validate:ci:database:total": 696,
+    "validate:ci:database:total": 698,
     "browser:release:4-isolated": 650,
     "browser:release:5-final": 290,
     "validate:ci:browser:total": 935

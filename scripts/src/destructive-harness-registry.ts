@@ -117,6 +117,13 @@ export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistra
     guardContract: "typescript",
   },
   {
+    name: "external database pool integration",
+    sourcePath: "scripts/src/external-database-pool.integration.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
     name: "admin summary",
     sourcePath: "artifacts/api-server/src/lib/admin-summary.test.ts",
     launch: "tsx",
@@ -140,6 +147,13 @@ export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistra
   {
     name: "final booking hardening",
     sourcePath: "artifacts/api-server/src/lib/final-booking-hardening.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "HTTP security hardening",
+    sourcePath: "artifacts/api-server/src/lib/http-security-hardening.test.ts",
     launch: "tsx",
     verifyAllowed: false,
     guardContract: "typescript",

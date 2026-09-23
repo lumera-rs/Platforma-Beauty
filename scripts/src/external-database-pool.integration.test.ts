@@ -3,6 +3,9 @@ import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import test from "node:test";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+
+assertDestructiveTestRuntimeAllowed(process.env, "External database pool integration tests");
 
 type HeldClient = {
   query: (sql: string) => Promise<{ rows: Array<Record<string, unknown>> }>;

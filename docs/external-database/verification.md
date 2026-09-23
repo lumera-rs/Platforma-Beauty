@@ -250,32 +250,36 @@ entries matched that snapshot; both historical tiers remained
 raw-byte-identical to `origin/main`. Complete hashes for that historical batch
 are recorded in `../production-evidence-execution-plan/provenance.md`.
 
-## Second-correction verification pending
+## Third-correction final verification
 
-The shared destructive-target guard correction and its final CLI/source state
-postdate the historical results above. Current completed second-correction
-evidence is:
+The shared destructive-target guard correction, registry completion, and final
+CLI/source state postdate the historical results above. Completed focused,
+aggregate, clean-CI, and protected-census evidence is listed below:
 
 | Check | Result |
 |---|---|
-| Generic unknown expected-argument CLI coverage | 12 passed; unrecognized `--expected-*` spellings report `Unrecognized --expected- argument at position N` |
-| Shared destructive-target guard | 11 passed |
+| Generic unknown expected-argument CLI coverage | 13 passed; unrecognised `--expected-*` spellings report the exact implementation text `Unrecognised --expected- argument at position N` |
+| Shared destructive-target guard | The focused shared-guard file passed 9 tests. The reported 11-test combined evidence consists of those 9 shared-guard tests plus the 2 destructive-runner tests; it is not an 11-test count for the shared guard alone. |
 | HTTP security fixture | Passed with `CI=true`, `NODE_ENV=test`, owned database name `lumera_ci_database`, and the private fixture marker unset |
 | HTTP target-boundary regressions | The normal owned disposable target passed; a non-disposable target was refused before application import/connection |
-| Full Phase 5 integration | 101 passed, 0 failed, 0 skipped; owned cluster removed cleanly |
-| Shared redacted child-output helper | Moved to `lib/db`, exported by `@workspace/db`, and re-exported for existing scripts callers; API and scripts TypeScript checks passed |
+| Full Phase 5 integration | Final current-source rerun passed all 101 tests across 11 suites and 12 files, with 0 failures and 0 skips; PostgreSQL 16 used loopback on a non-default port, the owned cluster was removed, `error` is `null`, and `cleanupErrors` is empty. The manifest is `.local/pr40-third-phase5-final/phase5-integration-manifest.json`. |
+| Destructive-harness registry mutations | Both guard-removal mutations were rejected: removing the shared guard call from either registered test failed the registry contract. Both registrations remained present; final source retains both guards. |
+| Clean CI database preparation and Phases 2–3 | All 66 manifest steps passed with exit code 0. The lifecycle step passed 37 tests in approximately 675 seconds (677-second enclosing step). The manifest environment and every step command, exit code, and duration are recorded in [CI database job verification](ci-database-job-verification.md). |
+| Shared redacted child-output helper | Implemented at `lib/db/src/safe-child-process-output.ts`, exported as the real `@workspace/db/safe-child-process-output` package subpath, and re-exported for existing scripts callers; API and scripts TypeScript checks passed |
 | Backend static standards | 13 passed, including prerequisites |
 | Backend database standards | 13 passed on the owned disposable target |
 | Release-chain contract | 30 passed |
 | Migration credential/capability contract | 60 passed |
-| Protected current-source census | All 158 entries match; exactly three second-correction amendments: CLI in both current tiers and the dependent diagnostic-manifest cascade |
+| Protected current-source census | All 158 current entries match after exactly three current-tier amendments: CLI in both current tiers and the dependent diagnostic-manifest cascade |
 | Historical protected tiers | Both 73-entry objects remain raw-byte-identical to `origin/main`; all 146 pinned values match `b8f30561` |
-| Documentation validation | 13 passed; 114 diagnostic negative cases and 65 execution negative fixtures passed |
+| Documentation validation | 13 passed; 114 diagnostic negative cases and 65 execution negative fixtures passed after the final current-only amendments and cascade |
 
-The calibrated budgets are now 366 seconds for
-`database:release:2-backend` and 696 seconds for
-`validate:ci:database:total`. The successful new-command measurements were
-approximately 1 second and 10 seconds. Hosted runner runs
+The calibrated budgets are now 368 seconds for
+`database:release:2-backend` and 698 seconds for
+`validate:ci:database:total`. The two successful pool-runtime measurements were
+0.97 and 1.46 seconds, and the two successful integration measurements were
+9.77 and 10.55 seconds. Per-command ceiling of each maximum gives a 13-second
+addition. Hosted runner runs
 `35920735732` and `35920728240` provide corroborating aggregate timing evidence,
 not successful-phase samples: both reports ultimately failed at a later Phase 2
 check. The derivation, artifact links, observed aggregate times, and unchanged
@@ -283,12 +287,12 @@ warning formula are recorded in
 `../phase7-external-database-ci-timing.md`.
 
 The initial second-correction full Phase 5 run was interrupted when the
-workspace restarted and is not counted as a pass. The replacement run under
-`/tmp/pr40-second-phase5-final` completed successfully. Its final manifest
-reports `status: passed`, `tests: 101`, `passed: 101`, `skipped: 0`,
-`ownedClusterRemoved: true`, `error: null`, and `cleanupErrors: []`. This is the
-current second-correction full-suite evidence; the historical 101-test result
-above remains evidence only for the earlier source snapshot.
+workspace restarted and is not counted as a pass. The replacement
+`.local/pr40-third-phase5-final` run is the final current-source result: its
+manifest was generated at `2026-09-23T23:10:47.982Z` and records `status:
+passed`, 101 tests passed, no skips, successful owned-cluster removal, no
+runner error, and no cleanup errors. The historical 101-test result above
+remains evidence only for the earlier source snapshot.
 
 This documentation and protected-hash work contacted no development or
 production database and changed no secret value. It added no application schema
