@@ -9,6 +9,35 @@ import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 
+test("external database pool checks stay in the timed backend release phase", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const databasePackage = JSON.parse(await readFile(path.join(workspaceRoot, "lib/db/package.json"), "utf8"));
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  const backendChecks = chainedPnpmScripts(root.scripts["validate:release:2-backend"]);
+
+  assert.deepEqual(
+    backendChecks.slice(0, 4),
+    [
+      "test:pool-runtime",
+      "test:external-database:integration",
+      "test:beauty-jobs",
+      "test:backend-standards:database",
+    ],
+    "The pool checks must be additive predecessors to every existing backend gate.",
+  );
+  assert.equal(root.scripts["test:pool-runtime"], "pnpm --filter @workspace/db run test:pool-runtime");
+  assert.equal(
+    databasePackage.scripts["test:pool-runtime"],
+    "pnpm --filter @workspace/scripts exec tsx --test ../lib/db/src/pool-runtime.test.ts",
+  );
+  assert.equal(
+    root.scripts["test:external-database:integration"],
+    "pnpm --filter @workspace/scripts exec tsx src/run-destructive-test.ts -- pnpm --filter @workspace/scripts exec tsx --test src/external-database-pool.integration.test.ts",
+  );
+  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 375);
+  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 705);
+});
+
 test("job first-publication HTTP lifecycle stays in the timed release chain on an owned PG16 cluster", async () => {
   const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
   const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
@@ -57,8 +86,8 @@ test("job first-publication HTTP lifecycle stays in the timed release chain on a
   assert.match(runner, /Math\.floor\(version \/ 10000\) !== 16/);
   assert.match(runner, /SITE_INDEXABLE: "false"/);
   assert.doesNotMatch(runner, /process\.env(?:\.DATABASE_URL|\["DATABASE_URL"\])|push-force|drizzle/);
-  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 355);
-  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 685);
+  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 375);
+  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 705);
 });
 
 test("public SEO SPA regression stays in the timed browser release phase without database setup", async () => {

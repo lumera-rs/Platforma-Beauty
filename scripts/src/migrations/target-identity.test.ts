@@ -140,6 +140,24 @@ test("Neon CLI identity flags are paired, validated, and reject duplicates", () 
   }
 });
 
+test("unknown expected identity diagnostics redact equals and colon values", () => {
+  for (const separator of ["=", ":"]) {
+    const secret = "must-not-appear";
+    assert.throws(
+      () => parseExpectedTargetIdentity([`--expected-x${separator}${secret}`]),
+      (error) => {
+        assert(error instanceof Error);
+        assert.equal(
+          error.message,
+          "Unrecognized expected target identity flag: --expected-x",
+        );
+        assert.doesNotMatch(error.message, new RegExp(secret));
+        return true;
+      },
+    );
+  }
+});
+
 test("migration CLI rejects unknown expected flags without exposing values", () => {
   const identityArgs = [
     "--expected-database=fixture",

@@ -2,19 +2,23 @@
 
 ## Task 4 decision and release boundary
 
-Task 4 selects `LUMERA_DATABASE_URL` as the application runtime override.
-Selection is deterministic:
+Task 4 gives deployment and workspace runtimes separate, non-overriding
+contracts. Selection is deterministic:
 
-1. If `LUMERA_DATABASE_URL` is non-empty, use it.
-2. Otherwise, in a non-deployment runtime only, use `DATABASE_URL`.
-3. Otherwise fail before constructing the pool.
+1. Determine whether the runtime is a deployment.
+2. In a deployment, require and use `LUMERA_DATABASE_URL`; ignore
+   `DATABASE_URL`.
+3. Outside a deployment, require and use `DATABASE_URL`; ignore
+   `LUMERA_DATABASE_URL`, even when it is set.
+4. Fail before constructing the pool when the variable required for that
+   runtime is absent.
 
 A runtime is a deployment when any of these three markers is present:
 `NODE_ENV=production`, `REPLIT_DEPLOYMENT=1`, or `REPL_DEPLOYMENT=1`.
 Deployment runtimes refuse to fall back to `DATABASE_URL`; they require
-`LUMERA_DATABASE_URL`. This lets development and disposable test harnesses keep
-their established `DATABASE_URL` contract while making the deployment target an
-explicit choice.
+`LUMERA_DATABASE_URL`. Workspace, development, and disposable test runtimes
+always retain their established `DATABASE_URL` contract and cannot be redirected
+by an ambient `LUMERA_DATABASE_URL`.
 
 This preparation does **not** move production. Production must remain on its
 current target until Phase 8 authorizes and performs the deployment change.
@@ -28,7 +32,8 @@ the effective host is checked using the driver's precedence: a non-empty
 `?host=` overrides the authority hostname. Neon hosts with any `-pooler` label
 are refused before pool construction. The application has long-lived
 `LISTEN` clients, and `LISTEN` does not work through a Neon pooler endpoint, so
-`LUMERA_DATABASE_URL` must name a direct Neon endpoint.
+the selected runtime URL must name a direct Neon endpoint when it targets Neon:
+`LUMERA_DATABASE_URL` in deployments and `DATABASE_URL` outside deployments.
 
 Configuration failures identify only the responsible variable:
 `LUMERA_DATABASE_URL`, `DATABASE_URL`, or `DB_STMT_TIMEOUT_MS`. Errors never

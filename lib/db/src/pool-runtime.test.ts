@@ -6,22 +6,36 @@ import {
   safeIdleClientErrorMessage,
   selectDatabaseUrl,
   type DatabaseUrlSelection,
-} from "./pool-runtime.ts";
+} from "./pool-runtime.js";
 
 const direct = "postgresql://user:fakepassword@ep-direct.neon.tech/lumera";
 const legacy = "postgresql://legacy:fakepassword@legacy.example/lumera";
 
-test("LUMERA_DATABASE_URL wins in every runtime", () => {
+test("only deployment runtimes honor LUMERA_DATABASE_URL", () => {
   for (const environment of [
-    { LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
     { NODE_ENV: "production", LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
     { REPLIT_DEPLOYMENT: "1", LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
+    { REPL_DEPLOYMENT: "1", LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
   ]) {
     assert.deepEqual(selectDatabaseUrl(environment), {
       connectionString: direct,
       variable: "LUMERA_DATABASE_URL",
     });
   }
+  for (const environment of [
+    { LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
+    { NODE_ENV: "test", LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
+    { NODE_ENV: "development", LUMERA_DATABASE_URL: direct, DATABASE_URL: legacy },
+  ]) {
+    assert.deepEqual(selectDatabaseUrl(environment), {
+      connectionString: legacy,
+      variable: "DATABASE_URL",
+    });
+  }
+  assert.throws(
+    () => selectDatabaseUrl({ LUMERA_DATABASE_URL: direct }),
+    /^Error: DATABASE_URL must be set outside deployment runtimes\.$/,
+  );
 });
 
 test("deployment runtimes require LUMERA_DATABASE_URL", () => {
@@ -56,6 +70,7 @@ test("Neon pooler URLs are refused without exposing connection details", () => {
     "postgresql://user:fakepassword@ep-fallback-pooler.neon.tech/db?host=ep-direct.neon.tech&host=",
     "postgresql://user:fakepassword@ep-dot-pooler.neon.tech./db",
     "postgresql://user:fakepassword@direct.example/db?host=ep-query-dot-pooler.neon.tech.",
+    "postgresql://user:fakepassword@direct.example/db?host=ep%2Dencoded%2Dpooler.neon.tech",
     "not a URL containing fakepassword and secret-host",
   ];
   for (const connectionString of values) {
@@ -66,7 +81,7 @@ test("Neon pooler URLs are refused without exposing connection details", () => {
     assert.throws(() => assertSupportedDatabaseUrl(selection), (error) => {
       assert(error instanceof Error);
       assert.match(error.message, /LUMERA_DATABASE_URL/);
-      if (connectionString.includes("-pooler")) {
+      if (connectionString.includes("-pooler") || connectionString.includes("%2Dpooler")) {
         assert.match(error.message, /LISTEN does not work through a -pooler endpoint/);
       }
       assert.doesNotMatch(
@@ -96,6 +111,29 @@ test("Neon pooler URLs are refused without exposing connection details", () => {
       variable: "LUMERA_DATABASE_URL",
     }),
   );
+});
+
+test("deployment override requires an explicit host without exposing details", () => {
+  for (const connectionString of [
+    "postgresql:///lumera?password=fakepassword",
+    "postgresql:/lumera?password=fakepassword",
+  ]) {
+    assert.throws(
+      () => assertSupportedDatabaseUrl({
+        connectionString,
+        variable: "LUMERA_DATABASE_URL",
+      }),
+      (error) => {
+        assert(error instanceof Error);
+        assert.equal(
+          error.message,
+          "LUMERA_DATABASE_URL must include an explicit database host.",
+        );
+        assert.doesNotMatch(error.message, /fakepassword|lumera/);
+        return true;
+      },
+    );
+  }
 });
 
 test("new-client initializer awaits timeout setup for every client", async () => {

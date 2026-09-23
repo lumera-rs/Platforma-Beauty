@@ -913,3 +913,55 @@ fixtures. All 13 regression tests passed with zero failures, cancellations, or
 skips. `git diff --check` passed for the owned documentation files. The new root
 integration script and the final duplicate-`?host=` runtime fix are outside the
 protected inventories and required no additional manifest amendment.
+
+## Task 4 contract correction — protected current-source amendments
+
+Authority: the owner's explicit instruction after the CLI worker declared its
+edits final to run the complete protected census, amend only branch-changed
+current-source entries, carry the final nested-manifest cascade, and preserve
+both historical tiers byte-identical to `origin/main`. The branch is
+`phase7/external-database`; HEAD was
+`d46370bbdfcb5944bfe0acb77d398bca869cc43d` and the `origin/main` comparison
+point was `397670ef781e9a21d7f63cbac2881c857ce07d38`.
+
+Before manifest edits, all 73 diagnostic `currentInputs` entries and all 85
+execution-plan `files` entries were independently SHA-256 hashed from current
+file bytes. Exactly two entries drifted: the same branch-changed
+`scripts/src/migrations/cli.ts` path in both current tiers. The protected
+runbook entry and every other current entry matched. No unchanged-file drift was
+present.
+
+### Complete amendment table
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `52aca56792e3d608f64a53a5e3dbdab6d02f887c1dea3bc3170ecd8cd9754722` | `24811339e61e712f40c4a0f9506de07f5cccdba9650188e122ddd2eb004fa716` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `52aca56792e3d608f64a53a5e3dbdab6d02f887c1dea3bc3170ecd8cd9754722` | `24811339e61e712f40c4a0f9506de07f5cccdba9650188e122ddd2eb004fa716` |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `33dba74c15c296eb85aa55fe0684dc493fa36dfa2f1a46216924fe35b130912e` | `71746b6bf78fc41e0a1be49595988844bb905dc33f1d69a9d2e5b445e169c8f7` |
+
+The CLI correction makes colon-delimited unknown `--expected-*` target-identity
+flags fail closed as intended. After both direct current-tier replacements were
+final, the diagnostic manifest was rehashed and only then was its enclosing
+execution-plan `files` entry amended. This batch therefore amends exactly three
+current-tier hashes: two direct entries and one dependent cascade.
+
+Both complete 73-entry historical objects were extracted as raw bytes and
+compared with `git show origin/main:...`. Both are 8,940 bytes, have SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`,
+and are raw-byte-identical to `origin/main`. All 146 historical values were also
+independently checked against their corresponding file bytes at pinned commit
+`b8f30561`, with zero mismatches.
+
+The final complete census has zero residual drift across all 158 current
+entries. Final manifest SHA-256 values are
+`71746b6bf78fc41e0a1be49595988844bb905dc33f1d69a9d2e5b445e169c8f7`
+for the diagnostic manifest and
+`843c6675a00b7643c6626de7820d8933993616e72941f17bfe849348f5100a30`
+for the execution-plan manifest.
+
+Validation command
+`pnpm --filter @workspace/scripts run test:reconstruction:docs` passed both
+validators: 114 diagnostic exact-rule negative cases and 65 execution negative
+fixtures. All 13 documentation regression tests passed with zero failures,
+cancellations, or skips. This amendment performs no historical-tier, source,
+SQL, database, secret, deployment, workflow, staging, or commit operation.

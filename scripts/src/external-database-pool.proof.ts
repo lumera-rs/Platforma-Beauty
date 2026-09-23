@@ -17,6 +17,7 @@ function selectAuthorizedTarget(name: "LUMERA_NEON_TEST_URL" | "LUMERA_NEON_TEST
   delete process.env.PGPORT;
   delete process.env.PGUSER;
   delete process.env.PGPASSWORD;
+  process.env.REPLIT_DEPLOYMENT = "1";
   process.env.LUMERA_DATABASE_URL = value;
   return value;
 }

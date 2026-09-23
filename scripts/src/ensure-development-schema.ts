@@ -1,5 +1,6 @@
 import { isDeploymentRuntime } from "./migrations/development-runtime";
 import { parseExpectedTargetIdentity } from "./migrations/cli";
+import { selectDatabaseUrl } from "@workspace/db/pool-runtime";
 
 function assertDevelopmentRuntime(
   environment: NodeJS.ProcessEnv = process.env,
@@ -21,6 +22,10 @@ export {};
 // production DATABASE_URL into a mutating target.
 assertDevelopmentRuntime();
 const expectedTargetIdentity = parseExpectedTargetIdentity(process.argv.slice(2));
+// Resolve through the same selector used by @workspace/db before that module
+// constructs its pool. The explicit identity declaration is therefore checked
+// against the exact configured target rather than a legacy fallback.
+selectDatabaseUrl(process.env);
 
 let closePool: (() => Promise<void>) | undefined;
 try {

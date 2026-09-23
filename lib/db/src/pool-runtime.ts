@@ -1,5 +1,5 @@
-import type { ClientBase } from "pg";
-import { isProductionOrDeploymentRuntime } from "./destructive-test-runtime.ts";
+import pg, { type ClientBase } from "pg";
+import { isProductionOrDeploymentRuntime } from "./destructive-test-runtime";
 
 export type DatabaseUrlSelection = {
   connectionString: string;
@@ -9,13 +9,13 @@ export type DatabaseUrlSelection = {
 export function selectDatabaseUrl(
   environment: NodeJS.ProcessEnv = process.env,
 ): DatabaseUrlSelection {
-  if (environment.LUMERA_DATABASE_URL) {
-    return {
-      connectionString: environment.LUMERA_DATABASE_URL,
-      variable: "LUMERA_DATABASE_URL",
-    };
-  }
   if (isProductionOrDeploymentRuntime(environment)) {
+    if (environment.LUMERA_DATABASE_URL) {
+      return {
+        connectionString: environment.LUMERA_DATABASE_URL,
+        variable: "LUMERA_DATABASE_URL",
+      };
+    }
     throw new Error("LUMERA_DATABASE_URL must be set in deployment runtimes.");
   }
   if (environment.DATABASE_URL) {
@@ -29,20 +29,30 @@ export function selectDatabaseUrl(
 
 export function assertSupportedDatabaseUrl(selection: DatabaseUrlSelection): void {
   let parsed: URL;
+  let effectiveHost: string;
   try {
     parsed = new URL(selection.connectionString);
+    effectiveHost = (new pg.Client({
+      connectionString: selection.connectionString,
+    }) as unknown as {
+      connectionParameters: { host: string };
+    }).connectionParameters.host;
   } catch {
     throw new Error(`${selection.variable} must be a valid PostgreSQL URL.`);
   }
   if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
     throw new Error(`${selection.variable} must use the PostgreSQL URL scheme.`);
   }
-  // pg-connection-string gives a non-empty `host` query parameter precedence
-  // over the URL authority, and duplicate parameters use the last value.
-  // Inspect the same effective host before Pool exists.
-  const queryHosts = parsed.searchParams.getAll("host");
-  const effectiveHost = (queryHosts.at(-1) || parsed.hostname)
-    .replace(/\.+$/, "");
+  if (
+    selection.variable === "LUMERA_DATABASE_URL"
+    && !parsed.hostname
+    && !parsed.searchParams.getAll("host").at(-1)
+  ) {
+    throw new Error("LUMERA_DATABASE_URL must include an explicit database host.");
+  }
+  // Use the driver's parser so query-parameter precedence and percent decoding
+  // exactly match the Pool that will consume this connection string.
+  effectiveHost = effectiveHost.replace(/\.+$/, "");
   const neonPooler = effectiveHost
     .toLowerCase()
     .split(".")

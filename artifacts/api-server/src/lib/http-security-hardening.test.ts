@@ -67,6 +67,16 @@ function assertBaselineSecurityHeaders(response: HttpResponse, label: string) {
 
 async function run(): Promise<void> {
   const previousNodeEnv = process.env["NODE_ENV"];
+  const disposableDatabaseUrl = process.env["LUMERA_DISPOSABLE_DATABASE"];
+  assert.ok(
+    disposableDatabaseUrl,
+    "HTTP security hardening requires an owned disposable database fixture.",
+  );
+  assert.equal(
+    process.env["DATABASE_URL"],
+    disposableDatabaseUrl,
+    "HTTP security hardening must run against its authorized disposable database.",
+  );
 
   // --- Production-topology assertion (HSTS gating). app.ts reads
   // process.env.NODE_ENV once, at module import time (same pattern as the
@@ -75,9 +85,14 @@ async function run(): Promise<void> {
   // `app` above. A genuinely separate child process, started with
   // NODE_ENV=production from before Node loads app.ts at all, is the only
   // way to observe that code path honestly.
+  const hstsEnvironment = {
+    ...process.env,
+    NODE_ENV: "production",
+    LUMERA_DATABASE_URL: disposableDatabaseUrl,
+  };
   const hstsChild = spawn(tsxBin, [hstsChildScript], {
-    env: { ...process.env, NODE_ENV: "production" },
-    stdio: ["ignore", "pipe", "inherit"],
+    env: hstsEnvironment,
+    stdio: ["ignore", "pipe", "ignore"],
   });
   try {
     const prodPort = await new Promise<number>((resolve, reject) => {
