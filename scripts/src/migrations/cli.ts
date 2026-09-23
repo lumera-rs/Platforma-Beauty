@@ -4,15 +4,47 @@ import { loadMigrations } from "./files";
 import { validateExpectedTargetIdentity, type ExpectedTargetIdentity } from "./target-identity";
 
 export function parseExpectedTargetIdentity(argv: readonly string[]): ExpectedTargetIdentity {
+  if (argv.some((item) => item === "--expected-neon-tenant-id"
+    || item.startsWith("--expected-neon-tenant-id="))) {
+    throw new Error("--expected-neon-tenant-id is no longer supported; use the Neon project and branch id flags");
+  }
+  for (const name of ["expected-neon-project-id", "expected-neon-branch-id", "expected-neon-timeline-id"]) {
+    if (argv.includes(`--${name}`)) {
+      throw new Error(`Explicit target identity requires --${name}=VALUE syntax`);
+    }
+  }
   for (const name of ["expected-database", "expected-system-identifier", "expected-transport"]) {
     if (argv.filter((item) => item.startsWith(`--${name}=`)).length !== 1) {
       throw new Error(`Explicit target identity requires exactly one --${name}= value`);
     }
   }
+  const neonProjectCount = argv.filter((item) => item.startsWith("--expected-neon-project-id=")).length;
+  const neonBranchCount = argv.filter((item) => item.startsWith("--expected-neon-branch-id=")).length;
+  const neonTimelineCount = argv.filter((item) => item.startsWith("--expected-neon-timeline-id=")).length;
+  for (const [name, count] of [
+    ["expected-neon-project-id", neonProjectCount],
+    ["expected-neon-branch-id", neonBranchCount],
+    ["expected-neon-timeline-id", neonTimelineCount],
+  ] as const) {
+    if (count > 1) throw new Error(`Explicit target identity permits at most one --${name}= value`);
+  }
+  if ((neonProjectCount === 1) !== (neonBranchCount === 1)) {
+    throw new Error("Explicit target identity requires both --expected-neon-project-id and --expected-neon-branch-id, or neither");
+  }
+  if (neonTimelineCount === 1 && neonProjectCount !== 1) {
+    throw new Error("Explicit target identity requires the Neon project and branch id when a timeline id is supplied");
+  }
   return validateExpectedTargetIdentity({
     databaseName: argument(argv, "expected-database"),
     systemIdentifier: argument(argv, "expected-system-identifier"),
     transport: argument(argv, "expected-transport"),
+    ...(neonProjectCount === 1 ? {
+      neon: {
+        projectId: argument(argv, "expected-neon-project-id"),
+        branchId: argument(argv, "expected-neon-branch-id"),
+        ...(neonTimelineCount === 1 ? { timelineId: argument(argv, "expected-neon-timeline-id") } : {}),
+      },
+    } : {}),
   });
 }
 
@@ -26,7 +58,9 @@ function usage(): never {
   throw new Error(
     "Usage: migrations <status|apply|adopt-baseline> "
     + "[--database-url=DATABASE_URL] [--confirm] "
-    + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted]",
+    + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted "
+    + "[--expected-neon-project-id=PROJECT_ID --expected-neon-branch-id=BRANCH_ID "
+    + "[--expected-neon-timeline-id=LOWERCASE32HEX]]]",
   );
 }
 
@@ -46,6 +80,9 @@ export function parseMigrationCliOptions(
 ): MigrationCliOptions {
   const command = argv[0];
   if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
+  if (command === "status" && argv.some((item) => /^--expected-neon-(?:project|branch|timeline|tenant)-id(?:=|$)/u.test(item))) {
+    throw new Error("Neon target identity declarations require apply or adopt-baseline; status does not verify target identity");
+  }
   const explicitDatabaseUrl = argument(argv, "database-url");
   const mutating = command === "apply" || command === "adopt-baseline";
   if (mutating && !explicitDatabaseUrl?.trim()) {

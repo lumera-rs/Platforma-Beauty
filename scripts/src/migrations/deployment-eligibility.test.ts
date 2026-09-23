@@ -174,7 +174,10 @@ test("ledger inspection rejects a finite but reversed completion interval", asyn
 test("supported runner rejects invalid ledger metadata before BEGIN or ledger DDL", async () => {
   const migrations = await loadMigrations();
   const client = fakeClient((sql) => {
-    if (sql.includes("pg_control_system")) return [{ database_name: "fixture", system_identifier: "123", encrypted: false }];
+    if (sql.includes("pg_control_system")) return [{
+      database_name: "fixture", system_identifier: "123", encrypted: false,
+      neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
+    }];
     if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
     if (sql.includes("pg_advisory_unlock")) return [{ unlocked: true }];
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
@@ -226,7 +229,10 @@ test("admission-contract adoption refuses deployment runtime after identity and 
   const client = {
     async query(sql: string) {
       statements.push(sql);
-      return { rows: [{ database_name: "fixture", system_identifier: "123", encrypted: false }] };
+      return { rows: [{
+        database_name: "fixture", system_identifier: "123", encrypted: false,
+        neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
+      }] };
     },
   } as DatabaseClient;
   const previous = {

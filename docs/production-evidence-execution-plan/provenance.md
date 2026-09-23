@@ -690,3 +690,160 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 passed all 13 regression tests, zero failures and zero skipped; both validators
 passed their 114 diagnostic negative cases and 65 execution negative fixtures.
 The protected-document diff passes `git diff --check`.
+
+## Phase 7 target identity — protected current-source amendments
+
+Authority: the owner's explicit authorization to amend protected current-source
+hashes reported by the validators, including the final nested diagnostic-manifest
+cascade. The branch and main baseline are
+`phase7/target-identity-neon-branch` and
+`f6e113e5aaec78fd27ff2ae4ca07c8bf61e420c2`, respectively.
+
+Before editing, a complete direct SHA-256 census covered all 158 current-source
+entries: 73 diagnostic `currentInputs` entries and 85 execution-plan `files`
+entries. Exactly six entries mismatched, representing the same three source
+files in both manifests. Each source file is changed by the branch relative to
+`origin/main`; no drift involved an unchanged source file, so the stop condition
+did not trigger.
+
+### Complete source-amendment table
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `currentInputs` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` |
+| Diagnostic | `scripts/src/migrations/migrations.test.ts` | `currentInputs` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` |
+| Execution | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `files` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` |
+| Execution | `scripts/src/migrations/migrations.test.ts` | `files` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` |
+
+The runbook, CLI, and unit-test bytes are the already-completed Phase 7 target
+identity changes. This documentation batch does not edit those source files.
+The other branch-changed migration tests and target-identity files are not
+members of either protected current-source inventory and therefore require no
+manifest amendment.
+
+### Final nested diagnostic-manifest cascade
+
+The execution-plan `files` entry for the diagnostic protected-input manifest
+matched its bytes before this batch. Only after the three diagnostic
+`currentInputs` replacements were final was the diagnostic manifest rehashed,
+and the explicitly authorized dependent entry was amended:
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `dda1bbabb8f2ad72351a86546f50514f8b7db4437a5cbf28f0d650f403d3c13b` | `61be0fd4c590a9167c5938a5b0af5a69cdfb1a70600cd44745113d5479e84846` |
+
+This batch therefore amends exactly seven current-tier hashes: three diagnostic,
+three execution source hashes, and one execution cascade hash. Direct raw-byte
+comparisons against `origin/main` prove that the complete 73-entry diagnostic
+historical `inputs` block and complete 73-entry execution
+`originalProtectedFiles` block are unchanged. Their compared raw-block sizes
+and SHA-256 values are 8,954 bytes /
+`f189dd413b3b6564faf10bd5c53d294483e6e05a4f21af5cbd72535bfe967a29`
+and 8,968 bytes /
+`1161b1c0cb6b8e2520e7993f88634e66c039b2d4babad8783ec399361c43ae17`,
+respectively.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+completed without database access. The diagnostic validator passed its reusable
+baseline and 114 exact-rule negative cases; the execution validator passed its
+baseline and rejected all 65 negative fixtures with exact errors. The Node test
+runner reported 13 passed, zero failed, zero cancelled, and zero skipped.
+
+A final complete census found zero residual drift across all 158 current-source
+entries. The final execution-plan manifest SHA-256 is
+`f66f386878cf6c65ee05ca2a7ce8ed53309d67fa91de3b793410b5a777bdec47`.
+The protected-document diff passes `git diff --check`. This batch edits only the
+two protected manifests and this provenance document; it performs no source,
+database, app-test, server, workflow, branch, commit, or push operation.
+
+## PR #39 follow-up — independently verifiable Neon identity hashes
+
+Authority: the follow-up attachment's `HASHES` instruction, authorizing only
+current-source amendments for branch-changed files and the dependent manifest
+cascade. The pre-amendment HEAD is
+`b2a106588de1ae1f67a658ed1595adbcd2bc727c`; the `origin/main` comparison point
+is `f6e113e5aaec78fd27ff2ae4ca07c8bf61e420c2`.
+
+Before amendment, the documentation command failed closed on protected hash
+drift at `scripts/src/migrations/PHASE-5B-RUNBOOK.md`. A direct census then
+hashed every current-tier file byte: all 73 diagnostic `currentInputs` entries
+and all 85 execution-plan `files` entries. Exactly six entries drifted, covering
+the same three source files in both manifests. Every one of those source files
+differs from `origin/main`; no unchanged-file drift was present.
+
+### Complete source-amendment table
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `currentInputs` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` | `711a76f7f2c5b028f3f9fcf4f151d32a9a1b33db2e5eb28d905982e318842470` |
+| Diagnostic | `scripts/src/migrations/migrations.test.ts` | `currentInputs` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` | `5e4788a7f896581518fde50cbb21a55fe4942a26f74a3c5a5a22356d445ee95f` |
+| Execution | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `files` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` | `711a76f7f2c5b028f3f9fcf4f151d32a9a1b33db2e5eb28d905982e318842470` |
+| Execution | `scripts/src/migrations/migrations.test.ts` | `files` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` | `5e4788a7f896581518fde50cbb21a55fe4942a26f74a3c5a5a22356d445ee95f` |
+
+These are the already-completed follow-up changes for the independently
+verifiable Neon project/branch discriminator, its command-line flags and unit
+regressions. This hash batch changes none of those source bytes. Other
+branch-changed source and test files are outside both protected inventories.
+
+### Dependent diagnostic-manifest cascade
+
+After the three diagnostic current-source replacements were final, the
+diagnostic manifest was rehashed and its enclosing execution-plan entry was
+amended:
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `61be0fd4c590a9167c5938a5b0af5a69cdfb1a70600cd44745113d5479e84846` | `4736bc587d191649bfccfa22833571a80ed87d398241c91418b2d54ebe77ca1b` |
+
+This follow-up therefore amends exactly seven current-tier hashes: three
+diagnostic source entries, the same three execution source entries, and one
+execution cascade entry.
+
+Both complete historical JSON object blocks were extracted from working-tree
+bytes and directly compared with the corresponding `git show origin/main:...`
+bytes. Each comparison was raw-byte-identical. Excluding property names and
+indentation, each 73-entry object is 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`.
+No historical value, path inventory, pin, SQL, validator, or source file is
+amended by this batch.
+
+The final complete census has zero residual drift across all 158 current-tier
+entries. The final diagnostic and execution-plan manifest SHA-256 values are
+`4736bc587d191649bfccfa22833571a80ed87d398241c91418b2d54ebe77ca1b`
+and `6c697edfcd8029d499c2340713d86b3c5f4d9acbe0a2a99e3d6361524616888d`.
+Documentation validation passed both validators and all 13 regression tests:
+zero failed, zero cancelled and zero skipped; the diagnostic validator covered
+114 exact-rule negative cases and the execution validator rejected all 65
+negative fixtures with exact errors. The protected-document diff passes
+`git diff --check`. This batch edits only the two protected manifests and this
+provenance append; it performs no database, secret, workflow, source, commit or
+push operation.
+
+## Operator-measured restore evidence — documentation-only amendment
+
+The operator supplied a real Restore from history observation on the `probni`
+Neon project: branch `br-falling-surf-b1mlfio0`, named `production`, retained its
+ID after restore, while Neon created a separate `production_old_...` backup.
+The runbook and follow-up report now attribute this measured evidence to the
+operator and require re-reading the branch ID in the console after every
+restore before migrations. No new restore or database connection was performed.
+
+A complete census of 73 diagnostic and 85 execution current entries found only
+the changed runbook drifting, once in each tier. The documentation-only change
+requires these current-tier amendments and its dependent manifest cascade:
+
+| Entry | Old SHA-256 | New SHA-256 |
+| --- | --- | --- |
+| Diagnostic `currentInputs`: runbook | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` |
+| Execution `files`: runbook | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` |
+| Execution `files`: diagnostic manifest | `4736bc587d191649bfccfa22833571a80ed87d398241c91418b2d54ebe77ca1b` | `f3cc0da821e992ce133aa14227bd739bd3c5fb7a3a05a8aa5d5cea85c8980c42` |
+
+Historical tiers are unchanged. No executable source, tests, SQL, or validators
+were modified.
+Validation passed all 13 documentation tests and both documentation validators.
+The final census matches all 158 current hashes, and both historical object
+blocks remain raw-byte-identical to `origin/main`. `git diff --check` passed.

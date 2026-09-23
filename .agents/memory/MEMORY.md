@@ -144,3 +144,4 @@
 - [Cover-description browser triage](cover-description-browser-triage.md) — use visible form prerequisites, reload round-trips, managed media, and moderation before public metadata checks.
 - [Browser storage stub isolation](browser-storage-stub-isolation.md) — absent storage settings do not mean the local sidecar port is free; browser-signed uploads also require preflight CORS.
 - [Disposable browser origins](disposable-browser-origins.md) — generated public origins must satisfy HTTPS policy without leaking API-only settings into frontend startup.
+- [Independent target declarations](independent-target-declarations.md) — a discriminator must be independently obtainable by operators, not merely distinguish databases in a live test.

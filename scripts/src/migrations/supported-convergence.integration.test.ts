@@ -249,7 +249,10 @@ test("production runtime guard rejects after identity verification and before mu
   const fakeClient = {
     query: async () => {
       queryCount += 1;
-      return { rows: [{ database_name: "fixture", system_identifier: "123", encrypted: false }] };
+      return { rows: [{
+        database_name: "fixture", system_identifier: "123", encrypted: false,
+        neon_project_id: null, neon_branch_id: null, neon_timeline_id: null,
+      }] };
     },
   };
   const previous = process.env.NODE_ENV;
