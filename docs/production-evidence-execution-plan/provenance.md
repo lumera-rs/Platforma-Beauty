@@ -822,3 +822,28 @@ negative fixtures with exact errors. The protected-document diff passes
 `git diff --check`. This batch edits only the two protected manifests and this
 provenance append; it performs no database, secret, workflow, source, commit or
 push operation.
+
+## Operator-measured restore evidence — documentation-only amendment
+
+The operator supplied a real Restore from history observation on the `probni`
+Neon project: branch `br-falling-surf-b1mlfio0`, named `production`, retained its
+ID after restore, while Neon created a separate `production_old_...` backup.
+The runbook and follow-up report now attribute this measured evidence to the
+operator and require re-reading the branch ID in the console after every
+restore before migrations. No new restore or database connection was performed.
+
+A complete census of 73 diagnostic and 85 execution current entries found only
+the changed runbook drifting, once in each tier. The documentation-only change
+requires these current-tier amendments and its dependent manifest cascade:
+
+| Entry | Old SHA-256 | New SHA-256 |
+| --- | --- | --- |
+| Diagnostic `currentInputs`: runbook | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` |
+| Execution `files`: runbook | `fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43` | `9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809` |
+| Execution `files`: diagnostic manifest | `4736bc587d191649bfccfa22833571a80ed87d398241c91418b2d54ebe77ca1b` | `f3cc0da821e992ce133aa14227bd739bd3c5fb7a3a05a8aa5d5cea85c8980c42` |
+
+Historical tiers are unchanged. No executable source, tests, SQL, or validators
+were modified.
+Validation passed all 13 documentation tests and both documentation validators.
+The final census matches all 158 current hashes, and both historical object
+blocks remain raw-byte-identical to `origin/main`. `git diff --check` passed.

@@ -94,9 +94,18 @@ whichever candidate SQL URL was supplied and automatically trusting its pair
 would defeat the wrong-target safeguard. A same-connection observation in a
 regression proof is deliberately a test fixture, not an operator approval flow.
 
-A point-in-time restore of an existing branch keeps that branch's ID. The backup
-branch Neon creates has a different branch ID and is rejected by the original
-declaration. The underlying timeline can change: if an optional timeline pin
+Measured evidence supplied by the operator from a real test on the `probni` Neon
+project confirms the restore behavior: the branch named `production`
+(`br-falling-surf-b1mlfio0`) was restored to an earlier point in time using
+**Restore from history** in the Neon console. After completion, that same branch
+retained its identical `branch_id`. Neon created a separate backup branch named
+`production_old_...`; it did not move the original branch ID to the backup.
+The backup branch has a different branch ID and is rejected by the original
+declaration. As an additional safeguard, after every restore the operator must
+re-read the intended branch's `branch_id` in the Neon console before running
+migrations. This evidence was supplied by the operator, not measured anew by
+the agent during this documentation update.
+The underlying timeline can change: if an optional timeline pin
 was approved, a restore can invalidate it and requires a separately approved
 replacement. Do not silently recapture it from a candidate target.
 See [instant restore](https://neon.com/docs/introduction/branch-restore),

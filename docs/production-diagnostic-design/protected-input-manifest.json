@@ -134,7 +134,7 @@
     "scripts/src/migration-contract/migration-contract.test.ts": "10929eaeb3b285e8cb9497bd1faada7c8c67c438e45a674a46f6cc23f9a6fe64",
     "scripts/src/migration-contract/validate-ci-migration-contract.ts": "0f43ecb5cea354b0ce6d8b99ccf1601de3adf6208e535f6736cd33a296b2c1e2",
     "scripts/src/migration-contract/verify-migration-contract.ts": "b873affd553852cc984d4e41f65a8fc69cccb307c6b09733b3700d429bc33d28",
-    "scripts/src/migrations/PHASE-5B-RUNBOOK.md": "fdbf7cfb9a3565c9a3c1abcfa60b83debe5aec391ca36fe8d68b0f075e4ead43",
+    "scripts/src/migrations/PHASE-5B-RUNBOOK.md": "9146cfa96f8b30f9fe9fe97ad35c17ebab57dcb6a568a249eca61075e25a6809",
     "scripts/src/migrations/cli.ts": "711a76f7f2c5b028f3f9fcf4f151d32a9a1b33db2e5eb28d905982e318842470",
     "scripts/src/migrations/files.ts": "4efc901729341ee25580e4ebee8855c3255dc37211e48849556aa93fda7a8db0",
     "scripts/src/migrations/index.ts": "b5f45f9657442748d34c68850773e72954a52d6aee5cdbab44dea745615d1c8e",

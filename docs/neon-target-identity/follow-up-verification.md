@@ -250,9 +250,18 @@ Read-only status rejects Neon declarations instead of silently ignoring them.
 The runbook now documents independent acquisition from the console URL and
 branch page, authenticated project/branch API listings, and neonctl (or the
 current `neon` executable). Existing-branch PITR preserves the branch ID; the
-backup branch has a different ID and is rejected. An optional timeline pin can
-be invalidated by restore. These restore semantics are documentation guidance,
-not a claim that a restore was performed during this verification.
+backup branch has a different ID and is rejected. This branch-ID behavior is
+a measured fact from a real test on the `probni` Neon project, supplied by the
+operator: the branch named `production` (`br-falling-surf-b1mlfio0`) was restored
+to an earlier point in time using **Restore from history** in the Neon console.
+After the restore completed, that same branch retained its identical
+`branch_id`; Neon created a separate backup branch named `production_old_...`,
+not the other way around. The agent did not perform another restore or connect
+to a database for this documentation update.
+
+As an additional safeguard, after every restore the operator must re-read the
+intended branch's `branch_id` in the Neon console before running migrations.
+An optional timeline pin can still be invalidated by restore.
 
 Custom `neon.*` values on an ordinary PostgreSQL server can be set by its owner
 and do not authenticate a Neon server. Verified transport and independent
@@ -284,9 +293,10 @@ the runbook, CLI, and migrations unit test. The nested diagnostic-manifest entry
 required the seventh amendment. All old/new values are appended in
 [provenance](../production-evidence-execution-plan/provenance.md).
 
-Final diagnostic manifest SHA-256:
+At implementation verification, before the later documentation-only restore
+evidence amendment recorded in provenance, the final diagnostic manifest SHA-256 was:
 `4736bc587d191649bfccfa22833571a80ed87d398241c91418b2d54ebe77ca1b`.
-Final execution manifest SHA-256:
+The corresponding execution manifest SHA-256 was:
 `6c697edfcd8029d499c2340713d86b3c5f4d9acbe0a2a99e3d6361524616888d`.
 Final current-tier drift is zero; both historical tiers are raw-byte-identical
 to `origin/main`.
