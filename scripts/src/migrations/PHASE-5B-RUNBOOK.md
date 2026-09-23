@@ -95,16 +95,17 @@ would defeat the wrong-target safeguard. A same-connection observation in a
 regression proof is deliberately a test fixture, not an operator approval flow.
 
 Measured evidence supplied by the operator from a real test on the `probni` Neon
-project confirms the restore behavior: the branch named `production`
+project applies only to its root branch. The root branch named `production`
 (`br-falling-surf-b1mlfio0`) was restored to an earlier point in time using
-**Restore from history** in the Neon console. After completion, that same branch
-retained its identical `branch_id`. Neon created a separate backup branch named
-`production_old_...`; it did not move the original branch ID to the backup.
+**Restore from history** in the Neon console. After completion, that same root
+branch retained its identical `branch_id`. Neon created a separate backup branch
+named `production_old_...`; it did not move the original branch ID to the backup.
 The backup branch has a different branch ID and is rejected by the original
-declaration. As an additional safeguard, after every restore the operator must
-re-read the intended branch's `branch_id` in the Neon console before running
-migrations. This evidence was supplied by the operator, not measured anew by
-the agent during this documentation update.
+declaration. Child branches do not support point-in-time restore, so this
+measured result must not be generalized to them. As an additional safeguard,
+after every restore the operator must re-read the intended branch's `branch_id`
+in the Neon console before running migrations. This evidence was supplied by
+the operator, not measured anew by the agent during this documentation update.
 The underlying timeline can change: if an optional timeline pin
 was approved, a restore can invalidate it and requires a separately approved
 replacement. Do not silently recapture it from a candidate target.

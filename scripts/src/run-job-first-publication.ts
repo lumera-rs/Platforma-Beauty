@@ -37,7 +37,7 @@ try {
   await pool.end();
   pool = undefined;
   const databaseUrl = `postgresql://job_publication@localhost/postgres?host=${encodeURIComponent(dir)}&port=55441`;
-  const childEnvironment = {
+  const childEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
     SITE_INDEXABLE: "false",
@@ -49,6 +49,7 @@ try {
     LUMERA_TEST_DATABASE_SYSTEM_IDENTIFIER: expectedTargetIdentity.systemIdentifier,
     LUMERA_TEST_DATABASE_TRANSPORT: expectedTargetIdentity.transport,
   };
+  delete childEnvironment.LUMERA_DATABASE_URL;
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       "pnpm",

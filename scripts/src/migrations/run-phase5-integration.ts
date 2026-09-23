@@ -20,6 +20,7 @@ const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const owner = "lumera_phase5_owner";
 const ambientDatabaseKeys = [
   "DATABASE_URL",
+  "LUMERA_DATABASE_URL",
   "LUMERA_MIGRATION_DATABASE_URL",
   "LUMERA_PHASE4_DISPOSABLE_DATABASE_URL",
   "LUMERA_PHASE4_DISPOSABLE_DB",
@@ -196,15 +197,18 @@ async function run(program: string, args: readonly string[], logPath: string): P
   });
 }
 
-function safeEnvironment(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+export function safeEnvironment(
+  extra: NodeJS.ProcessEnv = {},
+  ambient: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH,
-    HOME: process.env.HOME ?? os.tmpdir(),
+    PATH: ambient.PATH,
+    HOME: ambient.HOME ?? os.tmpdir(),
     LANG: "C.UTF-8",
     NODE_ENV: "test",
     // Preserve the workspace label: it is explicitly not a deployment marker.
-    REPLIT_ENVIRONMENT: process.env.REPLIT_ENVIRONMENT,
-    CI: process.env.CI ?? "true",
+    REPLIT_ENVIRONMENT: ambient.REPLIT_ENVIRONMENT,
+    CI: ambient.CI ?? "true",
     ...extra,
   };
   for (const key of ambientDatabaseKeys) delete environment[key];

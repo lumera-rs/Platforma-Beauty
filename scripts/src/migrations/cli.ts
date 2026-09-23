@@ -3,7 +3,28 @@ import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
 import { loadMigrations } from "./files";
 import { validateExpectedTargetIdentity, type ExpectedTargetIdentity } from "./target-identity";
 
+const expectedTargetIdentityFlags = new Set([
+  "--expected-database",
+  "--expected-system-identifier",
+  "--expected-transport",
+  "--expected-neon-project-id",
+  "--expected-neon-branch-id",
+  "--expected-neon-timeline-id",
+  "--expected-neon-tenant-id",
+]);
+
+function rejectUnknownExpectedTargetIdentityFlags(argv: readonly string[]): void {
+  for (const item of argv) {
+    if (!item.startsWith("--expected-")) continue;
+    const flag = item.split("=", 1)[0]!;
+    if (!expectedTargetIdentityFlags.has(flag)) {
+      throw new Error(`Unrecognized expected target identity flag: ${flag}`);
+    }
+  }
+}
+
 export function parseExpectedTargetIdentity(argv: readonly string[]): ExpectedTargetIdentity {
+  rejectUnknownExpectedTargetIdentityFlags(argv);
   if (argv.some((item) => item === "--expected-neon-tenant-id"
     || item.startsWith("--expected-neon-tenant-id="))) {
     throw new Error("--expected-neon-tenant-id is no longer supported; use the Neon project and branch id flags");
@@ -80,6 +101,7 @@ export function parseMigrationCliOptions(
 ): MigrationCliOptions {
   const command = argv[0];
   if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
+  rejectUnknownExpectedTargetIdentityFlags(argv);
   if (command === "status" && argv.some((item) => /^--expected-neon-(?:project|branch|timeline|tenant)-id(?:=|$)/u.test(item))) {
     throw new Error("Neon target identity declarations require apply or adopt-baseline; status does not verify target identity");
   }

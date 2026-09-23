@@ -89,7 +89,10 @@ async function provisionDisposableDatabase(label: string): Promise<DisposableDat
     // itself, not an accident of push order.
     await execFileAsync(
       "pnpm", ["--filter", "@workspace/db", "run", "push-force"],
-      { cwd: workspaceRoot, env: { ...process.env, DATABASE_URL: databaseUrl } },
+      {
+        cwd: workspaceRoot,
+        env: { ...process.env, DATABASE_URL: databaseUrl, LUMERA_DATABASE_URL: undefined },
+      },
     );
   } catch (error) {
     exists = false;
@@ -123,6 +126,7 @@ function runEnsureChild(databaseUrl: string, scenario?: string): Promise<{ code:
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
+        LUMERA_DATABASE_URL: undefined,
         ...(scenario ? { LUMERA_TEST_SCHEMA_SCENARIO: scenario } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],

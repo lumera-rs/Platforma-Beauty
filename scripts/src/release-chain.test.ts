@@ -632,8 +632,8 @@ test("publish validation checks the release chain first without database access"
   assert.ok(publishCommand, "validate:publish must be defined.");
   assert.match(
     publishCommand,
-    /^export CI=true && env -u DATABASE_URL pnpm run test:release-chain && /,
-    "validate:publish must fail on an invalid release chain before build, database, or browser work and without DATABASE_URL.",
+    /^export CI=true && env -u DATABASE_URL -u LUMERA_DATABASE_URL pnpm run test:release-chain && /,
+    "validate:publish must fail on an invalid release chain before build, database, or browser work and without either runtime database URL.",
   );
   assert.equal(
     publishCommand.match(/(?:^| )pnpm run test:release-chain(?: |$)/g)?.length,

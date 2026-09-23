@@ -140,6 +140,56 @@ test("Neon CLI identity flags are paired, validated, and reject duplicates", () 
   }
 });
 
+test("migration CLI rejects unknown expected flags without exposing values", () => {
+  const identityArgs = [
+    "--expected-database=fixture",
+    "--expected-system-identifier=123",
+    "--expected-transport=unencrypted",
+  ];
+  const mutatingArgs = ["--database-url=postgres://local/db", "--confirm", ...identityArgs];
+  for (const commandArgs of [
+    ["status", "--database-url=postgres://local/db"],
+    ["apply", ...mutatingArgs],
+    ["adopt-baseline", ...mutatingArgs],
+  ]) {
+    for (const unknown of [
+      "--expected-neon-timline-id",
+      "--expected-neon-timline-id=do-not-disclose",
+    ]) {
+      assert.throws(
+        () => parseMigrationCliOptions([...commandArgs, unknown]),
+        (error: unknown) => {
+          assert.match(String(error), /--expected-neon-timline-id/u);
+          assert.doesNotMatch(String(error), /do-not-disclose/u);
+          return true;
+        },
+      );
+    }
+  }
+  assert.throws(
+    () => parseExpectedTargetIdentity([...identityArgs, "--expected-databsae=do-not-disclose"]),
+    /--expected-databsae/u,
+  );
+  assert.deepEqual(
+    parseMigrationCliOptions(["status", "--database-url=postgres://local/db", "--unrelated=value"], {}),
+    { command: "status", databaseUrl: "postgres://local/db" },
+  );
+  assert.deepEqual(
+    parseMigrationCliOptions(["apply", ...mutatingArgs, "--unrelated=value"], {}),
+    {
+      command: "apply",
+      databaseUrl: "postgres://local/db",
+      expectedTargetIdentity: expected,
+    },
+  );
+  assert.deepEqual(parseExpectedTargetIdentity([
+    ...identityArgs,
+    `--expected-neon-project-id=${projectId}`,
+    `--expected-neon-branch-id=${branchId}`,
+    `--expected-neon-timeline-id=${timelineId}`,
+  ]), expectedNeonTimeline);
+});
+
 test("identity evidence fails closed on every mismatch and unavailable backend evidence", async () => {
   const row = nonNeonRow;
   await assertTargetIdentity({ async query() { return { rows: [row] }; } }, expected);
