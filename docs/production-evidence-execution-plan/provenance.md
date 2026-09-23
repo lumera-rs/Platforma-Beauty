@@ -690,3 +690,70 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 passed all 13 regression tests, zero failures and zero skipped; both validators
 passed their 114 diagnostic negative cases and 65 execution negative fixtures.
 The protected-document diff passes `git diff --check`.
+
+## Phase 7 target identity — protected current-source amendments
+
+Authority: the owner's explicit authorization to amend protected current-source
+hashes reported by the validators, including the final nested diagnostic-manifest
+cascade. The branch and main baseline are
+`phase7/target-identity-neon-branch` and
+`f6e113e5aaec78fd27ff2ae4ca07c8bf61e420c2`, respectively.
+
+Before editing, a complete direct SHA-256 census covered all 158 current-source
+entries: 73 diagnostic `currentInputs` entries and 85 execution-plan `files`
+entries. Exactly six entries mismatched, representing the same three source
+files in both manifests. Each source file is changed by the branch relative to
+`origin/main`; no drift involved an unchanged source file, so the stop condition
+did not trigger.
+
+### Complete source-amendment table
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `currentInputs` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` |
+| Diagnostic | `scripts/src/migrations/migrations.test.ts` | `currentInputs` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` |
+| Execution | `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `files` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` | `fcdc99105bc5bc43af7c21ce7161193f9f4e1624cbfccd8723a502b69e772819` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `6ae1e4fa44fe6714fe0718322433f50a6718129b1bfb3f5d186b6792ed033771` | `d1cfd28d7e2067abd52133aede3a72630fa7560bb85c0ef413b89e22e4136333` |
+| Execution | `scripts/src/migrations/migrations.test.ts` | `files` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` | `8eae2ec809853f6584d2541bb20d0826c5cc3d42e4dcc72df9dc2f7482f243b9` |
+
+The runbook, CLI, and unit-test bytes are the already-completed Phase 7 target
+identity changes. This documentation batch does not edit those source files.
+The other branch-changed migration tests and target-identity files are not
+members of either protected current-source inventory and therefore require no
+manifest amendment.
+
+### Final nested diagnostic-manifest cascade
+
+The execution-plan `files` entry for the diagnostic protected-input manifest
+matched its bytes before this batch. Only after the three diagnostic
+`currentInputs` replacements were final was the diagnostic manifest rehashed,
+and the explicitly authorized dependent entry was amended:
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `dda1bbabb8f2ad72351a86546f50514f8b7db4437a5cbf28f0d650f403d3c13b` | `61be0fd4c590a9167c5938a5b0af5a69cdfb1a70600cd44745113d5479e84846` |
+
+This batch therefore amends exactly seven current-tier hashes: three diagnostic,
+three execution source hashes, and one execution cascade hash. Direct raw-byte
+comparisons against `origin/main` prove that the complete 73-entry diagnostic
+historical `inputs` block and complete 73-entry execution
+`originalProtectedFiles` block are unchanged. Their compared raw-block sizes
+and SHA-256 values are 8,954 bytes /
+`f189dd413b3b6564faf10bd5c53d294483e6e05a4f21af5cbd72535bfe967a29`
+and 8,968 bytes /
+`1161b1c0cb6b8e2520e7993f88634e66c039b2d4babad8783ec399361c43ae17`,
+respectively.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+completed without database access. The diagnostic validator passed its reusable
+baseline and 114 exact-rule negative cases; the execution validator passed its
+baseline and rejected all 65 negative fixtures with exact errors. The Node test
+runner reported 13 passed, zero failed, zero cancelled, and zero skipped.
+
+A final complete census found zero residual drift across all 158 current-source
+entries. The final execution-plan manifest SHA-256 is
+`f66f386878cf6c65ee05ca2a7ce8ed53309d67fa91de3b793410b5a777bdec47`.
+The protected-document diff passes `git diff --check`. This batch edits only the
+two protected manifests and this provenance document; it performs no source,
+database, app-test, server, workflow, branch, commit, or push operation.

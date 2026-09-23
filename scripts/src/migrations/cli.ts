@@ -4,15 +4,37 @@ import { loadMigrations } from "./files";
 import { validateExpectedTargetIdentity, type ExpectedTargetIdentity } from "./target-identity";
 
 export function parseExpectedTargetIdentity(argv: readonly string[]): ExpectedTargetIdentity {
+  for (const name of ["expected-neon-tenant-id", "expected-neon-timeline-id"]) {
+    if (argv.includes(`--${name}`)) {
+      throw new Error(`Explicit target identity requires --${name}=VALUE syntax`);
+    }
+  }
   for (const name of ["expected-database", "expected-system-identifier", "expected-transport"]) {
     if (argv.filter((item) => item.startsWith(`--${name}=`)).length !== 1) {
       throw new Error(`Explicit target identity requires exactly one --${name}= value`);
     }
   }
+  const neonTenantCount = argv.filter((item) => item.startsWith("--expected-neon-tenant-id=")).length;
+  const neonTimelineCount = argv.filter((item) => item.startsWith("--expected-neon-timeline-id=")).length;
+  if (neonTenantCount > 1) {
+    throw new Error("Explicit target identity permits at most one --expected-neon-tenant-id= value");
+  }
+  if (neonTimelineCount > 1) {
+    throw new Error("Explicit target identity permits at most one --expected-neon-timeline-id= value");
+  }
+  if ((neonTenantCount === 1) !== (neonTimelineCount === 1)) {
+    throw new Error("Explicit target identity requires both --expected-neon-tenant-id and --expected-neon-timeline-id, or neither");
+  }
   return validateExpectedTargetIdentity({
     databaseName: argument(argv, "expected-database"),
     systemIdentifier: argument(argv, "expected-system-identifier"),
     transport: argument(argv, "expected-transport"),
+    ...(neonTenantCount === 1 ? {
+      neon: {
+        tenantId: argument(argv, "expected-neon-tenant-id"),
+        timelineId: argument(argv, "expected-neon-timeline-id"),
+      },
+    } : {}),
   });
 }
 
@@ -26,7 +48,8 @@ function usage(): never {
   throw new Error(
     "Usage: migrations <status|apply|adopt-baseline> "
     + "[--database-url=DATABASE_URL] [--confirm] "
-    + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted]",
+    + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted "
+    + "[--expected-neon-tenant-id=LOWERCASE32HEX --expected-neon-timeline-id=LOWERCASE32HEX]]",
   );
 }
 
@@ -46,6 +69,9 @@ export function parseMigrationCliOptions(
 ): MigrationCliOptions {
   const command = argv[0];
   if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
+  if (command === "status" && argv.some((item) => /^--expected-neon-(?:tenant|timeline)-id(?:=|$)/u.test(item))) {
+    throw new Error("Neon target identity declarations require apply or adopt-baseline; status does not verify target identity");
+  }
   const explicitDatabaseUrl = argument(argv, "database-url");
   const mutating = command === "apply" || command === "adopt-baseline";
   if (mutating && !explicitDatabaseUrl?.trim()) {

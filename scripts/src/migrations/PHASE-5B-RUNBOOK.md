@@ -53,8 +53,50 @@ The operator/provider must authorize access to this exact read-only function
 (for example a narrowly scoped EXECUTE grant where supported), and confirm
 own-backend `pg_stat_ssl` visibility. Otherwise this runner cannot proceed:
 do not substitute a URL, address/port, self-declared database setting, or a weaker
-identity. A hosted compatible identity signal would require a separately
-reviewed contract; none is silently selected here.
+identity. The additive Neon discriminator below does not bypass these required
+backend queries or substitute a weaker identity.
+
+### Neon branch discriminator
+
+Neon branches can share all three declarations above. For a Neon-hosted target,
+also supply both of these explicitly approved declarations:
+
+```text
+--expected-neon-tenant-id=<32 lowercase hexadecimal characters>
+--expected-neon-timeline-id=<32 lowercase hexadecimal characters>
+```
+
+The additive programmatic shape is
+`{ databaseName, systemIdentifier, transport, neon: { tenantId, timelineId } }`.
+The tenant and timeline come from the actual `neon.tenant_id` and
+`neon.timeline_id` settings. The observed provider also exposes `neon.branch_id`;
+its console branch identifier is distinct from the timeline value. The chosen
+tenant/timeline pair identifies the storage timeline, not a compute endpoint.
+Approve the intended pair independently before a migration; reading whichever
+candidate URL was supplied and automatically trusting its pair would defeat the
+wrong-target safeguard.
+
+The existing single identity SELECT reads both values using
+`pg_catalog.current_setting('<setting name>', true)` on the same connected
+backend. There is no additional round trip, schema object, or migration.
+If both values are NULL, the target retains the existing non-Neon checks and
+must not receive a supplied Neon discriminator. This preserves the non-Neon
+Replit/Helium and disposable PostgreSQL paths. If either value is present, both
+must be valid and both must exactly match the caller's supplied pair. Missing,
+partial, malformed, or mismatched evidence fails closed with the affected
+`neon.tenantId` or `neon.timelineId` named in the error. Supplied declarations
+are never ignored.
+
+Read-only tests on two externally owned Neon branches confirmed equal database
+names and system identifiers but different timelines. The first branch accepted
+its own pair and rejected the second branch's pair without changing connections.
+The [verification report](../../../docs/neon-target-identity/verification.md)
+contains the complete observed settings and test evidence.
+
+This discriminator is not cryptographic server authentication and does not
+replace verified transport or independently trusted provisioning evidence.
+**This change does not authorize a Neon-hosted database for production.**
+That requires a separate decision and all existing authorization gates.
 
 `REPLIT_ENVIRONMENT=production` alone is an editor workspace label, not deployment
 authorization. All five development guards reject `NODE_ENV=production`,
