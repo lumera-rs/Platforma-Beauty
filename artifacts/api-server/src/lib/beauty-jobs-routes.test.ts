@@ -2,32 +2,68 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq, inArray, like, sql } from "drizzle-orm";
-import {
+import type { SmsProvider } from "./sms";
+import type { TransactionalEmailTransport } from "./brevo";
+const targetIdentityModulePath = "../../../../scripts/src/migrations/target-identity";
+const {
+  assertTargetIdentity,
+  validateExpectedTargetIdentity,
+} = await import(targetIdentityModulePath);
+
+const expectedTargetIdentity = validateExpectedTargetIdentity({
+  databaseName: process.env["LUMERA_TEST_DATABASE_NAME"],
+  systemIdentifier: process.env["LUMERA_TEST_DATABASE_SYSTEM_IDENTIFIER"],
+  transport: process.env["LUMERA_TEST_DATABASE_TRANSPORT"],
+});
+
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Beauty jobs routes tests");
+
+const databaseModule = await import("@workspace/db");
+const {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
   educationCentersTable, educationFinancialAuditLogTable, educationTrialClaimsTable, employeeLocationAssignmentsTable,
   employeeLocationSchedulesTable, employeeSchedulesTable, employeeServicesTable, employeesTable,
   imageAssetsTable, mediaAssetsTable, mediaVariantsTable, pool, salonsTable, servicesTable, smsDeliveriesTable, subscriptionPlansTable, usersTable,
-} from "@workspace/db";
-import { GetBeautyJobResponse } from "@workspace/api-zod";
-import app from "../app";
-import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureBusinessGrowthSchema } from "./business-growth-schema";
-import {
-  sendBeautyJobEmail,
-  setBeautyJobEmailTransportForTests,
-} from "./beauty-jobs-email";
-import {
-  retryFailedRetryableEmails,
-  type TransactionalEmailTransport,
-} from "./brevo";
-import {
-  BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS,
-  runBeautyJobDeliveryFailureAlerts,
-} from "./beauty-jobs-delivery-monitor";
-import type { SmsProvider } from "./sms";
+} = databaseModule;
+
+try {
+  const identityClient = await pool.connect();
+  try {
+    await assertTargetIdentity(identityClient, expectedTargetIdentity);
+  } finally {
+    identityClient.release();
+  }
+} catch (error) {
+  await pool.end();
+  throw error;
+}
+
+const [
+  { eq, inArray, like, sql },
+  { GetBeautyJobResponse },
+  { default: app },
+  { createSession, hashPassword, sessionCookieName },
+  { ensureBusinessGrowthSchema },
+  { createJobPublicationCutoffResolver, resetJobPublicationCutoffForTests, resolveJobPublicationCutoff },
+  { logger },
+  { sendBeautyJobEmail, setBeautyJobEmailTransportForTests },
+  { retryFailedRetryableEmails },
+  { BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS, runBeautyJobDeliveryFailureAlerts },
+] = await Promise.all([
+  import("drizzle-orm"),
+  import("@workspace/api-zod"),
+  import("../app"),
+  import("./auth"),
+  import("./business-growth-schema"),
+  import("./job-publication-cutoff"),
+  import("./logger"),
+  import("./beauty-jobs-email"),
+  import("./brevo"),
+  import("./beauty-jobs-delivery-monitor"),
+]);
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
@@ -96,6 +132,12 @@ async function insertApproved(categoryId: string, authorId: string, title: strin
 
 async function run(): Promise<void> {
   await ensureBusinessGrowthSchema();
+  const publicationMigration = await pool.query<{ boundary: string }>(
+    "SELECT finished_at::text AS boundary FROM public.lumera_migration_ledger WHERE migration_id='000004' AND state='APPLIED'",
+  );
+  const publicationBoundary = publicationMigration.rows[0]?.boundary;
+  assert.ok(publicationBoundary, "publication tests require the applied migration's authoritative timestamp");
+  const legacyCreatedAt = new Date(Date.parse(publicationBoundary) - 86400000);
   let originalSettings: typeof beautyJobPlatformSettingsTable.$inferSelect | undefined;
   const originalAppBaseUrl = process.env["APP_BASE_URL"];
   process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
@@ -585,11 +627,13 @@ async function run(): Promise<void> {
     assert.equal((await request(base, `/education/courses/${absentCourseId}/enrollments`, student.token, "POST", {})).status, 404, "STUDENT remains eligible for education");
     assert.equal((await request(base, `/education/courses/${absentCourseId}/enrollments`, blockedCustomer.token, "POST", {})).status, 403, "CUSTOMER is denied education enrollment");
 
-    const customerCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Customer ${suffix}`));
+    const customerCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Customer ${suffix}`, { firstPublishedAt: "2000-01-01T00:00:00.000Z" }));
     assert.equal(customerCreate.status, 201);
     const customerListing = customerCreate.body;
     createdListingIds.push(customerListing.id);
     assert.equal(customerListing.moderationStatus, "pending");
+    assert.equal(customerListing.firstPublishedAt, null, "creation alone never sets publication time");
+    assert.ok(Date.parse(customerListing.createdAt) >= Date.parse(publicationBoundary), "new API creation belongs to the post-migration generation");
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`)).status, 404, "pending listing remains private");
     assert.equal((await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`)).status, 401, "admin preview requires authentication");
     assert.equal((await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`, customer.token)).status, 403, "admin preview rejects non-admin users");
@@ -618,11 +662,16 @@ async function run(): Promise<void> {
     assert.ok(ownerMine.body.items.some((x: any) => x.id === ownerListing.id) && !ownerMine.body.items.some((x: any) => x.id === customerListing.id), "owner scope must exclude customer-author listings");
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`, otherOwner.token, "PATCH", { title: "steal" })).status, 403);
 
+    const approvalStartedAt = Date.now();
     const concurrentApprovals = await Promise.all([
       request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" }),
       request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" }),
     ]);
     assert.deepEqual(concurrentApprovals.map((result) => result.status), [200, 200]);
+    const firstPublishedAt = concurrentApprovals[0]!.body.firstPublishedAt;
+    assert.ok(Date.parse(firstPublishedAt) >= approvalStartedAt && Date.parse(firstPublishedAt) <= Date.now(), "first approval records the actual public transition");
+    assert.equal(concurrentApprovals[1]!.body.firstPublishedAt, firstPublishedAt, "concurrent approval retries preserve the original publication time");
+    assert.notEqual(firstPublishedAt, customerListing.createdAt, "publication is distinct from creation");
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`)).status, 200, "approved listing becomes publicly visible");
     assert.equal(
       sentEmails.filter((email) => email.subject.includes("Oglas je odobren")).length,
@@ -737,10 +786,21 @@ async function run(): Promise<void> {
     const retainedAudit = await db.select().from(beautyJobModerationAuditTable)
       .where(eq(beautyJobModerationAuditTable.listingId, bulkReject.body.id));
     assert.equal(retainedAudit.length, 2, "moderation audit history must survive physical listing removal");
-    const edited = await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", { title: `Edited ${suffix}` });
+    const edited = await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", {
+      title: `Edited ${suffix}`, firstPublishedAt: "2000-01-01T00:00:00.000Z",
+    });
     assert.equal(edited.status, 200);
     assert.equal(edited.body.moderationStatus, "pending", "editing must re-enter moderation");
-    await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(edited.body.firstPublishedAt, firstPublishedAt, "editing cannot reset or accept a client-supplied publication time");
+    const reapproved = await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(reapproved.body.firstPublishedAt, firstPublishedAt, "reapproval after editing keeps first publication");
+    const rejectedPublished = await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "reject", reason: "Publication lifecycle regression" });
+    assert.equal(rejectedPublished.body.firstPublishedAt, firstPublishedAt, "rejection preserves first publication");
+    const approvedAgain = await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(approvedAgain.body.firstPublishedAt, firstPublishedAt, "rejection followed by approval does not republish the date");
+    const renewedPublished = await request(base, `/beauty-jobs/${customerListing.id}/renew`, customer.token, "POST", {});
+    assert.equal(renewedPublished.status, 200);
+    assert.equal(renewedPublished.body.firstPublishedAt, firstPublishedAt, "renewal cannot change the original date");
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", {
       categoryId: rentalCategory.id, type: "equipment_rental", intent: "offering", availabilityPattern: "Po dogovoru",
     })).status, 400, "converting to an offering rental requires a concrete slot");
@@ -1572,6 +1632,190 @@ async function run(): Promise<void> {
       "missing production base URL must fail visibly instead of sending an email without a CTA",
     );
     process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
+
+    const waitingExpired = await insertApproved(hairCategory.id, customer.user.id, `Expired before approval ${suffix}`, {
+      moderationStatus: "pending", expiresAt: new Date(Date.now() - 86400000),
+    });
+    const expiredApproval = await request(base, `/admin/beauty-jobs/${waitingExpired.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(expiredApproval.status, 200);
+    assert.equal(expiredApproval.body.firstPublishedAt, null, "approval without future expiry is not publication");
+    assert.equal((await request(base, `/beauty-jobs/${waitingExpired.id}`)).status, 404);
+    const activationStarted = Date.now();
+    const firstActivation = await request(base, `/beauty-jobs/${waitingExpired.id}/renew`, customer.token, "POST", {});
+    assert.equal(firstActivation.status, 200);
+    assert.ok(Date.parse(firstActivation.body.firstPublishedAt) >= activationStarted, "activation after expired approval records its first actual visibility");
+    const activationRetry = await request(base, `/beauty-jobs/${waitingExpired.id}/renew`, customer.token, "POST", {});
+    assert.equal(activationRetry.body.firstPublishedAt, firstActivation.body.firstPublishedAt, "ordinary renewal never changes an initialized date");
+    await request(base, `/beauty-jobs/${waitingExpired.id}/close`, customer.token, "POST", {});
+    const reactivation = await request(base, `/admin/beauty-jobs/${waitingExpired.id}/moderation`, admin.token, "POST", { action: "reactivate" });
+    assert.equal(reactivation.body.firstPublishedAt, firstActivation.body.firstPublishedAt, "admin reactivation preserves earlier publication");
+
+    const bulkPending = await insertApproved(hairCategory.id, customer.user.id, `First bulk publication ${suffix}`, { moderationStatus: "pending" });
+    assert.equal(bulkPending.firstPublishedAt, null);
+    const bulkFirstApproval = await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", { listingIds: [bulkPending.id], action: "approve" });
+    assert.equal(bulkFirstApproval.status, 200);
+    const bulkPublished = await request(base, `/beauty-jobs/${bulkPending.id}`);
+    assert.equal(typeof bulkPublished.body.firstPublishedAt, "string", "bulk approval also captures first visibility");
+    await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", { listingIds: [bulkPending.id], action: "approve" });
+    assert.equal((await request(base, `/beauty-jobs/${bulkPending.id}`)).body.firstPublishedAt, bulkPublished.body.firstPublishedAt);
+
+    const legacyPublished = await insertApproved(hairCategory.id, customer.user.id, `Legacy visible ${suffix}`, { createdAt: legacyCreatedAt });
+    const legacyRenewal = await request(base, `/beauty-jobs/${legacyPublished.id}/renew`, customer.token, "POST", {});
+    assert.equal(legacyRenewal.body.firstPublishedAt, null, "renewal of an already visible legacy row retains its documented creation-time fallback");
+    const legacyApprovalRetry = await request(base, `/admin/beauty-jobs/${legacyPublished.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(legacyApprovalRetry.body.firstPublishedAt, null, "no-op approval must not invent a publication time for legacy data");
+    const legacyExpired = await insertApproved(hairCategory.id, customer.user.id, `Legacy expired ${suffix}`, {
+      createdAt: legacyCreatedAt, expiresAt: new Date(Date.now() - 1000), status: "expired",
+    });
+    const renewedLegacyExpired = await request(base, `/beauty-jobs/${legacyExpired.id}/renew`, customer.token, "POST", {});
+    assert.equal(renewedLegacyExpired.status, 200);
+    assert.equal(renewedLegacyExpired.body.firstPublishedAt, null, "legacy expired renewal cannot invent an original publication time");
+    assert.equal(renewedLegacyExpired.body.createdAt, legacyCreatedAt.toISOString(), "legacy renewal preserves the visible creation-time approximation");
+    const legacyClosed = await insertApproved(hairCategory.id, customer.user.id, `Legacy closed ${suffix}`, {
+      createdAt: legacyCreatedAt, status: "closed",
+    });
+    const reactivatedLegacy = await request(base, `/admin/beauty-jobs/${legacyClosed.id}/moderation`, admin.token, "POST", { action: "reactivate" });
+    assert.equal(reactivatedLegacy.status, 200);
+    assert.equal(reactivatedLegacy.body.firstPublishedAt, null, "legacy reactivation must retain NULL permanently");
+    const legacyPending = await insertApproved(hairCategory.id, customer.user.id, `Legacy pending ${suffix}`, {
+      createdAt: legacyCreatedAt, moderationStatus: "pending",
+    });
+    const approvedLegacy = await request(base, `/admin/beauty-jobs/${legacyPending.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal(approvedLegacy.status, 200);
+    assert.equal(approvedLegacy.body.firstPublishedAt, null, "all pre-migration NULL rows retain the documented legacy approximation");
+    // Resolver mechanics use a real, already verified receipt as the fixture.
+    let resolverReads = 0;
+    let temporarilyUnavailable = true;
+    const resolverWarnings: string[] = [];
+    const isolatedResolver = createJobPublicationCutoffResolver({
+      read: async () => {
+        resolverReads++;
+        await Promise.resolve();
+        if (temporarilyUnavailable) throw Object.assign(new Error("temporary read failure"), { code: "42P01" });
+        return [{ mode: "transactional", state: "APPLIED", chronological: true, finished_at: new Date(publicationBoundary) }];
+      },
+      warn: (reason) => { resolverWarnings.push(reason); },
+    });
+    assert.deepEqual(await Promise.all([isolatedResolver(), isolatedResolver(), isolatedResolver()]), [null, null, null]);
+    assert.equal(resolverReads, 1, "concurrent failed reads are deduplicated");
+    assert.deepEqual(resolverWarnings, ["ledger_missing"]);
+    temporarilyUnavailable = false;
+    const resolvedCopies = await Promise.all([isolatedResolver(), isolatedResolver(), isolatedResolver()]);
+    assert.equal(resolverReads, 2, "a failed read is not cached; concurrent recovery shares one read");
+    resolvedCopies[0]!.setTime(0);
+    assert.equal((await isolatedResolver())!.getTime(), Date.parse(publicationBoundary), "callers cannot mutate the cached cutoff");
+    assert.equal(resolverReads, 2, "validated cutoff is read once per process cache");
+
+    const warnings: Array<{ event?: string; reason?: string; code?: string }> = [];
+    const originalWarn = logger.warn.bind(logger);
+    logger.warn = ((record: object, message: string) => {
+      warnings.push(record);
+      originalWarn(record, message);
+    }) as typeof logger.warn;
+    const previousConnectionOptions = pool.options.options;
+    const switchPoolRole = async (limited: boolean) => {
+      // Cover both existing connections and replacement connections opened
+      // after pg discards a client whose standalone ledger query failed.
+      pool.options.options = limited ? "-c role=job_publication_limited" : previousConnectionOptions;
+      const clients = await Promise.all(Array.from({ length: pool.options.max! }, () => pool.connect()));
+      try {
+        await Promise.all(clients.map((client) => client.query(limited ? "SET ROLE job_publication_limited" : "RESET ROLE")));
+      } finally {
+        for (const client of clients) client.release();
+      }
+    };
+    const transition = async (operation: "single" | "bulk" | "renew", listingId: string) => operation === "single"
+      ? request(base, `/admin/beauty-jobs/${listingId}/moderation`, admin.token, "POST", { action: "approve" })
+      : operation === "bulk"
+        ? request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", { listingIds: [listingId], action: "approve" })
+        : request(base, `/beauty-jobs/${listingId}/renew`, customer.token, "POST", {});
+    try {
+      for (const failure of ["ledger_missing", "ledger_select_denied", "migration_row_missing"] as const) {
+        if (failure === "ledger_missing") {
+          await pool.query("ALTER TABLE public.lumera_migration_ledger RENAME TO publication_cutoff_ledger_fixture");
+        } else if (failure === "migration_row_missing") {
+          await pool.query("UPDATE public.lumera_migration_ledger SET migration_id='cutoff_fixture_000004' WHERE migration_id='000004'");
+        } else {
+          await pool.query(`
+            CREATE ROLE job_publication_limited NOSUPERUSER NOCREATEDB NOCREATEROLE NOLOGIN;
+            GRANT USAGE ON SCHEMA public TO job_publication_limited;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO job_publication_limited;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO job_publication_limited;
+            REVOKE SELECT ON public.lumera_migration_ledger FROM job_publication_limited;
+          `);
+          await switchPoolRole(true);
+          const role = (await pool.query("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser, has_table_privilege(current_user, 'public.lumera_migration_ledger', 'SELECT') AS ledger_select")).rows[0];
+          assert.equal(role.current_user, "job_publication_limited");
+          assert.equal(role.superuser, false, "permission regression really uses a non-superuser");
+          assert.equal(role.ledger_select, false, "ledger SELECT is actually revoked");
+        }
+        try {
+          for (const operation of ["single", "bulk", "renew"] as const) {
+            for (const knownDate of [null, new Date(Date.now() - 1000)]) {
+              const listing = await insertApproved(hairCategory.id, customer.user.id, `${failure} ${operation} ${suffix}`, {
+                moderationStatus: operation === "renew" ? "approved" : "pending",
+                expiresAt: new Date(Date.now() + (operation === "renew" ? -86400000 : 86400000)),
+                firstPublishedAt: knownDate,
+              });
+              resetJobPublicationCutoffForTests();
+              const before = warnings.length;
+              const result = await transition(operation, listing.id);
+              assert.equal(result.status, 200, `${failure} / ${operation} / ${knownDate ? "known" : "unset"}: transition must succeed despite unavailable publication cutoff`);
+              const visible = await request(base, `/beauty-jobs/${listing.id}`);
+              assert.equal(visible.status, 200, `${failure} / ${operation}: normal public visibility is preserved`);
+              assert.equal(visible.body.firstPublishedAt, knownDate?.toISOString() ?? null, `${failure} / ${operation}: preserve existing date or leave NULL`);
+              const diagnostic = warnings.slice(before).find((item) => item.event === "job-publication-cutoff-unavailable");
+              assert.equal(diagnostic?.reason, failure, `${failure} / ${operation}: diagnostic identifies the actual cause`);
+              if (failure !== "migration_row_missing") assert.equal(diagnostic?.code, failure === "ledger_missing" ? "42P01" : "42501");
+              if (operation !== "renew") {
+                const audit = await db.select().from(beautyJobModerationAuditTable).where(eq(beautyJobModerationAuditTable.listingId, listing.id));
+                assert.ok(audit.length > 0, `${failure} / ${operation}: moderation transaction and audit commit normally`);
+              }
+            }
+          }
+        } finally {
+          if (failure === "ledger_missing") await pool.query("ALTER TABLE public.publication_cutoff_ledger_fixture RENAME TO lumera_migration_ledger");
+          else if (failure === "migration_row_missing") await pool.query("UPDATE public.lumera_migration_ledger SET migration_id='000004' WHERE migration_id='cutoff_fixture_000004'");
+          else {
+            await switchPoolRole(false);
+            await pool.query("DROP OWNED BY job_publication_limited; DROP ROLE job_publication_limited");
+          }
+        }
+        assert.equal((await resolveJobPublicationCutoff())!.getTime(), Date.parse(publicationBoundary), `${failure}: restored evidence recovers without restarting`);
+      }
+
+      // The restored successful receipt is cached. Removing the table again
+      // must not affect stamping or produce another warning on any path.
+      const warmWarningCount = warnings.length;
+      await pool.query("ALTER TABLE public.lumera_migration_ledger RENAME TO publication_cutoff_ledger_fixture");
+      try {
+        for (const operation of ["single", "bulk", "renew"] as const) {
+          const listing = await insertApproved(hairCategory.id, customer.user.id, `Warm cache ${operation} ${suffix}`, {
+            moderationStatus: operation === "renew" ? "approved" : "pending",
+            expiresAt: new Date(Date.now() + (operation === "renew" ? -86400000 : 86400000)),
+          });
+          assert.equal((await transition(operation, listing.id)).status, 200, `cached cutoff / ${operation}: ledger is not read again`);
+          assert.equal(typeof (await request(base, `/beauty-jobs/${listing.id}`)).body.firstPublishedAt, "string", `cached cutoff / ${operation}: valid evidence still stamps first publication`);
+        }
+        assert.equal(warnings.length, warmWarningCount, "warm cache needs no further ledger reads or warnings");
+      } finally {
+        await pool.query("ALTER TABLE public.publication_cutoff_ledger_fixture RENAME TO lumera_migration_ledger");
+      }
+
+      resetJobPublicationCutoffForTests();
+      try {
+        await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=NULL WHERE migration_id='000004'");
+        assert.equal(await resolveJobPublicationCutoff(), null, "invalid receipt is not cached or used");
+        assert.equal(warnings.at(-1)?.reason, "migration_receipt_invalid");
+      } finally {
+        await pool.query("UPDATE public.lumera_migration_ledger SET finished_at=$1 WHERE migration_id='000004'", [publicationBoundary]);
+      }
+      assert.equal((await resolveJobPublicationCutoff())!.getTime(), Date.parse(publicationBoundary));
+    } finally {
+      logger.warn = originalWarn;
+      pool.options.options = previousConnectionOptions;
+      resetJobPublicationCutoffForTests();
+    }
   } finally {
     if (originalAppBaseUrl === undefined) delete process.env["APP_BASE_URL"];
     else process.env["APP_BASE_URL"] = originalAppBaseUrl;

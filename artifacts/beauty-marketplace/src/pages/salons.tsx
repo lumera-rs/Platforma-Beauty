@@ -1,5 +1,6 @@
 import { Layout } from "@/components/layout";
-import { Link, useRoute, useSearch } from "wouter";
+import { cityPhrase, publicImageAlt } from "../../seo-text.mjs";
+import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ export default function Salons() {
   const categoryPage = getPublicCategoryPage(categoryRouteParams?.categorySlug);
   const searchString = useSearch();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const cityValues = searchParams.getAll("city").map((value) => value.trim()).filter(Boolean);
+  const cityHeading = cityValues.length === 1 ? `Saloni ${cityPhrase(cityValues[0])}` : undefined;
 
   const [category, setCategory] = useState(categoryPage?.apiCategory || searchParams.get("category") || "");
   const [city, setCity] = useState(searchParams.get("city") || "");
@@ -43,10 +46,13 @@ export default function Salons() {
   const [homeService, setHomeService] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNote, setLocationNote] = useState("");
-  const [page, setPage] = useState(1);
+  const requestedPage = Number(searchParams.get("page") || 1);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
+  const [, navigate] = useLocation();
+  const filterEdited = useRef(false);
   const debouncedCity = useDebouncedSearch(city);
   const debouncedMunicipality = useDebouncedSearch(municipality);
   const debouncedBrand = useDebouncedSearch(brand);
@@ -64,6 +70,10 @@ export default function Salons() {
   useEffect(() => {
     setCategory(categoryPage?.apiCategory || searchParams.get("category") || "");
     setCity(searchParams.get("city") || "");
+    setMunicipality(searchParams.get("municipality") || "");
+    setBrand(searchParams.get("brand") || "");
+    const priceFromQuery = searchParams.get("priceMax");
+    setPriceMax(priceFromQuery !== null && Number.isFinite(Number(priceFromQuery)) ? Number(priceFromQuery) : undefined);
     const sortFromQuery = searchParams.get("sort");
     setSort(isSalonSort(sortFromQuery) ? sortFromQuery : "recommended");
     setDiscountsOnly(searchParams.get("discountsOnly") === "true");
@@ -89,10 +99,6 @@ export default function Salons() {
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
   }), [category, debouncedCity, debouncedMunicipality, debouncedBrand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, homeService, topSalon, featured, location]);
 
-  // Reset to the first page whenever the filter set changes.
-  useEffect(() => {
-    setPage(1);
-  }, [filterParams]);
 
   const params = useMemo<ListSalonsParams>(() => ({
     ...filterParams,
@@ -114,10 +120,18 @@ export default function Salons() {
     </label>
   );
 
-  // The server returns exactly one page. A full page implies another page may
-  // exist; a short page (or empty) means we are on the last page.
+  // The API returns an array, not a total. Confirm a real following page before
+  // exposing its crawlable URL; a full final page is not evidence of page N+1.
   const paginatedSalons = pageSalons ?? [];
-  const hasNextPage = paginatedSalons.length === PAGE_SIZE;
+  const nextParams = { ...params, page: page + 1 };
+  const { data: followingSalons } = useListSalons(nextParams, {
+    query: {
+      queryKey: getListSalonsQueryKey(nextParams),
+      enabled: !isResultsLoading && paginatedSalons.length === PAGE_SIZE,
+      staleTime: 30_000,
+    },
+  });
+  const hasNextPage = paginatedSalons.length === PAGE_SIZE && (followingSalons?.length ?? 0) > 0;
   const hasPreviousPage = page > 1;
   const relativeLastBooked = (value: Date | string) => {
     const hours = Math.round((new Date(value).getTime() - Date.now()) / 3_600_000);
@@ -125,12 +139,24 @@ export default function Salons() {
     return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(Math.round(hours / 24), "day");
   };
 
-  const goToPage = (nextPage: number) => {
-    setPage(nextPage);
+  const pageHref = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(filterParams)) {
+      if (key === "sort" && value === "recommended" && !searchParams.has("sort")) continue;
+      if (value !== undefined) params.set(key, String(value));
+      else params.delete(key);
+    }
+    params.set("page", String(nextPage));
+    return `${window.location.pathname}?${params}`;
   };
+  useEffect(() => {
+    if (!filterEdited.current) return;
+    filterEdited.current = false;
+    navigate(pageHref(1));
+  }, [filterParams]);
 
   const FiltersContent = () => (
-    <div className="space-y-6">
+    <div className="space-y-6" onChangeCapture={() => { filterEdited.current = true; }}>
       <div className="flex items-center gap-2 font-medium border-b pb-4 text-lg">
         <SlidersHorizontal className="w-5 h-5" /> Filteri
       </div>
@@ -191,7 +217,7 @@ export default function Salons() {
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div>
             <h1 className="text-3xl md:text-4xl font-serif font-bold text-foreground mb-2">
-              {categoryPage?.h1 || "Istražite salone"}
+              {categoryPage?.h1 || cityHeading || "Istražite salone"}
             </h1>
             <p className="text-muted-foreground text-base max-w-2xl">
               {categoryPage?.intro || "Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini."}
@@ -238,7 +264,7 @@ export default function Salons() {
                   {isResultsLoading ? "Učitavanje..." : (paginatedSalons.length === 0 ? "Nema rezultata" : `Strana ${page} — prikazano ${paginatedSalons.length} salona`)}
                 </p>
                 <div className="flex items-center gap-2 text-sm">
-                  <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
+                  <select value={sort} onChange={(event) => { filterEdited.current = true; setSort(event.target.value as ListSalonsParams["sort"]); }} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
                     <option value="recommended">Preporučeno</option>
                     <option value="nearest">U mojoj blizini</option>
                     <option value="newest">Nedavno dodato</option>
@@ -274,7 +300,7 @@ export default function Salons() {
                     <div className="relative w-full h-48 overflow-hidden bg-muted">
                       <OptimizedImage
                         src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
-                        alt={salon.coverImageDescription?.trim() || `${salon.name} — salon lepote`}
+                        alt={publicImageAlt({ name: salon.name, category: salon.popularServices?.join(', '), city: salon.city, description: salon.coverImageDescription })}
                         width={800}
                         height={384}
                         responsiveSizes="(max-width: 1024px) calc(100vw - 2rem), (max-width: 1280px) calc(50vw - 2rem), 400px"
@@ -321,13 +347,13 @@ export default function Salons() {
                 {/* Pagination */}
                 {(hasPreviousPage || hasNextPage) && (
                   <div className="col-span-full flex items-center justify-center gap-2 mt-6 pb-6">
-                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={!hasPreviousPage} className="h-9">
+                    {hasPreviousPage && <Button asChild variant="outline" size="sm" className="h-9"><Link href={pageHref(page - 1)}>
                       <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
-                    </Button>
+                    </Link></Button>}
                     <span className="text-sm font-medium text-muted-foreground px-3">Strana {page}</span>
-                    <Button variant="outline" size="sm" onClick={() => goToPage(page + 1)} disabled={!hasNextPage} className="h-9">
+                    {hasNextPage && <Button asChild variant="outline" size="sm" className="h-9"><Link href={pageHref(page + 1)}>
                       Sledeća <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
+                    </Link></Button>}
                   </div>
                 )}
               </div>

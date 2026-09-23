@@ -7,6 +7,8 @@
  */
 
 export interface EducationTaxonomyItem {
+  /** @nullable */
+  updatedAt?: Date | null;
   id: string;
   name: string;
   slug: string;

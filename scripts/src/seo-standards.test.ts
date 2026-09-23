@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { createServer, get } from "node:http";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relativePath: string) =>
@@ -62,7 +63,7 @@ export function validateStaticSeoPages(value: unknown): asserts value is StaticS
 
 process.env.NODE_ENV = "test";
 process.env.PUBLIC_SITE_URL = "https://lumera.example";
-delete process.env.SITE_INDEXABLE;
+process.env.SITE_INDEXABLE = "false";
 const parsedStaticSeoPages: unknown = JSON.parse(
   read("artifacts/beauty-marketplace/src/lib/static-seo-pages.json"),
 );
@@ -100,6 +101,7 @@ type SeoPayload = {
   imageHeight?: number;
   imageType?: string;
   indexable: boolean;
+  successfulPageResponse?: boolean;
   canonicalPath?: string;
 };
 type SeoQueryClient = {
@@ -140,6 +142,12 @@ const { createSeoResponse } = await import(moduleUrl(serverPath)) as {
     template: string,
   ) => Promise<{ status: number; body: string }>;
 };
+const { listingIndexable, listingCanonical } = await import(
+  moduleUrl("artifacts/beauty-marketplace/seo-policy.mjs")
+) as {
+  listingIndexable: (pathname: string, search?: string) => boolean;
+  listingCanonical: (pathname: string, search?: string) => string;
+};
 const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
   moduleUrl("artifacts/beauty-marketplace/src/components/client-seo-metadata.tsx")
 ) as {
@@ -154,6 +162,8 @@ const { applySeo, resolvePostMountSeo, seoHeadMetadata } = await import(
     payload: SeoPayload,
     origin: string,
     siteAllowed: boolean,
+    previousRobots?: string,
+    serverRobots?: string,
   ) => SeoHeadMetadata;
 };
 
@@ -460,6 +470,7 @@ const beautyJob = {
   region: "Beograd",
   authorDisplayName: "Glow Studio",
   photos: ["/glow-job.jpg"],
+  createdAt: "2026-09-20T10:00:00.000Z",
 };
 const course = {
   id: courseId,
@@ -520,6 +531,8 @@ function responseJson(payload: unknown, status = 200): Response {
 }
 
 const originalFetch = globalThis.fetch;
+const requestedSalonCities: string[] = [];
+const relatedSalons = Array.from({ length: 8 }, (_, i) => ({ ...salon, id: `related-${i}`, slug: `related-${i}`, name: `Javni salon ${i + 1}` }));
 globalThis.fetch = async (input) => {
   const rawUrl = typeof input === "string"
     ? input
@@ -529,8 +542,14 @@ globalThis.fetch = async (input) => {
   const url = new URL(rawUrl, "https://seo-contract.test");
   const requestPath = `${url.pathname}${url.search}`;
 
-  if (requestPath.startsWith("/api/salons?")) return responseJson([salon]);
+  if (requestPath.startsWith("/api/salons?")) {
+    if (url.searchParams.has("city")) requestedSalonCities.push(url.searchParams.get("city")!);
+    if (url.searchParams.get("city") === "Niš") return responseJson([]);
+    return responseJson(url.searchParams.get("pageSize") === "9" ? [salon, ...relatedSalons] : url.searchParams.get("page") === "2" ? relatedSalons.slice(0, 6) : [salon]);
+  }
   if (url.pathname === `/api/salons/${salon.slug}`) return responseJson(salon);
+  if (url.pathname === "/api/suppliers") return responseJson([supplier]);
+  if (url.pathname === "/api/beauty-jobs") return responseJson({ items: [beautyJob], total: 1, page: 1, pageSize: 10 });
   if (url.pathname === `/api/beauty-jobs/${beautyJob.id}`) return responseJson(beautyJob);
   if (url.pathname === `/api/suppliers/${supplier.slug}/public-products/${product.id}`) {
     return responseJson(product);
@@ -545,6 +564,9 @@ globalThis.fetch = async (input) => {
   if (url.pathname === "/api/education/public/taxonomy") return responseJson(taxonomy);
   if (url.pathname === `/api/education/public/courses/${course.id}`) return responseJson(course);
   if (url.pathname === "/api/education/public/courses") return responseJson([course]);
+  if (url.pathname === "/api/inspiracija") return responseJson([{ title: "Profesionalna nega lica", imageUrl: "/public-inspiration.jpg", description: "Prikaz javnog tretmana.", salon: { slug: salon.slug, name: salon.name } }]);
+  if (url.pathname === "/api/recnik") return responseJson([{ term: "Balayage", definition: "Tehnika bojenja kose." }]);
+  if (url.pathname === "/api/brendovi") return responseJson([{ name: "Javni beauty brend", description: "Brend iz javnog kataloga." }]);
   if (url.pathname === `/api/education/bundles/${bundle.id}`) return responseJson(bundle);
   if (url.pathname === `/api/education/public/centers/${center.id}`) return responseJson(center);
   if (url.pathname === `/api/education/instructors/${instructor.id}/public`) {
@@ -634,6 +656,15 @@ const htmlTemplate = `<!doctype html><html><head>
   <link rel="canonical" href="${seoOrigin}/">
 </head><body><div id="root"></div></body></html>`;
 
+function assertPublicImageAlts(html: string, pathname: string) {
+  for (const image of html.matchAll(/<img\b[^>]*>/gu)) {
+    const alt = image[0].match(/\balt="([^"]*)"/u)?.[1];
+    assert.ok(typeof alt === "string", `${pathname}: every public image requires an alt attribute`);
+    assert.ok(alt?.trim(), `${pathname}: every public image requires meaningful nonblank alt`);
+    assert.doesNotMatch(alt, /^(?:undefined|null|image|slika|placeholder)$/iu, `${pathname}: alt cannot be placeholder text`);
+  }
+}
+
 async function serverMetadata(pathname: string): Promise<{
   status: number;
   head: ComparableSeoHead;
@@ -647,6 +678,7 @@ async function serverMetadata(pathname: string): Promise<{
       "x-forwarded-proto": "https",
     },
   }, htmlTemplate);
+  assertPublicImageAlts(response.body, pathname);
   const siteAllowed = optionalHtmlAttribute(response.body, /<meta name="lumera:site-indexable" content="([^"]*)">/u) === "true";
   assert.equal(siteAllowed, false, "the parity fixture must exercise staging noindex policy");
   return { status: response.status, head: ssrHead(response.body), siteAllowed };
@@ -675,6 +707,134 @@ async function clientMetadataAfterMount(
 }
 
 try {
+  // Exercise real HTTP framing, but never call an application/API listener or
+  // execute JavaScript. The only upstream transport remains the fixture fetch.
+  const fixtureServer = createServer(async (req, res) => {
+    try {
+      const result = await createSeoResponse({
+        url: req.url ?? "/",
+        headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+      }, htmlTemplate);
+      res.writeHead(result.status, { "content-type": "text/html; charset=utf-8" });
+      res.end(result.body);
+    } catch (error) {
+      res.writeHead(500);
+      res.end(String(error));
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    fixtureServer.once("error", reject);
+    fixtureServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = fixtureServer.address();
+  assert.ok(address && typeof address === "object");
+  const httpDocument = (pathname: string) => new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const outgoing = get({ hostname: "127.0.0.1", port: address.port, path: pathname, agent: false }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode ?? 0, body }));
+      response.on("error", reject);
+    });
+    outgoing.on("error", reject);
+  });
+  try {
+    for (const [rawCity, canonicalCity] of [
+      ["  nOvI   sAd  ", "Novi Sad"], [" nis\u030c ", "Niš"], ["BEOGRAD", "Beograd"],
+    ]) {
+      requestedSalonCities.length = 0;
+      const query = new URLSearchParams({ city: rawCity });
+      const response = await httpDocument(`/saloni?${query}`);
+      assert.equal(response.status, 200);
+      assert.equal(ssrHead(response.body).canonical, `${seoOrigin}/saloni?${new URLSearchParams({ city: canonicalCity })}`);
+      assert.match(ssrHead(response.body).robots, /noindex/u);
+      assert.ok(requestedSalonCities.length > 0, "city HTTP fixture must exercise an actual public API lookup");
+      assert.ok(requestedSalonCities.every((city) => city === canonicalCity), "canonical and API city predicate must share NFC/case/spacing normalization");
+    }
+    const entityMarkers: Record<string, string> = {
+      "/": salon.name, "/saloni": salon.name, "/poslovi": beautyJob.title,
+      "/proizvodi": supplier.name, "/inspiracija": "Profesionalna nega lica",
+      "/recnik": "Balayage", "/brendovi": "Javni beauty brend", "/edukacije": course.title,
+      "/saloni/kategorija/frizerski-saloni": salon.name,
+      "/saloni/glow-studio": salon.name, "/poslovi/frizer/glow-job": beautyJob.title,
+      "/shop/glow-supply": supplier.name, "/shop/glow-supply/nega-lica": product.name,
+      "/shop/glow-supply/proizvod/glow-product": product.name,
+      "/edukacije/instruktori/glow-instructor": instructor.name,
+      "/edukacije/centri/glow-center": center.name, "/edukacije/paketi/glow-bundle": bundle.name,
+      [`/edukacije/${courseId}`]: course.title,
+      "/edukacije/sekcije/nega": course.title, "/edukacije/sekcije/nega/lice": course.title,
+      "/edukacije/sekcije/nega/lice/hidratacija": course.title,
+    };
+    for (const pathname of [...staticRouteContracts, ...dynamicRouteContracts.map((entry) => entry.pathname)]) {
+      const response = await httpDocument(pathname);
+      assert.equal(response.status, 200, `${pathname}: plain HTTP must succeed`);
+      const head = ssrHead(response.body);
+      assert.doesNotMatch(head.title, /^(?:Default|Placeholder|LUMERA)$/iu, pathname);
+      assert.ok(head.description.length > 20, `${pathname}: meaningful description`);
+      assert.doesNotMatch(head.description, /^(?:Default|placeholder)$/iu, pathname);
+      assert.equal(head.canonical, `${seoOrigin}${pathname}`, `${pathname}: pinned public canonical`);
+      assert.match(head.robots, /noindex/u, `${pathname}: staging stays noindex`);
+      const content = response.body.replace(/<head>[\s\S]*?<\/head>/u, "")
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gu, "");
+      const h1 = content.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/u)?.[1];
+      assert.ok(h1?.replace(/<[^>]+>/gu, "").trim(), `${pathname}: initial HTML H1, not an app shell`);
+      const marker = entityMarkers[pathname] ?? staticSeoPages.find((entry) => entry.path === pathname)?.title.split(" | ")[0];
+      assert.ok(marker, `${pathname}: explicit public content marker required`);
+      assert.ok(content.includes(marker), `${pathname}: initial HTML must contain ${marker}`);
+      assert.doesNotMatch(content, /<body>\s*<div id="root"><\/div>\s*<\/body>/u, `${pathname}: empty SPA shell`);
+    }
+    for (const { missingPathname } of dynamicRouteContracts) {
+      for (const suffix of ["", "?ref=campaign&empty="]) {
+        const response = await httpDocument(missingPathname + suffix);
+        assert.equal(response.status, 404, `${missingPathname}${suffix}: confirmed absence`);
+        assert.match(ssrHead(response.body).robots, /noindex/u);
+      }
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => fixtureServer.close((error) => error ? reject(error) : resolve()));
+  }
+  for (const search of ["", "?page=1", "?page=2", "?city=Beograd", "?city=Beograd&page=1", "?city=Beograd&page=2"]) {
+    assert.equal(listingIndexable("/saloni", search), true, `${search || "(plain)"} must be directly indexable before deployment policy`);
+  }
+  for (const search of ["?category=Lice", "?city=Beograd&category=Lice"]) {
+    assert.equal(listingIndexable("/saloni", search), false, `${search} must canonicalize to an indexable parent`);
+  }
+  const { cityPhrase, cityLocative, publicImageAlt, publicSalonCategories } = await import(moduleUrl("artifacts/beauty-marketplace/seo-text.mjs"));
+  const { buildPageStructuredData } = await import(moduleUrl("artifacts/beauty-marketplace/structured-data.mjs"));
+  for (const [city, locative] of Object.entries({ Beograd: "Beogradu", Kragujevac: "Kragujevcu", Niš: "Nišu", "Novi Sad": "Novom Sadu", Pančevo: "Pančevu", Subotica: "Subotici", Čačak: "Čačku" })) assert.equal(cityPhrase(city), `u ${locative}`);
+  assert.equal(cityLocative("Nepoznat grad"), null);
+  assert.equal(cityPhrase("Nepoznat grad"), "Nepoznat grad");
+  const schemaOptions = { origin: "https://lumera.example", canonical: "/poslovi/frizer/glow-job" };
+  for (const key of ["title", "description", "city", "authorDisplayName", "createdAt"]) assert.equal(buildPageStructuredData("job", { ...beautyJob, [key]: "" }, schemaOptions), null);
+  for (const price of [undefined, null, "", "100", -1, Infinity, NaN]) assert.equal(buildPageStructuredData("product", { ...product, price, discountPrice: undefined }, schemaOptions), null);
+  const paginated = await createSeoResponse({ url: "/saloni?city=Beograd&page=2", headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
+  assert.match(paginated.body, /href="\/saloni\?city=Beograd&amp;page=1"/u);
+  assert.match(paginated.body, /href="\/saloni\?city=Beograd&amp;page=3"/u);
+  assert.match(paginated.body, /rel="canonical" href="https:\/\/lumera.example\/saloni\?city=Beograd&amp;page=2"/u);
+  assert.match(paginated.body, /name="robots" content="noindex, nofollow"/u);
+  const cityListingCases = [
+    { route: "/saloni", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?page=1", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?page=2", canonical: "/saloni?page=2", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?city=Beograd", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&page=1", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&page=2", canonical: "/saloni?city=Beograd&page=2", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?city=Beograd&category=Lice", canonical: "/saloni?city=Beograd", title: "Saloni u Beogradu | LUMERA", heading: "Saloni u Beogradu" },
+    { route: "/saloni?category=Lice&page=2", canonical: "/saloni", title: "Saloni i beauty tretmani | LUMERA", heading: "Pronađite salon i tretman koji vam odgovaraju." },
+    { route: "/saloni?city=Ni%C5%A1", canonical: "/saloni?city=Ni%C5%A1", title: "Saloni u Nišu | LUMERA", heading: "Saloni u Nišu" },
+    { route: "/saloni?city=Nepoznat+grad", canonical: "/saloni?city=Nepoznat+Grad", title: "Saloni Nepoznat Grad | LUMERA", heading: "Saloni Nepoznat Grad" },
+  ] as const;
+  for (const scenario of cityListingCases) {
+    const result = await createSeoResponse({
+      url: scenario.route,
+      headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+    }, htmlTemplate);
+    const head = ssrHead(result.body);
+    assert.equal(head.canonical, `${seoOrigin}${scenario.canonical.replaceAll("&", "&amp;")}`, `${scenario.route} canonical`);
+    assert.equal(head.title, scenario.title, `${scenario.route} title`);
+    assert.equal(head.robots, "noindex, nofollow", `${scenario.route} staging robots`);
+    assert.ok(result.body.includes(`<h1>${scenario.heading}</h1>`), `${scenario.route} H1`);
+  }
   // Fixture-only, initial HTML checks: no API process or database is involved.
   const structuredRoutes: Array<[string, string[]]> = [
     ["/", ["Organization", "WebSite"]],
@@ -682,7 +842,7 @@ try {
     [`/edukacije/${course.id}`, ["Course", "BreadcrumbList"]],
     [`/edukacije/instruktori/${instructor.id}`, ["Person", "BreadcrumbList"]],
     [`/edukacije/centri/${center.id}`, ["EducationalOrganization", "BreadcrumbList"]],
-    [`/edukacije/paketi/${bundle.id}`, ["Product", "Offer", "BreadcrumbList"]],
+    [`/edukacije/paketi/${bundle.id}`, ["BreadcrumbList"]],
     [`/poslovi/${beautyJob.slug}/${beautyJob.id}`, ["JobPosting", "BreadcrumbList"]],
     [`/shop/${supplier.slug}/proizvod/${product.id}`, ["Product", "Offer", "BreadcrumbList"]],
     [`/shop/${supplier.slug}`, ["ItemList", "BreadcrumbList"]],
@@ -701,6 +861,14 @@ try {
       value.forEach((item) => inspectSchema(item, types));
     } else if (typeof value === "object" && value) {
       assert.ok(Object.keys(value).length, "JSON-LD must not contain empty objects");
+      const node = value as Record<string, unknown>;
+      if (node["@type"] === "JobPosting") {
+        for (const required of ["title", "description", "datePosted", "hiringOrganization", "jobLocation"]) assert.ok(node[required], `JobPosting requires ${required}`);
+      }
+      if (node["@type"] === "Offer" || "priceCurrency" in node) {
+        assert.equal(typeof node.price, "number", "Offers and currency require a finite numeric price");
+        assert.ok(Number.isFinite(node.price) && Number(node.price) >= 0);
+      }
       for (const [key, item] of Object.entries(value)) {
         assert.notEqual(key, "sameAs");
         if (key === "@type" && typeof item === "string") types.add(item);
@@ -711,12 +879,27 @@ try {
   for (const [pathname, expectedTypes] of structuredRoutes) {
     const result = await createSeoResponse({ url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" } }, htmlTemplate);
     assert.equal(result.status, 200, pathname);
-    const scripts = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)];
+    const scripts = [...result.body.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gu)];
     assert.ok(scripts.length, `${pathname} needs initial HTML JSON-LD`);
     const types = new Set<string>();
     scripts.forEach((script) => inspectSchema(JSON.parse(script[1]), types));
     expectedTypes.forEach((type) => assert.ok(types.has(type), `${pathname} needs ${type}`));
     assert.match(result.body, /name="robots" content="noindex, nofollow"/u, "staging remains noindex");
+    assertPublicImageAlts(result.body, pathname);
+    if (["/", "/saloni", "/saloni/glow-studio", "/inspiracija", "/edukacije", `/edukacije/${course.id}`, "/poslovi", `/poslovi/${beautyJob.slug}/${beautyJob.id}`, "/proizvodi", `/shop/${supplier.slug}`, `/shop/${supplier.slug}/${category.path}`, `/shop/${supplier.slug}/proizvod/${product.id}`, categoryPaths[0], "/edukacije/sekcije/nega/lice/hidratacija"].includes(pathname)) {
+      assert.match(result.body, /<img\b/u, `${pathname}: image coverage must not pass vacuously with an empty fixture`);
+    }
+    if (pathname === "/saloni/glow-studio") {
+      assert.match(result.body, /<title>Glow Studio u Beogradu/u);
+      assert.match(result.body, /href="\/saloni\?city=Beograd"/u);
+      for (const related of relatedSalons) assert.ok(result.body.includes(`href="/saloni/${related.slug}"`), "same-city related salon must be a real anchor");
+    }
+    if (pathname === `/edukacije/paketi/${bundle.id}`) assert.doesNotMatch(scripts[0][1], /"@type":"(?:Product|Offer)"/u);
+    if (process.env.SEO_FIXTURE_EVIDENCE_DIR && ["/saloni/glow-studio", `/edukacije/${course.id}`, `/poslovi/${beautyJob.slug}/${beautyJob.id}`].includes(pathname)) {
+      fs.mkdirSync(process.env.SEO_FIXTURE_EVIDENCE_DIR, { recursive: true });
+      const name = pathname.startsWith("/saloni/") ? "salon" : pathname.startsWith("/edukacije/") ? "course" : "job";
+      fs.writeFileSync(path.join(process.env.SEO_FIXTURE_EVIDENCE_DIR, `${name}.fixture.html`), `<!-- TEST PUBLIC DTO; real createSeoResponse initial HTML; NOT live data; no JavaScript executed -->\n${result.body}`);
+    }
     if (pathname === "/") assert.doesNotMatch(scripts[0][1], /"logo":/u);
     if (pathname === "/saloni/glow-studio") {
       assert.match(scripts[0][1], /"ratingValue":4.9/u);
@@ -759,7 +942,7 @@ try {
       : "Tošin bunar 181, 11000 Beograd";
     assert.ok(result.body.includes(`${expected}</a>`));
     assert.match(result.body, /name="robots" content="noindex, nofollow"/u);
-    const structured = [...result.body.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gu)].map((match) => match[1]).join("");
+    const structured = [...result.body.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gu)].map((match) => match[1]).join("");
     assert.match(structured, /"streetAddress":"Tošin bunar 181"/u);
     assert.doesNotMatch(structured, /ulaz sa bočne|22 enter|IV sprat|"apartment"|"geo"/u);
     const maps = result.body.match(/href="(https:\/\/www.google.com\/maps\/search\/[^"]+)"/u);
@@ -875,8 +1058,8 @@ try {
     );
     assert.equal(
       queryResult.head.canonical,
-      `${seoOrigin}${contract.pathname}`,
-      `${contract.pattern} query canonical must omit the query string`,
+      `${seoOrigin}${listingCanonical(contract.pathname, "seo-contract=1")}`,
+      `${contract.pattern} query canonical must follow shared listing/detail policy`,
     );
     const clientQueryHead = await clientMetadataAfterMount(contract.pathname, queryResult.siteAllowed, "seo-contract=1");
     assert.deepEqual(
@@ -929,9 +1112,13 @@ try {
   );
   assert.equal(
     (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt,
-    salon.coverImageDescription,
-    "dynamic social images must prefer the owner's cover description",
+    publicImageAlt({ name: salon.name, category: publicSalonCategories(salon).join(", "), city: salon.city, description: salon.coverImageDescription }),
+    "dynamic social images must retain the owner's semantic detail with the salon name and locative",
   );
+  const contextualAlt = (await serverMetadata("/saloni/glow-studio")).head.openGraph.imageAlt;
+  assert.ok(contextualAlt?.startsWith(salon.name));
+  assert.ok(contextualAlt?.includes("u Beogradu"));
+  assert.ok(contextualAlt?.endsWith(salon.coverImageDescription), "authored semantic detail may not be discarded by either renderer or helper");
   assert.equal(
     (await serverMetadata("/")).head.openGraph.imageAlt,
     "LUMERA platforma za beauty i wellness usluge, proizvode i edukacije",
@@ -985,6 +1172,25 @@ try {
   assert.equal(explicitImage.imageHeight, 640);
   assert.equal(explicitImage.imageType, "image/webp");
 
+  // Exercise allowed-site policy purely: never change the staging document's
+  // site-indexable setting to simulate a deployment inside one document.
+  const successfulPayload: SeoPayload = {
+    title: "LUMERA",
+    description: "LUMERA",
+    indexable: true,
+    successfulPageResponse: true,
+  };
+  assert.equal(
+    seoHeadMetadata("/", successfulPayload, seoOrigin, true, "noindex, follow", "index, follow").robots,
+    "index, follow",
+    "successful current-page data can recover transient client noindex when SSR allowed indexing",
+  );
+  assert.equal(
+    seoHeadMetadata("/", successfulPayload, seoOrigin, true, "index, follow", "noindex, nofollow").robots,
+    "noindex, nofollow",
+    "even successful policy cannot loosen the same document URL's original SSR noindex",
+  );
+
   type FakeHeadNode = {
     content: string;
     href: string;
@@ -1030,6 +1236,7 @@ try {
   for (const [name, content] of [
     ["lumera:public-site-url", seoOrigin],
     ["lumera:site-indexable", String((await serverMetadata("/")).siteAllowed)],
+    ["robots", "noindex, nofollow"],
   ]) {
     const node = fakeDocument.createElement();
     node.setAttribute("name", name);
@@ -1038,7 +1245,7 @@ try {
   }
   Object.assign(globalThis, {
     document: fakeDocument,
-    window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host } },
+    window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host, pathname: "/", search: "" } },
   });
   try {
     applySeo("/", {
@@ -1060,13 +1267,9 @@ try {
     assert.equal(nodes.has('meta[property="og:image:width"]'), false);
     assert.equal(nodes.has('meta[property="og:image:height"]'), false);
     assert.equal(nodes.has('meta[property="og:image:type"]'), false);
-    nodes.get('meta[name="lumera:site-indexable"]')!.content = "true";
-    applySeo("/", {
-      title: "LUMERA",
-      description: "LUMERA",
-      indexable: true,
-    });
-    assert.equal(nodes.get('meta[name="robots"]')?.content, "index, follow");
+    applySeo("/", successfulPayload);
+    assert.equal(nodes.get('meta[name="lumera:site-indexable"]')?.content, "false", "DOM integration remains in staging");
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow", "the same staging document must remain noindex after successful metadata");
 
     Object.assign(globalThis.window.location, { host: "different-host.example" });
     applySeo("/", {
@@ -1074,6 +1277,43 @@ try {
       description: "LUMERA",
       indexable: true,
     });
+    assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
+
+    // A separate allowed-site document restores positive applySeo coverage.
+    // The original staging document and its meta flags remain untouched.
+    const positiveNodes = new Map<string, FakeHeadNode>();
+    const positiveHead = {
+      querySelector: (selector: string) => positiveNodes.get(selector) ?? null,
+      append: (node: FakeHeadNode) => {
+        positiveNodes.set(node.attributes.name ? `meta[name="${node.attributes.name}"]`
+          : node.attributes.property ? `meta[property="${node.attributes.property}"]` : `link[rel="${node.rel}"]`, node);
+      },
+    };
+    const positiveDocument = {
+      title: "", head: positiveHead, querySelector: positiveHead.querySelector,
+      createElement: () => {
+        const node = fakeDocument.createElement();
+        node.remove = () => { for (const [key, value] of positiveNodes) if (value === node) positiveNodes.delete(key); };
+        return node;
+      },
+    };
+    for (const [name, content] of [["lumera:public-site-url", seoOrigin], ["lumera:site-indexable", "true"], ["robots", "index, follow"]]) {
+      const node = positiveDocument.createElement();
+      node.setAttribute("name", name); node.content = content; positiveHead.append(node);
+    }
+    Object.assign(globalThis, {
+      document: positiveDocument,
+      window: { location: { origin: seoOrigin, host: new URL(seoOrigin).host, pathname: "/edukacije", search: "" } },
+    });
+    const pendingPayload = { title: "Edukacije", description: "Edukacije", indexable: false, successfulPageResponse: false };
+    applySeo("/edukacije", pendingPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow", "applySeo loading must keep genuine server index");
+    positiveNodes.get('meta[name="robots"]')!.content = "noindex, follow";
+    applySeo("/edukacije", pendingPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow", "applySeo must distinguish original SSR from previous DOM robots");
+    applySeo("/edukacije", successfulPayload);
+    assert.equal(positiveNodes.get('meta[name="robots"]')?.content, "index, follow");
+    assert.equal(nodes.get('meta[name="lumera:site-indexable"]')?.content, "false");
     assert.equal(nodes.get('meta[name="robots"]')?.content, "noindex, nofollow");
   } finally {
     if (originalDocument === undefined) {
@@ -1088,29 +1328,16 @@ try {
     }
   }
 
-  const privateQueryResult = await serverMetadata("/admin?seo-contract=1");
-  assert.equal(privateQueryResult.status, 200, "private query routes must render the app shell");
-  assert.equal(privateQueryResult.head.robots, "noindex, nofollow");
-  assert.equal(privateQueryResult.head.canonical, `${seoOrigin}/admin`);
-  assert.deepEqual(
-    privateQueryResult.head.openGraph,
-    {
-      title: null,
-      description: null,
-      url: null,
-      image: null,
-      imageAlt: null,
-      imageWidth: undefined,
-      imageHeight: undefined,
-      imageType: undefined,
-    },
-    "private query routes must not receive public Open Graph metadata",
-  );
-  assert.deepEqual(
-    privateQueryResult.head.twitter,
-    { title: null, description: null, url: null, image: null, imageAlt: null },
-    "private query routes must not receive public Twitter metadata",
-  );
+  for (const pathname of ["/admin?seo-contract=1", "/shop/checkout?ref=campaign", "/edukacije/checkout?ref=campaign"]) {
+    const privateQueryResult = await createSeoResponse({
+      url: pathname, headers: { host: "lumera.example", "x-forwarded-proto": "https" },
+    }, htmlTemplate);
+    assert.equal(privateQueryResult.status, 200, "private query routes must preserve client routing");
+    assert.match(privateQueryResult.body, /name="robots" content="noindex, nofollow"/u);
+    assert.doesNotMatch(privateQueryResult.body, /rel="canonical"|property="og:|name="twitter:|application\/ld\+json/u,
+      "private query routes must not receive public canonical, social or entity metadata");
+    assert.match(privateQueryResult.body, /<div id="root"><\/div>/u);
+  }
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -1170,8 +1397,7 @@ assert.match(
   "JSON-LD must be injected into server-rendered documents",
 );
 
-const sitemapSerializer =
-  server.match(/function sitemapXml\([^)]*\)\s*\{([\s\S]*?)\n\}/u)?.[1] ?? "";
+const sitemapSerializer = read("artifacts/beauty-marketplace/seo-discovery.mjs");
 assert.match(sitemapSerializer, /<lastmod>/u, "sitemap entries must include lastmod");
 assert.match(
   sitemapSerializer,

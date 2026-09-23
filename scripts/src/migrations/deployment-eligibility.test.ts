@@ -38,7 +38,7 @@ test("fresh eligibility is read-only and reports the initial transition", async 
   const report = await classifyDeploymentEligibility(client);
   assert.deepEqual(report.path, "FRESH_EMPTY");
   assert.equal(report.mode, "INITIAL_TRANSITION");
-  assert.deepEqual(report.pendingMigrationIds, ["000001", "000002", "000003"]);
+  assert.deepEqual(report.pendingMigrationIds, ["000001", "000002", "000003", "000004"]);
   assert.equal(report.productionEligibility, "NOT_ASSESSED");
   assert.equal(client.statements.some((sql) => /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i.test(sql)), false);
 });

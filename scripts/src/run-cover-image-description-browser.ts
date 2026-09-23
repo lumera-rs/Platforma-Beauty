@@ -3,6 +3,7 @@ import {
   runIsolatedBrowserSuite,
   type IsolatedBrowserSuiteConfiguration,
 } from "./run-isolated-browser-suite";
+import { startObjectStorageStubIfAbsent } from "./object-storage-stub";
 
 const configuration: IsolatedBrowserSuiteConfiguration = {
   databasePrefix: "lumera_cover_",
@@ -30,18 +31,23 @@ async function run(): Promise<void> {
     await recoverInterruptedHarnessDatabases(configuration, "browser");
     return;
   }
-  if (args.length === 1 && args[0] === "--mobile") {
-    await recoverInterruptedHarnessDatabases(mobileConfiguration, "browser");
-    await runIsolatedBrowserSuite(mobileConfiguration);
-    return;
-  }
-  if (args.length > 0) {
+  const mobile = args.length === 1 && args[0] === "--mobile";
+  if (args.length > 0 && !mobile) {
     throw new Error(
       "Usage: run-cover-image-description-browser.ts [--mobile|--recover-interrupted-databases]",
     );
   }
-  await recoverInterruptedHarnessDatabases(configuration, "browser");
-  await runIsolatedBrowserSuite(configuration);
+  const selected = mobile ? mobileConfiguration : configuration;
+  await recoverInterruptedHarnessDatabases(selected, "browser");
+  const objectStorage = await startObjectStorageStubIfAbsent();
+  try {
+    await runIsolatedBrowserSuite({
+      ...selected,
+      environment: { ...selected.environment, ...objectStorage.environment },
+    });
+  } finally {
+    await objectStorage.close();
+  }
 }
 
 void run().catch((error: unknown) => {

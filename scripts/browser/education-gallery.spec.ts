@@ -1,6 +1,10 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import {
+import type { TransactionalEmailTransport } from "../../artifacts/api-server/src/lib/brevo";
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Education gallery browser tests");
+
+const {
   db,
   pool,
   coursesTable,
@@ -11,18 +15,17 @@ import {
   educationMediaUploadsTable,
   subscriptionPlansTable,
   usersTable,
-} from "@workspace/db";
-import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
-import {
+} = await import("@workspace/db");
+const { hashPassword } = await import("../../artifacts/api-server/src/lib/auth");
+const {
   sendEducationGalleryCleanupAlert,
-  type TransactionalEmailTransport,
-} from "../../artifacts/api-server/src/lib/brevo";
-import {
+} = await import("../../artifacts/api-server/src/lib/brevo");
+const {
   cleanupEducationMediaUpload,
   runEducationGalleryCleanup,
-} from "../../artifacts/api-server/src/routes/marketplace";
-import { buildValidOnlineEducationCourse } from "../../artifacts/api-server/src/lib/education-test-fixtures";
-import { eq, inArray, like, or, sql } from "drizzle-orm";
+} = await import("../../artifacts/api-server/src/routes/marketplace");
+const { buildValidOnlineEducationCourse } = await import("../../artifacts/api-server/src/lib/education-test-fixtures");
+const { eq, inArray, like, or, sql } = await import("drizzle-orm");
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWPYEtD0HxkzkC4AAFKXKFH5WEhSAAAAAElFTkSuQmCC",

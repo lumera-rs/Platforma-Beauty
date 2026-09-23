@@ -7,7 +7,7 @@ import { applyMigrations, migrationStatus, splitSqlStatements } from "./runner";
 import type { LoadedMigration } from "./types";
 
 test("the manifest preserves the canonical baseline and pins the guarded data transition", async () => {
-  assert.deepEqual(MIGRATION_MANIFEST.map((entry) => entry.id), ["000001", "000002", "000003"]);
+  assert.deepEqual(MIGRATION_MANIFEST.map((entry) => entry.id), ["000001", "000002", "000003", "000004"]);
   const migrations = await loadMigrations();
   assert.equal(migrations[0]?.checksum, "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60");
   assert.equal(migrations[0]?.mode, "transactional");
@@ -20,6 +20,13 @@ test("the manifest preserves the canonical baseline and pins the guarded data tr
   assert.match(migrations[2]!.body.trim(), /^ALTER TABLE public\.salons\s+ADD COLUMN entrance_directions TEXT,\s+ADD COLUMN intercom TEXT,\s+ADD COLUMN floor TEXT,\s+ADD COLUMN apartment TEXT;\s*$/u);
   assert.equal(migrations[2]?.preconditions.length, 1);
   assert.equal(migrations[2]?.postconditions.length, 1);
+  assert.equal(migrations[3]?.admissionContract, undefined);
+  assert.equal(migrations[3]?.mode, "transactional");
+  assert.equal(migrations[3]?.postgresMajor, 16);
+  assert.match(migrations[3]!.body.trim(), /^ALTER TABLE public\.beauty_job_listings\s+ADD COLUMN first_published_at TIMESTAMP WITH TIME ZONE;\s*$/u);
+  assert.equal(migrations[3]?.preconditions.length, 1);
+  assert.equal(migrations[3]?.postconditions.length, 1);
+  assert.match(migrations[3]!.recovery, /Transaction rollback leaves the database unchanged/u);
 });
 
 test("status does not create a missing ledger", async () => {

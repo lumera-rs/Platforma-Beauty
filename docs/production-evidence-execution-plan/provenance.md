@@ -557,7 +557,7 @@ no database tests or connections, servers, workflows, commits, or pushes.
 
 ## Public salon address — final CI scheduling audit
 
-After Stage B commit `28ddbea44d8f7b1ba6fcf300255714e062440d95`, the CI
+After Stage B commit `67bb260d409e70ca01b773ddfe9d65fd564021e7`, the CI
 scheduling changes were audited separately. A fresh complete SHA-256 census
 of all 158 current-tier entries found zero mismatches (`[]`), requiring zero
 new hash amendments and zero cascade updates. Both manifests remain
@@ -573,3 +573,120 @@ Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
 ran once after this audit note. Both validators passed (114 diagnostic negative
 cases; 65 execution negative fixtures); all 13 regression tests passed with
 zero failures and zero skipped tests.
+
+## SEO part 2 — protected-input and path-scope audit
+
+On `daily/2026-09-22`, the baseline and pre-audit HEAD are main
+`a94abeeea316710c000629d4d78b8ce3c86bb5e8`. A complete SHA-256 census of
+all 158 current-source entries (73 diagnostic `currentInputs`, 85 execution
+`files`) found zero mismatches (`[]`). There are zero new amendments, no
+old/new replacement rows, and no dependent cascade. Both entire manifests are
+byte-identical to this main baseline, preserving the prior 11 amendments.
+
+Both historical tiers were explicitly compared as raw text bytes with
+`git show <main>:<manifest>` and are byte-identical. All 146 historical entries
+were additionally reproduced from pinned `b8f30561` Git file bytes.
+
+The complete tracked diff-name list against this main baseline and the
+untracked-file list were checked directly, independently of tests. No changed
+or new paths exist under `lib/db/` (including schema, migrations and
+migration-runtime), `scripts/src/migrations/`, or `artifacts/api-server/`.
+The same lists contain no path components naming booking, auth,
+authorization, or baseline. This is a file-scope check, not an assertion about
+every expression in changed frontend pages.
+
+Only this audit note is added by the manifest audit. No manifest, source,
+memory file, database, server, workflow, commit, or push is changed or operated
+by this audit.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+ran once. Both validators passed (114 diagnostic negative cases and 65
+execution negative fixtures); the regression runner reported 13 passed,
+zero failed, zero skipped.
+
+## Daily task 2 — city canonical and address-test follow-up audit
+
+Authority: attachment `1790067612505`, with separate city-canonical/browser/
+timing and address-test/provenance commits. The pre-audit HEAD is
+`56a71599f41ccb5c378523e5b8f4e74319fcd3d6`; eligibility and historical parity
+use main `a94abeeea316710c000629d4d78b8ce3c86bb5e8`.
+
+A complete direct SHA-256 census checked all 158 current-source entries:
+73 diagnostic `currentInputs` and 85 execution-plan `files`. The full drift
+list is empty (`[]`): zero new current-hash amendments, zero old/new hash rows,
+and zero manifest-cascade changes. Neither the canonical/browser/timing files
+nor the two address-test files require a protected hash replacement. There is
+therefore no first-commit hash subset to stage; this audit note accompanies
+the second commit's existing Stage B provenance-reference correction.
+
+Both entire manifests, including their historical tiers, remain byte-identical
+to main a94. The 146 historical entries were also independently verified
+against their pinned `b8f30561` Git file bytes. Prior approved hash amendments
+are preserved without any manifest changes.
+
+Direct inspection of all diff paths against main and all untracked paths found
+no changes under `lib/db/` or `scripts/src/migrations/`. The only changed API
+path is `artifacts/api-server/src/lib/appointment-routes.test.ts`, the expressly
+authorized cross-salon-owner authorization regression test. No API
+implementation, authentication/authorization engine, booking engine, database
+schema, migration, or migration-runtime file is changed in those scopes.
+`scripts/src/public-salon-address.test.ts` is the authorized whole-helper-result
+test follow-up. This records file-scope evidence, not a substitute for the
+implementation agent's test results.
+
+This audit edits only this provenance document, preserving the worker's
+correction to the real Stage B commit `67bb260d409e70ca01b773ddfe9d65fd564021e7`.
+It performs no source/test edits, database operations, servers, workflows,
+commits, or pushes.
+
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+ran once for this task. Both validators passed (114 diagnostic negative cases;
+65 execution negative fixtures), and all 13 regression tests passed with zero
+failures and zero skipped tests.
+
+## Job first publication — current-source hash amendment audit
+
+Authority: the owner's first-publication task and explicit authorization to
+amend changed current-source hashes with the full dependent manifest cascade.
+Pre-audit HEAD is `43e0232770cb8c6d79735d781ab727a95265a808` on
+`daily/2026-09-22`; historical parity uses main
+`a94abeeea316710c000629d4d78b8ce3c86bb5e8`.
+
+A complete direct census of all 158 current entries (73 diagnostic
+`currentInputs`, 85 execution-plan `files`) identified exactly eight source
+hash mismatches: the four branch-changed paths below in both manifests.
+The new `000004` migration legitimately advances HEAD fingerprints/frontier;
+baseline admission pins and previous migration entries are not rebaselined.
+These are current-source amendments, not amendments to historical evidence.
+
+| Changed source (amended in both current tiers) | Previous SHA-256 | Current SHA-256 |
+| --- | --- | --- |
+| `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `b04526547e6e32e00c55dc0241cc18a69eef95235490ded190687ac3fd9fe251` | `34dcafd4006a51e5e04df0ec82c688b6578fefcd16d3e948ec51143cb6e2308d` |
+| `scripts/src/migrations/manifest.ts` | `c5ced3b9b9fb486cdd4494b5347bd2caf47d8d37612f955b9c59ad765dde298f` | `e6f2ee512bf1938849ee73873ec6bf9809dfa7873823c92ee0a4fb1ac2eb2549` |
+| `scripts/src/migrations/migrations.integration.test.ts` | `6418c5ff3ac6050187cc972546788bef8bbc92f97e0274a07f219119d4c3345c` | `4d7afaf96db9a01b3ac607c2facfd744bea98e64c027a965a46711c618cc4720` |
+| `scripts/src/migrations/migrations.test.ts` | `7dec6c6505da552438bb64b905d868f75215688575dc8c9a92e1e8811ab7d566` | `8ddb6d2bbb7987e9bcafdce86b4955731b00bd054a823ddb187ebe5e1a6fd6d3` |
+
+The ninth amendment is the dependent execution-plan `files` entry for
+`docs/production-diagnostic-design/protected-input-manifest.json`:
+`cc5ca3028064bd35c6fbf10412f9f16b9853ff0481002f7583b20fd7222c186a`
+becomes
+`dda1bbabb8f2ad72351a86546f50514f8b7db4437a5cbf28f0d650f403d3c13b`.
+No other current entry is amended. Both immutable historical tiers remain
+raw-byte-identical to main, with all 146 historical hashes independently
+reproduced from pinned `b8f30561` Git bytes.
+
+Final full-census and database-free documentation-validator results are
+retained in ignored `recovery-backups/job-publication/protected-audit.json`
+and `protected-docs-validators.log`. This audit owns only the two protected
+manifests and this provenance note; it performs no application/migration code
+edits, database operations, CI reads, deployments, Git staging, commits or
+pushes.
+
+Final census: all 158 current hashes match, with exactly nine approved
+amendments and no residual drift; all 146 historical hashes match their
+pinned Git bytes. Final execution-plan manifest SHA-256:
+`f6f0a0aeeb493cc69d211d4e2bbbfc14a8623dbebac34656b9ce23cbc79ff99a`.
+Validation: `pnpm --filter @workspace/scripts run test:reconstruction:docs`
+passed all 13 regression tests, zero failures and zero skipped; both validators
+passed their 114 diagnostic negative cases and 65 execution negative fixtures.
+The protected-document diff passes `git diff --check`.

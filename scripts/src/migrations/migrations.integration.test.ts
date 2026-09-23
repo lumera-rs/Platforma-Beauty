@@ -164,9 +164,9 @@ const canonicalAdoptionRefusal = "Supported baseline adoption requires the exact
 test("fresh apply and rerun are a no-op", skip, async () => {
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
-    assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002", "000003"]);
+    assert.deepEqual(migrations.map(({ id }) => id), ["000001", "000002", "000003", "000004"]);
     const first = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(first.applied, ["000001", "000002", "000003"]);
+    assert.deepEqual(first.applied, ["000001", "000002", "000003", "000004"]);
     assert.deepEqual(first.skipped, []);
     const beforeReceipts = await ledgerReceipts(pool);
     const beforeCatalog = await fingerprint(pool);
@@ -175,17 +175,17 @@ test("fresh apply and rerun are a no-op", skip, async () => {
     assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
     const second = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.applied, []);
-    assert.deepEqual(second.skipped, ["000001", "000002", "000003"]);
+    assert.deepEqual(second.skipped, ["000001", "000002", "000003", "000004"]);
     assert.deepEqual(await ledgerReceipts(pool), beforeReceipts);
     assert.deepEqual(await fingerprint(pool), beforeCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "APPLIED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" },
+         { id: "000001", state: "APPLIED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" }, { id: "000004", state: "APPLIED" },
       ]);
   });
   await withDatabase(async (pool) => {
     const migrations = await loadMigrations();
-    const previous = migrations.filter(migration => migration.id !== "000003");
+    const previous = migrations.filter(migration => migration.id < "000003");
     await withClient(pool, client => applyMigrations(client, { migrations: previous, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, false);
     // An ordinary tenant row must not re-trigger 000002's initial-state gate.
@@ -203,7 +203,7 @@ test("fresh apply and rerun are a no-op", skip, async () => {
     assert.deepEqual(await fingerprint(pool), before, "failed postcondition must roll back all four columns");
     assert.deepEqual(await ledgerReceipts(pool), receipts, "failed transaction must not leave a receipt");
     const result = await withClient(pool, client => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(result, { applied: ["000003"], skipped: ["000001", "000002"] });
+    assert.deepEqual(result, { applied: ["000003", "000004"], skipped: ["000001", "000002"] });
     assert.equal((await pool.query("SELECT count(*)::integer AS count FROM public.users WHERE email='address-owner@disposable.invalid'")).rows[0].count, 1);
     const columns = await pool.query(`SELECT column_name, udt_schema, udt_name, is_nullable, column_default
       FROM information_schema.columns WHERE table_schema='public' AND table_name='salons'
@@ -211,6 +211,42 @@ test("fresh apply and rerun are a no-op", skip, async () => {
     assert.deepEqual(columns.rows, ["apartment", "entrance_directions", "floor", "intercom"].map(column_name => ({
       column_name, udt_schema: "pg_catalog", udt_name: "text", is_nullable: "YES", column_default: null,
     })));
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
+  });
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const previous = migrations.filter(migration => migration.id < "000004");
+    await withClient(pool, client => applyMigrations(client, { migrations: previous, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, false);
+    await pool.query(`INSERT INTO public.users
+      (id,first_name,last_name,email,password_hash,role)
+      VALUES ('10000000-0000-4000-8000-000000000004','Job','Owner','job-owner@disposable.invalid','x','CUSTOMER')`);
+    await pool.query(`INSERT INTO public.beauty_job_categories (id,slug,name)
+      VALUES ('20000000-0000-4000-8000-000000000004','publication-proof','Publication proof')`);
+    await pool.query(`INSERT INTO public.beauty_job_listings
+      (category_id,user_id,posted_by_type,type,title,description,city,region,moderation_status,expires_at)
+      VALUES ('20000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000004',
+      'user','job','Legacy listing','Legacy description','Nis','Nis','approved',now()+interval '10 days')`);
+    const before = await fingerprint(pool);
+    const receipts = await ledgerReceipts(pool);
+    const failing = migrations.map(migration => migration.id === "000004"
+      ? { ...migration, postconditions: ["SELECT false"] } : migration);
+    await assert.rejects(
+      () => withClient(pool, client => applyMigrations(client, { migrations: failing, expectedTargetIdentity: expectedDisposableTarget(pool) })),
+      /postcondition failed/u,
+    );
+    assert.deepEqual(await fingerprint(pool), before, "failed job publication migration rolls back its column");
+    assert.deepEqual(await ledgerReceipts(pool), receipts, "failed transaction leaves no publication receipt");
+    const result = await withClient(pool, client => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
+    assert.deepEqual(result, { applied: ["000004"], skipped: ["000001", "000002", "000003"] });
+    const columns = await pool.query(`SELECT column_name, udt_schema, udt_name, is_nullable, column_default
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='beauty_job_listings'
+      AND column_name='first_published_at'`);
+    assert.deepEqual(columns.rows, [{
+      column_name: "first_published_at", udt_schema: "pg_catalog", udt_name: "timestamptz", is_nullable: "YES", column_default: null,
+    }]);
+    assert.deepEqual((await pool.query("SELECT first_published_at FROM public.beauty_job_listings")).rows,
+      [{ first_published_at: null }], "existing public listings are not backfilled");
     assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
   });
 });
@@ -234,15 +270,15 @@ test("exact adoption and second adoption are idempotent", skip, async () => {
     assert.deepEqual(await fingerprint(pool), adoptedCatalog);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" },
+         { id: "000001", state: "ADOPTED" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" }, { id: "000004", state: "PENDING" },
       ]);
     // Explicit B1 adoption and data execution are separate operations.
     const applied = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(applied.applied, ["000002", "000003"]);
+    assert.deepEqual(applied.applied, ["000002", "000003", "000004"]);
     assert.deepEqual(applied.skipped, ["000001"]);
     assert.deepEqual((await withClient(pool, (client) => migrationStatus(client, migrations)))
       .map(({ id, state }) => ({ id, state })), [
-        { id: "000001", state: "ADOPTED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" },
+         { id: "000001", state: "ADOPTED" }, { id: "000002", state: "APPLIED" }, { id: "000003", state: "APPLIED" }, { id: "000004", state: "APPLIED" },
       ]);
   });
 });
@@ -496,7 +532,7 @@ test("status is read-only", skip, async () => {
     await withClient(pool, async (client) => {
       assert.deepEqual((await migrationStatus(client, migrations))
         .map(({ id, state }) => ({ id, state })), [
-          { id: "000001", state: "PENDING" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" },
+          { id: "000001", state: "PENDING" }, { id: "000002", state: "PENDING" }, { id: "000003", state: "PENDING" }, { id: "000004", state: "PENDING" },
         ]);
       const relation = await client.query(
         "SELECT to_regclass('public.lumera_migration_ledger') AS ledger",

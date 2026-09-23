@@ -1,3 +1,5 @@
+import { publicJobDate } from "../../structured-data.mjs";
+import { publicImageAlt } from "../../seo-text.mjs";
 import { useState, useEffect } from "react";
 import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -251,7 +253,7 @@ export default function BeautyJobDetailPage() {
             
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-primary" />
-              <span>Objavljeno: {formatBeautyJobDate(job.createdAt, "dd.MM.yyyy.")}</span>
+              {publicJobDate(job) && <span>Objavljeno: <time dateTime={publicJobDate(job)}>{formatBeautyJobDate(publicJobDate(job), "dd.MM.yyyy.")}</time></span>}
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -318,7 +320,7 @@ export default function BeautyJobDetailPage() {
               <div className="md:col-span-3 aspect-[4/3] md:aspect-[16/9] rounded-xl overflow-hidden bg-muted relative">
                 <OptimizedImage
                   src={job.photos[0]}
-                  alt={photoDescriptions[job.photos[0]]?.trim() || job.coverImageDescription?.trim() || job.title}
+                  alt={publicImageAlt({ name: job.title, category: job.categoryName, city: job.city, description: photoDescriptions[job.photos[0]]?.trim() || job.coverImageDescription })}
                   width={800}
                   height={600}
                   className="w-full h-full object-cover"
@@ -329,7 +331,7 @@ export default function BeautyJobDetailPage() {
                   <div key={idx} className="flex-1 rounded-xl overflow-hidden bg-muted relative min-h-0">
                     <OptimizedImage
                       src={photo}
-                      alt={photoDescriptions[photo]?.trim() || `${job.title} — fotografija ${idx + 2}`}
+                      alt={publicImageAlt({ name: job.title, category: job.categoryName, city: job.city, description: photoDescriptions[photo]?.trim() || `Fotografija ${idx + 2}` })}
                       width={300}
                       height={200}
                       className="w-full h-full object-cover"

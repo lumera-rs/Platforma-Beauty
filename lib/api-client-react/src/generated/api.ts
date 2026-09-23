@@ -469,6 +469,7 @@ import type {
   GetEducationSubscriptionRenewalInstructions200,
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
+  GetSalon200,
   GetSalonAvailabilityParams,
   GetSalonCalendarDayParams,
   GetSalonDashboardParams,
@@ -659,7 +660,6 @@ import type {
   SalonPackageAppointmentsInput,
   SalonPackageAppointmentsPreview,
   SalonPackageAppointmentsResult,
-  SalonProfile,
   SalonProfileMedia,
   SalonProfileMediaUpdate,
   SalonResource,
@@ -2570,9 +2570,9 @@ export const getGetSalonUrl = (slug: string,) => {
 /**
  * @summary Get salon profile
  */
-export const getSalon = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<SalonProfile> => {
+export const getSalon = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<GetSalon200> => {
 
-  return customFetch<SalonProfile>(getGetSalonUrl(slug),
+  return customFetch<GetSalon200>(getGetSalonUrl(slug),
   {
     ...options,
     method: 'GET'

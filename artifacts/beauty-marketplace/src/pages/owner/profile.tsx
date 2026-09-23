@@ -17,7 +17,8 @@ import { SafeExternalLink } from "@/components/safe-external-link";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
 import { trackEvent } from "@/lib/analytics";
 import { useMediaDescriptions } from "@/lib/media-descriptions";
-import { publicSiteUrl } from "@/lib/public-site-url";
+import { publicSiteOrigin, publicSiteUrl } from "@/lib/public-site-url";
+import { ownerWidgetUrl } from "@/lib/owner-widget-url";
 import { QRCodeSVG } from "qrcode.react";
 import {
   getGetManagedSalonProfileQueryKey,
@@ -189,7 +190,7 @@ export default function OwnerSalonProfile() {
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   );
-  const widgetUrl = salon ? publicSiteUrl(`/widget/${salon.slug}${widgetColor ? `?boja=${widgetColor.slice(1)}` : ""}`) : "";
+  const widgetUrl = salon ? ownerWidgetUrl(publicSiteOrigin(), import.meta.env.BASE_URL, salon.slug, widgetColor) : "";
   const widgetSnippet = `<iframe src="${widgetUrl}" style="border:0;width:100%;max-width:420px;height:640px" title="Zakazivanje"></iframe>`;
   const widgetAvailable = Boolean(salon?.active && salon.isVerified);
   const copyWidgetSnippet = async () => {

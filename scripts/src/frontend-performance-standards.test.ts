@@ -51,7 +51,22 @@ const paginatedSearchFiles = serverSearchFiles.filter((file) =>
 );
 for (const file of paginatedSearchFiles) {
   const source = read(file);
-  assert.match(source, /setPage\(1\)/u, `${file} must reset pagination when criteria settle`);
+  if (file === "artifacts/beauty-marketplace/src/pages/salons.tsx") {
+    assert.match(source, /useEffect\(\(\) => \{\s*if \(!filterEdited\.current\) return;\s*filterEdited\.current = false;\s*navigate\(pageHref\(1\)\);\s*\}, \[filterParams\]\)/u, "salon filter changes must reset the URL page after debounced criteria settle, not on initial/back-forward navigation");
+    assert.match(source, /const pageHref = \(nextPage: number\) => \{[\s\S]*?new URLSearchParams\(searchParams\)[\s\S]*?Object\.entries\(filterParams\)[\s\S]*?params\.set\("page", String\(nextPage\)\)/u, "salon page links must preserve settled filters and set the requested URL page");
+    assert.match(source, /const requestedPage = Number\(searchParams\.get\("page"\) \|\| 1\)/u, "salon page requests must restore the URL cursor");
+    assert.match(source, /const params = useMemo<ListSalonsParams>\(\(\) => \(\{\s*\.\.\.filterParams,\s*page,\s*pageSize: PAGE_SIZE,/u, "salons must send filters, current page, and bounded page size to the API");
+    assert.match(source, /useListSalons\(params,/u);
+    assert.doesNotMatch(source, /\b(?:pageSalons|paginatedSalons)\??\.slice\(/u, "salon results must not be locally paginated after server pagination");
+  } else if (file.endsWith("/education-marketplace.tsx")) {
+    assert.match(source, /const setFilter = \(key: string, value: string \| undefined\) => \{[\s\S]*?if \(key !== 'page'\) next\.set\('page', '1'\);[\s\S]*?setLocation\(`\$\{basePath\}\?\$\{next\.toString\(\)\}`\)/u, "education criterion changes must reset the URL page while page navigation preserves the requested cursor");
+    assert.match(source, /const page = listingPage\(searchString\)/u, "education must restore the URL page on direct and history navigation");
+    assert.match(source, /const queryParams:[\s\S]*?=\s*\{[\s\S]*?\bpage,\s*pageSize: EDUCATION_PAGE_SIZE,/u, "education must request the current server page and bounded page size");
+    assert.match(source, /useListPublicEducationCourses\(queryParams,/u);
+    assert.doesNotMatch(source, /\bcourses\??\.slice\(/u, "education results must not be locally paginated after server pagination");
+  } else {
+    assert.match(source, /setPage\(1\)/u, `${file} must reset pagination when criteria settle`);
+  }
 }
 
 const optimisticTargets = [

@@ -3600,6 +3600,7 @@ async function centerPublicView(
     : 0;
   return {
     id: center.id,
+    updatedAt: safeIsoTimestamp(center.updatedAt),
     name: center.name,
     city: center.city,
     description: center.description,
@@ -3796,6 +3797,7 @@ async function educationCourseView(
     instructor: instructorName,
     instructorProfileId,
     instructorProfile: publicInstructorProfile,
+    updatedAt: safeIsoTimestamp(course.updatedAt),
     publisher: publisher?.name ?? "LUMERA partner",
     publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
     publisherVerified: center[0]?.verificationStatus === "verified",
@@ -3834,6 +3836,10 @@ async function educationCourseView(
     refundPolicy: course.refundPolicy,
     groupDiscountMinimum: course.groupDiscountMinimum,
     groupDiscountPercent: course.groupDiscountPercent,
+    onlineAccessDays: course.onlineAccessDays,
+    extensionPrice1Month: course.extensionPrice1Month,
+    extensionPrice3Months: course.extensionPrice3Months,
+    extensionPrice6Months: course.extensionPrice6Months,
     giftVoucherEligible: course.giftVoucherEligible,
     centerId: course.centerId,
     imageUrl: course.imageUrl,
@@ -6663,7 +6669,7 @@ router.get("/salons", async (req, res): Promise<void> => {
 
   const predicates = [
     eq(salonsTable.active, true),
-    query.city ? sql`lower(${salonsTable.city}) = ${query.city.toLowerCase()}` : undefined,
+    query.city ? sql`lower(trim(regexp_replace(normalize(${salonsTable.city}, NFC), '[[:space:]]+', ' ', 'g'))) = ${query.city.normalize("NFC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("sr-Latn")}` : undefined,
     query.municipality ? sql`lower(${salonsTable.municipality}) = ${query.municipality.toLowerCase()}` : undefined,
     treatment
       ? sql`exists (select 1 from ${servicesTable} where ${activeService} and position(${treatment} in lower(${servicesTable.categoryName} || ' ' || ${servicesTable.name} || ' ' || coalesce(${servicesTable.tags}::text, ''))) > 0)`
@@ -7031,7 +7037,14 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     eq(salonsTable.slug, parsed.data.slug),
     eq(salonsTable.active, true),
   )).limit(1);
-  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+  if (!salon) {
+    // Only name, inactive state and public city are approved for inactive profiles.
+    // Never expose street/entrance, contacts, coordinates, assets or booking data.
+    const [inactive] = await db.select({ name: salonsTable.name, city: salonsTable.city }).from(salonsTable)
+      .where(and(eq(salonsTable.slug, parsed.data.slug), eq(salonsTable.active, false))).limit(1);
+    if (inactive) { res.json({ name: inactive.name, active: false, city: inactive.city }); return; }
+    res.status(404).json({ error: "Salon nije pronađen." }); return;
+  }
   const [services, staff, hours, reviews, firstAvailability] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
     db.select({ employee: employeesTable }).from(employeesTable)
@@ -22124,12 +22137,15 @@ router.get("/education/public/taxonomy", async (_req, res): Promise<void> => {
     const sectionCategories = categories.filter((category) => category.sectionId === section.id);
     return {
       id: section.id, name: section.name, slug: section.slug, sortOrder: section.sortOrder, active: section.active,
+      updatedAt: safeIsoTimestamp(section.updatedAt),
       courseCount: countFor((row) => sectionCategories.some((category) => category.id === row.categoryId)),
       categories: sectionCategories.map((category) => ({
         id: category.id, name: category.name, slug: category.slug, sortOrder: category.sortOrder, active: category.active,
+        updatedAt: safeIsoTimestamp(category.updatedAt),
         courseCount: countFor((row) => row.categoryId === category.id),
         subcategories: subcategories.filter((subcategory) => subcategory.categoryId === category.id).map((subcategory) => ({
           id: subcategory.id, name: subcategory.name, slug: subcategory.slug, sortOrder: subcategory.sortOrder, active: subcategory.active,
+          updatedAt: safeIsoTimestamp(subcategory.updatedAt),
           courseCount: countFor((row) => row.subcategoryId === subcategory.id),
           courseTypes: courseTypes.filter((courseType) => courseType.subcategoryId === subcategory.id).map((courseType) => ({
             id: courseType.id, name: courseType.name, slug: taxonomySlug(courseType.name), sortOrder: courseType.sortOrder, active: courseType.active,
@@ -23201,6 +23217,7 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   const rating = Math.round(Number(publishedReviewAggregate?.rating ?? 0) * 10) / 10;
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
+    updatedAt: safeIsoTimestamp(instructor.updatedAt),
     socialImage: await publicSocialImage(instructor.photoUrl),
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
     qualifications: instructor.qualifications, portfolioMedia: instructor.portfolioMedia,

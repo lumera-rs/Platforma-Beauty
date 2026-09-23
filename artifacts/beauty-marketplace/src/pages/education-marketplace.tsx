@@ -1,3 +1,5 @@
+import { listingPage } from "../../seo-policy.mjs";
+import { publicImageAlt } from "../../seo-text.mjs";
 import { useState, useMemo, useEffect, useRef, ReactNode } from "react";
 import { Link, useLocation, useRoute, useSearch } from "wouter";
 import {
@@ -42,7 +44,7 @@ import {
   getListPublicEducationCoursesQueryKey,
   createTargetedIdempotencyKeys,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -150,7 +152,7 @@ export function EducationCourseCard({ course, compact = false, placementLabel, o
   return (
     <Card className="group flex h-full flex-col overflow-hidden border-border/60 transition-all hover:border-primary/30 hover:shadow-xl hover:-translate-y-1">
       <Link href={`/edukacije/${course.id}`} className="block aspect-[16/9] overflow-hidden bg-muted relative">
-        <OptimizedImage src={course.imageUrl} alt={course.coverImageDescription?.trim() || course.title} width={800} height={450} responsiveSizes="(max-width: 640px) 100vw, 400px" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+        <OptimizedImage src={course.imageUrl} alt={publicImageAlt({ name: course.title, category: course.category, city: course.city, description: course.coverImageDescription })} width={800} height={450} responsiveSizes="(max-width: 640px) 100vw, 400px" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
         <CourseWishlistButton course={course} />
         {placementLabel && (
           <div className="absolute top-3 right-3">
@@ -422,7 +424,7 @@ export default function EducationMarketplace({
   const [, setLocation] = useLocation();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
 
-  const page = parseInt(searchParams.get("page") ?? "1", 10);
+  const page = listingPage(searchString);
   const q = searchParams.get("q") || undefined;
   const categoryFilter = searchParams.get("category") || undefined;
   const sectionId = searchParams.get("sectionId") || undefined;
@@ -504,7 +506,20 @@ export default function EducationMarketplace({
     query: { queryKey: getListPublicEducationCoursesQueryKey(queryParams) }
   });
 
-  const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
+  const nextQueryParams = { ...queryParams, page: page + 1 };
+  const { data: followingCourses } = useListPublicEducationCourses(nextQueryParams, {
+    query: {
+      queryKey: getListPublicEducationCoursesQueryKey(nextQueryParams),
+      enabled: !loadingCourses && (courses?.length ?? 0) === EDUCATION_PAGE_SIZE,
+      staleTime: 30_000,
+    },
+  });
+  const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE && (followingCourses?.length ?? 0) > 0;
+  const pageHref = (next: number) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("page", String(next));
+    return `${window.location.pathname}?${params}`;
+  };
 
   const flatCategories = useMemo(() => {
     if (!taxonomy) return [];
@@ -763,21 +778,13 @@ export default function EducationMarketplace({
               )}
 
               <div className="mt-12 flex items-center justify-center gap-4 border-t border-border/50 pt-8">
-                <Button
-                  variant="outline"
-                  disabled={page <= 1}
-                  onClick={() => setFilter("page", (page - 1).toString())}
-                >
+                {page > 1 && <Button asChild variant="outline"><Link href={pageHref(page - 1)}>
                   <ArrowLeft className="w-4 h-4 mr-2" /> Prethodna
-                </Button>
+                </Link></Button>}
                 <span className="text-sm font-medium text-muted-foreground">Strana {page}</span>
-                <Button
-                  variant="outline"
-                  disabled={!hasNextPage}
-                  onClick={() => setFilter("page", (page + 1).toString())}
-                >
+                {hasNextPage && <Button asChild variant="outline"><Link href={pageHref(page + 1)}>
                   Sledeća <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
+                </Link></Button>}
               </div>
             </section>
 
@@ -899,7 +906,16 @@ export function EducationBundleDetail() {
   const bundleId = params?.bundleId ?? "";
   const { data: current } = useGetCurrentUser();
   const { toast } = useToast();
-  const [bundle, setBundle] = useState<any>(null);
+  const { data: bundle, isError: bundleError } = useQuery<any>({
+    queryKey: [`/api/education/bundles/${bundleId}`],
+    enabled: Boolean(bundleId),
+    retry: false,
+    queryFn: async () => {
+      const response = await fetch(`/api/education/bundles/${bundleId}`);
+      if (!response.ok) throw Object.assign(new Error(`Paket nije dostupan (${response.status}).`), { status: response.status });
+      return response.json();
+    },
+  });
   const [employees, setEmployees] = useState<Array<{ id: string; salonId: string; name: string }>>([]);
   const [employeeId, setEmployeeId] = useState("");
   const [pending, setPending] = useState(false);
@@ -911,7 +927,6 @@ export function EducationBundleDetail() {
   // logical purchase attempt in between.
   const [purchaseAttempt, setPurchaseAttempt] = useState(0);
   const bundlePurchaseIdempotencyKey = useMemo(() => crypto.randomUUID(), [bundleId, purchaseAttempt]);
-  useEffect(() => { void fetch(`/api/education/bundles/${bundleId}`).then(r => r.ok ? r.json() : Promise.reject()).then(setBundle).catch(() => setBundle(false)); }, [bundleId]);
   useEffect(() => { if (current?.user?.role === "SALON_OWNER") void fetch("/api/education/bundle-purchases/eligible-employees", { credentials: "include" }).then(r => r.json()).then(setEmployees); }, [current?.user?.role]);
   useEffect(() => { setDigitalContentConsent(false); }, [bundleId]);
   const hasOnlineCourse = Boolean(bundle?.courses?.some((course: any) => course.format === "online"));
@@ -935,7 +950,7 @@ export function EducationBundleDetail() {
       toast.success("Zahtev za paket je evidentiran");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Kupovina nije uspela"); } finally { setPending(false); }
   };
-  if (bundle === false) return <Layout><main className="container mx-auto px-4 py-16">Paket nije pronađen.</main></Layout>;
+  if (bundleError) return <Layout><main className="container mx-auto px-4 py-16">Paket nije pronađen.</main></Layout>;
   if (!bundle) return <Layout><main className="container mx-auto px-4 py-16"><Loader2 className="animate-spin" /></main></Layout>;
   return (
     <Layout>
@@ -1244,7 +1259,7 @@ export function EducationPublicCourseDetail() {
 
         <SalonGallery
           media={gallery}
-          salonName={course.title}
+          salonName={publicImageAlt({ name: course.title, category: course.category, city: course.city })}
           coverImageUrl={course.imageUrl}
           coverImageDescription={course.coverImageDescription}
         />

@@ -1,5 +1,70 @@
 import staticPages from './src/lib/static-seo-pages.json' with { type: 'json' };
 
+export function normalizedQuery(search = '') {
+  const params = new URLSearchParams([...new URLSearchParams(search)].filter(([, value]) => value !== ''));
+  params.sort();
+  return params;
+}
+
+export function normalizeCity(value = '') {
+  return String(value).normalize('NFC').trim().replace(/\s+/gu, ' ')
+    .toLocaleLowerCase('sr-Latn').replace(/(^|[\s-])(\p{L})/gu,
+      (_, separator, letter) => separator + letter.toLocaleUpperCase('sr-Latn'));
+}
+
+export function listingPage(search = '') {
+  const value = new URLSearchParams(search).get('page');
+  return value && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : 1;
+}
+export function listingCanonical(pathname, search = '') {
+  const params = normalizedQuery(search);
+  if (!['/saloni', '/edukacije', '/poslovi'].includes(pathname)
+    && !pathname.startsWith('/saloni/kategorija/')
+    && !pathname.startsWith('/edukacije/sekcije/')
+    && !(/^\/shop\/[^/]+(?:\/.*)?$/.test(pathname) && !pathname.includes('/proizvod/'))) return pathname;
+  const pageValue = params.get('page');
+  const page = pageValue && /^[1-9]\d*$/.test(pageValue) && Number.isSafeInteger(Number(pageValue))
+    ? Number(pageValue)
+    : 1;
+
+  if (pathname === '/saloni') {
+    const cities = params.getAll('city').map(normalizeCity).filter(Boolean);
+    const canonical = new URLSearchParams();
+    if (cities.length === 1) canonical.set('city', cities[0]);
+
+    const filters = new URLSearchParams(params);
+    filters.delete('page');
+    filters.delete('pageSize');
+    const isPlainOrCityOnly = filters.size === 0
+      || (filters.size === 1 && filters.has('city') && cities.length === 1);
+    if (isPlainOrCityOnly && page >= 2) canonical.set('page', String(page));
+    canonical.sort();
+    return canonical.size ? `${pathname}?${canonical}` : pathname;
+  }
+
+  if (pathname.startsWith('/shop/') || pathname.startsWith('/saloni/kategorija/')
+    || pathname.startsWith('/edukacije/sekcije/')) {
+    return params.size ? `${pathname}?${params}` : pathname;
+  }
+
+  // Page one always folds into the unpaginated parent. Existing page two and
+  // later listing contracts retain their filters.
+  if (page < 2) return pathname;
+  params.set('page', String(page));
+  params.sort();
+  return `${pathname}?${params}`;
+}
+
+export function listingIndexable(pathname, search = '') {
+  const params = normalizedQuery(search);
+  if (pathname !== '/saloni') return params.size === 0;
+  params.delete('pageSize');
+  if (params.get('page') === '1') params.delete('page');
+  params.sort();
+  const normalizedRequest = params.size ? `${pathname}?${params}` : pathname;
+  return listingCanonical(pathname, search) === normalizedRequest;
+}
+
 export function publicSiteOrigin(env = process.env) {
   const value = env.PUBLIC_SITE_URL || env.LUMERA_PUBLIC_URL;
   if (!value) throw new Error('PUBLIC_SITE_URL must be configured.');

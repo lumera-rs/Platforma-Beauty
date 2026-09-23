@@ -4,9 +4,102 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import { parse as parseYaml } from "yaml";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
+
+test("job first-publication HTTP lifecycle stays in the timed release chain on an owned PG16 cluster", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const runner = await readFile(path.join(workspaceRoot, "scripts/src/run-job-first-publication.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:2-backend"], /pnpm run test:beauty-jobs &&/);
+  assert.equal(root.scripts["test:beauty-jobs"], "pnpm --filter @workspace/scripts run test:beauty-jobs");
+  assert.equal(scripts.scripts["test:beauty-jobs"], "tsx ./src/run-job-first-publication.ts");
+  assert.match(runner, /beauty-jobs-routes\.test\.ts/);
+  assert.match(
+    runner,
+    /stdio:\s*\["ignore",\s*"pipe",\s*"pipe"\][\s\S]*pipeRedactedDatabaseOutput\(child,\s*childEnvironment\)/,
+    "The database URL child must use piped, redacted output rather than inherited file descriptors.",
+  );
+  assert.doesNotMatch(
+    runner,
+    /stdio:\s*"inherit"/,
+    "The first-publication database child must never inherit stdout or stderr.",
+  );
+  const source = ts.createSourceFile("run-job-first-publication.ts", runner, ts.ScriptTarget.Latest, true);
+  const migrationCalls: ts.CallExpression[] = [];
+  const identities: ts.VariableDeclaration[] = [];
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "applyMigrations") {
+      migrationCalls.push(node);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "identity") {
+      identities.push(node);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  assert.equal(migrationCalls.length, 1, "The owned runner must apply the manifest exactly once.");
+  assert.equal(identities.length, 1, "The owned runner must declare one explicit target identity.");
+  const printer = ts.createPrinter({ removeComments: true });
+  const print = (node: ts.Node) => printer.printNode(ts.EmitHint.Unspecified, node, source);
+  assert.equal(print(migrationCalls[0]!), "applyMigrations(client, { migrations: await loadMigrations(), expectedTargetIdentity: identity })");
+  const identity = identities[0]!.initializer;
+  assert.ok(identity && ts.isObjectLiteralExpression(identity), "Target identity must be an explicit object.");
+  assert.deepEqual(identity.properties.map(print), [
+    'databaseName: "postgres"',
+    "systemIdentifier",
+    'transport: "unencrypted" as const',
+  ], "The migration target must declare database name, cluster system identifier, and transport.");
+  assert.match(runner, /const systemIdentifier = \(await client\.query\("SELECT system_identifier::text FROM pg_catalog\.pg_control_system\(\)"\)\)\.rows\[0\]\.system_identifier;/);
+  assert.match(runner, /Math\.floor\(version \/ 10000\) !== 16/);
+  assert.match(runner, /SITE_INDEXABLE: "false"/);
+  assert.doesNotMatch(runner, /process\.env(?:\.DATABASE_URL|\["DATABASE_URL"\])|push-force|drizzle/);
+  assert.equal(budgets.baselinesSeconds["database:release:2-backend"], 355);
+  assert.equal(budgets.baselinesSeconds["validate:ci:database:total"], 685);
+});
+
+test("public SEO SPA regression stays in the timed browser release phase without database setup", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const config = await readFile(path.join(workspaceRoot, "scripts/playwright.seo.config.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:client-seo-browser/);
+  assert.match(root.scripts["test:client-seo-browser"], /--filter @workspace\/scripts run test:client-seo-browser/);
+  assert.match(scripts.scripts["test:client-seo-browser"], /playwright test --config playwright\.seo\.config\.ts/);
+  assert.match(config, /client-seo-navigation\.spec\.ts/);
+  assert.match(config, /SITE_INDEXABLE: "false"/);
+  assert.doesNotMatch(config, /DATABASE_URL|run-isolated-browser-suite|SITE_INDEXABLE: "true"/);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+});
+
+test("cover descriptions and nonroot owner widget URLs stay in the timed SEO release phase", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const scripts = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/package.json"), "utf8"));
+  const runner = await readFile(path.join(workspaceRoot, "scripts/src/run-cover-image-description-browser.ts"), "utf8");
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:owner-widget-url && pnpm run test:client-seo-browser && pnpm run test:cover-image-description-browser/);
+  assert.equal(root.scripts["test:owner-widget-url"], "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/beauty-marketplace/src/lib/owner-widget-url.test.ts");
+  assert.equal(root.scripts["test:cover-image-description-browser"], "pnpm --filter @workspace/scripts run test:cover-image-description-browser");
+  assert.equal(scripts.scripts["test:cover-image-description-browser"], "tsx ./src/run-cover-image-description-browser.ts");
+  assert.match(runner, /specPath: "browser\/cover-image-description-isolation\.spec\.ts"/);
+  assert.doesNotMatch(runner, /SITE_INDEXABLE:\s*"true"/);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+  assert.equal(budgets.baselinesSeconds["validate:ci:browser:total"], 935);
+});
+
+test("SEO discovery and inactive salon regressions stay in the existing timed SEO release command", async () => {
+  const root = JSON.parse(await readFile(path.join(workspaceRoot, "package.json"), "utf8"));
+  const frontend = JSON.parse(await readFile(path.join(workspaceRoot, "artifacts/beauty-marketplace/package.json"), "utf8"));
+  const budgets = JSON.parse(await readFile(path.join(workspaceRoot, "scripts/ci-build-timings.json"), "utf8"));
+  assert.match(frontend.scripts["test:seo"], /node --test seo-server\.test\.mjs seo-discovery\.test\.mjs inactive-salon-city\.test\.mjs/);
+  assert.equal(root.scripts["test:seo"], "pnpm --filter @workspace/beauty-marketplace run test:seo && NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test src/inactive-salon-contract.test.ts");
+  assert.match(root.scripts["validate:release:5-final"], /pnpm run test:seo &&/);
+  assert.equal(budgets.baselinesSeconds["browser:release:5-final"], 290);
+  assert.equal(budgets.baselinesSeconds["validate:ci:browser:total"], 935);
+});
 
 const requiredOtherIsolatedBrowserGateScripts = [
   "test:beauty-jobs-browser",
@@ -605,6 +698,27 @@ test("Batch 1 F1 and A-2 regressions stay in the API release phase", async () =>
     apiPhase,
     /pnpm run test:change-password-session-revocation && pnpm run test:owner-reset-password-session-revocation/,
     "F1 must run beside the related password-session gate in release phase 3.",
+  );
+});
+
+test("salon address authorization regression stays in the API release phase", async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const scripts = packageJson.scripts ?? {};
+
+  assert.ok(
+    chainedPnpmScripts(scripts["validate:release:3-api"] ?? "").includes("test:appointment-regressions"),
+    "Release phase 3 must retain the appointment regression gate.",
+  );
+  assert.ok(
+    chainedPnpmScripts(scripts["test:appointment-regressions"] ?? "").includes("test:appointment-concurrency"),
+    "The appointment regression gate must retain its database-backed concurrency suite.",
+  );
+  assert.equal(
+    scripts["test:appointment-concurrency"]?.match(/\.\.\/artifacts\/api-server\/src\/lib\/appointment-routes\.test\.ts/g)?.length,
+    1,
+    "The appointment concurrency suite must run appointment-routes.test.ts exactly once.",
   );
 });
 

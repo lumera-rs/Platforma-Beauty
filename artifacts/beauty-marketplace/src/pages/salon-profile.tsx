@@ -1,3 +1,6 @@
+import { publicImageAlt, publicSalonCategories, categoryListingHref } from "../../seo-text.mjs";
+import { publicReviews, salonStructuredData, validDate } from "../../structured-data.mjs";
+import { publicSiteOrigin } from "@/lib/public-site-url";
 import { BookingWidget, MobileBookingTrigger, MobileBookingDrawer } from "@/components/booking-widget";
 import { Layout } from "@/components/layout";
 import { publicSalonAddress } from "../../public-salon-address.mjs";
@@ -104,7 +107,8 @@ export default function SalonProfile() {
   const replaceJobseekerSalonInterests = useReplaceJobseekerSalonInterests();
   const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
 
-  const salonData = salon;
+  const inactiveSalon = salon && "active" in salon && salon.active === false ? salon : undefined;
+  const salonData = salon && "id" in salon ? salon : undefined;
 
   const [cart, setCart] = useState<{serviceId: string, employeeId?: string | null}[]>([]);
   const [bookingCart, setBookingCart] = useState<GroupedTreatmentRequest[]>([]);
@@ -166,12 +170,14 @@ export default function SalonProfile() {
   const { data: nearbySalonsResponse } = useListSalons(
     {
       city: salonData?.city,
+      page: 1, pageSize: 9,
     },
     {
       query: {
         enabled: !!salonData?.city,
         queryKey: getListSalonsQueryKey({
           city: salonData?.city,
+          page: 1, pageSize: 9,
         }),
       }
     }
@@ -232,8 +238,8 @@ export default function SalonProfile() {
     const list = Array.isArray(nearbySalonsResponse)
       ? nearbySalonsResponse
       : (nearbySalonsResponse as any)?.salons || (nearbySalonsResponse as any)?.data || [];
-    return list.filter((s: any) => s.id !== salonData?.id).slice(0, 5);
-  }, [nearbySalonsResponse, salonData?.id]);
+    return list.filter((s: any) => s.id !== salonData?.id && s.city === salonData?.city).slice(0, 8);
+  }, [nearbySalonsResponse, salonData?.id, salonData?.city]);
 
   const scrollToSection = (id: string) => {
     const section = document.getElementById(id);
@@ -692,6 +698,20 @@ export default function SalonProfile() {
     );
   }
 
+  if (inactiveSalon) {
+    // Only reuse the city link from this exact server-rendered profile. Never
+    // infer a city from private data or a stale profile after SPA navigation.
+    const serverLink = typeof document === "undefined" ? null : Array.from(document.querySelectorAll<HTMLAnchorElement>("[data-inactive-salon-city-link]"))
+      .find(link => link.dataset.inactiveSalonCityLink === `/saloni/${encodeURIComponent(slug || "")}`);
+    return <Layout><article className="container mx-auto px-4 py-12">
+      <h1 className="text-3xl font-bold">{inactiveSalon.name}</h1>
+      <p className="mt-4">Ovaj salon trenutno nije dostupan za zakazivanje.</p>
+      {serverLink
+        ? <a className="mt-4 inline-block underline" href={serverLink.getAttribute("href") || "/saloni"}>{serverLink.textContent}</a>
+        : <a className="mt-4 inline-block underline" href="/saloni">Pogledajte dostupne salone</a>}
+    </article></Layout>;
+  }
+
   if (!salonData) {
     const { status: salonErrorStatus } = getApiErrorDetails(salonError);
     if (salonError && salonErrorStatus !== 404) {
@@ -723,6 +743,8 @@ export default function SalonProfile() {
   }
 
   const isInterestedInSalon = jobseekerSalonInterests.includes(salonData.id);
+  const visibleReviews = publicReviews(salonData);
+  const salonPriceRange = salonStructuredData(salonData, publicSiteOrigin(), window.location.pathname)?.priceRange;
   const canUseBookingActions = !isLoadingUser && (!user || user.role === "CUSTOMER");
   const isCustomer = user?.role === "CUSTOMER";
   const toggleJobseekerSalonInterest = () => {
@@ -794,7 +816,7 @@ export default function SalonProfile() {
              <div className="w-full lg:w-[55%] xl:w-[60%]">
                 <SalonGallery
                   media={mediaItems}
-                  salonName={salonData.name}
+                  salonName={publicImageAlt({ name: salonData.name, category: publicSalonCategories(salonData).join(', '), city: salonData.city })}
                   coverImageUrl={salonData.imageUrl}
                   coverImageDescription={salonData.coverImageDescription}
                 />
@@ -861,6 +883,13 @@ export default function SalonProfile() {
                 <p className="text-muted-foreground text-lg leading-relaxed max-w-xl">
                   {salonData.description}
                 </p>
+                {salonPriceRange && <p className="text-sm text-muted-foreground">Raspon cena: {salonPriceRange}</p>}
+                <nav aria-label="Istražite salone" className="flex flex-wrap gap-3 text-sm text-primary underline">
+                  {salonData.city && <Link href={`/saloni?city=${encodeURIComponent(salonData.city)}`}>Saloni — {salonData.city}</Link>}
+                  {publicSalonCategories(salonData).map((category) => (
+                    <Link key={category} href={categoryListingHref(category)}>{category}</Link>
+                  ))}
+                </nav>
 
                 <div className="flex flex-col gap-4 pt-6 border-t border-border/60">
                   <div className="flex items-center gap-4 text-foreground font-medium text-lg">
@@ -1106,7 +1135,7 @@ export default function SalonProfile() {
                ) : null}
              </div>
              <div className="space-y-5">
-              {salonData.reviews?.map(review => (
+              {visibleReviews.map((review: (typeof salonData.reviews)[number]) => (
                 <div key={review.id} className="p-8 rounded-3xl border border-border/60 bg-card shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
@@ -1120,7 +1149,7 @@ export default function SalonProfile() {
                       <div>
                         <span className="font-bold text-foreground block text-lg">{review.authorName}</span>
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-0.5">
-                          <span>{review.date ? format(parseISO(review.date), 'dd.MM.yyyy') : "Datum nije dostupan"}</span>
+                          {review.date && validDate(review.date) && <time dateTime={review.date}>{format(parseISO(review.date), 'dd.MM.yyyy')}</time>}
                           {review.verifiedBooking && <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md"><ShieldCheck className="h-4 w-4" />Proverena poseta</span>}
                         </div>
                       </div>
@@ -1137,7 +1166,7 @@ export default function SalonProfile() {
                   </div>
                 </div>
               ))}
-              {(!salonData.reviews || salonData.reviews.length === 0) && (
+              {visibleReviews.length === 0 && (
                 <div className="p-12 text-center border border-dashed rounded-3xl bg-muted/20 text-muted-foreground">
                   <Star className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
                   <p className="font-medium text-lg">Još uvek nema recenzija za ovaj salon.</p>
@@ -1224,7 +1253,7 @@ export default function SalonProfile() {
                       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
                         <OptimizedImage
                           src={nearbySalon.imageUrl || "https://images.unsplash.com/photo-1519014816548-bf5fe059c98b?q=80&w=800"}
-                          alt={`${nearbySalon.name} — salon lepote`}
+                          alt={publicImageAlt({ name: nearbySalon.name, category: nearbySalon.popularServices?.join(', '), city: nearbySalon.city, description: nearbySalon.coverImageDescription })}
                           width={600}
                           height={450}
                           responsiveSizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 768px) calc(50vw - 1.5rem), 300px"

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { GetSalonResponse } from "@workspace/api-zod";
-import {
+const { assertDestructiveTestRuntimeAllowed } = await import("@workspace/db/destructive-test-runtime");
+assertDestructiveTestRuntimeAllowed(process.env, "Appointment routes tests");
+
+const { and, eq, inArray, sql } = await import("drizzle-orm");
+const { GetSalonResponse } = await import("@workspace/api-zod");
+const {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
   appointmentStatusHistoryTable,
@@ -32,13 +35,13 @@ import {
   servicesTable,
   treatmentPackagesTable,
   usersTable,
-} from "@workspace/db";
-import app from "../app";
-import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { lockAppointmentResources } from "./appointment-locks";
-import { ensureBusinessGrowthSchema } from "./business-growth-schema";
-import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
-import { initializeDevelopmentTestFixtures } from "./seed";
+} = await import("@workspace/db");
+const { default: app } = await import("../app");
+const { createSession, hashPassword, sessionCookieName } = await import("./auth");
+const { lockAppointmentResources } = await import("./appointment-locks");
+const { ensureBusinessGrowthSchema } = await import("./business-growth-schema");
+const { assertNoPgBusyClientWarnings } = await import("./pg-busy-client.test-support");
+const { initializeDevelopmentTestFixtures } = await import("./seed");
 
 const suffix = randomUUID();
 const customerPhone = `+3816${(
@@ -218,11 +221,19 @@ async function run(): Promise<void> {
   let server: ReturnType<typeof app.listen> | undefined;
 
   try {
-    const [owner, customer, otherCustomer, employeeUser, admin] = await db.insert(usersTable).values([
+    const [owner, ownerB, customer, otherCustomer, employeeUser, admin] = await db.insert(usersTable).values([
       {
         firstName: "Vlasnik",
         lastName: "HTTP test",
         email: fixtureEmail("owner"),
+        passwordHash,
+        passwordSetAt: new Date(),
+        role: "SALON_OWNER",
+      },
+      {
+        firstName: "Vlasnik B",
+        lastName: "HTTP test",
+        email: fixtureEmail("owner-b"),
         passwordHash,
         passwordSetAt: new Date(),
         role: "SALON_OWNER",
@@ -260,7 +271,7 @@ async function run(): Promise<void> {
         role: "ADMIN",
       },
     ]).returning();
-    createdUserIds.push(owner!.id, customer!.id, otherCustomer!.id, employeeUser!.id, admin!.id);
+    createdUserIds.push(owner!.id, ownerB!.id, customer!.id, otherCustomer!.id, employeeUser!.id, admin!.id);
 
     const [salon, foreignSalon] = await db.insert(salonsTable).values([
       {
@@ -286,7 +297,7 @@ async function run(): Promise<void> {
         topSalon: true,
       },
       {
-        ownerId: owner!.id,
+        ownerId: ownerB!.id,
         name: `Drugi HTTP salon ${suffix}`,
         slug: `foreign-http-appointment-salon-${suffix}`,
         city: "Novi Sad",
@@ -306,6 +317,7 @@ async function run(): Promise<void> {
       },
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
+    await db.update(usersTable).set({ activeSalonId: foreignSalon!.id }).where(eq(usersTable.id, ownerB!.id));
 
     const managedSalonImageAssetId = randomUUID();
     const managedSalonImageHash = "b".repeat(64);
@@ -521,8 +533,9 @@ async function run(): Promise<void> {
       },
     ]).returning();
 
-    const [ownerSession, customerSession, otherCustomerSession, employeeSession, adminSession] = await Promise.all([
+    const [ownerSession, ownerBSession, customerSession, otherCustomerSession, employeeSession, adminSession] = await Promise.all([
       createSession(owner!.id),
+      createSession(ownerB!.id),
       createSession(customer!.id),
       createSession(otherCustomer!.id),
       createSession(employeeUser!.id),
@@ -575,6 +588,7 @@ async function run(): Promise<void> {
       assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
       const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
       const parsedPublicProfile = GetSalonResponse.parse(publicProfile);
+      assert.ok("id" in parsedPublicProfile, "active fixture returns the full public profile");
       assert.deepEqual(
         parsedPublicProfile.socialImage,
         managedSalonSocialImage,
@@ -602,6 +616,7 @@ async function run(): Promise<void> {
       const externalProfileResponse = await fetch(`${baseUrl}/api/salons/${foreignSalon!.slug}`);
       assert.equal(externalProfileResponse.status, 200, "a public salon with a legacy external image must remain discoverable");
       const externalProfile = GetSalonResponse.parse(await externalProfileResponse.json());
+      assert.ok("id" in externalProfile, "active fixture returns the full public profile");
       assert.deepEqual(
         externalProfile.socialImage,
         { url: externalSalonImageUrl },
@@ -1099,6 +1114,31 @@ async function run(): Promise<void> {
       entranceDirections: "ulaz sa bočne strane odmah pored dečijeg tobogana",
       intercom: "22 enter", floor: "IV sprat", apartment: "22",
     };
+    const [beforeForeignOwnerDetails] = await db.select({
+      entranceDirections: salonsTable.entranceDirections,
+      intercom: salonsTable.intercom,
+      floor: salonsTable.floor,
+      apartment: salonsTable.apartment,
+    }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
+    const foreignOwnerDetails = await request(
+      baseUrl,
+      ownerBSession,
+      `/admin/salons/${salon!.id}`,
+      "PATCH",
+      details,
+    );
+    assert.equal(foreignOwnerDetails.status, 403, "the owner of salon B cannot edit salon A address details");
+    const [afterForeignOwnerDetails] = await db.select({
+      entranceDirections: salonsTable.entranceDirections,
+      intercom: salonsTable.intercom,
+      floor: salonsTable.floor,
+      apartment: salonsTable.apartment,
+    }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
+    assert.deepEqual(
+      afterForeignOwnerDetails,
+      beforeForeignOwnerDetails,
+      "a refused address update from the owner of salon B leaves salon A unchanged",
+    );
     const beforeDeniedDetails = await getRequest(baseUrl, ownerSession, "/salon/profile");
     const deniedDetails = await request(baseUrl, customerSession, "/salon/profile", "PATCH", details);
     assert.equal(deniedDetails.status, 403, "a non-manager cannot edit salon address details");
@@ -1116,6 +1156,7 @@ async function run(): Promise<void> {
     const anonymousDetails = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
     assert.equal(anonymousDetails.status, 200);
     const publicDetails = GetSalonResponse.parse(await anonymousDetails.json());
+    assert.ok("id" in publicDetails, "active fixture returns the full public profile");
     for (const [key, value] of Object.entries(details)) {
       assert.equal((reloadedDetails.body as Record<string, unknown>)[key], value, "reload preserves details");
       assert.equal(publicDetails[key as keyof typeof details], value, "anonymous response carries public details");
@@ -1135,6 +1176,7 @@ async function run(): Promise<void> {
     assert.equal(clearedDetails.status, 200);
     const reloadedCleared = await getRequest(baseUrl, ownerSession, "/salon/profile");
     const anonymousCleared = GetSalonResponse.parse(await (await fetch(`${baseUrl}/api/salons/${salon!.slug}`)).json());
+    assert.ok("id" in anonymousCleared, "active fixture returns the full public profile");
     for (const key of Object.keys(details) as Array<keyof typeof details>) {
       assert.equal((reloadedCleared.body as Record<string, unknown>)[key], null, "clearing survives reload");
       assert.equal(anonymousCleared[key], null, "clearing reaches anonymous visitors");

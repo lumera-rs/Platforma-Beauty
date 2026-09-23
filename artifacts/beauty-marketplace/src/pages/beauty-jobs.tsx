@@ -201,6 +201,11 @@ export default function BeautyJobsPage() {
   const totalPages = Math.max(1, Math.ceil(totalJobs / PAGE_SIZE));
   const hasNextPage = page < totalPages;
   const hasPreviousPage = page > 1;
+  const pageHref = (next: number) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("page", String(next));
+    return `/poslovi?${params}`;
+  };
 
   const handleToggleSaved = (jobId: string, currentState: boolean) => {
     if (!user) {
@@ -400,13 +405,13 @@ export default function BeautyJobsPage() {
 
               {(hasPreviousPage || hasNextPage) && (
                 <div className="flex items-center justify-center gap-2 mt-4 pb-8">
-                  <Button variant="outline" size="sm" onClick={() => updateFilters({ page: Math.max(1, page - 1) })} disabled={!hasPreviousPage}>
+                  {hasPreviousPage && <Button asChild variant="outline" size="sm"><Link href={pageHref(page - 1)}>
                     <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
-                  </Button>
+                  </Link></Button>}
                   <span className="text-sm font-medium text-muted-foreground px-3">Strana {page} od {totalPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => updateFilters({ page: Math.min(totalPages, page + 1) })} disabled={!hasNextPage}>
+                  {hasNextPage && <Button asChild variant="outline" size="sm"><Link href={pageHref(page + 1)}>
                     Sledeća <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+                  </Link></Button>}
                 </div>
               )}
             </div>

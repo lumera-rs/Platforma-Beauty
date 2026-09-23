@@ -18,6 +18,8 @@ import type { EducationInstructorSummary } from './educationInstructorSummary';
 import type { PublicSocialImage } from './publicSocialImage';
 
 export interface Course {
+  /** @nullable */
+  updatedAt?: Date | null;
   id: string;
   title: string;
   description: string;

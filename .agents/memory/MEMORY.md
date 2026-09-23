@@ -139,3 +139,8 @@
 - [Browser fixture failure classification](browser-fixture-failure-classification.md) — a rejected mocked identity can cause secondary redirect failures without exercising application authorization.
 - [Disposable PostgreSQL lifecycle](disposable-postgres-lifecycle.md) — bound owned socket paths; pool shutdown can precede server disconnects, so forced cleanup can race.
 - [Database and fixture verification](database-verification-lessons.md) — real session-lock failures, source-position evidence, owned-cluster cleanup, clocks, and fixture failure classification.
+- [SSR robots authority](ssr-robots-authority.md) — transient client failures cannot overturn server indexing evidence; test real wiring separately from staging overrides.
+- [Job publication legacy boundary](job-publication-legacy-boundary.md) — old empty dates remain approximations; later activation must not invent an original publication date.
+- [Cover-description browser triage](cover-description-browser-triage.md) — use visible form prerequisites, reload round-trips, managed media, and moderation before public metadata checks.
+- [Browser storage stub isolation](browser-storage-stub-isolation.md) — absent storage settings do not mean the local sidecar port is free; browser-signed uploads also require preflight CORS.
+- [Disposable browser origins](disposable-browser-origins.md) — generated public origins must satisfy HTTPS policy without leaking API-only settings into frontend startup.

@@ -1,4 +1,4 @@
-import { defineConfig, InputTransformerFn } from "orval";
+import { defineConfig, type InputTransformerFn, type Options, type OutputOptions } from "orval";
 import path from "path";
 import {
   apiOutputInventory,
@@ -19,6 +19,9 @@ function generatorDestination(name: string) {
 
 const apiClientReactDestination = generatorDestination("api-client-react");
 const apiZodDestination = generatorDestination("zod");
+
+// Preserve the existing formatting flag while checking the current Orval options.
+type GeneratorConfig = Record<string, Options & { output: OutputOptions & { prettier: boolean } }>;
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
 const titleTransformer: InputTransformerFn = (config) => {
@@ -91,4 +94,4 @@ export default defineConfig(defineInventoriedGeneratorConfig({
       },
     },
   },
-}, outputRoot));
+} satisfies GeneratorConfig, outputRoot));

@@ -6278,6 +6278,8 @@ export interface EducationInstructorSummary {
 }
 
 export interface Course {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   title: string;
   description: string;
@@ -6961,6 +6963,8 @@ export interface EducationMedia {
 }
 
 export interface EducationCenterPublic {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   city: string;
@@ -7251,6 +7255,8 @@ export interface EducationGroupEnrollmentResponse {
 }
 
 export interface EducationTaxonomyItem {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   slug: string;
@@ -8822,6 +8828,8 @@ export const EducationInstructorPublicProfileRatingSource = {
 } as const;
 
 export interface EducationInstructorPublicProfile {
+  /** @nullable */
+  updatedAt?: string | null;
   id: string;
   name: string;
   /** @nullable */
@@ -12734,6 +12742,11 @@ export interface BeautyJobListing {
   moderationReason: string | null;
   /** @nullable */
   moderatedAt: string | null;
+  /**
+     * First public visibility time, immutable after initial publication. Null legacy rows use createdAt as an approximation.
+     * @nullable
+     */
+  readonly firstPublishedAt?: string | null;
   contactCount: number;
   viewCount: number;
   /** @nullable */
@@ -15115,6 +15128,12 @@ export const ListSalonsGender = {
 
 export type GetMarketplaceHomeDiscoveryParams = {
 city?: CityQueryParameter;
+};
+
+export type GetSalon200 = SalonProfile | {
+  name: string;
+  active: false;
+  city: string;
 };
 
 export type GetSalonAvailabilityParams = {

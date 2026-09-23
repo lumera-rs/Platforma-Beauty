@@ -8,3 +8,9 @@ Active public salon profiles may expose the salon-entered postal address and ent
 **Why:** The owner explicitly made the full salon address public while retaining separate contact privacy. Reapplying the former blanket street-address restriction would undo that decision.
 
 **How to apply:** Use the public profile's approved fields, not arbitrary private salon records. Google Maps queries and PostalAddress use only street/number, postal code, city and country, never entrance/intercom/floor/apartment or coordinates. Phone requires an explicit public permission; absence of such a flag is not consent. Protected appointment contacts still require customer ownership and a `pending`, `confirmed` or `completed` appointment.
+
+Inactive public salon API responses contain exactly name, active=false and public city.
+
+**Why:** The owner explicitly approved city for inactive profiles so their noindex HTML can link to the city listing without restoring private street/entrance, contact, coordinate or booking data.
+
+**How to apply:** SSR obtains city only from the anonymous API DTO. Direct SSR database connections and frontend pg dependencies are forbidden; never reuse a private full-profile response. Keep tests mocked or on owned disposable clusters, and treat malformed/missing city as unavailable evidence rather than a missing salon.

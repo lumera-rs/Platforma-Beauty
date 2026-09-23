@@ -477,11 +477,23 @@ paths:
         - $ref: "#/components/parameters/SalonSlug"
       responses:
         "200":
-          description: Salon profile
+          description: Active salon profile, or an inactive profile containing exactly name, active=false and public city. Inactive profiles never expose street, entrance, contact, coordinate or booking details.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SalonProfile"
+                oneOf:
+                  - $ref: "#/components/schemas/SalonProfile"
+                  - type: object
+                    additionalProperties: false
+                    required: [name, active, city]
+                    properties:
+                      name:
+                        type: string
+                      active:
+                        type: boolean
+                        enum: [false]
+                      city:
+                        type: string
   /salons/{salonId}/availability:
     get:
       operationId: getSalonAvailability
@@ -14048,6 +14060,7 @@ components:
     Course:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         title: { type: string }
         description: { type: string }
@@ -14433,6 +14446,7 @@ components:
     EducationCenterPublic:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         city: { type: string }
@@ -14488,6 +14502,7 @@ components:
     EducationTaxonomyItem:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         slug: { type: string }
@@ -15503,6 +15518,7 @@ components:
     EducationInstructorPublicProfile:
       type: object
       properties:
+        updatedAt: { type: ["string", "null"], format: date-time }
         id: { type: string }
         name: { type: string }
         photoUrl: { type: ["string", "null"] }
@@ -18137,6 +18153,11 @@ components:
         moderationStatus: { type: string }
         moderationReason: { type: [string, "null"] }
         moderatedAt: { type: [string, "null"], format: date-time }
+        firstPublishedAt:
+          type: [string, "null"]
+          format: date-time
+          readOnly: true
+          description: First public visibility time, immutable after initial publication. Null legacy rows use createdAt as an approximation.
         contactCount: { type: integer }
         viewCount: { type: integer }
         expiresAt: { type: ["string", "null"], format: date-time }

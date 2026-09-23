@@ -56,3 +56,48 @@ The header fix and Ubuntu pins were retained unchanged. The runner evidence is
 the Build and static checks job at
 https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35568623224/job/106235889746:
 Ubuntu 24.04.5 LTS, image ubuntu-24.04, image version 20260907.300.1.
+
+## Task 2 browser-final calibration
+
+The earlier provisional context above is retained as historical context. For
+Task 2, `browser:release:5-final` is recalibrated from successful CI phase
+measurements, rather than from whole-job durations. The verified artifact
+reports supply these samples, ordered by workflow `startedAt`, newest first:
+
+| Event | Workflow run `startedAt` | Run and source artifact | Report commit | Successful phase duration |
+| --- | --- | --- | --- | --- |
+| pull request | 2026-09-22T07:49:59Z | [run 35701592978](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701592978), [artifact 10684565187](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701592978/artifacts/10684565187) | synthetic merge `0274c931` (parents `a94…` and head `56a71599`) | 135 seconds |
+| push | 2026-09-22T07:49:57Z | [run 35701589972](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701589972), [artifact 10683887999](https://github.com/lumera-rs/Platforma-Beauty/actions/runs/35701589972/artifacts/10683887999) | head `56a71599` | 130 seconds |
+
+Both ZIP artifact reports were verified by the existing worker. Their
+`browser:release:5-final` phase records—not the 1,908-second and 1,866-second
+browser-total phase durations—are the calibration evidence. Following the
+existing convention, the new baseline is the ceiling of the maximum successful
+phase sample: 135 seconds. The unchanged warning formula gives
+`ceil(max(135 * 1.5, 135 + 30)) = ceil(max(202.5, 165)) = 203` seconds.
+Commit `1efa920a` made this final-phase increment:
+`browser:release:5-final` changed from 105 to 135 seconds while the browser
+total remained 780 seconds. This robots task makes no CI timing budget change.
+Across all of PR 38 compared with main at `a94abeee`, the browser total changed
+from 750 to 780 seconds and
+`browser:release:5-final` changed from 75 to 135 seconds.
+
+## Job first-publication regression calibration
+
+The job publication task adds the existing Beauty Poslovi HTTP lifecycle suite
+to `validate:release:2-backend`, through its owned PostgreSQL 16 runner. Three
+successful prior warm local executions of the exact
+`pnpm run test:beauty-jobs` command, with `NODE_ENV=test`,
+`SITE_INDEXABLE=false` and `DATABASE_URL` unset, took 27.597, 27.064 and
+29.073 seconds (shell elapsed clock, launcher, migrations and cleanup
+included). Those samples do not include the independent cold-start measurement
+of 30.7 seconds reported by the user; that cold-start value was not locally
+remeasured.
+
+The timed database phase-2 baseline therefore increases from 350 to 355
+seconds: the new publication step is budgeted at 35 seconds, a conservative
+rounding above the reported 30.7-second cold start. Its database total feeds
+through from 680 to 685 seconds. Browser budgets, warning formula and all
+historical observations above remain unchanged. The release-chain test pins the
+command, isolated runner, declared migration identity and these two budget
+values.

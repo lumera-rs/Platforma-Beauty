@@ -1,11 +1,51 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSeoResponse } from './seo-server.mjs';
-import { publicSiteOrigin, siteIndexable, canonicalRedirect, normalizedPublicPath, applySitePolicy } from './seo-policy.mjs';
+import { publicSiteOrigin, siteIndexable, canonicalRedirect, normalizedPublicPath, normalizedQuery, listingCanonical, listingIndexable, applySitePolicy } from './seo-policy.mjs';
 
 const template = '<html><head><meta name="robots" content="index, follow"></head><body><div id="root"></div></body></html>';
 const env = { PUBLIC_SITE_URL: 'https://lumera.example', SITE_INDEXABLE: 'true' };
 const req = (url, host = 'lumera.example', proto = 'https') => ({ url, method: 'GET', headers: { host, 'x-forwarded-proto': proto } });
+
+test('canonical query normalization sorts and removes empty values without folding route identity', () => {
+  assert.equal(String(normalizedQuery('?page=2&city=Beograd&empty=')), 'city=Beograd&page=2');
+  assert.equal(String(normalizedQuery('city=&city=Niš&brand=')), 'city=Ni%C5%A1');
+  assert.equal(listingCanonical('/saloni', 'page=2&city=Beograd&empty='), '/saloni?city=Beograd&page=2');
+  assert.equal(String(normalizedQuery('brand=Test&city=Beograd')), 'brand=Test&city=Beograd');
+  assert.equal(listingCanonical('/saloni', 'brand=Test&city=Beograd'), '/saloni?city=Beograd');
+});
+
+test('query normalization preserves non-empty repeated values with legacy delete semantics', () => {
+  const OriginalURLSearchParams = globalThis.URLSearchParams;
+  globalThis.URLSearchParams = class extends OriginalURLSearchParams {
+    delete(name) { super.delete(name); }
+  };
+  try {
+    assert.deepEqual(normalizedQuery('city=&city=Nis').getAll('city'), ['Nis']);
+    assert.deepEqual(normalizedQuery('city=Nis&city=&city=Beograd').getAll('city'), ['Nis', 'Beograd']);
+  } finally {
+    globalThis.URLSearchParams = OriginalURLSearchParams;
+  }
+});
+
+test('education and jobs canonical normalization removes empty query parameters', () => {
+  for (const pathname of ['/edukacije', '/poslovi']) {
+    assert.equal(listingCanonical(pathname, 'a=1&page=2&x='), `${pathname}?a=1&page=2`);
+    assert.equal(listingCanonical(pathname, 'x=&page=2&a=1'), `${pathname}?a=1&page=2`);
+  }
+});
+
+test('other listing eligibility uses normalized empty query parameters while staging stays noindex', () => {
+  for (const pathname of ['/edukacije', '/poslovi']) {
+    assert.equal(listingCanonical(pathname, 'prazno='), pathname);
+    assert.equal(listingIndexable(pathname, 'prazno='), true);
+    assert.equal(listingIndexable(pathname, '?prazno=&drugo='), true);
+    assert.equal(listingIndexable(pathname, 'prazno=&a=1'), false);
+    assert.equal(listingIndexable(pathname, 'page=2&x='), false);
+    assert.match(applySitePolicy(template, req(`${pathname}?prazno=`, 'staging.example'),
+      { ...env, SITE_INDEXABLE: 'false' }), /name="robots" content="noindex, nofollow"/);
+  }
+});
 
 test('indexing requires exact host and explicit true; invalid origins fail closed', () => {
   assert.equal(siteIndexable(req('/'), env), true);
@@ -37,7 +77,7 @@ test('SSR sends noindex,nofollow to staging and to disabled production for ordin
     ? { id: 's1', slug: 'test-salon', name: 'Test salon', description: 'Test', city: 'Beograd', rating: 5, reviewCount: 2, services: [] }
     : []), { status: new URL(url).pathname === '/api/salons/missing' ? 404 : 200, headers: { 'content-type': 'application/json' } });
   try {
-    for (const enabled of ['false', 'true']) {
+    for (const enabled of ['false']) {
       process.env.SITE_INDEXABLE = enabled;
       for (const host of ['staging.example', 'lumera.example']) {
         for (const pathname of ['/', '/saloni/test-salon', '/prijava?returnTo=abc']) {
@@ -74,4 +114,44 @@ test('policy replaces stale build metadata without duplicate robots tags', () =>
   assert.equal((second.match(/name="robots"/g) ?? []).length, 1);
   assert.equal((second.match(/name="lumera:public-site-url"/g) ?? []).length, 1);
   assert.match(second, /noindex, nofollow/);
+});
+
+test('indexing-enabled production policy is pure and staging still cannot index', () => {
+  const previous = process.env.SITE_INDEXABLE;
+  for (const host of ['lumera.example', 'staging.example']) {
+    for (const userAgent of ['ordinary-client', 'Googlebot']) {
+      const request = { ...req('/saloni/test', host), headers: { ...req('/saloni/test', host).headers, 'user-agent': userAgent } };
+      const output = applySitePolicy(template, request, env);
+      assert.match(output, host === 'lumera.example'
+        ? /name="robots" content="index, follow"/
+        : /name="robots" content="noindex, nofollow"/);
+      assert.equal(siteIndexable(request, env), host === 'lumera.example');
+    }
+  }
+  assert.equal(process.env.SITE_INDEXABLE, previous, 'Pure policy must never enable process indexing');
+});
+
+test('all filter listings drop empty values but retain sorted nonempty parameters', () => {
+  for (const pathname of [
+    '/shop/aurora', '/shop/aurora/nega/lica',
+    '/saloni/kategorija/frizerski-saloni',
+    '/edukacije/sekcije/nega', '/edukacije/sekcije/nega/lice',
+    '/edukacije/sekcije/nega/lice/hidratacija',
+  ]) {
+    assert.equal(listingCanonical(pathname, '?empty=&z=last&a=first'), `${pathname}?a=first&z=last`);
+    assert.equal(listingCanonical(pathname, '?z=last&empty=&page=2&a=first'), `${pathname}?a=first&page=2&z=last`);
+    assert.equal(listingCanonical(pathname, '?empty=&another='), pathname);
+    assert.equal(listingIndexable(pathname, '?empty=&another='), true);
+    assert.equal(listingIndexable(pathname, '?empty=&a=first'), false);
+  }
+});
+
+test('city canonicals collapse case, NFC and spacing without stripping accents', () => {
+  for (const city of ['Novi Sad', 'novi sad', 'NOVI SAD', '  nOvI   sAd  ', '\tNovi\nSad']) {
+    assert.equal(listingCanonical('/saloni', new URLSearchParams({ city }).toString()), '/saloni?city=Novi+Sad');
+  }
+  for (const city of ['Niš', 'NIŠ', '  nis\u030c  ']) {
+    assert.equal(listingCanonical('/saloni', new URLSearchParams({ city }).toString()), '/saloni?city=Ni%C5%A1');
+  }
+  assert.equal(listingCanonical('/saloni', 'city=Nis'), '/saloni?city=Nis', 'accent variants are not assumed equal by the backend');
 });

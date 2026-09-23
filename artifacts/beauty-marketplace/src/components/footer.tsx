@@ -1,4 +1,6 @@
 import { Link } from "wouter";
+import { cityLocatives } from "../../seo-text.mjs";
+import { PUBLIC_CATEGORY_PAGES } from "@/lib/public-category-pages";
 
 export function Footer() {
   return (
@@ -47,6 +49,14 @@ export function Footer() {
           </div>
         </div>
         
+        <nav aria-label="Gradovi i kategorije" className="mt-10 space-y-4 border-t border-background/20 pt-6 text-sm text-background/80">
+          <div className="flex flex-wrap gap-x-5 gap-y-3">{Object.keys(cityLocatives).map((city) => (
+            <Link key={city} href={`/saloni?city=${encodeURIComponent(city)}`} className="hover:text-white">{city}</Link>
+          ))}</div>
+          <div className="flex flex-wrap gap-x-5 gap-y-3">{PUBLIC_CATEGORY_PAGES.map((category) => (
+            <Link key={category.path} href={category.path} className="hover:text-white">{category.label}</Link>
+          ))}</div>
+        </nav>
         <div className="mt-12 pt-8 border-t border-background/20 flex flex-col md:flex-row items-center justify-between text-sm text-background/60">
           <p>© {new Date().getFullYear()} Lumera. Sva prava zadržana.</p>
           <div className="flex gap-4 mt-4 md:mt-0">

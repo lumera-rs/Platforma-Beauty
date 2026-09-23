@@ -235,7 +235,7 @@ async function insertEducationSubscriptionFixture(pool: pg.Pool, snapshots: bool
 
 test("manifest exposes exactly the supported numbered state migration", { skip }, async () => {
   const migrations = await loadMigrations();
-  assert.deepEqual(migrations.map((migration) => migration.id), ["000001", "000002", "000003"]);
+  assert.deepEqual(migrations.map((migration) => migration.id), ["000001", "000002", "000003", "000004"]);
   assert.equal(migrations[1]?.admissionContract, "supported-startup-v1");
   assert.match(migrations[1]?.checksum ?? "", /^[a-f0-9]{64}$/u);
   assert.equal(migrations[1]?.mode, "transactional");
@@ -245,15 +245,15 @@ test("fresh default pipeline applies the full frontier, then repeats without dat
   await withOwnedDisposableDatabase(adminUrl!, async ({ pool }) => {
     const migrations = await loadMigrations();
     const first = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(first.applied, ["000001", "000002", "000003"]);
+    assert.deepEqual(first.applied, ["000001", "000002", "000003", "000004"]);
     const before = await state(pool);
     const second = await withClient(pool, (client) => applyMigrations(client, { migrations, expectedTargetIdentity: expectedDisposableTarget(pool) }));
     assert.deepEqual(second.applied, []);
-    assert.deepEqual(second.skipped, ["000001", "000002", "000003"]);
+    assert.deepEqual(second.skipped, ["000001", "000002", "000003", "000004"]);
     assert.deepEqual(await state(pool), before);
     await withClient(pool, async (client) => {
       assert.deepEqual((await readLedger(client)).map((row) => [row.id, row.state]), [
-        ["000001", "APPLIED"], ["000002", "APPLIED"], ["000003", "APPLIED"],
+        ["000001", "APPLIED"], ["000002", "APPLIED"], ["000003", "APPLIED"], ["000004", "APPLIED"],
       ]);
     });
   });
@@ -271,7 +271,7 @@ test("existing canonical baseline admits supported data and preserves preexistin
       "SELECT name,price,trial_days,features,limits,audience,active FROM public.subscription_plans WHERE name='Existing salon'",
     ).then((result) => result.rows[0]));
     const result = await withClient(pool, (client) => applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) }));
-    assert.deepEqual(result.applied, ["000002", "000003"]);
+    assert.deepEqual(result.applied, ["000002", "000003", "000004"]);
     const after = await withClient(pool, (client) => client.query(
       "SELECT name,price,trial_days,features,limits,audience,active FROM public.subscription_plans WHERE name='Existing salon'",
     ).then((result) => result.rows[0]));
@@ -547,9 +547,9 @@ test("backend termination after the outer transaction starts leaves no partial 0
     await withClient(pool, async (client) => {
       assert.equal(await value(client, "SELECT count(*)::integer FROM public.subscription_plans WHERE audience='education'"), 0);
       const result = await applyMigrations(client, { expectedTargetIdentity: expectedDisposableTarget(pool) });
-      assert.deepEqual(result.applied, ["000002", "000003"]);
+      assert.deepEqual(result.applied, ["000002", "000003", "000004"]);
       assert.deepEqual((await readLedger(client)).map((row) => [row.id, row.state]), [
-        ["000001", "APPLIED"], ["000002", "APPLIED"], ["000003", "APPLIED"],
+        ["000001", "APPLIED"], ["000002", "APPLIED"], ["000003", "APPLIED"], ["000004", "APPLIED"],
       ]);
     });
   });

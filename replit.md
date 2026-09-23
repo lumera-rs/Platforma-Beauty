@@ -1,5 +1,6 @@
 ## Published-environment data boundary
 
+- Standing owner rule (2026-09-23), applying to every task unless explicitly overridden: never select the production environment in any tool, for reads or writes, and never fetch production logs. If a task appears to require production data, stop and ask the owner first. Do not use combined log-fetching tools that also retrieve production logs.
 - As of 2026-09-17, the owner describes the published application as a live test environment without real customers. This is owner-provided context, not independently verified deployment metadata.
 - Existing live test data remains valuable. “Test” does not authorize deletion, reset, development-database copying, migration execution or publishing. Any destructive action needs explicit owner authorization.
 - During the startup-DDL transition, retain the existing ensure paths until the complete supported-state migration and boot evidence passes. Local disposable proofs do not authorize operations on the published database.

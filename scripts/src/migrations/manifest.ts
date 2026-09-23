@@ -41,6 +41,23 @@ export const MIGRATION_MANIFEST: readonly MigrationManifestEntry[] = Object.free
     triggerCount: 24,
     functionCount: 21,
   },
+  {
+    id: "000004",
+    directory: "000004_job_first_publication",
+    checksum: "0e2e866fe285d43fb7a8b5508cb60c44df4e7d333961247c31879f2f2cd91083",
+    mode: "transactional",
+    description: "Add the original public visibility time to job listings",
+    structuralFingerprint: "805c6d8d8a375ffd842b92ce018073627a9f82fe40d81537ceed1494f913f7e9",
+    physicalFingerprint: "60400deed8e8d3521ebf2af5c2e3ae2c491be8dffa0dd654c644fe44930bf3ce",
+    fingerprintVersion: 4,
+    formatVersion: 2,
+    postgresMajor: 16,
+    postgresVersionNum: 160010,
+    normalizedObjectCount: 5065,
+    enumCount: 103,
+    triggerCount: 24,
+    functionCount: 21,
+  },
 ]);
 
 export function assertManifestOrder(

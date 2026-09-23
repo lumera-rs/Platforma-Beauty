@@ -1,0 +1,12 @@
+export function compactSchema(value: any): any;
+export function schemaImage(origin: string, value: unknown): string | undefined;
+export function validPrice(value: unknown): boolean;
+export function validDate(value: unknown): string | undefined;
+export function publicJobDate(job: any): string | undefined;
+export function publicReviews(salon: any): any[];
+export function salonStructuredData(salon: any, origin: string, pathname: string, description?: string): any;
+export function breadcrumbStructuredData(origin: string, crumbs?: { name: string; pathname: string }[]): any;
+export function buildPageStructuredData(type: string, data: any, options: { origin: string; canonical: string; description?: string; breadcrumbs?: { name: string; pathname: string }[] }): any;
+export type PublicSchemaListData = { name: string; items: { name: string; pathname?: string }[] };
+export type PublicSchemaHomeData = { description?: string };
+export type PublicSchemaStaticData = { name: string };

@@ -95,6 +95,8 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   /** Private moderator context; never expose this on public listing responses. */
   moderationInternalNote: text("moderation_internal_note"),
   moderatedAt: timestamp("moderated_at", { withTimezone: true }),
+  /** Original public visibility time; nullable for legacy listings, never reset. */
+  firstPublishedAt: timestamp("first_published_at", { withTimezone: true }),
   contactCount: integer("contact_count").notNull().default(0),
   viewCount: integer("view_count").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
