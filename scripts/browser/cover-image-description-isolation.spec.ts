@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -78,7 +79,7 @@ async function saveAndWait(page: Page, path: string, buttonName: string | RegExp
   });
   await page.getByRole("button", { name: buttonName }).last().click();
   const response = await responsePromise;
-  expect(response.ok(), `${path} must save successfully`).toBe(true);
+  expect(response.ok(), `${path} must save successfully: ${await response.text()}`).toBe(true);
 }
 
 test.beforeAll(async () => {
@@ -106,7 +107,7 @@ test.beforeAll(async () => {
   const [listing] = await db.insert(beautyJobListingsTable).values({
     categoryId: category!.id, salonId: salons[1]!.id, postedByType: "salon", type: "job", title: names.listing,
     description: title, city: "Beograd", region: "Vračar", status: "active", moderationStatus: "approved",
-    expiresAt: new Date(Date.now() + 86400000), photos: ["/test.jpg"],
+    expiresAt: new Date(Date.now() + 86400000), photos: [],
   }).returning({ id: beautyJobListingsTable.id });
   ids.listings.push(listing!.id);
   const [supplier] = await db.insert(suppliersTable).values({
@@ -196,6 +197,7 @@ test("admin product editor persists and clears its cover description", async ({ 
     const page = await context.newPage();
     await page.goto("/admin/proizvodi");
     await page.getByTestId(`btn-edit-product-${ids.products[0]}`).click();
+    await page.getByTestId("input-product-public-description").fill(`${title} public product description`);
     const field = page.locator("#product-cover-description");
     await field.fill(`${title} product description`);
     await saveAndWait(page, `/api/admin/products/${ids.products[0]}`, /sačuv/i);
@@ -223,6 +225,10 @@ test("education course editor exposes cover description and persists clearing", 
     const page = await context.newPage();
     await page.goto(`/biznis/edukacije/${ids.courses[0]}`);
     await page.getByRole("button", { name: "Izmeni podatke kursa" }).click();
+    await page.getByPlaceholder("npr. 30").fill("30");
+    await page.getByPlaceholder("RSD", { exact: true }).nth(0).fill("100");
+    await page.getByPlaceholder("RSD", { exact: true }).nth(1).fill("200");
+    await page.getByPlaceholder("RSD", { exact: true }).nth(2).fill("300");
     const field = page.locator("#education-cover-description");
     await field.fill(`${title} course description`);
     await saveAndWait(page, `/api/education/courses/${ids.courses[0]}`, "Sačuvaj izmene");
@@ -234,7 +240,7 @@ test("education course editor exposes cover description and persists clearing", 
     const response = await context.request.get(`/api/education/public/courses/${ids.courses[0]}`);
     expect(response.ok()).toBe(true);
     expect((await response.json()).coverImageDescription).toBeNull();
-    await expectSocialAlt(page, `/edukacije/${ids.courses[0]}`, publicImageAlt({ name: names.course, category: "Ostalo", city: "Beograd" }));
+    await expectSocialAlt(page, `/edukacije/${ids.courses[0]}`, publicImageAlt({ name: names.course, category: "Ostalo" }));
   } finally { await context.close(); }
 });
 
@@ -246,6 +252,14 @@ test("salon owner Beauty Jobs form persists and clears its cover description", a
     const page = await context.newPage();
     await page.goto("/biznis/poslovi");
     await page.getByTestId(`action-edit-${ids.listings[0]}`).click();
+    const finalizedImage = page.waitForResponse((response) =>
+      response.request().method() === "POST" && /\/api\/media\/image-uploads\/[^/]+\/finalize$/.test(new URL(response.url()).pathname),
+    );
+    await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp,image/gif"]').setInputFiles(
+      fileURLToPath(new URL("../../artifacts/beauty-marketplace/public/lumera-media/salon-1.jpg", import.meta.url)),
+    );
+    expect((await finalizedImage).ok(), "Owner upload must finish through the visible form").toBe(true);
+    await expect(page.locator("#job-photo-description-0")).toBeVisible();
     const field = page.getByPlaceholder("Kratko opišite šta se vidi na prvoj slici");
     await field.fill(`${title} jobs description`);
     await saveAndWait(page, `/api/beauty-jobs/${ids.listings[0]}`, "Sačuvaj izmene");
@@ -255,6 +269,15 @@ test("salon owner Beauty Jobs form persists and clears its cover description", a
     await page.getByPlaceholder("Kratko opišite šta se vidi na prvoj slici").fill("");
     await saveAndWait(page, `/api/beauty-jobs/${ids.listings[0]}`, "Sačuvaj izmene");
     const listing = ids.listings[0]!;
+    const adminContext = await browser.newContext();
+    try {
+      const admin = (await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, emails.admin)))[0]!;
+      await login(adminContext, emails.admin, admin.id);
+      const approval = await adminContext.request.post("/api/admin/beauty-jobs/bulk-moderation", {
+        data: { listingIds: [listing], action: "approve" },
+      });
+      expect(approval.ok(), `Edited listing must be approved before public lookup: ${await approval.text()}`).toBe(true);
+    } finally { await adminContext.close(); }
     expect(await publicValue(context, `/api/beauty-jobs/${listing}`)).toBeNull();
     await expectSocialAlt(page, `/poslovi/cover-regression/${listing}`, publicImageAlt({ name: names.listing, category: `${title} category`, city: "Beograd" }));
   } finally { await context.close(); }
