@@ -5,6 +5,7 @@ import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 
 import { createServer } from "node:net";
 import path from "node:path";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import { startIsolatedPublicOrigin, type IsolatedPublicOrigin } from "./isolated-public-origin";
 import {
   pipeRedactedDatabaseOutput,
   redactDatabaseCommandOutput,
@@ -612,6 +613,7 @@ export async function runIsolatedBrowserSuite(
   let databaseMayExist = false;
   let apiProcess: ChildProcess | undefined;
   let webProcess: ChildProcess | undefined;
+  let publicOrigin: IsolatedPublicOrigin | undefined;
   let activeCommand: ChildProcess | undefined;
   let interruptedSignal: NodeJS.Signals | undefined;
   let isCleaningUp = false;
@@ -672,10 +674,13 @@ export async function runIsolatedBrowserSuite(
     );
     await reportLifecycleProgress(testEnvironment, "schema-ready");
 
+    throwIfInterrupted();
+    publicOrigin = await startIsolatedPublicOrigin(apiPort);
+    throwIfInterrupted();
     apiProcess = startProcess(
       path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
       [path.join(workspaceRoot, "artifacts", "api-server", "src", "test-server.ts")],
-      { ...testEnvironment, PORT: String(apiPort) },
+      { ...testEnvironment, PORT: String(apiPort), PUBLIC_SITE_URL: publicOrigin.origin },
       "Disposable API server",
     );
     await reportLifecycleProgress(testEnvironment, "api-start");
@@ -734,15 +739,19 @@ export async function runIsolatedBrowserSuite(
       try {
         await stopProcess(apiProcess);
       } finally {
-        if (databaseMayExist) {
-          await runCommand(
-            "dropdb",
-            ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
-            process.env,
-            "Removing the disposable browser test database",
-          );
+        try {
+          await publicOrigin?.close();
+        } finally {
+          if (databaseMayExist) {
+            await runCommand(
+              "dropdb",
+              ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
+              process.env,
+              "Removing the disposable browser test database",
+            );
+          }
+          await removeHarnessDatabaseManifest(manifestPath);
         }
-        await removeHarnessDatabaseManifest(manifestPath);
       }
     }
     process.removeListener("SIGINT", onSignal);
