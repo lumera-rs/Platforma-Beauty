@@ -965,3 +965,55 @@ validators: 114 diagnostic exact-rule negative cases and 65 execution negative
 fixtures. All 13 documentation regression tests passed with zero failures,
 cancellations, or skips. This amendment performs no historical-tier, source,
 SQL, database, secret, deployment, workflow, staging, or commit operation.
+
+## Task 4 second correction — protected current-source amendments
+
+Authority: the owner's instruction after the CLI implementation was declared
+final to run a complete protected-input census, amend only branch-changed
+current-source entries, apply the dependent manifest cascade, and preserve both
+historical tiers raw-byte-identical to `origin/main`. The branch is
+`phase7/external-database`; the pre-amendment HEAD is
+`9abb2f557d3c4eac0c65c011d8a49d1065b5e808`, and the `origin/main`
+comparison point is `397670ef781e9a21d7f63cbac2881c857ce07d38`.
+
+Before manifest edits, all 73 diagnostic `currentInputs` entries and all 85
+execution-plan `files` entries were independently hashed from current file
+bytes. Exactly two entries drifted: `scripts/src/migrations/cli.ts` in the two
+current tiers. That path is changed by this branch relative to `origin/main`;
+every other current entry matched, so no unchanged-file stop condition applied.
+
+| Manifest | File | Tier | Old SHA-256 | New SHA-256 |
+| --- | --- | --- | --- | --- |
+| Diagnostic | `scripts/src/migrations/cli.ts` | `currentInputs` | `24811339e61e712f40c4a0f9506de07f5cccdba9650188e122ddd2eb004fa716` | `91fd907aeea08fffc2b40175e28b51f6248b9a6b097d1d24b95a476a5c3c453e` |
+| Execution | `scripts/src/migrations/cli.ts` | `files` | `24811339e61e712f40c4a0f9506de07f5cccdba9650188e122ddd2eb004fa716` | `91fd907aeea08fffc2b40175e28b51f6248b9a6b097d1d24b95a476a5c3c453e` |
+| Execution | `docs/production-diagnostic-design/protected-input-manifest.json` | `files` | `71746b6bf78fc41e0a1be49595988844bb905dc33f1d69a9d2e5b445e169c8f7` | `046c4fa06f15c99e4dba7a139f2fac1f1247bfa42b8abf568630c65381a53b3a` |
+
+The finalized CLI gives every unrecognized `--expected-*` spelling the generic
+`Unrecognized --expected- argument at position N` failure. Focused CLI coverage
+reported 12 passes, and guard coverage reported 6 passes. After the two direct
+current-tier replacements, the diagnostic manifest was rehashed and only then
+was its enclosing execution-plan entry amended. This batch therefore changes
+exactly three current-tier hashes.
+
+Both complete 73-entry historical objects were extracted from the working-tree
+files and compared as raw bytes with their corresponding `git show
+origin/main:...` objects. Both are 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`
+and are byte-identical to `origin/main`. All 146 historical values were also
+independently checked against their pinned `b8f30561` file bytes with zero
+mismatches. No historical value, inventory, pin, source, SQL, database, secret,
+workflow, staging, commit, or deployment is changed by this batch.
+
+The post-cascade census found zero residual drift across all 158 current
+entries. Final manifest SHA-256 values are
+`046c4fa06f15c99e4dba7a139f2fac1f1247bfa42b8abf568630c65381a53b3a`
+for the diagnostic manifest and
+`c4edaf95b871ca9d6adf16bd8e875ea076e3fec955e37fa911859880b4e35eaf`
+for the execution-plan manifest.
+
+Database-free documentation validation passed both validators: 114 diagnostic
+exact-rule negative cases and 65 execution negative fixtures. All 13
+documentation regression tests passed with zero failures, cancellations, or
+skips. `git diff --check` passed at this stage. The concurrent full Phase 5 run
+is deliberately not claimed here; its final evidence belongs in the external
+database verification record after the implementation owner reports completion.

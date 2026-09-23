@@ -193,27 +193,33 @@ pnpm --filter @workspace/scripts exec tsx src/external-database-pool.proof.ts di
 pnpm --filter @workspace/scripts exec tsx src/external-database-pool.proof.ts pooler-refusal
 ```
 
-## Final full-suite and contract verification
+## Historical first-correction full-suite and contract verification
 
-The final normal Phase 5 disposable-PostgreSQL runner completed with **101 tests
+The first contract-correction verification cycle completed with **101 tests
 passed**, zero failures and zero skips, across 11 suites and 12 files. Its
 manifest is
 `/tmp/pr40-fix-phase5-final/phase5-integration-manifest.json` and reports
 `status: passed`, `tests: 101`, `passed: 101`, `skipped: 0`,
 `ownedClusterRemoved: true`, `error: null`, and `cleanupErrors: []`.
+These results are retained as historical evidence for that source snapshot; they
+are not final evidence for the subsequent second correction.
 
-An earlier post-correction attempt exposed scanner handling of `.js` versus
-extensionless imports. That scanner issue was corrected before the final run.
-It was not the older fixture-mode/Anthropic incident, which is not asserted as a
-current failure.
+An earlier attempt in that cycle failed because `lib/db/src/pool-runtime.ts`
+imported `./destructive-test-runtime.js`. The only correction for that failure
+was changing this new import to the extensionless
+`./destructive-test-runtime`. The startup-DDL scanner itself was unchanged and
+already resolved extensionless local imports as implemented. This was not a
+scanner correction. It was also not the older fixture-mode/Anthropic incident,
+which is not asserted as a current failure.
 
-Release Phase 2 is now wired to run the pool-runtime units and external-database
-integration before the remaining backend checks. Its recorded CI timing budgets
-are 375 seconds for `database:release:2-backend` and 705 seconds for
-`validate:ci:database:total`. Those budgets are provisional configuration
-pending final CI calibration, not execution evidence.
+At that snapshot, Release Phase 2 was wired to run the pool-runtime units and
+external-database integration before the remaining backend checks. Its
+provisional CI timing budgets were 375 seconds for
+`database:release:2-backend` and 705 seconds for
+`validate:ci:database:total`. Those historical values were configuration, not
+execution evidence, and were replaced by the later calibration below.
 
-Current final evidence:
+Historical first-correction evidence:
 
 | Check | Result |
 |---|---|
@@ -237,15 +243,54 @@ actual-pool `onConnect` removal mutant and an actual `index.ts` mutant that
 wrongly fell back to `DATABASE_URL` in deployment were also rejected by the
 disposable integration tests. See `mutations.md` and the wiring evidence above.
 
-The final contract-correction hash batch required exactly three current-tier
+The first contract-correction hash batch required exactly three current-tier
 amendments: CLI in both manifests, then the nested diagnostic-manifest cascade.
 The earlier Task 4 hash batch remains separately recorded. All 158 current
-entries match; both historical tiers remain raw-byte-identical to `origin/main`.
-Complete hashes are recorded in
-`../production-evidence-execution-plan/provenance.md`.
+entries matched that snapshot; both historical tiers remained
+raw-byte-identical to `origin/main`. Complete hashes for that historical batch
+are recorded in `../production-evidence-execution-plan/provenance.md`.
 
-No development or production database was contacted. The API workflow was
-stopped to prevent watcher-triggered development-database connections and was
-not restarted. No secret values were changed, no application schema or migration
-was added, and no deployment or publication was performed. The production move
+## Second-correction verification pending
+
+The shared destructive-target guard correction and its final CLI/source state
+postdate the historical results above. Current completed second-correction
+evidence is:
+
+| Check | Result |
+|---|---|
+| Generic unknown expected-argument CLI coverage | 12 passed; unrecognized `--expected-*` spellings report `Unrecognized --expected- argument at position N` |
+| Shared destructive-target guard | 11 passed |
+| HTTP security fixture | Passed with `CI=true`, `NODE_ENV=test`, owned database name `lumera_ci_database`, and the private fixture marker unset |
+| HTTP target-boundary regressions | The normal owned disposable target passed; a non-disposable target was refused before application import/connection |
+| Full Phase 5 integration | 101 passed, 0 failed, 0 skipped; owned cluster removed cleanly |
+| Shared redacted child-output helper | Moved to `lib/db`, exported by `@workspace/db`, and re-exported for existing scripts callers; API and scripts TypeScript checks passed |
+| Backend static standards | 13 passed, including prerequisites |
+| Backend database standards | 13 passed on the owned disposable target |
+| Release-chain contract | 30 passed |
+| Migration credential/capability contract | 60 passed |
+| Protected current-source census | All 158 entries match; exactly three second-correction amendments: CLI in both current tiers and the dependent diagnostic-manifest cascade |
+| Historical protected tiers | Both 73-entry objects remain raw-byte-identical to `origin/main`; all 146 pinned values match `b8f30561` |
+| Documentation validation | 13 passed; 114 diagnostic negative cases and 65 execution negative fixtures passed |
+
+The calibrated budgets are now 366 seconds for
+`database:release:2-backend` and 696 seconds for
+`validate:ci:database:total`. The successful new-command measurements were
+approximately 1 second and 10 seconds. Hosted runner runs
+`35920735732` and `35920728240` provide corroborating aggregate timing evidence,
+not successful-phase samples: both reports ultimately failed at a later Phase 2
+check. The derivation, artifact links, observed aggregate times, and unchanged
+warning formula are recorded in
+`../phase7-external-database-ci-timing.md`.
+
+The initial second-correction full Phase 5 run was interrupted when the
+workspace restarted and is not counted as a pass. The replacement run under
+`/tmp/pr40-second-phase5-final` completed successfully. Its final manifest
+reports `status: passed`, `tests: 101`, `passed: 101`, `skipped: 0`,
+`ownedClusterRemoved: true`, `error: null`, and `cleanupErrors: []`. This is the
+current second-correction full-suite evidence; the historical 101-test result
+above remains evidence only for the earlier source snapshot.
+
+This documentation and protected-hash work contacted no development or
+production database and changed no secret value. It added no application schema
+or migration and performed no deployment or publication. The production move
 remains Phase 8.

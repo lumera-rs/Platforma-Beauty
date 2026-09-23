@@ -14,11 +14,11 @@ const expectedTargetIdentityFlags = new Set([
 ]);
 
 function rejectUnknownExpectedTargetIdentityFlags(argv: readonly string[]): void {
-  for (const item of argv) {
+  for (const [index, item] of argv.entries()) {
     if (!item.startsWith("--expected-")) continue;
     const flag = item.split(/[=:]/u, 1)[0]!;
     if (!expectedTargetIdentityFlags.has(flag)) {
-      throw new Error(`Unrecognized expected target identity flag: ${flag}`);
+      throw new Error(`Unrecognised --expected- argument at position ${index + 1}`);
     }
   }
 }

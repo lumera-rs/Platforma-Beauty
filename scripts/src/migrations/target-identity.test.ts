@@ -140,18 +140,26 @@ test("Neon CLI identity flags are paired, validated, and reject duplicates", () 
   }
 });
 
-test("unknown expected identity diagnostics redact equals and colon values", () => {
-  for (const separator of ["=", ":"]) {
-    const secret = "must-not-appear";
+test("unknown expected identity diagnostics never echo any part of the argument", () => {
+  const sentinel = "RECOGNIZABLE-SENTINEL";
+  for (const unknown of [
+    `--expected-x=${sentinel}`,
+    `--expected-x:${sentinel}`,
+    `--expected-x,${sentinel}`,
+    `--expected-x@${sentinel}`,
+    `--expected-x/${sentinel}`,
+    `--expected-${sentinel}`,
+  ]) {
     assert.throws(
-      () => parseExpectedTargetIdentity([`--expected-x${separator}${secret}`]),
+      () => parseExpectedTargetIdentity(["unrelated", unknown]),
       (error) => {
         assert(error instanceof Error);
         assert.equal(
           error.message,
-          "Unrecognized expected target identity flag: --expected-x",
+          "Unrecognised --expected- argument at position 2",
         );
-        assert.doesNotMatch(error.message, new RegExp(secret));
+        assert.doesNotMatch(error.message, new RegExp(sentinel));
+        assert.doesNotMatch(error.message, /--expected-x/u);
         return true;
       },
     );
@@ -177,7 +185,8 @@ test("migration CLI rejects unknown expected flags without exposing values", () 
       assert.throws(
         () => parseMigrationCliOptions([...commandArgs, unknown]),
         (error: unknown) => {
-          assert.match(String(error), /--expected-neon-timline-id/u);
+          assert.match(String(error), /Unrecognised --expected- argument at position \d+/u);
+          assert.doesNotMatch(String(error), /--expected-neon-timline-id/u);
           assert.doesNotMatch(String(error), /do-not-disclose/u);
           return true;
         },
@@ -186,7 +195,11 @@ test("migration CLI rejects unknown expected flags without exposing values", () 
   }
   assert.throws(
     () => parseExpectedTargetIdentity([...identityArgs, "--expected-databsae=do-not-disclose"]),
-    /--expected-databsae/u,
+    (error: unknown) => {
+      assert.match(String(error), /Unrecognised --expected- argument at position 4/u);
+      assert.doesNotMatch(String(error), /--expected-databsae|do-not-disclose/u);
+      return true;
+    },
   );
   assert.deepEqual(
     parseMigrationCliOptions(["status", "--database-url=postgres://local/db", "--unrelated=value"], {}),
