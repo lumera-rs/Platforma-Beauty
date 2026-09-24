@@ -1260,3 +1260,45 @@ All 146 historical values also reproduce from pinned commit
 `b8f30561d658d7a87d06d520002d4136855e85e1`, with zero mismatches. No
 historical value, protected inventory, source, test, workflow, database,
 secret, deployment, or publication is amended by this final census.
+
+## Phase 7 data transfer fix — final protected-input census
+
+This section supersedes the two preceding Phase 7 census conclusions for the
+current pull-request-fix tree. The comparison base is data-transfer commit
+`26fa8b531be040b3cbba56a94649037c6434ace0`.
+
+Before any manifest edit, both database-free validators exited zero. There was
+therefore no protected-drift error to amend:
+
+```text
+PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases
+validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.
+```
+
+The complete final-source census independently hashed all 73 diagnostic
+`currentInputs` entries and all 85 execution-plan `files` entries. All 158
+matched, with zero mismatches. None of the 34 branch-changed tracked or
+untracked paths was present in either current protected inventory. The final
+path set includes the final PostgreSQL infrastructure guards: the destructive
+test runner, backend-standards database test, booking-load runner client,
+business-growth cleanup-reports test, isolated admin fixture, destructive
+harness registry, and trigger-policy test. The complete set contains 34 paths
+and is recorded in `.local/data-transfer-fix/hashes/final-paths.txt`. The
+authorized amendment count is consequently exactly zero: zero direct
+current-source amendments and zero manifest-cascade amendments. Both protected
+manifest files remain byte-for-byte unchanged.
+
+Both complete 73-entry historical objects were extracted directly from the
+working-tree manifest text and compared as raw bytes with the corresponding
+objects in `origin/main`. Each object is 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`;
+both comparisons are byte-identical.
+
+All 146 historical hash values were reproduced from the corresponding Git
+object bytes at recorded historical boundary
+`b8f30561d658d7a87d06d520002d4136855e85e1`, with zero mismatches. Large
+objects were read with an explicit 32 MiB buffer rather than the process
+API's 1 MiB default, so their successful reproduction is not confused with a
+missing Git object. No historical object or manifest value is changed by this
+census. No database, secret, workflow, application source, migration, commit,
+deployment, or publication operation is performed by this census.

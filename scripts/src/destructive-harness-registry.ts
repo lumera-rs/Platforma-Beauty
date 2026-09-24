@@ -9,6 +9,20 @@ export type DestructiveHarnessRegistration = {
 
 export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistration[] = [
   {
+    name: "data transfer trigger policy tests",
+    sourcePath: "scripts/src/data-transfer/trigger-policy.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "authorized Neon test rehearsal",
+    sourcePath: "scripts/src/data-transfer-proof/neon-rehearsal.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
     name: "data transfer owned PostgreSQL pair",
     sourcePath: "scripts/src/data-transfer-proof/owned-pair.ts",
     launch: "tsx",

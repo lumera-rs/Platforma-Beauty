@@ -51,8 +51,11 @@ function isolatedEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
   delete environment.LUMERA_TEST_SEED;
   return environment;
 }
+const postgresProgram = (command: string, env: NodeJS.ProcessEnv) =>
+  env.LUMERA_POSTGRES_16_BIN && ["createdb", "dropdb", "psql"].includes(command)
+    ? path.join(env.LUMERA_POSTGRES_16_BIN, command) : command;
 const run = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Promise<void>((resolve, reject) => {
-  const child = spawn(command, args, { cwd: root, env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(postgresProgram(command, env), args, { cwd: root, env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
@@ -63,7 +66,7 @@ const run = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Pro
   });
 });
 const capture = (command: string, args: string[], env: NodeJS.ProcessEnv) => new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(postgresProgram(command, env), args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });

@@ -1,7 +1,10 @@
 # CI wiring and local verification
 
 The transfer commands were added only after the standalone unit and disposable
-integration suites had been proved in a clean CI-matching environment.
+integration suites had been run with a cleared environment but the Replit-provided
+PATH. This was not a complete CI-matching binary-resolution proof: Replit put
+PostgreSQL binaries on PATH, whereas GitHub supplies LUMERA_POSTGRES_16_BIN.
+The previous description of these runs as clean CI-matching proof was incorrect.
 The existing migration CI job now runs the unit suite, synthetic disposable
 integration suite, and canonical-success smoke after installing PostgreSQL 16.
 The canonical smoke requires no snapshot or other untracked input. Its JSON
@@ -9,9 +12,41 @@ proof is uploaded separately from the existing Phase 5 proof artifact.
 
 Each local command below ran with only `HOME`, `PATH`, `CI=true` and
 `NODE_ENV=test` supplied through `env -i`. Database tests provision their own
-PostgreSQL 16 clusters, never an ambient database.
+PostgreSQL 16 clusters, never an ambient database. These historical runs did not
+prove operation with initdb absent from PATH. Their recorded outputs remain real
+local results, not evidence that the original binary lookup worked in GitHub CI.
 
-## Commands and exact observed results
+## Superseding restricted-PATH proof
+
+The FIX reran both required jobs with every PATH directory containing
+`initdb`, `postgres`, or `pg_ctl` removed. PostgreSQL was supplied only through
+`LUMERA_POSTGRES_16_BIN`. Both logs begin with the actual output:
+
+```text
+BINARY_PROOF command -v initdb: not found
+BINARY_PROOF LUMERA_POSTGRES_16_BIN=/nix/store/bgwr5i8jf8jpg75rr53rz3fqv5k8yrwp-postgresql-16.10/bin
+```
+
+The final whole database job recorded:
+
+```text
+[2026-09-24T14:08:40Z] END phase-4-migration-integration (exit 0)
+Final status: passed (exit 0)
+```
+
+Its manifest contains 67 steps, all with exit zero, and reports the owned
+cluster as `stopped-and-removed`. The separate Phase 5 job exited zero; its
+disposable manifest contains 105 tests, 105 passes, zero skips, and
+`ownedClusterRemoved: true`. The complete final evidence, all 67 step
+durations, the honest unit skip, intervening failed runs, transfer regressions,
+mutations, and Neon rehearsal are recorded in
+[`fix-verification.md`](./fix-verification.md).
+
+Required non-PostgreSQL tooling remained on the restricted PATH. In particular,
+the final wrapper retained the PDF inspection programs; it did not make
+PostgreSQL discoverable through PATH.
+
+## Historical initial-PR commands and exact observed results
 
 `pnpm run test:data-transfer:unit` exited 0:
 
@@ -60,9 +95,11 @@ OWNED_CLUSTER_REMOVED
 These final runs include the disposable-runtime guard fix. Retained outputs
 and exit files are under `.local/data-transfer/ci-final-*`.
 
-## Whole database job
+## Historical initial-PR whole database job
 
-The complete clean-environment owned-PostgreSQL job finished successfully:
+This earlier owned-PostgreSQL job finished successfully, but it used the
+Replit-provided PostgreSQL PATH and is not the restricted binary-resolution
+proof:
 
 ```text
 [2026-09-24T11:55:23Z] END phase-4-migration-integration (exit 0)

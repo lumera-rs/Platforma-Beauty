@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
@@ -24,7 +25,24 @@ export type OwnedPair = {
 
 /** No ambient database parameters, credentials, deployment markers, or provider secrets. */
 export function isolatedEnvironment(): NodeJS.ProcessEnv {
-  return { HOME: os.homedir(), PATH: process.env.PATH, CI: "true", NODE_ENV: "test" };
+  return { HOME: os.homedir(), PATH: process.env.PATH, CI: "true", NODE_ENV: "test",
+    ...(process.env.LUMERA_POSTGRES_16_BIN ? { LUMERA_POSTGRES_16_BIN: process.env.LUMERA_POSTGRES_16_BIN } : {}) };
+}
+
+export async function postgresPrograms(environment: NodeJS.ProcessEnv = process.env): Promise<Record<"initdb" | "pg_ctl" | "pg_restore", string>> {
+  const names = ["initdb", "pg_ctl", "pg_restore"] as const;
+  const directories = environment.LUMERA_POSTGRES_16_BIN
+    ? [environment.LUMERA_POSTGRES_16_BIN]
+    : ["/usr/lib/postgresql/16/bin", "/usr/local/pgsql/bin", ...(environment.PATH ?? "").split(path.delimiter)];
+  for (const directory of directories) {
+    if (!directory) continue;
+    const programs = Object.fromEntries(names.map(name => [name, path.resolve(directory, name)])) as Record<typeof names[number], string>;
+    try {
+      await Promise.all(names.map(name => access(programs[name], constants.X_OK)));
+      return programs;
+    } catch { /* Try the next installation, never mix PostgreSQL installations. */ }
+  }
+  throw new Error("PostgreSQL 16 binaries unavailable; set LUMERA_POSTGRES_16_BIN");
 }
 
 async function command(program: string, args: string[], log: string): Promise<void> {
@@ -61,6 +79,7 @@ export async function withOwnedPair<T>(
   // Check the caller's real runtime BEFORE the child environment is sanitized.
   // Sanitization must not turn a deployment runtime into an authorized test runtime.
   assertDestructiveTestRuntimeAllowed(process.env, "Data transfer owned PostgreSQL pair");
+  const programs = await postgresPrograms();
   const root = await mkdtemp(path.join(os.tmpdir(), "lumera-data-transfer-owned-"));
   const data = path.join(root, "data");
   const selectedPort = await port();
@@ -70,8 +89,8 @@ export async function withOwnedPair<T>(
   let source: pg.Pool | undefined;
   let target: pg.Pool | undefined;
   try {
-    await command("initdb", ["-D", data, "-U", "transfer_owner", "--auth=trust", "--encoding=UTF8", "--locale=C"], path.join(root, "init.log"));
-    await command("pg_ctl", ["-D", data, "-l", path.join(root, "server.log"), "-o", `-h 127.0.0.1 -p ${selectedPort} -k ${root}`, "-w", "start"], path.join(root, "start.log"));
+    await command(programs.initdb, ["-D", data, "-U", "transfer_owner", "--auth=trust", "--encoding=UTF8", "--locale=C"], path.join(root, "init.log"));
+    await command(programs.pg_ctl, ["-D", data, "-l", path.join(root, "server.log"), "-o", `-h 127.0.0.1 -p ${selectedPort} -k ${root}`, "-w", "start"], path.join(root, "start.log"));
     started = true;
     admin = new pg.Pool({ connectionString: `${base}/postgres`, password: "" });
     const major = Number((await admin.query("SHOW server_version_num")).rows[0].server_version_num);
@@ -95,14 +114,14 @@ export async function withOwnedPair<T>(
       expectedTargetIdentity: expectedDisposableTarget(target),
       buildCanonical,
       restoreSource: async dump => {
-        await command("pg_restore", ["--exit-on-error", "--no-owner", "--no-privileges", `--dbname=${base}/transfer_source`, path.resolve(dump)], path.join(root, "restore.log"));
+        await command(programs.pg_restore, ["--exit-on-error", "--no-owner", "--no-privileges", `--dbname=${base}/transfer_source`, path.resolve(dump)], path.join(root, "restore.log"));
       },
     });
   } finally {
     try {
       await Promise.all([source?.end(), target?.end(), admin?.end()]);
     } finally {
-      if (started) await command("pg_ctl", ["-D", data, "-m", "immediate", "-w", "stop"], path.join(root, "stop.log"));
+      if (started) await command(programs.pg_ctl, ["-D", data, "-m", "immediate", "-w", "stop"], path.join(root, "stop.log"));
       await rm(root, { recursive: true, force: true });
     }
   }

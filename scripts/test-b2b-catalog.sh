@@ -4,6 +4,7 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/isolated-admin-fixture.sh"
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/destructive-test-runtime.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/postgres-test-client.sh"
 assert_destructive_test_runtime_allowed "B2B catalog tests"
 resolve_api_base_url
 check_api_server

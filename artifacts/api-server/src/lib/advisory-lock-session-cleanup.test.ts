@@ -10,6 +10,8 @@ import pg from "pg";
 import { ensureMediaSchema } from "./media-schema";
 
 const KEY = "lumera:media-schema:v1";
+const postgresProgram = (name: string) => process.env.LUMERA_POSTGRES_16_BIN
+  ? join(process.env.LUMERA_POSTGRES_16_BIN, name) : name;
 
 async function listen(server: net.Server): Promise<number> {
   await new Promise<void>((resolve, reject) => {
@@ -60,9 +62,9 @@ test("media owner destroys a session when a transport blackhole prevents unlock"
     ssl: false as const, connectionTimeoutMillis: 3000,
   };
   try {
-    execFileSync("initdb", ["-D", data, "-U", "lock_test", "-A", "trust", "--no-locale"], { stdio: "pipe" });
+    execFileSync(postgresProgram("initdb"), ["-D", data, "-U", "lock_test", "-A", "trust", "--no-locale"], { stdio: "pipe" });
     initialized = true;
-    execFileSync("pg_ctl", ["-D", data, "-l", join(root, "postgres.log"),
+    execFileSync(postgresProgram("pg_ctl"), ["-D", data, "-l", join(root, "postgres.log"),
       "-o", `-h 127.0.0.1 -p ${port} -k ${root}`, "-w", "start"], { stdio: "pipe" });
     observer = new pg.Client(config);
     contender = new pg.Client(config);
@@ -192,7 +194,7 @@ test("media owner destroys a session when a transport blackhole prevents unlock"
       await Promise.all([observer?.end(), contender?.end()]);
       try {
         if (initialized && existsSync(join(data, "postmaster.pid"))) {
-          execFileSync("pg_ctl", ["-D", data, "-m", "immediate", "-w", "stop"], { stdio: "pipe" });
+          execFileSync(postgresProgram("pg_ctl"), ["-D", data, "-m", "immediate", "-w", "stop"], { stdio: "pipe" });
         }
       } finally {
         // Never remove a cluster directory if its server could still be running.

@@ -6,20 +6,24 @@ import { LEDGER, planMapping, type Blocker, type TransferPolicy } from "./mappin
 import { hashRows, readPinnedSeedContract, stableRows, type SeedContract } from "./seed-contract";
 import { verifyConstraints } from "./constraints";
 import { MIGRATION_MANIFEST } from "../migrations/manifest";
+import { inspectTriggerPolicy, setMutatingTriggers, verifyDisabledTriggerInvariants } from "./trigger-policy";
+import { foreignKeyReady } from "./load-order";
 
-export interface TransferOptions { expectedTargetIdentity: ExpectedTargetIdentity; policy?: TransferPolicy }
+export interface TransferOptions { expectedTargetIdentity: ExpectedTargetIdentity; policy?: TransferPolicy; rehearsal?: boolean }
 export interface TableResult {
   table: string; sourceCount: number; targetCount: number; sourceHash: string; targetHash: string;
   hashColumns?: string[]; outcome?: "not-loaded" | "excluded" | "verified" | "committed";
   ordering?: "primary-key" | "row-multiset"; recomputedColumns?: string[];
 }
 export interface TransferReport {
-  status: "committed" | "blocked"; blockers: Blocker[]; tables: TableResult[];
+  status: "committed" | "blocked" | "rehearsed"; blockers: Blocker[]; tables: TableResult[];
+  vacuumRecommended?: boolean;
   namedDrops: string[]; namedExclusions: string[];
   fingerprints?: { structural: string; physical: string };
 }
 export class TransferError extends Error {
-  constructor(public readonly code: string) { super(code); this.name = "TransferError"; }
+  constructor(public readonly code: string, public readonly sqlstate: string | null = null,
+    public readonly step = "admission", public readonly vacuumRecommended = true) { super(code); this.name = "TransferError"; }
 }
 async function fingerprints(client: DatabaseClient): Promise<{ structural: string; physical: string }> {
   const result = fingerprintSnapshot(await readPostgresSnapshot(client), ownershipExceptions, await readPostgresFingerprintCompatibility(client));
@@ -34,6 +38,8 @@ export async function transferData(source: DatabaseClient, target: DatabaseClien
   return transferCore(source, target, options, { readiness, seeds: await readPinnedSeedContract(), fingerprint: fingerprints, boundLedger: true });
 }
 export interface Admission {
+  fixtureMutatingTriggers?: readonly string[];
+  fixtureValidatingTriggers?: readonly string[];
   readiness(client: DatabaseClient): Promise<void>;
   seeds: SeedContract | null;
   fingerprint(client: DatabaseClient): Promise<{ structural: string; physical: string }>;
@@ -47,8 +53,15 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
   let sourceOpen = false;
   let targetOpen = false;
   let committed = false;
+  let step = "identity";
   try {
+    await source.query("SET statement_timeout = '30min'");
+    await target.query("SET statement_timeout = '30min'");
     await assertTargetIdentity(target, options.expectedTargetIdentity);
+    step = "trigger-runtime";
+    const replication = await target.query("SELECT current_setting('session_replication_role') AS role");
+    if (replication.rows[0]?.role !== "origin") throw new TransferError("TARGET_REPLICATION_ROLE_NOT_ORIGIN", null, step);
+    step = "readiness";
     await admission.readiness(target);
     await source.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     sourceOpen = true;
@@ -82,10 +95,8 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
     const before = await admission.fingerprint(target);
     if (admission.boundLedger && (before.structural !== MIGRATION_MANIFEST.at(-1)?.structuralFingerprint
       || before.physical !== MIGRATION_MANIFEST.at(-1)?.physicalFingerprint)) throw new TransferError("TARGET_NOT_CANONICAL");
-    const triggers = await target.query(`SELECT c.relname,t.tgname,t.tgenabled FROM pg_trigger t
-      JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='public' AND NOT t.tgisinternal AND t.tgenabled IN ('A','R')`);
-    for (const t of triggers.rows) report.blockers.push({ code: "UNSUPPRESSIBLE_TRIGGER", table: `public.${String(t.relname)}`, constraint: String(t.tgname) });
+    step = "trigger-policy";
+    const disabledTriggers = await inspectTriggerPolicy(target, admission.fixtureMutatingTriggers, admission.fixtureValidatingTriggers);
     const sourceMap = new Map(sourceTables.map(t => [t.name, t]));
     const targetMap = new Map(targetTables.map(t => [t.name, t]));
     for (const name of policy.excludeTables ?? []) {
@@ -153,10 +164,12 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
       else report.tables[index] = { ...report.tables[index], ...result };
     };
     // Exclusion and unsupported constraints are fail-closed before any data mutation.
+    step = "preload-constraints";
     report.blockers.push(...await verifyConstraints(target, targetTables));
     if (report.blockers.length) return report;
-    // Replica mode suppresses ordinary user triggers AND FK triggers. ALWAYS/REPLICA triggers were refused.
-    await target.query("SET LOCAL session_replication_role = replica");
+    step = "disable-mutating-triggers";
+    await setMutatingTriggers(target, disabledTriggers, false);
+    const pending: { table: string; columns: string; row: string }[] = [];
     for (const { table, plan } of plans) {
       const rows = await stableRows(source, table.name, plan.shared, table.primaryKey);
       const sourceHash = hashRows(rows);
@@ -174,6 +187,21 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
       }
       const columns = plan.shared.filter(c => !plan.generated.includes(c)).map(identifier).join(",");
       for (const row of rows) {
+        pending.push({ table: table.name, columns, row });
+      }
+    }
+    // Row-level dependency ordering handles nullable cycles and self-references.
+    // A closed cycle with no already-present parent cannot satisfy immediate FKs:
+    // refuse it rather than changing schema, disabling constraints or repairing rows.
+    while (pending.length) {
+      let progress = false;
+      for (let i = 0; i < pending.length;) {
+        const item = pending[i]!;
+        step = "foreign-key-dependency";
+        if (!await foreignKeyReady(target, item.table, item.row)) { i++; continue; }
+        const { columns, row } = item;
+        const table = { name: item.table };
+        step = "insert";
         try {
           if (columns) {
             await target.query(`INSERT INTO ${relation(table.name)} (${columns}) OVERRIDING SYSTEM VALUE
@@ -193,16 +221,32 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
           }
           throw error;
         }
+        pending.splice(i, 1);
+        progress = true;
       }
+      if (!progress) {
+        for (const name of [...new Set(pending.map(p => p.table))]) {
+          report.blockers.push({ code: "FOREIGN_KEY_DEPENDENCY_BLOCKED", table: name, count: pending.filter(p => p.table === name).length });
+        }
+        return report;
+      }
+    }
+    for (const { table, plan } of plans) {
+      if (existingCounts.get(table.name)) continue;
+      step = "content-verification";
+      const rows = await stableRows(source, table.name, plan.shared, table.primaryKey);
+      const sourceHash = hashRows(rows);
       const targetRows = await stableRows(target, table.name, plan.shared, table.primaryKey);
       const targetHash = hashRows(targetRows);
       recordTable({ table: table.name, sourceCount: rows.length, targetCount: targetRows.length, sourceHash, targetHash, outcome: "verified" });
       if (rows.length !== targetRows.length || sourceHash !== targetHash) report.blockers.push({ code: "CONTENT_MISMATCH", table: table.name });
     }
+    step = "postload-constraints";
     report.blockers.push(...await verifyConstraints(target, targetTables));
     if (report.blockers.length) return report;
     // PostgreSQL ALTER SEQUENCE RESTART is transactional, unlike setval().
     for (const { table } of plans) {
+      step = "sequences";
       for (const column of table.columns) {
         const sequence = await target.query("SELECT pg_get_serial_sequence($1,$2) AS name", [table.name, column.name]);
         if (!sequence.rows[0]?.name) continue;
@@ -216,29 +260,43 @@ export async function transferCore(source: DatabaseClient, target: DatabaseClien
         await target.query(`ALTER SEQUENCE ${relation(seqName.startsWith("public.") ? seqName : `public.${seqName}`)} RESTART WITH ${next}`);
       }
     }
-    await target.query("SET LOCAL session_replication_role = origin");
+    step = "trigger-invariants";
+    await verifyDisabledTriggerInvariants(target, disabledTriggers);
+    await setMutatingTriggers(target, disabledTriggers, true);
+    await inspectTriggerPolicy(target, admission.fixtureMutatingTriggers, admission.fixtureValidatingTriggers);
+    step = "precommit-fingerprints";
     const after = await admission.fingerprint(target);
     if (JSON.stringify(before) !== JSON.stringify(after)) throw new TransferError("SCHEMA_CHANGED");
-    await target.query("COMMIT");
+    step = options.rehearsal ? "rehearsal-rollback" : "commit";
+    await target.query(options.rehearsal ? "ROLLBACK" : "COMMIT");
     targetOpen = false;
-    committed = true;
+    committed = !options.rehearsal;
+    step = "post-transaction-readiness";
     await admission.readiness(target);
     await target.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     targetOpen = true;
     await pinMigrationFingerprintEnvironment(target);
+    step = "post-transaction-fingerprints";
     const postCommit = await admission.fingerprint(target);
     if (JSON.stringify(before) !== JSON.stringify(postCommit)) throw new TransferError("POSTCOMMIT_SCHEMA_CHANGED");
     await target.query("ROLLBACK"); targetOpen = false;
-    report.status = "committed"; report.fingerprints = postCommit;
-    for (const table of report.tables) if (table.outcome === "verified") table.outcome = "committed";
+    report.status = options.rehearsal ? "rehearsed" : "committed"; report.fingerprints = postCommit;
+    report.vacuumRecommended = !!options.rehearsal;
+    if (!options.rehearsal) for (const table of report.tables) if (table.outcome === "verified") table.outcome = "committed";
     return report;
   } catch (error) {
-    if (error instanceof TransferError) throw error;
+    if (error instanceof TransferError) throw error.step === "admission"
+      ? new TransferError(error.code, error.sqlstate, step, error.vacuumRecommended) : error;
     const message = error instanceof Error ? error.message : "";
-    if (/^Target identity (?:mismatch|indeterminate): [a-zA-Z.]+$/u.test(message)) throw new TransferError(message);
-    throw new TransferError(committed ? "POSTCOMMIT_VERIFICATION_FAILED" : "TRANSFER_FAILED");
+    if (/^Target identity (?:mismatch|indeterminate): [a-zA-Z.]+$/u.test(message)) throw new TransferError(message, null, step);
+    const state = (error as { code?: unknown })?.code;
+    throw new TransferError(committed ? "POSTCOMMIT_VERIFICATION_FAILED" : "TRANSFER_FAILED",
+      typeof state === "string" && /^[0-9A-Z]{5}$/.test(state) ? state : null, step);
   } finally {
-    if (targetOpen) await target.query("ROLLBACK").catch(() => { throw new TransferError("TARGET_ROLLBACK_FAILED"); });
-    if (sourceOpen) await source.query("ROLLBACK").catch(() => { throw new TransferError("SOURCE_ROLLBACK_FAILED"); });
+    if (report.status !== "committed") report.vacuumRecommended = true;
+    let rollbackError: TransferError | undefined;
+    if (targetOpen) await target.query("ROLLBACK").catch(() => { rollbackError = new TransferError("TARGET_ROLLBACK_FAILED", null, "target-rollback"); });
+    if (sourceOpen) await source.query("ROLLBACK").catch(() => { rollbackError ??= new TransferError("SOURCE_ROLLBACK_FAILED", null, "source-rollback"); });
+    if (rollbackError) throw rollbackError;
   }
 }

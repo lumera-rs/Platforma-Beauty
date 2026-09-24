@@ -148,3 +148,4 @@
 - [Hosted pool timeout evidence](hosted-pool-timeout-evidence.md) — accepted startup options may be ignored; prove server state on fresh application clients without masking fallback options.
 - [Ledger binding policy](ledger-binding-policy.md) — legacy binding never authorizes rebinding copied foreign history; copied-branch recovery requires separate approval.
 - [Data transfer seed policy](data-transfer-seed-policy.md) — seed reconciliation needs owner approval; prospective-target FK failures do not establish source corruption.
+- [CI PostgreSQL binary proof](ci-postgres-binary-proof.md) — clean env alone is insufficient; prove initdb absent from PATH while supplying an explicit installation.

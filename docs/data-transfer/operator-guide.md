@@ -24,10 +24,18 @@ column discovery or row reads. No ledger row is written by transfer.
 
 The entire load, trigger suppression, constraint verification and sequence
 restart occur in one target transaction. A refusal or failure rolls back.
-Ordinary user triggers and FK triggers are suppressed using transaction-local
-replica mode; ALWAYS/REPLICA user triggers are refused. All FK, CHECK, UNIQUE,
+The closed [trigger policy](./trigger-policy.md) keeps validating triggers and
+all foreign keys enabled. Only three named mutating triggers are disabled and
+re-enabled transactionally; their invariants are explicitly checked. Unknown
+triggers or unexpected enabled modes refuse. Dependency-ready rows load first;
+unresolvable cycles or missing parents refuse without constraint relaxation.
+All FK, CHECK, UNIQUE,
 primary-key, standalone unique-index and exclusion constraints are explicitly
 checked before commit. Unsupported constraint semantics fail closed.
+Use `--rehearsal` to complete loading and verification then roll back; reported
+counts describe the would-be target. Both sessions use an explicit 30-minute
+statement timeout. After refusal or rollback, `vacuumRecommended: true` advises
+target VACUUM before retry/cutover. SQL failures report only SQLSTATE and step.
 Constraint reports name each observed violation and its count; a constraint
 enforced during INSERT can report only the actually rejected row, not unseen
 later rows.

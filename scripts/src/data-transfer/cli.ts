@@ -8,7 +8,9 @@ export function parseTransferArguments(argv: string[]) {
   const recognized = new Set(["source-url", "target-url", "policy-file", "expected-database", "expected-system-identifier",
     "expected-transport", "expected-neon-project-id", "expected-neon-branch-id", "expected-neon-timeline-id"]);
   const values = new Map<string, string>();
+  const rehearsal = argv.includes("--rehearsal");
   for (const arg of argv) {
+    if (arg === "--rehearsal") continue;
     const match = /^--([^=]+)=(.+)$/u.exec(arg);
     if (!match || !recognized.has(match[1]!) || values.has(match[1]!)) throw new TransferError("INVALID_ARGUMENTS");
     values.set(match[1]!, match[2]!);
@@ -22,7 +24,7 @@ export function parseTransferArguments(argv: string[]) {
     if ([...url.searchParams.keys()].some(key => /options|service|passfile/iu.test(key))) throw new TransferError("INVALID_CONNECTION");
   }
   return { sourceUrl: values.get("source-url")!, targetUrl: values.get("target-url")!,
-    policyFile: values.get("policy-file"), expectedTargetIdentity: parseExpectedTargetIdentity(argv) };
+    rehearsal, policyFile: values.get("policy-file"), expectedTargetIdentity: parseExpectedTargetIdentity(argv.filter(a => a !== "--rehearsal")) };
 }
 function validatePolicy(value: unknown): TransferPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TransferError("INVALID_POLICY");
@@ -47,14 +49,17 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const target = new pg.Client({ connectionString: options.targetUrl, application_name: "lumera_data_transfer_target" });
   try {
     await source.connect(); await target.connect();
-    const result = await transferData(source, target, { expectedTargetIdentity: options.expectedTargetIdentity, policy });
+    const result = await transferData(source, target, { expectedTargetIdentity: options.expectedTargetIdentity, policy, rehearsal: options.rehearsal });
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (result.status !== "committed") process.exitCode = 2;
+    if (result.status === "blocked") process.exitCode = 2;
   } finally { await Promise.allSettled([source.end(), target.end()]); }
 }
 if (process.argv[1]?.endsWith("/data-transfer/cli.ts")) {
   main().catch(error => {
-    process.stderr.write(`${JSON.stringify({ code: error instanceof TransferError ? error.code : "TRANSFER_FAILED" })}\n`);
+    process.stderr.write(`${JSON.stringify({ code: error instanceof TransferError ? error.code : "TRANSFER_FAILED",
+      sqlstate: error instanceof TransferError ? error.sqlstate
+        : typeof error?.code === "string" && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : null,
+      step: error instanceof TransferError ? error.step : "connection-or-arguments", vacuumRecommended: true })}\n`);
     process.exitCode = 2;
   });
 }

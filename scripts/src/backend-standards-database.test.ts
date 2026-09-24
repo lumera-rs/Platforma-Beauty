@@ -345,7 +345,9 @@ async function runDatabaseCommand(
   label: string,
 ): Promise<Awaited<ReturnType<typeof execFileAsync>>> {
   try {
-    return await execFileAsync(command, args, options);
+    const executable = process.env.LUMERA_POSTGRES_16_BIN && ["createdb", "dropdb", "psql"].includes(command)
+      ? path.join(process.env.LUMERA_POSTGRES_16_BIN, command) : command;
+    return await execFileAsync(executable, args, options);
   } catch (error) {
     throw formatDatabaseCommandFailure(label, error, options?.env);
   }

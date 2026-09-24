@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/destructive-test-runtime.sh"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/postgres-test-client.sh"
 
 require_isolated_admin_fixture_dependencies() {
   assert_destructive_test_runtime_allowed "Isolated administrator fixtures"
@@ -8,7 +9,10 @@ require_isolated_admin_fixture_dependencies() {
     echo "DATABASE_URL is required for the isolated administrator fixture." >&2
     return 1
   fi
-  if ! command -v psql >/dev/null; then
+  if [[ -n "${LUMERA_POSTGRES_16_BIN:-}" ]] && [[ ! -x "${LUMERA_POSTGRES_16_BIN}/psql" ]]; then
+    echo "psql is unavailable in LUMERA_POSTGRES_16_BIN." >&2
+    return 1
+  elif [[ -z "${LUMERA_POSTGRES_16_BIN:-}" ]] && ! type -P psql >/dev/null; then
     echo "psql is required for the isolated administrator fixture." >&2
     return 1
   fi

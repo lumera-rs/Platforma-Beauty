@@ -521,6 +521,16 @@ jobs:
           retention-days: 14
       - name: Run data transfer mapping tests
         run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:data-transfer:unit
+      - name: Prove explicit PostgreSQL binary resolution without initdb on PATH
+        env:
+          LUMERA_POSTGRES_16_BIN: /usr/lib/postgresql/16/bin
+        run: |
+          if command -v initdb; then
+            echo "Unexpected initdb on PATH"
+            exit 1
+          fi
+          echo "BINARY_PROOF command -v initdb: not found"
+          env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm --filter @workspace/scripts exec tsx --test src/data-transfer-proof/binaries.test.ts
       - name: Run owned PostgreSQL 16 data transfer regression tests
         env:
           LUMERA_POSTGRES_16_BIN: /usr/lib/postgresql/16/bin

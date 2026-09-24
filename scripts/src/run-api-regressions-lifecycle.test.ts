@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import fsPromises from "node:fs/promises";
+import { existsSync, symlinkSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
@@ -25,6 +26,21 @@ import {
 import { redactDatabaseCommandOutput } from "./safe-child-process-output";
 
 const execFileAsync = promisify(execFile);
+const postgresProgram = (name: string) => process.env.LUMERA_POSTGRES_16_BIN
+  ? path.join(process.env.LUMERA_POSTGRES_16_BIN, name) : name;
+const originalPostgresBin = process.env.LUMERA_POSTGRES_16_BIN;
+function postgresShimDirectory(directory: string): string | undefined {
+  if (!originalPostgresBin) return undefined;
+  for (const name of ["initdb", "postgres", "pg_ctl", "psql", "createdb", "dropdb", "pg_dump", "pg_restore"]) {
+    const destination = path.join(directory, name);
+    if (!existsSync(destination)) symlinkSync(path.join(originalPostgresBin, name), destination);
+  }
+  return directory;
+}
+function restorePostgresBin(): void {
+  if (originalPostgresBin === undefined) delete process.env.LUMERA_POSTGRES_16_BIN;
+  else process.env.LUMERA_POSTGRES_16_BIN = originalPostgresBin;
+}
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 assertDestructiveTestRuntimeAllowed(process.env, "API regression lifecycle tests");
 const runnerPath = path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx");
@@ -65,6 +81,9 @@ type LifecycleWaitContext = {
 assert.ok(databaseUrl, "DATABASE_URL is required for the API regression lifecycle test.");
 
 async function commandPath(command: string): Promise<string> {
+  if (originalPostgresBin && ["initdb", "postgres", "pg_ctl", "psql", "createdb", "dropdb"].includes(command)) {
+    return path.join(originalPostgresBin, command);
+  }
   const { stdout } = await execFileAsync("which", [command]);
   const resolved = stdout.trim();
   assert.ok(resolved, `Could not resolve ${command}.`);
@@ -454,7 +473,7 @@ async function writeManifest(
 }
 
 async function databaseExists(databaseName: string): Promise<boolean> {
-  const { stdout } = await execFileAsync("psql", [
+  const { stdout } = await execFileAsync(postgresProgram("psql"), [
     databaseUrl!,
     "-At",
     "-c",
@@ -464,7 +483,7 @@ async function databaseExists(databaseName: string): Promise<boolean> {
 }
 
 async function createDatabase(databaseName: string): Promise<void> {
-  await execFileAsync("createdb", [
+  await execFileAsync(postgresProgram("createdb"), [
     "--maintenance-db",
     databaseUrl!,
     databaseName,
@@ -472,7 +491,7 @@ async function createDatabase(databaseName: string): Promise<void> {
 }
 
 async function dropDatabase(databaseName: string): Promise<void> {
-  await execFileAsync("dropdb", [
+  await execFileAsync(postgresProgram("dropdb"), [
     "--force",
     "--if-exists",
     "--maintenance-db",
@@ -758,6 +777,7 @@ void db.insert({} as never);
             LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
             LUMERA_GUARD_HARNESS: harness.mode,
             PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+            LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
           },
         }).then(
           () => assert.fail(`${harness.name} accepted ${guardedEnvironment.name}.`),
@@ -796,6 +816,7 @@ void db.insert({} as never);
             LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
             LUMERA_GUARD_HARNESS: harness.mode,
             PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+            LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
           },
         }));
         assert.match(
@@ -1002,6 +1023,7 @@ test("proc discovery handles an exited PID without hiding enumeration errors or 
     await writeFile(path.join(temporaryRoot, "dropdb"),
       `#!/bin/sh\nprintf 'drop\\n' >> '${dropLog}'\n`, { mode: 0o755 });
     process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+    if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(temporaryRoot);
     const currentIdentity = await getProcessIdentity(process.pid);
     await mkdir(manifestDirectory, { recursive: true });
     const staleManifest = {
@@ -1048,6 +1070,7 @@ test("proc discovery handles an exited PID without hiding enumeration errors or 
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     if (child.exitCode === null && child.signalCode === null) {
@@ -1068,6 +1091,7 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
 
   await writeFile(path.join(temporaryRoot, "dropdb"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+  if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(temporaryRoot);
 
   const dispatchCases = [
     {
@@ -1150,6 +1174,7 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
   } finally {
     console.log = originalConsoleLog;
     process.argv = originalArgv;
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     await rm(temporaryRoot, { recursive: true, force: true });
@@ -1172,6 +1197,7 @@ test("recovery reports malformed manifests while recovering valid records", asyn
 
   await writeFile(path.join(temporaryRoot, "dropdb"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+  if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(temporaryRoot);
 
   const recoveryCases = [
     {
@@ -1266,6 +1292,7 @@ test("recovery reports malformed manifests while recovering valid records", asyn
     console.error = originalConsoleError;
     process.argv = originalArgv;
     process.exitCode = originalExitCode;
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
@@ -1320,6 +1347,7 @@ test("standalone browser cleanup entry points report browser suite wording", asy
       { mode: 0o755 },
     );
     process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+    if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(binDirectory);
 
     for (const runner of standaloneRunners) {
       const expectedOutput: string[] = [];
@@ -1365,6 +1393,7 @@ test("standalone browser cleanup entry points report browser suite wording", asy
       );
     }
   } finally {
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
@@ -1414,6 +1443,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
       { mode: 0o755 },
     );
     process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+    if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(binDirectory);
 
     for (const runner of standaloneRunners) {
       const databaseName =
@@ -1471,6 +1501,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
       await readFile(manifestPath);
     }
   } finally {
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
@@ -1521,6 +1552,7 @@ test("retention cleanup continues after malformed recovery folders", async () =>
       { mode: 0o755 },
     );
     process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+    if (originalPostgresBin) process.env.LUMERA_POSTGRES_16_BIN = postgresShimDirectory(binDirectory);
 
     for (const [index, manifestDirectory] of manifestDirectories.entries()) {
       await mkdir(manifestDirectory, { recursive: true });
@@ -1588,6 +1620,7 @@ test("retention cleanup continues after malformed recovery folders", async () =>
       await readFile(manifestPath);
     }));
   } finally {
+    restorePostgresBin();
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     await Promise.all(validManifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
@@ -1702,6 +1735,7 @@ void runIsolatedBrowserSuiteCommand({
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
       DATABASE_URL: databaseUrl,
       LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
       LUMERA_LIFECYCLE_FRONTEND_PID: frontendPidPath,
@@ -1918,6 +1952,7 @@ void runIsolatedBrowserSuiteCommand({
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
       DATABASE_URL: databaseUrl,
       LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
       LUMERA_LIFECYCLE_FRONTEND_PID: frontendPidPath,
@@ -2202,6 +2237,7 @@ void runIsolatedApiSuiteCommand({
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
       DATABASE_URL: databaseUrl,
       LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
       LUMERA_LIFECYCLE_DROPDB_FAILURE_MARKER: dropDatabaseFailureMarkerPath,
@@ -2308,6 +2344,7 @@ async function runInterruptedScenario(
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
       DATABASE_URL: databaseUrl,
       LUMERA_API_REGRESSION_DATABASE_PREFIX: databasePrefix,
       LUMERA_API_REGRESSION_MANIFEST_DIRECTORY: manifestDirectoryName,
@@ -2478,6 +2515,7 @@ async function runForcedStopScenario(): Promise<void> {
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      LUMERA_POSTGRES_16_BIN: postgresShimDirectory(binDirectory),
       DATABASE_URL: databaseUrl,
       LUMERA_API_REGRESSION_DATABASE_PREFIX: databasePrefix,
       LUMERA_API_REGRESSION_MANIFEST_DIRECTORY: manifestDirectoryName,
