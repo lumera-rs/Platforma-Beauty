@@ -54,9 +54,13 @@ export async function readLedgerForPreflight(client: DatabaseClient): Promise<Mi
     { name: "state", type: "text", notNull: true, default: null },
     { name: "system_identifier", type: "text", notNull: false, default: null },
   ];
+  const legacyColumns = expectedColumns.filter(({ name }) =>
+    !["database_name", "system_identifier", "neon_project_id", "neon_branch_id"].includes(name));
+  const recognizedColumns = JSON.stringify(normalizedColumns) === JSON.stringify(expectedColumns)
+    || JSON.stringify(normalizedColumns) === JSON.stringify(legacyColumns);
   if (
     row?.["relkind"] !== "r"
-    || JSON.stringify(normalizedColumns) !== JSON.stringify(expectedColumns)
+    || !recognizedColumns
     || !Array.isArray(constraints)
     || constraints.length !== 3
   ) {

@@ -1,5 +1,55 @@
 # Local provenance
 
+## PR #41 ledger-fix current-source amendment census
+
+Authority: the owner's explicit current-tier-only manifest and provenance
+instruction after the PR #41 source fix stabilized. No source file was changed
+by this amendment work, and no database or production call was made.
+
+The required documentation validator was run before any edit. It failed closed
+at the first drift with the exact message
+`Error: protected hash drift: scripts/src/migrations/migrations.integration.test.ts`.
+Exact stdout, stderr, and exit code are preserved in
+`.local/ledger-fix/hashes/docvalidators-before.*`.
+
+The complete direct-byte census covered all 158 current-tier entries: 73 D
+`currentInputs` plus 85 E `files`. Before amendment, 154 matched and exactly
+four entries mismatched across two files; every mismatch was a working-tree
+source change and there were zero unrelated mismatches.
+
+| Path | Old current hash | Actual byte hash / new current hash | Current tiers | Reason |
+| --- | --- | --- | --- | --- |
+| `scripts/src/migrations/migrations.integration.test.ts` | `b67c1049062066350c9ffb4520b80f4c03dcffbe5dda7ac5ebef4fd831cc162f` | `cd67046171376c988977b9ebbf51baa6678701b95633d93ba6571e80ac2b2528` | D `currentInputs`; E `files` | Adds legacy seven-column ledger read, refusal non-mutation, and transactional rollback coverage. |
+| `scripts/src/migrations/read-only-ledger.ts` | `000ba6a0551bc966d56cf640dae60b99f5748a1d4adf6d78e2e13a21b40c811d` | `56b95c66410137cb8c666b359b52ebb24a458a19e5a2db8c4d2ee5cf2062c5ab` | D `currentInputs`; E `files` | Recognizes both the legacy seven-column and identity-extended ledger shapes in read-only preflight. |
+
+The third stabilized source change,
+`scripts/src/schema-drift/eligibility-cli.test.ts`, is not a path in either
+current-tier inventory, so it correctly requires no protected hash amendment.
+The two protected source files produce four current-tier amendments. Finalizing
+D requires one enclosing E `files` cascade amendment for
+`docs/production-diagnostic-design/protected-input-manifest.json`:
+`b65f40e7ec6fe6f49999f69cc86317c255e41ae042e7fea78f25e935461fc75f`
+to
+`077982b28392b35dfdc42504f19c808b20d5dbc7cca862ece5098fef72f56822`.
+The batch therefore contains exactly five current-tier hash amendments.
+
+All 146 historical entries reproduce from `git show b8f30561:<path>`. The D
+historical `inputs` raw block is byte-identical to `origin/main` (8,954 bytes,
+SHA-256
+`f189dd413b3b6564faf10bd5c53d294483e6e05a4f21af5cbd72535bfe967a29`);
+the E historical `originalProtectedFiles` raw block is also byte-identical
+(8,971 bytes, SHA-256
+`74a5b036d043d0a8071e52d7d0bc4824797cd1429d05e0691319740c375dfd9f`).
+No historical tier was amended.
+
+The full documentation suite then passed with the exact summary lines
+`PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases`,
+`validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`validation.test.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`ℹ tests 13`, `ℹ pass 13`, `ℹ fail 0`, and `ℹ skipped 0`.
+Exact stdout, empty stderr, and zero exit code are preserved in
+`.local/ledger-fix/hashes/docvalidators-final.*`.
+
 ## Ledger-identity current-source amendment census
 
 Authority: the owner's explicit current-tier-only manifest and provenance

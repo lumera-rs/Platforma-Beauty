@@ -57,6 +57,7 @@ const sharedMigrationRuntimeFiles = [
   "catalog.ts",
   "fingerprint.ts",
   "ownership.ts",
+  "ledger-identity.ts",
 ].map((file) => `lib/db/src/migration-runtime/${file}`);
 
 type PackageManifest = {
