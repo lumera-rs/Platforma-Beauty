@@ -21,6 +21,12 @@ import {
   readDeploymentLedgerInspection,
 } from "./deployment-eligibility";
 import { isReviewedPostgresPatch } from "@workspace/db/migration-runtime";
+import {
+  ledgerIdentityFromTarget,
+  ledgerIdentityMismatch,
+  parseLedgerIdentity,
+  type DatabaseTargetIdentity,
+} from "@workspace/db/migration-runtime";
 
 const BUSINESS_GROWTH_ADVISORY_KEY = 1111949377;
 
@@ -77,6 +83,31 @@ function validateLedger(
     if (row.state === "FAILED" || row.state === "APPLYING") blocked = true;
   }
   return result;
+}
+
+function assertLedgerIdentity(
+  rows: readonly MigrationLedgerRow[],
+  target: DatabaseTargetIdentity,
+  deployment: boolean,
+): void {
+  const expected = ledgerIdentityFromTarget(target);
+  for (const row of rows) {
+    const state = parseLedgerIdentity({
+      database_name: row.databaseName,
+      system_identifier: row.systemIdentifier,
+      neon_project_id: row.neonProjectId,
+      neon_branch_id: row.neonBranchId,
+    });
+    if (state.kind === "partial") {
+      throw new Error(`Migration ledger identity partial for ${row.id}: ${state.component}`);
+    }
+    if (state.kind === "unbound") {
+      if (deployment) throw new Error(`Migration ledger identity unbound for ${row.id}: databaseName`);
+      continue;
+    }
+    const component = ledgerIdentityMismatch(state.identity, expected);
+    if (component) throw new Error(`Migration ledger identity mismatch for ${row.id}: ${component}`);
+  }
 }
 
 async function condition(client: DatabaseClient, sql: string, kind: "precondition" | "postcondition"): Promise<void> {
@@ -242,15 +273,18 @@ export async function applyMigrations(
   client: MigrationDatabaseClient,
   options: MigrationRunnerOptions = {},
 ): Promise<MigrationRunResult> {
-  await assertTargetIdentity(client, options.expectedTargetIdentity);
+  const targetIdentity = await assertTargetIdentity(client, options.expectedTargetIdentity);
   const migrations = options.migrations ?? await loadMigrations();
   if (migrations.some((migration) => migration.admissionContract)) {
-    return applySupportedMigrations(client, migrations, options);
+    return applySupportedMigrations(client, migrations, options, targetIdentity);
   }
   return withMigrationAdvisoryLock(client, async () => {
     const namespaceInspection = await readDeploymentLedgerInspection(client, migrations);
     if (namespaceInspection.reasons.length) {
       throw new Error(`Unsupported migration ledger: ${namespaceInspection.reasons.join(",")}`);
+    }
+    if (namespaceInspection.exists) {
+      assertLedgerIdentity(await readLedger(client), targetIdentity, isDeploymentRuntime(process.env));
     }
     await ensureLedger(client);
     const rows = validateLedger(await readLedger(client), migrations);
@@ -268,7 +302,7 @@ export async function applyMigrations(
       if (row?.state === "FAILED" && migration.mode === "nontransactional") {
         throw new Error(`Failed nontransactional migration requires recovery: ${migration.id}`);
       }
-      await markApplying(client, migration);
+      await markApplying(client, migration, targetIdentity);
       try {
         await executeMigration(
           client,
@@ -299,6 +333,7 @@ async function applySupportedMigrations(
   client: MigrationDatabaseClient,
   migrations: readonly LoadedMigration[],
   options: MigrationRunnerOptions,
+  targetIdentity: DatabaseTargetIdentity,
 ): Promise<MigrationRunResult> {
   assertSupportedMigrationDevelopmentOnly();
   const admitted = migrations.filter((migration) => migration.admissionContract);
@@ -311,6 +346,9 @@ async function applySupportedMigrations(
     const rows = [...ledgerInspection.rows];
     if (ledgerInspection.reasons.length) {
       throw new Error(`Unsupported migration ledger: ${ledgerInspection.reasons.join(",")}`);
+    }
+    if (ledgerInspection.exists) {
+      assertLedgerIdentity(await readLedger(client), targetIdentity, isDeploymentRuntime(process.env));
     }
     const checked = validateLedger(rows, migrations);
     for (const migration of admitted) {
@@ -407,7 +445,7 @@ async function applySupportedMigrations(
           continue;
         }
         if (row) throw new Error(`Supported migration cannot resume ledger state ${row.state}: ${migration.id}`);
-        await markApplying(client, migration);
+        await markApplying(client, migration, targetIdentity);
         await executeMigration(
           client,
           migration,
@@ -520,11 +558,11 @@ export async function adoptBaseline(
   client: MigrationDatabaseClient,
   options: MigrationRunnerOptions = {},
 ): Promise<{ readonly adopted: string[]; readonly fingerprint: CatalogFingerprintResult }> {
-  await assertTargetIdentity(client, options.expectedTargetIdentity);
+  const targetIdentity = await assertTargetIdentity(client, options.expectedTargetIdentity);
   const migrations = options.migrations ?? await loadMigrations();
   if (migrations.some((migration) => migration.admissionContract)) {
     assertSupportedMigrationDevelopmentOnly();
-    return adoptSupportedBaseline(client, migrations, options);
+    return adoptSupportedBaseline(client, migrations, options, targetIdentity);
   }
   return withMigrationAdvisoryLock(client, async () => {
     // Namespace admission is part of every supported branch, including
@@ -538,7 +576,10 @@ export async function adoptBaseline(
     const ledgerRelation = await client.query(
       "SELECT pg_catalog.to_regclass('public.lumera_migration_ledger') AS ledger",
     );
-    if (ledgerRelation.rows[0]?.["ledger"] != null) existingRows = await readLedger(client);
+    if (ledgerRelation.rows[0]?.["ledger"] != null) {
+      existingRows = await readLedger(client);
+      assertLedgerIdentity(existingRows, targetIdentity, isDeploymentRuntime(process.env));
+    }
     validateLedger(existingRows, migrations);
     const fingerprint = await currentFingerprint(client);
     const expected = migrations.find((migration) => migration.id === "000001");
@@ -579,7 +620,7 @@ export async function adoptBaseline(
         throw new Error(`Migration baseline adoption found inconsistent ledger state for ${migration.id}: ${row.state}`);
       }
       if (row?.state === "APPLIED") continue;
-      await adoptLedgerRow(client, migration);
+      await adoptLedgerRow(client, migration, targetIdentity);
     }
     return { adopted: ["000001"], fingerprint };
   }, { timeoutMs: options.lockTimeoutMs, pollMs: options.lockPollMs });
@@ -594,6 +635,7 @@ async function adoptSupportedBaseline(
   client: MigrationDatabaseClient,
   migrations: readonly LoadedMigration[],
   options: MigrationRunnerOptions,
+  targetIdentity: DatabaseTargetIdentity,
 ): Promise<{ readonly adopted: string[]; readonly fingerprint: CatalogFingerprintResult }> {
   return withMigrationAdvisoryLock(client, async () => {
     await client.query("BEGIN");
@@ -609,6 +651,9 @@ async function adoptSupportedBaseline(
       const inspection = await readDeploymentLedgerInspection(client, migrations);
       if (inspection.reasons.length) {
         throw new Error(`Unsupported migration ledger: ${inspection.reasons.join(",")}`);
+      }
+      if (inspection.exists) {
+        assertLedgerIdentity(await readLedger(client), targetIdentity, isDeploymentRuntime(process.env));
       }
       const rows = new Map(inspection.rows.map((row) => [row.id, row]));
       const baseline = migrations.find((migration) => migration.id === "000001");
@@ -660,9 +705,81 @@ async function adoptSupportedBaseline(
       if (existing && existing.state !== "ADOPTED" && existing.state !== "APPLIED") {
         throw new Error(`Supported adoption found inconsistent ledger state for ${baseline.id}: ${existing.state}`);
       }
-      if (!existing) await adoptLedgerRow(client, baseline);
+      if (!existing) await adoptLedgerRow(client, baseline, targetIdentity);
       await client.query("COMMIT");
       return { adopted: existing ? [] : [baseline.id], fingerprint };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+  }, { timeoutMs: options.lockTimeoutMs, pollMs: options.lockPollMs });
+}
+
+export interface BindMigrationLedgerIdentityResult {
+  readonly bound: readonly string[];
+}
+
+/**
+ * One-way compatibility command for receipts created before ledger identity
+ * existed. Bound rows are immutable: this command never repairs or rebinds one.
+ */
+export async function bindMigrationLedgerIdentity(
+  client: MigrationDatabaseClient,
+  options: MigrationRunnerOptions = {},
+): Promise<BindMigrationLedgerIdentityResult> {
+  const targetIdentity = await assertTargetIdentity(client, options.expectedTargetIdentity);
+  const migrations = options.migrations ?? await loadMigrations();
+  return withMigrationAdvisoryLock(client, async () => {
+    await client.query("BEGIN");
+    try {
+      const inspection = await readDeploymentLedgerInspection(client, migrations);
+      if (!inspection.exists) throw new Error("Migration ledger identity binding requires an existing ledger");
+      if (inspection.reasons.length) {
+        throw new Error(`Unsupported migration ledger: ${inspection.reasons.join(",")}`);
+      }
+      // Lock every receipt before deciding whether any row may be changed.
+      // Together with the CAS update this makes the all-row refusal atomic,
+      // including against writers that do not take the migration advisory lock.
+      const rows = await readLedger(client, { forUpdate: true });
+      validateLedger(rows, migrations);
+      const expected = ledgerIdentityFromTarget(targetIdentity);
+      const unbound: string[] = [];
+      for (const row of rows) {
+        const state = parseLedgerIdentity({
+          database_name: row.databaseName,
+          system_identifier: row.systemIdentifier,
+          neon_project_id: row.neonProjectId,
+          neon_branch_id: row.neonBranchId,
+        });
+        if (state.kind === "partial") {
+          throw new Error(`Migration ledger identity partial for ${row.id}: ${state.component}`);
+        }
+        if (state.kind === "unbound") {
+          unbound.push(row.id);
+          continue;
+        }
+        const component = ledgerIdentityMismatch(state.identity, expected);
+        if (component) throw new Error(`Migration ledger identity mismatch for ${row.id}: ${component}`);
+      }
+      await ensureLedger(client);
+      const bound: string[] = [];
+      for (const id of unbound) {
+        const result = await client.query(`
+          UPDATE public.lumera_migration_ledger
+          SET database_name=$2, system_identifier=$3, neon_project_id=$4, neon_branch_id=$5
+          WHERE migration_id=$1
+            AND database_name IS NULL AND system_identifier IS NULL
+            AND neon_project_id IS NULL AND neon_branch_id IS NULL
+          RETURNING migration_id
+        `, [id, expected.databaseName, expected.systemIdentifier,
+          expected.neonProjectId, expected.neonBranchId]);
+        if (result.rows.length !== 1) {
+          throw new Error(`Migration ledger identity binding lost for ${id}: databaseName`);
+        }
+        bound.push(id);
+      }
+      await client.query("COMMIT");
+      return { bound };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;

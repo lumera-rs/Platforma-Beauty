@@ -1,4 +1,8 @@
 import type { DatabaseClient } from "../backend-standards-database";
+import {
+  readDatabaseTargetIdentity,
+  type DatabaseTargetIdentity,
+} from "@workspace/db/migration-runtime";
 
 export interface ExpectedTargetIdentity {
   readonly databaseName: string;
@@ -57,64 +61,27 @@ export function validateExpectedTargetIdentity(value: unknown): ExpectedTargetId
 export async function assertTargetIdentity(
   client: DatabaseClient,
   expected: ExpectedTargetIdentity | undefined,
-): Promise<void> {
+): Promise<DatabaseTargetIdentity> {
   const identity = validateExpectedTargetIdentity(expected);
-  // One read, on the very same dedicated backend subsequently used to mutate.
-  // No address/port assumption: Unix sockets and some hosted servers return NULL.
-  // ssl proves backend transport encryption, NOT certificate authentication.
-  let rows: Record<string, unknown>[];
-  try {
-    ({ rows } = await client.query(`
-      SELECT pg_catalog.current_database() AS database_name,
-             control.system_identifier::text AS system_identifier,
-             ssl.ssl AS encrypted,
-             pg_catalog.current_setting('neon.project_id', true) AS neon_project_id,
-             pg_catalog.current_setting('neon.branch_id', true) AS neon_branch_id,
-             pg_catalog.current_setting('neon.timeline_id', true) AS neon_timeline_id
-      FROM pg_catalog.pg_control_system() AS control
-      JOIN pg_catalog.pg_stat_ssl AS ssl ON ssl.pid = pg_catalog.pg_backend_pid()
-    `));
-  } catch {
-    throw new Error("Target identity indeterminate: pg_control_system and own-backend pg_stat_ssl access are required");
-  }
-  const row = rows[0];
-  if (rows.length !== 1 || !row || typeof row.database_name !== "string"
-    || typeof row.system_identifier !== "string" || !/^[1-9][0-9]*$/u.test(row.system_identifier)
-    || typeof row.encrypted !== "boolean") {
-    throw new Error("Target identity indeterminate: missing or invalid backend evidence");
-  }
-  if (row.database_name !== identity.databaseName) throw new Error("Target identity mismatch: databaseName");
-  if (row.system_identifier !== identity.systemIdentifier) throw new Error("Target identity mismatch: systemIdentifier");
-  if ((row.encrypted ? "encrypted" : "unencrypted") !== identity.transport) {
+  // One read on the same dedicated backend subsequently used to mutate.
+  const actual = await readDatabaseTargetIdentity(client);
+  if (actual.databaseName !== identity.databaseName) throw new Error("Target identity mismatch: databaseName");
+  if (actual.systemIdentifier !== identity.systemIdentifier) throw new Error("Target identity mismatch: systemIdentifier");
+  if (actual.transport !== identity.transport) {
     throw new Error("Target identity mismatch: transport");
   }
-  const actualProjectId = row.neon_project_id;
-  const actualBranchId = row.neon_branch_id;
-  const actualTimelineId = row.neon_timeline_id;
-  const nonNeon = actualProjectId === null && actualBranchId === null && actualTimelineId === null;
-  if (nonNeon) {
+  if (!actual.neon) {
     if (identity.neon) throw new Error("Target identity mismatch: neon.projectId");
-    return;
-  }
-  if (typeof actualProjectId !== "string" || Buffer.byteLength(actualProjectId, "utf8") > 63
-    || !neonProjectIdPattern.test(actualProjectId)) {
-    throw new Error("Target identity indeterminate: missing or invalid neon.projectId backend evidence");
-  }
-  if (typeof actualBranchId !== "string" || Buffer.byteLength(actualBranchId, "utf8") > 63
-    || !neonBranchIdPattern.test(actualBranchId)) {
-    throw new Error("Target identity indeterminate: missing or invalid neon.branchId backend evidence");
-  }
-  if (actualTimelineId !== null
-    && (typeof actualTimelineId !== "string" || !neonTimelineIdPattern.test(actualTimelineId))) {
-    throw new Error("Target identity indeterminate: missing or invalid neon.timelineId backend evidence");
+    return actual;
   }
   if (!identity.neon) throw new Error("Target identity mismatch: neon.projectId expected value is required");
-  if (actualProjectId !== identity.neon.projectId) throw new Error("Target identity mismatch: neon.projectId");
-  if (actualBranchId !== identity.neon.branchId) throw new Error("Target identity mismatch: neon.branchId");
+  if (actual.neon.projectId !== identity.neon.projectId) throw new Error("Target identity mismatch: neon.projectId");
+  if (actual.neon.branchId !== identity.neon.branchId) throw new Error("Target identity mismatch: neon.branchId");
   if (identity.neon.timelineId !== undefined) {
-    if (actualTimelineId === null) {
+    if (actual.neon.timelineId === undefined) {
       throw new Error("Target identity indeterminate: missing or invalid neon.timelineId backend evidence");
     }
-    if (actualTimelineId !== identity.neon.timelineId) throw new Error("Target identity mismatch: neon.timelineId");
+    if (actual.neon.timelineId !== identity.neon.timelineId) throw new Error("Target identity mismatch: neon.timelineId");
   }
+  return actual;
 }

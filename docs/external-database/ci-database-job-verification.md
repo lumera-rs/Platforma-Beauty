@@ -1,6 +1,6 @@
 # CI database job verification
 
-This records the final clean local reproduction of the CI database preparation,
+This records a historical clean local reproduction of the CI database preparation,
 Release Phase 2, and Release Phase 3 chain. The source manifest is
 `.local/ci-database-release-harness/runs/20260923T223623Z-125/manifest.json`.
 That ignored artifact is supporting evidence; this document is the tracked
@@ -111,15 +111,45 @@ The lifecycle step passed all **37 tests**. Its TAP test duration was
 approximately 675 seconds; the enclosing manifest step, including command
 overhead, was 677 seconds.
 
-## Guard mutation evidence
+## Guard mutation claim correction
 
-The final third-registry scratch report rejected both guard-removal
-mutations:
+The earlier version of this section reported two guard-removal mutations and
+described them as the final registry report. Their actual stdout/stderr was not
+preserved and is unavailable, so the quoted outcomes cannot serve as retained
+evidence. The implication that two mutations proved the shared registry is
+retracted.
 
-- removing the shared guard call from the external database pool integration
-  test failed with `external database pool integration must invoke the shared destructive-runtime guard`;
-- removing the shared guard call from the HTTP security hardening test failed
-  with `HTTP security hardening must invoke the shared destructive-runtime guard`.
+A current database-free reproduction removed only the actual guard call from
+each exact current source and applied the original main-branch predicate. That
+predicate accepted both import-only mutants and emitted these direct
+diagnostics:
 
-Both registrations remained present during the checks. The final source retains
-both registrations and both guard calls.
+> `current reproduction: original predicate accepted import-only external database pool integration mutation`
+>
+> `current reproduction: original predicate accepted import-only HTTP security hardening mutation`
+
+This is explicitly a current reproduction, not a historical result. Its
+unaltered streams and status are
+`.local/ledger-identity/registry/current-old-contract-reproduction.stdout`,
+`.stderr`, and `.exit-code`.
+
+The corrected database-free registry contract instead checks actual calls bound
+to the shared TypeScript import (including the reviewed dynamic-import form) or
+an actual shell guard invocation. A guard import, sourced helper, comment,
+string, unrelated same-name call, or identifier name without a call does not
+satisfy it. Its focused run
+passed 40 tests, including scratch remove-only-call mutations for every one of
+the 38 registrations covering 36 distinct source files. The actual run streams
+and status are preserved without reconstruction:
+
+- `.local/ledger-identity/registry/focused-registry.stdout`
+- `.local/ledger-identity/registry/focused-registry.stderr`
+- `.local/ledger-identity/registry/focused-registry.exit-code`
+
+The focused contract test is now an explicit input to the existing
+`test:api-regressions-lifecycle` package script, which is already the Release
+Phase 3 CI command recorded above. This makes the 40-test coverage persistent;
+it is not dependent on the one-off evidence command.
+
+The CI manifest above remains evidence only for its recorded historical run; it
+does not retroactively prove this corrected registry contract.

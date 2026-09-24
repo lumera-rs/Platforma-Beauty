@@ -14,6 +14,7 @@ import {
   assertDestructiveTestRuntimeAllowed,
   destructiveTestGuardEnvironments,
 } from "./destructive-test-runtime";
+import { assertRegisteredHarnessInvokesSharedGuard } from "./destructive-harness-registry-contract";
 import { registeredDestructiveHarnesses } from "./destructive-harness-registry";
 import {
   recoverInterruptedHarnessDatabases,
@@ -737,13 +738,7 @@ void db.insert({} as never);
       assert.ok(!uniqueRegistrations.has(registrationKey), `Duplicate destructive harness registration: ${registrationKey}`);
       uniqueRegistrations.add(registrationKey);
       const source = await readFile(path.join(workspaceRoot, harness.sourcePath), "utf8");
-      assert.match(
-        source,
-        harness.guardContract === "typescript"
-          ? /assertDestructiveTestRuntimeAllowed/
-          : /destructive-test-runtime\.sh/,
-        `${harness.name} must invoke the shared destructive-runtime guard`,
-      );
+      assertRegisteredHarnessInvokesSharedGuard(harness, source);
     }
 
     for (const harness of harnesses) {

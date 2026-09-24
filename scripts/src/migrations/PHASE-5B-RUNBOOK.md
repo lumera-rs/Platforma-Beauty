@@ -143,6 +143,82 @@ authorization. All five development guards reject `NODE_ENV=production`,
 case-insensitive `1`/`true` in either deployment flag, and the existence (even an
 empty value) of either deployment ID. This change does not authorize production.
 
+## Ledger identity binding and Phase 8 application privileges
+
+The runner-owned `public.lumera_migration_ledger` is outside the numbered
+migrations and excluded from the canonical catalog fingerprint. The runner
+upgrades existing ledgers in place with four nullable text columns:
+`database_name`, `system_identifier`, `neon_project_id`, and `neon_branch_id`.
+Existing rows are not automatically assigned an identity. New apply/adopt
+entries use the verified identity from the runner's existing single identity
+query on its dedicated backend.
+
+Startup is read-only: it never adds columns or binds rows. It compares every
+row with the current database name and cluster system identifier, plus the
+Neon project and branch IDs when present. A mismatch is refused in every
+runtime. Legacy entirely unbound rows (including a ledger without the new
+columns) are tolerated outside deployment and refused inside deployment.
+Partial identities are invalid, not legacy unbound rows.
+
+Only an explicit operator invocation may bind unbound rows:
+
+```sh
+pnpm run migrations:bind-ledger-identity -- \
+  --database-url='<explicit approved target URL>' --confirm \
+  --expected-database='<approved database name>' \
+  --expected-system-identifier='<approved decimal system identifier>' \
+  --expected-transport='<encrypted or unencrypted>' \
+  --expected-neon-project-id='<approved Neon project ID>' \
+  --expected-neon-branch-id='<approved Neon branch ID>'
+```
+
+Omit the Neon flags only for a non-Neon target. Expected declarations must come
+from independently approved provisioning/control-plane evidence, as described
+above; never derive approval automatically from the candidate connection.
+Transport remains part of target verification but is not persisted as a ledger
+binding. The optional timeline declaration likewise verifies the target but is
+not a ledger binding.
+
+The command verifies the full declared identity before any mutation. It checks
+all existing rows, refuses any foreign or partial binding, and atomically binds
+only rows still wholly unbound. It never overwrites a binding, including on
+replay. An already matching ledger is a no-op.
+
+**Neon copies versus restores:** a new branch has a different branch ID.
+Copied bound rows are therefore refused, even if the database name and cluster
+identifier match. This command cannot recover such a branch: strict no-rebind
+is intentional, and a separately authorized recovery procedure is future work.
+A copied legacy ledger whose rows are still unbound can be explicitly bound
+after the operator verifies that copy's provenance and independently declares
+the intended new branch. Binding is an operator attestation of existing history,
+not proof that migrations were executed locally.
+
+A point-in-time restore retaining the same database name, system identifier,
+project ID, and branch ID retains valid bindings. A timeline change does not
+invalidate ledger bindings because timelines are not persisted. This does not
+override the startup catalog/frontier checks, and an optional CLI timeline pin
+may still require a separately approved replacement. The earlier measured
+restore evidence above applies to the root branch, not arbitrary child-branch
+restore behavior.
+
+**Phase 8 must grant the application role this exact privilege**, through an
+authorized administrator, before enabling startup readiness:
+
+```sql
+GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO lumera_app;
+```
+
+Replace `lumera_app` with the provisioned application role. This narrow function
+grant permits reading the cluster system identifier; it does not require
+superuser, `pg_monitor`, ledger write permission, or migration-runner privileges.
+The role also needs `USAGE ON SCHEMA public`, `SELECT` on
+`public.lumera_migration_ledger`, normal catalog visibility for the existing
+fingerprint checks, and visibility of its own backend's `pg_stat_ssl` row.
+Confirm these privileges on the selected provider; if the identity query is
+denied or incomplete, readiness fails closed. Do not grant these privileges
+from application startup. No Phase 8 grant or production operation is authorized
+by this runbook.
+
 ## Required frontier after adoption
 
 The required frontier is now `000001`, `000002`, `000003`, **`000004`**. Migration

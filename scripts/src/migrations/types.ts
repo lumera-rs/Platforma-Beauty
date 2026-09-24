@@ -40,6 +40,10 @@ export interface MigrationLedgerRow {
   readonly mode: MigrationMode;
   readonly state: MigrationState;
   readonly error: string | null;
+  readonly databaseName: string | null;
+  readonly systemIdentifier: string | null;
+  readonly neonProjectId: string | null;
+  readonly neonBranchId: string | null;
 }
 
 export interface MigrationRunResult {

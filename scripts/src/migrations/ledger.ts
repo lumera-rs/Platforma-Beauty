@@ -1,5 +1,9 @@
 import type { DatabaseClient } from "../backend-standards-database";
 import type { LoadedMigration, MigrationLedgerRow, MigrationState } from "./types";
+import {
+  ledgerIdentityFromTarget,
+  type DatabaseTargetIdentity,
+} from "@workspace/db/migration-runtime";
 
 export const MIGRATION_LEDGER_TABLE = "public.lumera_migration_ledger";
 
@@ -11,20 +15,43 @@ CREATE TABLE IF NOT EXISTS ${MIGRATION_LEDGER_TABLE} (
   state text NOT NULL CHECK (state IN ('APPLYING', 'APPLIED', 'FAILED', 'ADOPTED')),
   started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   finished_at timestamptz,
-  error text
+  error text,
+  database_name text,
+  system_identifier text,
+  neon_project_id text,
+  neon_branch_id text
 )`;
 
 export async function ensureLedger(client: DatabaseClient): Promise<void> {
   await client.query(CREATE_LEDGER);
+  // Runner-owned compatibility upgrade. These bookkeeping columns are
+  // deliberately outside the immutable numbered migration/catalog contract.
+  await client.query(`
+    ALTER TABLE ${MIGRATION_LEDGER_TABLE}
+      ADD COLUMN IF NOT EXISTS database_name text,
+      ADD COLUMN IF NOT EXISTS system_identifier text,
+      ADD COLUMN IF NOT EXISTS neon_project_id text,
+      ADD COLUMN IF NOT EXISTS neon_branch_id text
+  `);
 }
 
-export async function readLedger(client: DatabaseClient): Promise<MigrationLedgerRow[]> {
+export async function readLedger(
+  client: DatabaseClient,
+  options: { readonly forUpdate?: boolean } = {},
+): Promise<MigrationLedgerRow[]> {
   const result = await client.query(`
-    SELECT migration_id, checksum, mode, state, error
+    SELECT pg_catalog.to_jsonb(ledger) AS ledger_row
     FROM ${MIGRATION_LEDGER_TABLE}
+    AS ledger
     ORDER BY migration_id
+    ${options.forUpdate ? "FOR UPDATE" : ""}
   `);
-  return result.rows.map((row) => {
+  return result.rows.map((resultRow) => {
+    const raw = resultRow["ledger_row"];
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new Error("Ledger row is not a JSON object");
+    }
+    const row = raw as Record<string, unknown>;
     const state = String(row["state"]);
     const mode = String(row["mode"]);
     if (!["APPLYING", "APPLIED", "FAILED", "ADOPTED"].includes(state)) {
@@ -39,6 +66,10 @@ export async function readLedger(client: DatabaseClient): Promise<MigrationLedge
       mode,
       state: state as MigrationState,
       error: row["error"] == null ? null : String(row["error"]),
+      databaseName: row["database_name"] == null ? null : String(row["database_name"]),
+      systemIdentifier: row["system_identifier"] == null ? null : String(row["system_identifier"]),
+      neonProjectId: row["neon_project_id"] == null ? null : String(row["neon_project_id"]),
+      neonBranchId: row["neon_branch_id"] == null ? null : String(row["neon_branch_id"]),
     };
   });
 }
@@ -46,6 +77,7 @@ export async function readLedger(client: DatabaseClient): Promise<MigrationLedge
 export async function markApplying(
   client: DatabaseClient,
   migration: LoadedMigration,
+  targetIdentity: DatabaseTargetIdentity,
 ): Promise<void> {
   const existing = await readLedger(client);
   const row = existing.find((item) => item.id === migration.id);
@@ -67,11 +99,14 @@ export async function markApplying(
     if (updated.rows.length !== 1) throw new Error(`Ledger APPLYING transition lost for ${migration.id}`);
     return;
   }
+  const identity = ledgerIdentityFromTarget(targetIdentity);
   await client.query(`
     INSERT INTO ${MIGRATION_LEDGER_TABLE}
-      (migration_id, checksum, mode, state, started_at, finished_at, error)
-    VALUES ($1, $2, $3, 'APPLYING', clock_timestamp(), NULL, NULL)
-  `, [migration.id, migration.checksum, migration.mode]);
+      (migration_id, checksum, mode, state, started_at, finished_at, error,
+       database_name, system_identifier, neon_project_id, neon_branch_id)
+    VALUES ($1, $2, $3, 'APPLYING', clock_timestamp(), NULL, NULL, $4, $5, $6, $7)
+  `, [migration.id, migration.checksum, migration.mode, identity.databaseName,
+    identity.systemIdentifier, identity.neonProjectId, identity.neonBranchId]);
 }
 
 export async function markFinished(
@@ -101,6 +136,7 @@ export async function markFailed(client: DatabaseClient, id: string, error: stri
 export async function adoptLedgerRow(
   client: DatabaseClient,
   migration: LoadedMigration,
+  targetIdentity: DatabaseTargetIdentity,
 ): Promise<void> {
   const existing = await readLedger(client);
   const row = existing.find((item) => item.id === migration.id);
@@ -112,9 +148,12 @@ export async function adoptLedgerRow(
     if (row.state === "ADOPTED") return;
     throw new Error(`Ledger state cannot be adopted for ${migration.id}: ${row.state}`);
   }
+  const identity = ledgerIdentityFromTarget(targetIdentity);
   await client.query(`
     INSERT INTO ${MIGRATION_LEDGER_TABLE}
-      (migration_id, checksum, mode, state, started_at, finished_at, error)
-    VALUES ($1, $2, $3, 'ADOPTED', clock_timestamp(), clock_timestamp(), NULL)
-  `, [migration.id, migration.checksum, migration.mode]);
+      (migration_id, checksum, mode, state, started_at, finished_at, error,
+       database_name, system_identifier, neon_project_id, neon_branch_id)
+    VALUES ($1, $2, $3, 'ADOPTED', clock_timestamp(), clock_timestamp(), NULL, $4, $5, $6, $7)
+  `, [migration.id, migration.checksum, migration.mode, identity.databaseName,
+    identity.systemIdentifier, identity.neonProjectId, identity.neonBranchId]);
 }
