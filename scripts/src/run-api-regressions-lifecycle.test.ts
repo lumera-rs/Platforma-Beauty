@@ -600,7 +600,7 @@ test("destructive harnesses refuse deployment runtimes before database commands"
       { mode: 0o755 },
     );
   }
-  for (const command of ["curl", "psql"]) {
+  for (const command of ["curl", "psql", "initdb", "pg_ctl", "pg_restore"]) {
     await writeFile(
       path.join(binDirectory, command),
       `#!/bin/sh\nprintf '${command}\\n' >> "$LUMERA_DATABASE_COMMAND_LOG"\nexit 99\n`,

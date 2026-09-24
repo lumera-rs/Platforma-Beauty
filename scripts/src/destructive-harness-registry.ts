@@ -9,6 +9,20 @@ export type DestructiveHarnessRegistration = {
 
 export const registeredDestructiveHarnesses: readonly DestructiveHarnessRegistration[] = [
   {
+    name: "data transfer owned PostgreSQL pair",
+    sourcePath: "scripts/src/data-transfer-proof/owned-pair.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
+    name: "data transfer integration tests",
+    sourcePath: "scripts/src/data-transfer-tests/transfer.integration.test.ts",
+    launch: "tsx",
+    verifyAllowed: false,
+    guardContract: "typescript",
+  },
+  {
     name: "isolated browser",
     sourcePath: "scripts/src/run-isolated-browser-suite.ts",
     launch: "isolated-wrapper",

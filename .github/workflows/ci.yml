@@ -519,6 +519,24 @@ jobs:
           path: ${{ runner.temp }}/lumera-phase5-integration/
           if-no-files-found: error
           retention-days: 14
+      - name: Run data transfer mapping tests
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:data-transfer:unit
+      - name: Run owned PostgreSQL 16 data transfer regression tests
+        env:
+          LUMERA_POSTGRES_16_BIN: /usr/lib/postgresql/16/bin
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:data-transfer:integration
+      - name: Prove transfer into a migration-built disposable target
+        env:
+          LUMERA_POSTGRES_16_BIN: /usr/lib/postgresql/16/bin
+        run: env -u DATABASE_URL -u LUMERA_MIGRATION_DATABASE_URL pnpm run test:data-transfer:canonical
+      - name: Upload canonical data transfer proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-transfer-canonical-${{ github.run_attempt }}
+          path: .local/data-transfer/canonical-success-proof.json
+          if-no-files-found: error
+          retention-days: 14
 
   browser:
     name: Browser user journeys
