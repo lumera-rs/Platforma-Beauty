@@ -1,5 +1,10 @@
 import pg from "pg";
-import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
+import {
+  adoptBaseline,
+  applyMigrations,
+  bindMigrationLedgerIdentity,
+  migrationStatus,
+} from "./runner";
 import { loadMigrations } from "./files";
 import { validateExpectedTargetIdentity, type ExpectedTargetIdentity } from "./target-identity";
 
@@ -79,7 +84,7 @@ function argument(argv: readonly string[], name: string): string | undefined {
 
 function usage(): never {
   throw new Error(
-    "Usage: migrations <status|apply|adopt-baseline> "
+    "Usage: migrations <status|apply|adopt-baseline|bind-ledger-identity> "
     + "[--database-url=DATABASE_URL] [--confirm] "
     + "[--expected-database=NAME --expected-system-identifier=DECIMAL --expected-transport=encrypted|unencrypted "
     + "[--expected-neon-project-id=PROJECT_ID --expected-neon-branch-id=BRANCH_ID "
@@ -92,7 +97,7 @@ function hasConfirmation(argv: readonly string[]): boolean {
 }
 
 export interface MigrationCliOptions {
-  readonly command: "status" | "apply" | "adopt-baseline";
+  readonly command: "status" | "apply" | "adopt-baseline" | "bind-ledger-identity";
   readonly databaseUrl: string;
   readonly expectedTargetIdentity?: ExpectedTargetIdentity;
 }
@@ -102,13 +107,15 @@ export function parseMigrationCliOptions(
   environment: NodeJS.ProcessEnv = process.env,
 ): MigrationCliOptions {
   const command = argv[0];
-  if (command !== "status" && command !== "apply" && command !== "adopt-baseline") usage();
+  if (command !== "status" && command !== "apply" && command !== "adopt-baseline"
+    && command !== "bind-ledger-identity") usage();
   rejectUnknownExpectedTargetIdentityFlags(argv);
   if (command === "status" && argv.some((item) => /^--expected-neon-(?:project|branch|timeline|tenant)-id(?:=|$)/u.test(item))) {
     throw new Error("Neon target identity declarations require apply or adopt-baseline; status does not verify target identity");
   }
   const explicitDatabaseUrl = argument(argv, "database-url");
-  const mutating = command === "apply" || command === "adopt-baseline";
+  const mutating = command === "apply" || command === "adopt-baseline"
+    || command === "bind-ledger-identity";
   if (mutating && !explicitDatabaseUrl?.trim()) {
     throw new Error("Mutating migrations require an explicit --database-url target");
   }
@@ -136,8 +143,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         process.stdout.write(`${JSON.stringify(await migrationStatus(client, migrations), null, 2)}\n`);
       } else if (command === "apply") {
         process.stdout.write(`${JSON.stringify(await applyMigrations(client, { migrations, expectedTargetIdentity }), null, 2)}\n`);
-      } else {
+      } else if (command === "adopt-baseline") {
         process.stdout.write(`${JSON.stringify(await adoptBaseline(client, { migrations, expectedTargetIdentity }), null, 2)}\n`);
+      } else {
+        process.stdout.write(`${JSON.stringify(
+          await bindMigrationLedgerIdentity(client, { migrations, expectedTargetIdentity }),
+          null,
+          2,
+        )}\n`);
       }
     } finally {
       client.release();

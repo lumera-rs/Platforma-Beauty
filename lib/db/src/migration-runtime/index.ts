@@ -24,6 +24,7 @@ export {
   type DatabaseMigrationReadiness,
   type CatalogIdentity,
   type CatalogIdentityReader,
+  type DatabaseTargetIdentityReader,
   type MigrationDatabasePool,
 } from "./readiness";
 export * from "./model";
@@ -34,3 +35,13 @@ export {
   assertPublicOnlyNamespaces,
   NON_PUBLIC_NAMESPACE_REASON,
 } from "./namespaces";
+export {
+  readDatabaseTargetIdentity,
+  ledgerIdentityFromTarget,
+  parseLedgerIdentity,
+  ledgerIdentityMismatch,
+  type DatabaseTargetIdentity,
+  type LedgerIdentity,
+  type LedgerIdentityColumns,
+  type LedgerIdentityState,
+} from "./ledger-identity";

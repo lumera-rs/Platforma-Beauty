@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { parseMigrationCliOptions, safeErrorText } from "./cli";
 import { MIGRATION_MANIFEST } from "./manifest";
 import { loadMigrations } from "./files";
-import { applyMigrations, migrationStatus, splitSqlStatements } from "./runner";
+import { applyMigrations, bindMigrationLedgerIdentity, migrationStatus, splitSqlStatements } from "./runner";
 import type { LoadedMigration } from "./types";
 
 test("the manifest preserves the canonical baseline and pins the guarded data transition", async () => {
@@ -42,7 +42,7 @@ test("status does not create a missing ledger", async () => {
   const status = await migrationStatus(client, []);
   assert.deepEqual(status, []);
   assert.equal(queries.length, 1);
-  assert.match(queries[0]!, /SELECT migration_id/u);
+  assert.match(queries[0]!, /SELECT pg_catalog\.to_jsonb\(ledger\)/u);
   assert.doesNotMatch(queries[0]!, /CREATE TABLE/u);
 });
 
@@ -190,12 +190,22 @@ test("B4 handles standard strings, identifiers, escape strings, dollar quotes, c
 });
 
 test("B5 refuses mutating commands that rely on ambient DATABASE_URL", () => {
-  for (const command of ["apply", "adopt-baseline"] as const) {
+  for (const command of ["apply", "adopt-baseline", "bind-ledger-identity"] as const) {
     assert.throws(
       () => parseMigrationCliOptions([command], { DATABASE_URL: "postgresql://user:password@production.invalid/db" }),
       /explicit --database-url target/u,
     );
   }
+});
+
+test("ledger identity binding CLI requires the complete explicit target declaration", () => {
+  assert.throws(
+    () => parseMigrationCliOptions([
+      "bind-ledger-identity", "--database-url=postgresql://db.invalid/db", "--confirm",
+    ], {}),
+    /Explicit (?:expected )?target identity/u,
+  );
+  assert.equal(typeof bindMigrationLedgerIdentity, "function");
 });
 
 test("B5 requires confirmation and accepts an explicit target without contacting a database", () => {

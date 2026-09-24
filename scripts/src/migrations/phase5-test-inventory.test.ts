@@ -71,7 +71,7 @@ test("required evidence skip policy rejects every supported Node test skip form"
 });
 
 test("Phase 5 inventory covers the complete seven-commit range and latest boot fixes", async () => {
-  assert.equal(phase5TestInventory.length, 26);
+  assert.equal(phase5TestInventory.length, 27);
   assert.equal(
     phase5TestInventory.filter((entry) => entry.provenance === "343ea5ae").length,
     11,

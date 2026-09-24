@@ -85,13 +85,19 @@ export async function readDeploymentLedgerInspection(
   const known = new Map(migrations.map((migration) => [migration.id, migration]));
   const reasons: string[] = [];
   const raw = await readOnly.query(`
-    SELECT migration_id, checksum, mode, state, error, started_at, finished_at
-    FROM public.lumera_migration_ledger
+    SELECT pg_catalog.to_jsonb(ledger) AS ledger_row
+    FROM public.lumera_migration_ledger AS ledger
     ORDER BY migration_id
   `);
   const rows: MigrationLedgerRow[] = [];
   const seen = new Set<string>();
-  for (const item of raw.rows) {
+  for (const rawItem of raw.rows) {
+    const value = rawItem.ledger_row;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      reasons.push("LEDGER_MALFORMED_ROW");
+      continue;
+    }
+    const item = value as Record<string, unknown>;
     const id = String(item.migration_id);
     const migration = known.get(id);
     if (!migration) {
@@ -129,6 +135,10 @@ export async function readDeploymentLedgerInspection(
       mode: mode as MigrationLedgerRow["mode"],
       state: state as MigrationLedgerRow["state"],
       error: item.error == null ? null : String(item.error),
+      databaseName: item.database_name == null ? null : String(item.database_name),
+      systemIdentifier: item.system_identifier == null ? null : String(item.system_identifier),
+      neonProjectId: item.neon_project_id == null ? null : String(item.neon_project_id),
+      neonBranchId: item.neon_branch_id == null ? null : String(item.neon_branch_id),
     });
   }
   for (let index = 0; index < migrations.length; index += 1) {

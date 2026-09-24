@@ -43,16 +43,24 @@ export async function readLedgerForPreflight(client: DatabaseClient): Promise<Mi
   }) : [];
   const expectedColumns = [
     { name: "checksum", type: "text", notNull: true, default: null },
+    { name: "database_name", type: "text", notNull: false, default: null },
     { name: "error", type: "text", notNull: false, default: null },
     { name: "finished_at", type: "timestamptz", notNull: false, default: null },
     { name: "migration_id", type: "text", notNull: true, default: null },
     { name: "mode", type: "text", notNull: true, default: null },
+    { name: "neon_branch_id", type: "text", notNull: false, default: null },
+    { name: "neon_project_id", type: "text", notNull: false, default: null },
     { name: "started_at", type: "timestamptz", notNull: true, default: "clock_timestamp()" },
     { name: "state", type: "text", notNull: true, default: null },
+    { name: "system_identifier", type: "text", notNull: false, default: null },
   ];
+  const legacyColumns = expectedColumns.filter(({ name }) =>
+    !["database_name", "system_identifier", "neon_project_id", "neon_branch_id"].includes(name));
+  const recognizedColumns = JSON.stringify(normalizedColumns) === JSON.stringify(expectedColumns)
+    || JSON.stringify(normalizedColumns) === JSON.stringify(legacyColumns);
   if (
     row?.["relkind"] !== "r"
-    || JSON.stringify(normalizedColumns) !== JSON.stringify(expectedColumns)
+    || !recognizedColumns
     || !Array.isArray(constraints)
     || constraints.length !== 3
   ) {
@@ -97,6 +105,10 @@ export async function readLedgerForPreflight(client: DatabaseClient): Promise<Mi
       mode: mode as MigrationMode,
       state: state as MigrationState,
       error: value["error"] == null ? null : String(value["error"]),
+      databaseName: value["database_name"] == null ? null : String(value["database_name"]),
+      systemIdentifier: value["system_identifier"] == null ? null : String(value["system_identifier"]),
+      neonProjectId: value["neon_project_id"] == null ? null : String(value["neon_project_id"]),
+      neonBranchId: value["neon_branch_id"] == null ? null : String(value["neon_branch_id"]),
     };
   }).sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 }

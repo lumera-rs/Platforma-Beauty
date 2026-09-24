@@ -9,6 +9,13 @@ import { fingerprintSnapshot } from "./fingerprint";
 import { ownershipExceptions } from "./ownership";
 import { assertPublicOnlyNamespaces, NON_PUBLIC_NAMESPACE_REASON } from "./namespaces";
 import { POSTGRES_DEPARSE_FORMAT, SUPPORTED_POSTGRES_MAJOR_VERSIONS } from "./model";
+import {
+  ledgerIdentityFromTarget,
+  ledgerIdentityMismatch,
+  parseLedgerIdentity,
+  readDatabaseTargetIdentity,
+  type DatabaseTargetIdentity,
+} from "./ledger-identity";
 
 const BASELINE_CHECKSUM = "643a649989c3658c96ae16d90c003eeeeee542f76d94cb3a8b00f6328002fc60";
 const SUPPORTED_STARTUP_MIGRATION_CHECKSUM =
@@ -61,6 +68,8 @@ export interface CatalogIdentity {
 }
 
 export type CatalogIdentityReader = (client: MigrationDatabaseClient) => Promise<CatalogIdentity>;
+export type DatabaseTargetIdentityReader =
+  (client: MigrationDatabaseClient) => Promise<DatabaseTargetIdentity>;
 
 function text(value: unknown): string {
   return value == null ? "" : String(value);
@@ -81,8 +90,10 @@ function isMissingRelation(error: unknown): boolean {
 export async function inspectDatabaseMigrationReady(
   client: MigrationDatabaseClient,
   injectedReader?: CatalogIdentityReader,
+  injectedTargetIdentityReader?: DatabaseTargetIdentityReader,
 ): Promise<DatabaseMigrationReadiness> {
   const readCatalogIdentity = injectedReader ?? defaultCatalogIdentity;
+  const readTargetIdentity = injectedTargetIdentityReader ?? readDatabaseTargetIdentity;
   let transactionStarted = false;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -91,11 +102,18 @@ export async function inspectDatabaseMigrationReady(
     const readOnly = readOnlyMigrationClient(client);
     await assertPublicOnlyNamespaces(readOnly);
     const result = await readOnly.query(`
-      SELECT migration_id, checksum, mode, state, error, started_at, finished_at
-      FROM public.lumera_migration_ledger
+      SELECT pg_catalog.to_jsonb(ledger) AS ledger_row /* migration_id, checksum */
+      FROM public.lumera_migration_ledger AS ledger
       ORDER BY migration_id
     `);
-    const rows = result.rows;
+    const rows = result.rows.map(row => {
+      const value = row.ledger_row ?? row;
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        throw new Error("MIGRATION_READINESS_INVALID_LEDGER:unknown");
+      }
+      return value as Record<string, unknown>;
+    });
+    const targetIdentity = ledgerIdentityFromTarget(await readTargetIdentity(readOnly));
     const expected = new Map([
       ["000001", { checksum: BASELINE_CHECKSUM, mode: "transactional" }],
       ["000002", { checksum: SUPPORTED_STARTUP_MIGRATION_CHECKSUM, mode: "transactional" }],
@@ -124,6 +142,25 @@ export async function inspectDatabaseMigrationReady(
         || state === "APPLYING" || state === "FAILED" || row.error != null) {
         throw new Error(`MIGRATION_READINESS_INCOMPLETE_LEDGER:${id}`);
       }
+      const ledgerIdentity = parseLedgerIdentity({
+        database_name: row.database_name,
+        system_identifier: row.system_identifier,
+        neon_project_id: row.neon_project_id,
+        neon_branch_id: row.neon_branch_id,
+      });
+      if (ledgerIdentity.kind === "partial") {
+        throw new Error(`MIGRATION_READINESS_LEDGER_IDENTITY_PARTIAL:${id}:${ledgerIdentity.component}`);
+      }
+      if (ledgerIdentity.kind === "unbound") {
+        if (isDeploymentRuntime(process.env)) {
+          throw new Error(`MIGRATION_READINESS_LEDGER_IDENTITY_UNBOUND:${id}:databaseName`);
+        }
+      } else {
+        const component = ledgerIdentityMismatch(ledgerIdentity.identity, targetIdentity);
+        if (component) {
+          throw new Error(`MIGRATION_READINESS_LEDGER_IDENTITY_MISMATCH:${id}:${component}`);
+        }
+      }
     }
     if ([...expected.keys()].some(id => !seen.has(id))) throw new Error("MIGRATION_READINESS_LEDGER_FRONTIER");
     const identity = await readCatalogIdentity(readOnly);
@@ -144,7 +181,7 @@ export async function inspectDatabaseMigrationReady(
       ? "MIGRATION_READINESS_NON_PUBLIC_NAMESPACE"
       : isMissingRelation(error)
       ? "MIGRATION_READINESS_LEDGER_MISSING"
-      : error instanceof Error && /^MIGRATION_READINESS_[A-Z0-9_]+$/u.test(error.message)
+      : error instanceof Error && /^MIGRATION_READINESS_[A-Z0-9_]+(?::[A-Za-z0-9_.-]+)*$/u.test(error.message)
       ? error.message
       : "MIGRATION_READINESS_READ_FAILED";
     return {
@@ -165,10 +202,11 @@ export async function inspectDatabaseMigrationReady(
 export async function assertDatabaseMigrationReady(
   pool: MigrationDatabasePool,
   injectedReader?: CatalogIdentityReader,
+  injectedTargetIdentityReader?: DatabaseTargetIdentityReader,
 ): Promise<DatabaseMigrationReadiness> {
   const client = await pool.connect();
   try {
-    const report = await inspectDatabaseMigrationReady(client, injectedReader);
+    const report = await inspectDatabaseMigrationReady(client, injectedReader, injectedTargetIdentityReader);
     if (!report.ready) throw new DatabaseMigrationReadinessError(report);
     return report;
   } finally {
@@ -178,6 +216,14 @@ export async function assertDatabaseMigrationReady(
       // Preserve the readiness/query error; release is best-effort cleanup.
     }
   }
+}
+
+function isDeploymentRuntime(environment: NodeJS.ProcessEnv): boolean {
+  return environment.NODE_ENV === "production"
+    || /^(?:1|true)$/iu.test(environment.REPLIT_DEPLOYMENT ?? "")
+    || /^(?:1|true)$/iu.test(environment.REPL_DEPLOYMENT ?? "")
+    || environment.REPLIT_DEPLOYMENT_ID !== undefined
+    || environment.REPL_DEPLOYMENT_ID !== undefined;
 }
 
 async function defaultCatalogIdentity(

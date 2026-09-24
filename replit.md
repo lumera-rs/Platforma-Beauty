@@ -4,6 +4,7 @@
 - As of 2026-09-17, the owner describes the published application as a live test environment without real customers. This is owner-provided context, not independently verified deployment metadata.
 - Existing live test data remains valuable. “Test” does not authorize deletion, reset, development-database copying, migration execution or publishing. Any destructive action needs explicit owner authorization.
 - During the startup-DDL transition, retain the existing ensure paths until the complete supported-state migration and boot evidence passes. Local disposable proofs do not authorize operations on the published database.
+- Evidence rule for every task: quote exact messages from retained actual runs for every reported test and mutation. Never substitute expected output for observed output; clearly distinguish historical evidence, reproductions, and unavailable logs.
 
 ## Run & Operate
 

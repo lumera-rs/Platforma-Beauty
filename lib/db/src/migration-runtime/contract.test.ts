@@ -67,6 +67,12 @@ const headLedgerRow = {
   finished_at: "2026-01-01T00:00:05Z",
 };
 
+const localTargetIdentity = async () => ({
+  databaseName: "fixture",
+  systemIdentifier: "123",
+  transport: "unencrypted" as const,
+});
+
 test("readiness leases one dedicated pool client and releases it", async () => {
   const queries: string[] = [];
   let released = 0;
@@ -131,6 +137,7 @@ test("readiness leases one dedicated pool client and releases it", async () => {
       triggerCount: 24,
       functionCount: 21,
     }),
+    localTargetIdentity,
   );
   assert.equal(report.ready, true);
   assert.equal(released, 1);
@@ -191,6 +198,7 @@ test("readiness admits reviewed PostgreSQL 16 patch releases with identical cata
     const report = await inspectDatabaseMigrationReady(
       client,
       async () => canonicalCatalogIdentity(postgresServerVersionNum),
+      localTargetIdentity,
     );
     assert.deepEqual(report, {
       ready: true,
@@ -251,7 +259,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
         return { rows: [] };
       },
     };
-    const report = await inspectDatabaseMigrationReady(client, async () => identity);
+    const report = await inspectDatabaseMigrationReady(client, async () => identity, localTargetIdentity);
     assert.equal(report.ready, false);
     assert.equal(report.reason, "MIGRATION_READINESS_CATALOG_DRIFT");
     assert.equal(report.catalog, "DRIFTED");
@@ -271,7 +279,7 @@ test("readiness rejects schema drift and unsupported PostgreSQL majors", async (
     const report = await inspectDatabaseMigrationReady(client, async () => {
       catalogReads += 1;
       return canonicalCatalogIdentity(160010);
-    });
+    }, localTargetIdentity);
     assert.equal(report.ready, false, `000004 ${state} must not satisfy readiness`);
     assert.equal(catalogReads, 0, "invalid receipt must refuse before the catalog reader");
   }

@@ -1,5 +1,113 @@
 # Local provenance
 
+## PR #41 ledger-fix current-source amendment census
+
+Authority: the owner's explicit current-tier-only manifest and provenance
+instruction after the PR #41 source fix stabilized. No source file was changed
+by this amendment work, and no database or production call was made.
+
+The required documentation validator was run before any edit. It failed closed
+at the first drift with the exact message
+`Error: protected hash drift: scripts/src/migrations/migrations.integration.test.ts`.
+Exact stdout, stderr, and exit code are preserved in
+`.local/ledger-fix/hashes/docvalidators-before.*`.
+
+The complete direct-byte census covered all 158 current-tier entries: 73 D
+`currentInputs` plus 85 E `files`. Before amendment, 154 matched and exactly
+four entries mismatched across two files; every mismatch was a working-tree
+source change and there were zero unrelated mismatches.
+
+| Path | Old current hash | Actual byte hash / new current hash | Current tiers | Reason |
+| --- | --- | --- | --- | --- |
+| `scripts/src/migrations/migrations.integration.test.ts` | `b67c1049062066350c9ffb4520b80f4c03dcffbe5dda7ac5ebef4fd831cc162f` | `cd67046171376c988977b9ebbf51baa6678701b95633d93ba6571e80ac2b2528` | D `currentInputs`; E `files` | Adds legacy seven-column ledger read, refusal non-mutation, and transactional rollback coverage. |
+| `scripts/src/migrations/read-only-ledger.ts` | `000ba6a0551bc966d56cf640dae60b99f5748a1d4adf6d78e2e13a21b40c811d` | `56b95c66410137cb8c666b359b52ebb24a458a19e5a2db8c4d2ee5cf2062c5ab` | D `currentInputs`; E `files` | Recognizes both the legacy seven-column and identity-extended ledger shapes in read-only preflight. |
+
+The third stabilized source change,
+`scripts/src/schema-drift/eligibility-cli.test.ts`, is not a path in either
+current-tier inventory, so it correctly requires no protected hash amendment.
+The two protected source files produce four current-tier amendments. Finalizing
+D requires one enclosing E `files` cascade amendment for
+`docs/production-diagnostic-design/protected-input-manifest.json`:
+`b65f40e7ec6fe6f49999f69cc86317c255e41ae042e7fea78f25e935461fc75f`
+to
+`077982b28392b35dfdc42504f19c808b20d5dbc7cca862ece5098fef72f56822`.
+The batch therefore contains exactly five current-tier hash amendments.
+
+All 146 historical entries reproduce from `git show b8f30561:<path>`. The D
+historical `inputs` raw block is byte-identical to `origin/main` (8,954 bytes,
+SHA-256
+`f189dd413b3b6564faf10bd5c53d294483e6e05a4f21af5cbd72535bfe967a29`);
+the E historical `originalProtectedFiles` raw block is also byte-identical
+(8,971 bytes, SHA-256
+`74a5b036d043d0a8071e52d7d0bc4824797cd1429d05e0691319740c375dfd9f`).
+No historical tier was amended.
+
+The full documentation suite then passed with the exact summary lines
+`PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases`,
+`validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`validation.test.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`ℹ tests 13`, `ℹ pass 13`, `ℹ fail 0`, and `ℹ skipped 0`.
+Exact stdout, empty stderr, and zero exit code are preserved in
+`.local/ledger-fix/hashes/docvalidators-final.*`.
+
+## Ledger-identity current-source amendment census
+
+Authority: the owner's explicit current-tier-only manifest and provenance
+instruction. The finalized source runbook and ledger-identity implementation
+were inputs to this amendment; no source file was changed by this work.
+
+The required validator command was run before any edit and stopped at the first
+measured drift with the exact error
+`Error: protected hash drift: scripts/src/migrations/PHASE-5B-RUNBOOK.md`.
+Its complete stdout, stderr, and exit code are preserved under
+`.local/ledger-identity/hashes/docvalidators-before.*`.
+
+An independent full byte census then hashed all 158 current-tier entries:
+73 diagnostic `currentInputs` and 85 execution `files`. There were exactly 18
+pre-amendment mismatches across nine source files, and 140 matches. Every
+mismatching path was present in `git diff --name-only $(git merge-base
+origin/main HEAD)` including working-tree changes; there were zero unrelated
+mismatches.
+
+The complete source-hash amendments are:
+
+| Path | Old current hash | Actual byte hash / new current hash | Current tiers |
+| --- | --- | --- | --- |
+| `scripts/src/migrations/PHASE-5B-RUNBOOK.md` | `ac91ce554de4001c6572f46220684b1b7df44e573f86349fe77ff957731b6faf` | `832392d292ff377d47538d40d3e24908a0daf650f11aae73fdc2147b13bef9ec` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/cli.ts` | `e166821057a679feba8f043ed7f053e0a006158569705cfb13b3ea6b5d0b6070` | `31a5fe124772a6ef54be67bd96e37ef11cc1c6f3d59cb0ba3f251cc637511429` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/index.ts` | `b5f45f9657442748d34c68850773e72954a52d6aee5cdbab44dea745615d1c8e` | `cfe65b428ab40e8427b45f3ff623a2a12f5b71e497ec145cb504b0e97cbe3bcf` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/ledger.ts` | `efd64df8d8968eedcd83d9bf4ff948c084462a0fef742e6a41dc7b405f73451c` | `7aed7a5d699cc74acc6b05ad7b65c1f59351c406c6b1b4f12e0511d3da03a026` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/migrations.integration.test.ts` | `4d7afaf96db9a01b3ac607c2facfd744bea98e64c027a965a46711c618cc4720` | `b67c1049062066350c9ffb4520b80f4c03dcffbe5dda7ac5ebef4fd831cc162f` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/migrations.test.ts` | `5e4788a7f896581518fde50cbb21a55fe4942a26f74a3c5a5a22356d445ee95f` | `fa0e88f0352003f30310f96a9de8d8fd979a50611fb2e779cdafe30bf59ea378` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/read-only-ledger.ts` | `4ab94212812b8a897d989b837f628935ed5ec83eab35489ef15ff88f808a7b61` | `000ba6a0551bc966d56cf640dae60b99f5748a1d4adf6d78e2e13a21b40c811d` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/runner.ts` | `ae6972ada8abb89cb21e0137be268ce3f7f0abdc0790b7cbc5e2f68eea58457f` | `66db1519141f507d70ee4561346a4be61a1a5f48d5ec83fe4c6aecf296b4d796` | D `currentInputs`; E `files` |
+| `scripts/src/migrations/types.ts` | `7f01d8bdea395c225cab03a83c91285f7e76af098cd78811e36b3c3d5de86871` | `32382f2fc32a80abfd8e0eb7c4c6f4b0ad11761469b8e62a169d8b4d6ee521a5` | D `currentInputs`; E `files` |
+
+These are 18 current-tier source amendments. After finalizing D, the necessary
+dependent E `files` amendment for
+`docs/production-diagnostic-design/protected-input-manifest.json` is
+`54b1e3901ba893db332da4f2f01aa30b2b57a231eb2d38f5bba683592a722e69`
+to
+`b65f40e7ec6fe6f49999f69cc86317c255e41ae042e7fea78f25e935461fc75f`.
+The batch therefore has exactly 19 current-tier hash amendments.
+
+All 146 historical entries were independently reproduced from
+`git show b8f30561:<path>` bytes and matched. The D historical `inputs` raw
+block is byte-identical to `origin/main` (8,954 bytes, SHA-256
+`f189dd413b3b6564faf10bd5c53d294483e6e05a4f21af5cbd72535bfe967a29`);
+the E historical `originalProtectedFiles` raw block is likewise byte-identical
+(8,971 bytes, SHA-256
+`74a5b036d043d0a8071e52d7d0bc4824797cd1429d05e0691319740c375dfd9f`).
+No historical tier or source was amended.
+
+The full documentation command then passed. Its exact summary messages include
+`PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases`,
+`validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`validation.test.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.`,
+`ℹ tests 13`, `ℹ pass 13`, `ℹ fail 0`, and `ℹ skipped 0`.
+Exact stdout, empty stderr, and zero exit code are preserved under
+`.local/ledger-identity/hashes/docvalidators-final.*`.
+
 ## PR #35: complete current-source amendment census
 
 Authority: the owner's explicit batch amendment instruction, including the

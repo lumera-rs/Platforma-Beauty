@@ -14,6 +14,7 @@ export interface Phase5TestInventoryEntry {
 
 export const phase5TestInventory: readonly Phase5TestInventoryEntry[] = [
   { path: "scripts/src/migrations/target-identity.test.ts", declaredTests: 11, execution: "database-free", provenance: "phase5-followup", skipPolicy: "forbidden" },
+  { path: "scripts/src/migrations/ledger-identity.test.ts", declaredTests: 3, execution: "database-free", provenance: "phase5-followup", skipPolicy: "forbidden" },
   { path: "scripts/src/migrations/target-identity.integration.test.ts", declaredTests: 6, execution: "disposable-integration", provenance: "phase5-followup", skipPolicy: "forbidden" },
   { path: "artifacts/api-server/src/lib/business-growth-schema-boot-regression.test.ts", declaredTests: 1, execution: "disposable-integration", provenance: "343ea5ae" },
   { path: "lib/db/src/migration-runtime/contract.test.ts", declaredTests: 5, execution: "database-free", provenance: "343ea5ae" },
@@ -22,8 +23,8 @@ export const phase5TestInventory: readonly Phase5TestInventoryEntry[] = [
   { path: "scripts/src/migrations/deployment-eligibility.test.ts", declaredTests: 10, execution: "database-free", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/historical-operation-matrix.test.ts", declaredTests: 1, execution: "database-free", provenance: "343ea5ae", skipPolicy: "forbidden" },
   { path: "scripts/src/migrations/migration-runtime-parity.test.ts", declaredTests: 1, execution: "database-free", provenance: "343ea5ae" },
-  { path: "scripts/src/migrations/migrations.integration.test.ts", declaredTests: 22, execution: "existing-phase4-command", provenance: "80f822ac..343ea5ae" },
-  { path: "scripts/src/migrations/migrations.test.ts", declaredTests: 13, execution: "database-free", provenance: "80f822ac..343ea5ae" },
+  { path: "scripts/src/migrations/migrations.integration.test.ts", declaredTests: 23, execution: "existing-phase4-command", provenance: "80f822ac..343ea5ae" },
+  { path: "scripts/src/migrations/migrations.test.ts", declaredTests: 14, execution: "database-free", provenance: "80f822ac..343ea5ae" },
   { path: "scripts/src/migrations/namespace-boundary.integration.test.ts", declaredTests: 1, execution: "disposable-integration", provenance: "343ea5ae" },
   { path: "scripts/src/migrations/preflight.test.ts", declaredTests: 4, execution: "database-free", provenance: "80f822ac..343ea5ae" },
   { path: "scripts/src/migrations/prepare-development.test.ts", declaredTests: 3, execution: "database-free", provenance: "343ea5ae" },
@@ -51,7 +52,7 @@ export const phase5DatabaseFreeTests = phase5TestInventory
 export const phase5DisposableIntegrationSuites = [
   {
     id: "phase4-migrations",
-    declaredTests: 22,
+    declaredTests: 23,
     files: ["scripts/src/migrations/migrations.integration.test.ts"],
   },
   {

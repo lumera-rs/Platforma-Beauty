@@ -16,7 +16,12 @@ import { fingerprintSnapshot } from "../schema-drift/fingerprint";
 import { beginFingerprintTransaction } from "../schema-drift/fingerprint-transaction";
 import { ownershipExceptions } from "../schema-drift/ownership";
 import { readOnlyQueryLayer } from "../schema-drift/read-only-query";
-import { adoptBaseline, applyMigrations, migrationStatus } from "./runner";
+import {
+  adoptBaseline,
+  applyMigrations,
+  bindMigrationLedgerIdentity,
+  migrationStatus,
+} from "./runner";
 import { registerDisposableTarget, expectedDisposableTarget } from "./disposable-target-fixture";
 import { loadMigration, loadMigrations } from "./files";
 import { ensureLedger, readLedger } from "./ledger";
@@ -140,6 +145,21 @@ async function ledgerReceipts(pool: pg.Pool): Promise<unknown[]> {
   )).rows;
 }
 
+async function ledgerColumnNames(pool: pg.Pool): Promise<string[]> {
+  return (await pool.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='lumera_migration_ledger'
+    ORDER BY ordinal_position
+  `)).rows.map((row) => String(row.column_name));
+}
+
+async function makeLedgerLegacySevenColumnShape(pool: pg.Pool): Promise<void> {
+  await pool.query(`ALTER TABLE public.lumera_migration_ledger
+    DROP COLUMN database_name, DROP COLUMN system_identifier,
+    DROP COLUMN neon_project_id, DROP COLUMN neon_branch_id`);
+}
+
 async function expectUnchangedRefusal(
   pool: pg.Pool,
   operation: () => Promise<unknown>,
@@ -248,6 +268,171 @@ test("fresh apply and rerun are a no-op", skip, async () => {
     assert.deepEqual((await pool.query("SELECT first_published_at FROM public.beauty_job_listings")).rows,
       [{ first_published_at: null }], "existing public listings are not backfilled");
     assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true);
+  });
+});
+
+test("ledger identity is bound, immutable, upgradeable, and deployment-enforced", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const expected = expectedDisposableTarget(pool);
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    const original = await readLedger(pool);
+    assert.ok(original.length > 0);
+    assert.ok(original.every(row => row.databaseName === expected.databaseName
+      && row.systemIdentifier === expected.systemIdentifier
+      && row.neonProjectId === null && row.neonBranchId === null));
+
+    await pool.query(`UPDATE public.lumera_migration_ledger
+      SET database_name='copied_database' WHERE migration_id='000002'`);
+    await assert.rejects(
+      () => withClient(pool, client => applyMigrations(client, {
+        migrations,
+        expectedTargetIdentity: expected,
+      })),
+      { message: "Migration ledger identity mismatch for 000002: databaseName" },
+    );
+    const beforeRefusedBind = await ledgerReceipts(pool);
+    await assert.rejects(
+      () => withClient(pool, client => bindMigrationLedgerIdentity(client, {
+        migrations,
+        expectedTargetIdentity: expected,
+      })),
+      { message: "Migration ledger identity mismatch for 000002: databaseName" },
+    );
+    assert.deepEqual(await ledgerReceipts(pool), beforeRefusedBind, "binding must never rewrite a bound row");
+
+    await pool.query(`UPDATE public.lumera_migration_ledger
+      SET database_name=NULL, system_identifier=NULL, neon_project_id=NULL, neon_branch_id=NULL`);
+    assert.equal((await withClient(pool, client => inspectDatabaseMigrationReady(client))).ready, true,
+      "nondeployment readiness tolerates wholly unbound legacy rows");
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const report = await withClient(pool, client => inspectDatabaseMigrationReady(client));
+      assert.equal(report.reason, "MIGRATION_READINESS_LEDGER_IDENTITY_UNBOUND:000001:databaseName");
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
+    const bound = await withClient(pool, client => bindMigrationLedgerIdentity(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    assert.deepEqual(bound.bound, migrations.map(migration => migration.id));
+
+    await pool.query(`UPDATE public.lumera_migration_ledger
+      SET neon_project_id='quiet-river-12345678' WHERE migration_id='000003'`);
+    const partial = await withClient(pool, client => inspectDatabaseMigrationReady(client));
+    assert.equal(partial.reason, "MIGRATION_READINESS_LEDGER_IDENTITY_PARTIAL:000003:neon.branchId");
+  });
+
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const expected = expectedDisposableTarget(pool);
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    const before = await fingerprint(pool);
+    await pool.query(`ALTER TABLE public.lumera_migration_ledger
+      DROP COLUMN database_name, DROP COLUMN system_identifier,
+      DROP COLUMN neon_project_id, DROP COLUMN neon_branch_id`);
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    const upgraded = await readLedger(pool);
+    assert.ok(upgraded.every(row => row.databaseName === null && row.systemIdentifier === null));
+    assert.deepEqual(await fingerprint(pool), before,
+      "runner-owned nullable ledger upgrade stays outside the canonical fingerprint");
+  });
+});
+
+test("adoption preflight reads the legacy seven-column ledger as unbound without DDL", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expectedDisposableTarget(pool),
+    }));
+    await makeLedgerLegacySevenColumnShape(pool);
+    const beforeRows = await ledgerReceipts(pool);
+    const beforeColumns = await ledgerColumnNames(pool);
+    const statements: string[] = [];
+    const report = await withClient(pool, async (client) => {
+      const observed = { async query(sql: string, values?: unknown[]) {
+        statements.push(sql);
+        return client.query(sql, values);
+      } };
+      return preflightBaselineAdoption(observed, migrations);
+    });
+    assert.equal(report.readiness, "NOT_READY");
+    assert.equal(report.ledger.state, "VALID");
+    assert.equal(report.blockers.includes("LEDGER_UNREADABLE"), false);
+    assert.equal(report.blockers.includes("LEDGER_INCONSISTENT"), false);
+    assert.ok(statements.every(sql =>
+      !/^\s*(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/iu.test(sql)));
+    assert.deepEqual(await ledgerReceipts(pool), beforeRows);
+    assert.deepEqual(await ledgerColumnNames(pool), beforeColumns);
+  });
+});
+
+test("binder refuses a wrong declared identity without changing legacy rows or shape", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const expected = expectedDisposableTarget(pool);
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    await makeLedgerLegacySevenColumnShape(pool);
+    const beforeRows = await ledgerReceipts(pool);
+    const beforeColumns = await ledgerColumnNames(pool);
+    await assert.rejects(
+      () => withClient(pool, client => bindMigrationLedgerIdentity(client, {
+        migrations,
+        expectedTargetIdentity: { ...expected, databaseName: "wrong_declared_database" },
+      })),
+      { message: "Target identity mismatch: databaseName" },
+    );
+    assert.deepEqual(await ledgerReceipts(pool), beforeRows);
+    assert.deepEqual(await ledgerColumnNames(pool), beforeColumns);
+  });
+});
+
+test("binder failure at 000003 rolls back earlier bindings and legacy column upgrades", skip, async () => {
+  await withDatabase(async (pool) => {
+    const migrations = await loadMigrations();
+    const expected = expectedDisposableTarget(pool);
+    await withClient(pool, client => applyMigrations(client, {
+      migrations,
+      expectedTargetIdentity: expected,
+    }));
+    await makeLedgerLegacySevenColumnShape(pool);
+    const beforeRows = await ledgerReceipts(pool);
+    const beforeColumns = await ledgerColumnNames(pool);
+    await assert.rejects(
+      () => withClient(pool, async (client) => {
+        const injected = { async query(sql: string, values?: unknown[]) {
+          if (/\bUPDATE\s+public\.lumera_migration_ledger\b/iu.test(sql) && values?.[0] === "000003") {
+            throw new Error("injected binding failure at 000003");
+          }
+          return client.query(sql, values);
+        } };
+        return bindMigrationLedgerIdentity(injected, {
+          migrations,
+          expectedTargetIdentity: expected,
+        });
+      }),
+      { message: "injected binding failure at 000003" },
+    );
+    assert.deepEqual(await ledgerReceipts(pool), beforeRows,
+      "failed all-row binding must roll back bindings written before 000003");
+    assert.deepEqual(await ledgerColumnNames(pool), beforeColumns,
+      "failed all-row binding must roll back newly added identity columns");
   });
 });
 

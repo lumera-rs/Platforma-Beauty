@@ -250,11 +250,28 @@ entries matched that snapshot; both historical tiers remained
 raw-byte-identical to `origin/main`. Complete hashes for that historical batch
 are recorded in `../production-evidence-execution-plan/provenance.md`.
 
-## Third-correction final verification
+## Third-correction historical verification and registry correction
 
-The shared destructive-target guard correction, registry completion, and final
-CLI/source state postdate the historical results above. Completed focused,
-aggregate, clean-CI, and protected-census evidence is listed below:
+The shared destructive-target guard correction and CLI/source state postdate the
+historical results above. The earlier text called the registry work complete,
+but the preserved scratch stdout/stderr for that two-mutant claim is
+unavailable. That broad completion claim is retracted. The clean-CI and Phase 5
+manifests remain historical evidence for their recorded source snapshots, not
+evidence that every later registered harness had an actual guard call.
+
+A current, database-free reproduction against the exact current HTTP-security
+and external-pool sources removed only each guard call and then applied the
+original main-branch predicate, `/assertDestructiveTestRuntimeAllowed/`. The
+imports remained, so the old predicate accepted both mutants. Its direct
+diagnostics were:
+
+> `current reproduction: original predicate accepted import-only external database pool integration mutation`
+>
+> `current reproduction: original predicate accepted import-only HTTP security hardening mutation`
+
+This is a current reproduction of the old predicate, not a recovered historical
+run. Its stdout, stderr, and exit code are preserved under
+`.local/ledger-identity/registry/current-old-contract-reproduction.*`.
 
 | Check | Result |
 |---|---|
@@ -263,7 +280,8 @@ aggregate, clean-CI, and protected-census evidence is listed below:
 | HTTP security fixture | Passed with `CI=true`, `NODE_ENV=test`, owned database name `lumera_ci_database`, and the private fixture marker unset |
 | HTTP target-boundary regressions | The normal owned disposable target passed; a non-disposable target was refused before application import/connection |
 | Full Phase 5 integration | Final current-source rerun passed all 101 tests across 11 suites and 12 files, with 0 failures and 0 skips; PostgreSQL 16 used loopback on a non-default port, the owned cluster was removed, `error` is `null`, and `cleanupErrors` is empty. The manifest is `.local/pr40-third-phase5-final/phase5-integration-manifest.json`. |
-| Destructive-harness registry mutations | Both guard-removal mutations were rejected: removing the shared guard call from either registered test failed the registry contract. Both registrations remained present; final source retains both guards. |
+| Earlier destructive-harness registry mutations | The prior document named two rejected mutations, but its actual stdout/stderr was not preserved and is unavailable. The claim that those two mutations established registry completion is retracted. The current reproduction quoted above demonstrates that the actual old predicate accepts both import-only mutants. |
+| Current destructive-harness registry contract | The contract now parses TypeScript with the compiler AST, ties calls to static or dynamic imports of the shared guard, and separately requires an actual shell guard invocation; an import, sourced helper, unrelated same-name call, comment, string, or guard name alone is insufficient. The focused database-free run passed 40 tests: final-source coverage, negative coverage, and scratch remove-only-call mutations for all 38 registrations (36 distinct source files). The same focused file is wired into the existing `test:api-regressions-lifecycle` script, so CI executes it before the expensive lifecycle file. Actual stdout, stderr, and exit code are preserved at `.local/ledger-identity/registry/focused-registry.stdout`, `.local/ledger-identity/registry/focused-registry.stderr`, and `.local/ledger-identity/registry/focused-registry.exit-code`; all mutation messages are quoted in `../ledger-identity/registry-evidence.md`. |
 | Clean CI database preparation and Phases 2–3 | All 66 manifest steps passed with exit code 0. The lifecycle step passed 37 tests in approximately 675 seconds (677-second enclosing step). The manifest environment and every step command, exit code, and duration are recorded in [CI database job verification](ci-database-job-verification.md). |
 | Shared redacted child-output helper | Implemented at `lib/db/src/safe-child-process-output.ts`, exported as the real `@workspace/db/safe-child-process-output` package subpath, and re-exported for existing scripts callers; API and scripts TypeScript checks passed |
 | Backend static standards | 13 passed, including prerequisites |

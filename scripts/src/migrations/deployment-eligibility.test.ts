@@ -107,8 +107,8 @@ test("ledger inspection rejects an incomplete APPLYING row before the runner can
   const migrations = await loadMigrations();
   const client = fakeClient((sql) => {
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
-    if (sql.includes("started_at")) {
-      return [{
+    if (sql.includes("to_jsonb(ledger)")) {
+      return [{ ledger_row: {
         migration_id: "000001",
         checksum: migrations[0]!.checksum,
         mode: migrations[0]!.mode,
@@ -116,7 +116,7 @@ test("ledger inspection rejects an incomplete APPLYING row before the runner can
         error: null,
         started_at: new Date(),
         finished_at: null,
-      }];
+      } }];
     }
     throw new Error(`unexpected query: ${sql}`);
   });
@@ -129,8 +129,8 @@ test("ledger inspection rejects checksum, mode, error, and timestamp drift", asy
   const migrations = await loadMigrations();
   const client = fakeClient((sql) => {
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
-    if (sql.includes("started_at")) {
-      return [{
+    if (sql.includes("to_jsonb(ledger)")) {
+      return [{ ledger_row: {
         migration_id: "000001",
         checksum: "wrong",
         mode: "nontransactional",
@@ -138,7 +138,7 @@ test("ledger inspection rejects checksum, mode, error, and timestamp drift", asy
         error: "stale failure",
         started_at: null,
         finished_at: null,
-      }];
+      } }];
     }
     throw new Error(`unexpected query: ${sql}`);
   });
@@ -154,8 +154,8 @@ test("ledger inspection rejects a finite but reversed completion interval", asyn
   const migrations = await loadMigrations();
   const client = fakeClient((sql) => {
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
-    if (sql.includes("started_at")) {
-      return [{
+    if (sql.includes("to_jsonb(ledger)")) {
+      return [{ ledger_row: {
         migration_id: "000001",
         checksum: migrations[0]!.checksum,
         mode: migrations[0]!.mode,
@@ -163,7 +163,7 @@ test("ledger inspection rejects a finite but reversed completion interval", asyn
         error: null,
         started_at: "2026-01-02T00:00:00.000Z",
         finished_at: "2026-01-01T00:00:00.000Z",
-      }];
+      } }];
     }
     throw new Error(`unexpected query: ${sql}`);
   });
@@ -181,8 +181,8 @@ test("supported runner rejects invalid ledger metadata before BEGIN or ledger DD
     if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
     if (sql.includes("pg_advisory_unlock")) return [{ unlocked: true }];
     if (sql.includes("to_regclass")) return [{ ledger: "lumera_migration_ledger" }];
-    if (sql.includes("started_at")) {
-      return [{
+    if (sql.includes("to_jsonb(ledger)")) {
+      return [{ ledger_row: {
         migration_id: "000001",
         checksum: "wrong",
         mode: migrations[0]!.mode,
@@ -190,7 +190,7 @@ test("supported runner rejects invalid ledger metadata before BEGIN or ledger DD
         error: null,
         started_at: null,
         finished_at: null,
-      }];
+      } }];
     }
     throw new Error(`unexpected query: ${sql}`);
   });
