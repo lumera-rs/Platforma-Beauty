@@ -50,6 +50,8 @@ import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-t
 assertDestructiveTestRuntimeAllowed(process.env, "Business growth schema cleanup reports tests");
 
 const execFileAsync = promisify(execFile);
+const postgresProgram = (name: string) => process.env.LUMERA_POSTGRES_16_BIN
+  ? path.join(process.env.LUMERA_POSTGRES_16_BIN, name) : name;
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(thisDir, "..", "..", "..", "..");
 const tsxBin = path.resolve(workspaceRoot, "scripts", "node_modules", ".bin", "tsx");
@@ -68,7 +70,7 @@ type DisposableDatabase = { databaseUrl: string; query: (sql: string) => Promise
  * own verification/setup queries instead of a direct pg.Pool.
  */
 async function psqlQuery(databaseUrl: string, sql: string): Promise<string[]> {
-  const { stdout } = await execFileAsync("psql", [databaseUrl, "-At", "-F", "\t", "-c", sql]);
+  const { stdout } = await execFileAsync(postgresProgram("psql"), [databaseUrl, "-At", "-F", "\t", "-c", sql]);
   return stdout.split("\n").filter((line) => line.trim().length > 0);
 }
 
@@ -80,7 +82,7 @@ async function provisionDisposableDatabase(label: string): Promise<DisposableDat
     url.pathname = `/${databaseName}`;
     return url.toString();
   })();
-  await execFileAsync("createdb", ["--maintenance-db", baseDatabaseUrl!, databaseName]);
+  await execFileAsync(postgresProgram("createdb"), ["--maintenance-db", baseDatabaseUrl!, databaseName]);
   let exists = true;
   try {
     // `drizzle-kit push` is the only schema step here -- deliberately never
@@ -96,14 +98,14 @@ async function provisionDisposableDatabase(label: string): Promise<DisposableDat
     );
   } catch (error) {
     exists = false;
-    await execFileAsync("dropdb", ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]).catch(() => {});
+    await execFileAsync(postgresProgram("dropdb"), ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]).catch(() => {});
     throw error;
   }
   return {
     databaseUrl,
     query: (sql: string) => psqlQuery(databaseUrl, sql),
     cleanup: async () => {
-      if (exists) await execFileAsync("dropdb", ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]);
+      if (exists) await execFileAsync(postgresProgram("dropdb"), ["--force", "--if-exists", "--maintenance-db", baseDatabaseUrl!, databaseName]);
     },
   };
 }

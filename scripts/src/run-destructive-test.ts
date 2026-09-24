@@ -11,6 +11,8 @@ import { pipeRedactedDatabaseOutput } from "./safe-child-process-output";
 import type { ExpectedTargetIdentity } from "./migrations/target-identity";
 
 const workspaceRoot = path.resolve(import.meta.dirname, "../..");
+const postgresProgram = (name: string) => process.env.LUMERA_POSTGRES_16_BIN
+  ? path.join(process.env.LUMERA_POSTGRES_16_BIN, name) : name;
 const command = process.argv.slice(2).filter((argument, index) => argument !== "--" || index !== 0);
 
 // Refuse the ambient runtime before sanitizing anything or creating the owned
@@ -149,7 +151,7 @@ let primaryError: unknown;
 let commandExitCode = 0;
 try {
   execFileSync(
-    "initdb",
+    postgresProgram("initdb"),
     [
       "-D", dataDirectory,
       "--auth=trust",
@@ -160,7 +162,7 @@ try {
     { stdio: "ignore" },
   );
   execFileSync(
-    "pg_ctl",
+    postgresProgram("pg_ctl"),
     [
       "-D", dataDirectory,
       "-l", path.join(dataDirectory, "server.log"),
@@ -233,7 +235,7 @@ try {
   if (clusterStarted) {
     try {
       execFileSync(
-        "pg_ctl",
+        postgresProgram("pg_ctl"),
         ["-D", dataDirectory, "-m", "fast", "-w", "stop"],
         { stdio: "ignore" },
       );

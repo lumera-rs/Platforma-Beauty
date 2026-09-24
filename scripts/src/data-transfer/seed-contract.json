@@ -1,0 +1,5086 @@
+{
+  "formatVersion": 1,
+  "tables": [
+    {
+      "table": "public.aftercare_completion_events",
+      "columns": [
+        "appointment_id",
+        "customer_user_id",
+        "transition_key",
+        "completed_at",
+        "processed_at",
+        "claim_token",
+        "claim_expires_at",
+        "attempts",
+        "last_error"
+      ],
+      "omittedColumns": [
+        "id",
+        "available_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.aftercare_deliveries",
+      "columns": [
+        "recommendation_id",
+        "line_id",
+        "kind",
+        "status",
+        "event_key",
+        "scheduled_at",
+        "claim_token",
+        "claim_expires_at",
+        "attempts",
+        "provider_message_id",
+        "provider_status",
+        "provider_event_at",
+        "accepted_at",
+        "sent_at",
+        "failed_at",
+        "last_error",
+        "payload_snapshot"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.aftercare_recommendation_appointments",
+      "columns": [
+        "recommendation_id",
+        "appointment_id",
+        "treatment_id",
+        "appointment_snapshot"
+      ],
+      "omittedColumns": [],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.aftercare_recommendation_lines",
+      "columns": [
+        "recommendation_id",
+        "kind",
+        "product_id",
+        "bundle_id",
+        "treatment_ids",
+        "covered_product_ids",
+        "catalog_snapshot",
+        "pricing_snapshot",
+        "discount_kind",
+        "discount_percent",
+        "discount_allocation_snapshot",
+        "replenishment_due_at",
+        "replenishment_sent_at",
+        "purchased_at",
+        "purchased_order_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.aftercare_recommendations",
+      "columns": [
+        "customer_user_id",
+        "settings_version",
+        "status",
+        "entitlement_token_hash",
+        "window_started_at",
+        "window_ends_at",
+        "activates_at",
+        "entitlement_expires_at",
+        "settings_snapshot",
+        "treatment_snapshot",
+        "read_at",
+        "first_sent_at",
+        "second_sent_at",
+        "converted_at",
+        "converted_order_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.aftercare_settings",
+      "columns": [
+        "version",
+        "is_current",
+        "first_timing",
+        "cooldown_days",
+        "second_reminder_delay_days",
+        "post_treatment_discount_enabled",
+        "post_treatment_discount_percent",
+        "post_treatment_discount_validity_days",
+        "personalized_bundle_discount_percent",
+        "combination_window_days",
+        "created_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 1,
+      "hash": "084b7f5fddbe9c0b34ad8b3c136cc8ecb2aa37d6113c558b0a2abc1cb2821611"
+    },
+    {
+      "table": "public.appointment_add_ons",
+      "columns": [
+        "appointment_id",
+        "add_on_id",
+        "name",
+        "duration_minutes",
+        "price"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_deposits",
+      "columns": [
+        "appointment_id",
+        "salon_id",
+        "amount",
+        "status",
+        "settled_at",
+        "settled_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_employees",
+      "columns": [
+        "appointment_id",
+        "employee_id",
+        "is_primary"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_resource_allocations",
+      "columns": [
+        "appointment_id",
+        "resource_id",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_series",
+      "columns": [
+        "salon_id",
+        "salon_customer_id",
+        "service_id",
+        "employee_id",
+        "total_appointments",
+        "recurrence_frequency",
+        "recurrence_interval",
+        "created_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_status_history",
+      "columns": [
+        "appointment_id",
+        "status",
+        "action",
+        "changed_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "occurred_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_treatments",
+      "columns": [
+        "appointment_id",
+        "service_id",
+        "employee_id",
+        "position",
+        "duration_minutes",
+        "buffer_minutes",
+        "price",
+        "planned_start_time",
+        "planned_end_time",
+        "actual_started_at",
+        "actual_completed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointment_waitlist",
+      "columns": [
+        "salon_id",
+        "service_id",
+        "customer_id",
+        "employee_id",
+        "desired_date",
+        "earliest_time",
+        "latest_time",
+        "status",
+        "notified_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.appointments",
+      "columns": [
+        "salon_id",
+        "customer_id",
+        "salon_customer_id",
+        "employee_id",
+        "service_id",
+        "series_id",
+        "booking_group_id",
+        "appointment_date",
+        "start_time",
+        "end_time",
+        "duration_minutes",
+        "pre_processing_minutes",
+        "processing_minutes",
+        "post_processing_minutes",
+        "buffer_minutes",
+        "seat_count",
+        "price",
+        "treatment_location",
+        "travel_fee",
+        "treatment_address_line_1",
+        "treatment_address_city",
+        "treatment_address_postal_code",
+        "treatment_address_details",
+        "status",
+        "notes",
+        "cancellation_reason",
+        "planned_date",
+        "planned_start_time",
+        "planned_end_time",
+        "arrived_at",
+        "arrived_by_user_id",
+        "actual_started_at",
+        "started_by_user_id",
+        "actual_completed_at",
+        "created_by_user_id",
+        "updated_by_user_id",
+        "confirmed_at",
+        "cancelled_at",
+        "cancelled_by_user_id",
+        "completed_at",
+        "completed_by_user_id",
+        "no_show_at",
+        "no_show_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.automatic_xy_promotion_targets",
+      "columns": [
+        "promotion_id",
+        "target_role",
+        "product_id",
+        "category_id"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.automatic_xy_promotions",
+      "columns": [
+        "name",
+        "market",
+        "buy_quantity",
+        "reward_quantity",
+        "reward_percent",
+        "per_order_reward_unit_cap",
+        "starts_at",
+        "ends_at",
+        "status",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.automation_deliveries",
+      "columns": [
+        "run_id",
+        "salon_id",
+        "event_key",
+        "channel",
+        "recipient_email",
+        "recipient_phone",
+        "status",
+        "processing_started_at",
+        "claim_expires_at",
+        "provider_message_id",
+        "error_message",
+        "delivered_at",
+        "opened_at",
+        "failed_at",
+        "sent_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.automation_rules",
+      "columns": [
+        "salon_id",
+        "name",
+        "trigger",
+        "trigger_config",
+        "action",
+        "email_subject",
+        "email_body",
+        "sms_body",
+        "voucher_code",
+        "status",
+        "ai_proposed"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.automation_runs",
+      "columns": [
+        "event_key",
+        "rule_id",
+        "salon_id",
+        "salon_customer_id",
+        "status",
+        "skip_reason",
+        "error_message",
+        "attributed_appointment_id",
+        "executed_at",
+        "sent_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2b_cart_imports",
+      "columns": [
+        "salon_id",
+        "cart_id",
+        "idempotency_key",
+        "content_hash",
+        "result"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2b_invoice_sequences",
+      "columns": [
+        "year",
+        "last_number"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2b_quotes",
+      "columns": [
+        "public_id",
+        "salon_id",
+        "source_cart_id",
+        "customer_company_name",
+        "seller_snapshot",
+        "item_snapshots",
+        "subtotal_without_vat",
+        "vat_amount",
+        "total_with_vat",
+        "currency",
+        "valid_until"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2c_display_settings",
+      "columns": [
+        "default_sort",
+        "enabled_sort_options",
+        "page_size",
+        "show_out_of_stock",
+        "recently_viewed_enabled",
+        "recently_viewed_max",
+        "version",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "fe80449f1531212827a96c31d140d9e4d2e8e198f138d2dff69dfa1594db2d7c"
+    },
+    {
+      "table": "public.b2c_need_tags",
+      "columns": [
+        "key",
+        "label",
+        "active",
+        "sort_order",
+        "version",
+        "created_by_user_id",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2c_product_need_tags",
+      "columns": [
+        "product_id",
+        "need_tag_id"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2c_product_types",
+      "columns": [
+        "slug",
+        "label",
+        "active",
+        "sort_order",
+        "version",
+        "created_by_user_id",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2c_promotional_banners",
+      "columns": [
+        "internal_name",
+        "supplier_id",
+        "desktop_image_url",
+        "mobile_image_url",
+        "headline",
+        "text",
+        "cta_label",
+        "destination_kind",
+        "destination_category_id",
+        "destination_product_id",
+        "filtered_listing",
+        "custom_internal_path",
+        "placement",
+        "active",
+        "starts_at",
+        "ends_at",
+        "sort_order",
+        "version",
+        "created_by_user_id",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.b2c_recently_viewed_products",
+      "columns": [
+        "viewer_token_hash",
+        "user_id",
+        "product_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "last_viewed_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_glossary",
+      "columns": [
+        "term",
+        "slug",
+        "definition",
+        "category"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_application_actions",
+      "columns": [
+        "contact_id",
+        "listing_id",
+        "from_status",
+        "to_status",
+        "private_note",
+        "actor_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_categories",
+      "columns": [
+        "slug",
+        "name",
+        "subtype_labels",
+        "enabled",
+        "feature_flag"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 17,
+      "hash": "1918f3d91c34e0a89f5b994bf23b1660a5924bca84d0b427752cdac1cd1f5cfe"
+    },
+    {
+      "table": "public.beauty_job_contacts",
+      "columns": [
+        "listing_id",
+        "applicant_user_id",
+        "applicant_message",
+        "applicant_status",
+        "author_reply",
+        "author_status",
+        "rejection_note",
+        "decision_actor_user_id",
+        "decision_at",
+        "replied_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_listing_availability",
+      "columns": [
+        "listing_id",
+        "availability_pattern",
+        "day_labels"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_listings",
+      "columns": [
+        "category_id",
+        "salon_id",
+        "user_id",
+        "posted_by_type",
+        "type",
+        "intent",
+        "title",
+        "description",
+        "city",
+        "region",
+        "latitude",
+        "longitude",
+        "price_amount",
+        "price_period",
+        "negotiable",
+        "is_urgent",
+        "photos",
+        "cover_image_description",
+        "is_test",
+        "status",
+        "moderation_status",
+        "moderation_reason",
+        "moderation_internal_note",
+        "moderated_at",
+        "contact_count",
+        "view_count",
+        "expires_at",
+        "closed_at",
+        "first_published_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_moderation_audit",
+      "columns": [
+        "listing_id",
+        "acting_admin_user_id",
+        "action",
+        "public_reason",
+        "internal_note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_notifications",
+      "columns": [
+        "recipient_user_id",
+        "listing_id",
+        "contact_id",
+        "type",
+        "title",
+        "body",
+        "read_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_platform_settings",
+      "columns": [
+        "listing_expiry_days",
+        "hourly_posting_limit",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "02ce205a3ed533d03c2ec1cb17c784a652e5cee1722e745c6a2f01f1cab9db35"
+    },
+    {
+      "table": "public.beauty_job_rental_requests",
+      "columns": [
+        "listing_id",
+        "slot_id",
+        "applicant_user_id",
+        "message",
+        "status",
+        "responded_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_rental_slots",
+      "columns": [
+        "listing_id",
+        "starts_at",
+        "ends_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_reports",
+      "columns": [
+        "listing_id",
+        "reporter_user_id",
+        "reason",
+        "status",
+        "resolved_by_user_id",
+        "resolution_note",
+        "resolved_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.beauty_job_saved_listings",
+      "columns": [
+        "user_id",
+        "listing_id"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.booking_command_receipts",
+      "columns": [
+        "salon_id",
+        "actor_type",
+        "actor_id",
+        "idempotency_key",
+        "command_type",
+        "payload_fingerprint",
+        "response_status",
+        "response_body"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.booking_groups",
+      "columns": [
+        "salon_id",
+        "customer_id",
+        "salon_customer_id",
+        "created_by_user_id",
+        "notes"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.bulk_sale_campaign_targets",
+      "columns": [
+        "campaign_id",
+        "product_id",
+        "category_id"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.bulk_sale_campaigns",
+      "columns": [
+        "name",
+        "market",
+        "discount_type",
+        "discount_value",
+        "starts_at",
+        "ends_at",
+        "status",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.business_growth_schema_rollout",
+      "columns": [
+        "singleton",
+        "version"
+      ],
+      "omittedColumns": [
+        "completed_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.business_verification_audits",
+      "columns": [
+        "legal_entity_business_id",
+        "previous_status",
+        "next_status",
+        "reason",
+        "actor_user_id",
+        "evidence"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.cart_threshold_rewards",
+      "columns": [
+        "name",
+        "market",
+        "spend_threshold_rsd",
+        "reward_kind",
+        "discount_percent",
+        "gift_product_id",
+        "gift_quantity",
+        "active",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.catalog_sync_runs",
+      "columns": [
+        "provider",
+        "status",
+        "item_count",
+        "validation_errors",
+        "requested_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.commerce_customer_notifications",
+      "columns": [
+        "user_id",
+        "waitlist_id",
+        "title",
+        "message",
+        "href",
+        "read_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.commerce_experience_settings",
+      "columns": [
+        "header_enabled",
+        "header_messages",
+        "header_interval_seconds",
+        "smart_search_mode",
+        "smart_search_product_ids",
+        "bestseller_period_days",
+        "version",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.coupon_redemptions",
+      "columns": [
+        "coupon_id",
+        "audience",
+        "order_id",
+        "retail_order_id",
+        "salon_id",
+        "user_id",
+        "guest_email_normalized",
+        "code_snapshot",
+        "discount_rsd",
+        "free_shipping",
+        "cancelled_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.coupons",
+      "columns": [
+        "code",
+        "active",
+        "audience",
+        "discount_type",
+        "discount_value",
+        "starts_at",
+        "ends_at",
+        "minimum_spend_rsd",
+        "maximum_spend_rsd",
+        "free_shipping",
+        "include_product_ids",
+        "exclude_product_ids",
+        "include_category_ids",
+        "exclude_category_ids",
+        "include_bundle_ids",
+        "exclude_bundle_ids",
+        "usage_limit",
+        "per_customer_usage_limit",
+        "usage_count"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.courier_services",
+      "columns": [
+        "code",
+        "name",
+        "tracking_url_template",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_categories",
+      "columns": [
+        "name",
+        "slug",
+        "section_id",
+        "sort_order",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_days",
+      "columns": [
+        "course_id",
+        "day_number",
+        "title",
+        "description",
+        "duration_minutes",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_enrollments",
+      "columns": [
+        "course_id",
+        "user_id",
+        "salon_id",
+        "employee_id",
+        "session_id",
+        "purchaser_id",
+        "status",
+        "payment_status",
+        "charged_amount",
+        "progress",
+        "next_lesson",
+        "access_granted_at",
+        "access_expires_at",
+        "access_days_snapshot",
+        "course_price_snapshot",
+        "duration_snapshot",
+        "extension_prices_snapshot",
+        "digital_content_consent_at",
+        "digital_content_consent_user_id",
+        "digital_content_consent_text_snapshot",
+        "digital_content_consent_version_snapshot",
+        "completed_at",
+        "certificate_issued_at",
+        "certificate_number",
+        "certificate_path",
+        "audit_data",
+        "idempotency_key",
+        "idempotency_fingerprint",
+        "payment_instructions_snapshot",
+        "bundle_purchase_id",
+        "booking_group_id",
+        "participant_id",
+        "participant_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "purchased_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_lessons",
+      "columns": [
+        "module_id",
+        "title",
+        "description",
+        "content",
+        "duration_minutes",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_modules",
+      "columns": [
+        "course_id",
+        "title",
+        "description",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_reviews",
+      "columns": [
+        "course_id",
+        "enrollment_id",
+        "user_id",
+        "rating",
+        "comment",
+        "status"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.course_sessions",
+      "columns": [
+        "course_id",
+        "starts_at",
+        "ends_at",
+        "location",
+        "capacity",
+        "reserved_seats",
+        "minimum_enrollments",
+        "cancelled_at",
+        "cancellation_reason"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.courses",
+      "columns": [
+        "center_id",
+        "salon_id",
+        "instructor_id",
+        "instructor_profile_id",
+        "category_id",
+        "subcategory_id",
+        "course_type_id",
+        "title",
+        "description",
+        "category",
+        "format",
+        "city",
+        "price",
+        "duration",
+        "duration_minutes",
+        "theory_hours",
+        "practical_hours",
+        "level",
+        "learning_outcomes",
+        "included_items",
+        "requirements",
+        "rating",
+        "certification",
+        "certificate_name",
+        "accredited",
+        "language",
+        "trailer_url",
+        "tags",
+        "faq",
+        "payment_mode",
+        "deposit_amount",
+        "image_url",
+        "cover_image_description",
+        "is_test",
+        "published",
+        "subscription_suspended",
+        "archived",
+        "is_featured",
+        "featured_until",
+        "featured_activated_at",
+        "featured_fee",
+        "refund_policy",
+        "gift_voucher_eligible",
+        "group_discount_minimum",
+        "group_discount_percent",
+        "scheduling_mode",
+        "operational_time_zone",
+        "cancellation_deadline_hours",
+        "deposit_disposition",
+        "minimum_enrollment_risk_deadline",
+        "early_bird_price",
+        "early_bird_cutoff",
+        "installment_count",
+        "start_date",
+        "end_date",
+        "online_access_days",
+        "extension_price_1_month",
+        "extension_price_3_months",
+        "extension_price_6_months"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_notes",
+      "columns": [
+        "salon_id",
+        "customer_id",
+        "note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_notifications",
+      "columns": [
+        "event_key",
+        "user_id",
+        "category",
+        "title",
+        "body",
+        "deep_link",
+        "read_at",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_package_purchases",
+      "columns": [
+        "salon_id",
+        "package_id",
+        "salon_customer_id",
+        "total_sessions",
+        "remaining_sessions",
+        "quota_policy",
+        "price_in_dinars",
+        "payment_method",
+        "status",
+        "expires_at",
+        "payment_confirmed_at",
+        "payment_confirmed_by_user_id",
+        "notes"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_password_setup_audits",
+      "columns": [
+        "administrator_user_id",
+        "target_user_id",
+        "action"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_password_setup_rate_limits",
+      "columns": [
+        "key_hash",
+        "action",
+        "window_started_at",
+        "request_count"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.customer_password_setup_tokens",
+      "columns": [
+        "user_id",
+        "issued_by_user_id",
+        "token_hash",
+        "expires_at",
+        "consumed_at",
+        "invalidated_at",
+        "failed_attempts",
+        "max_attempts"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_access_extensions",
+      "columns": [
+        "enrollment_id",
+        "purchaser_id",
+        "months",
+        "amount",
+        "status",
+        "previous_access_expires_at",
+        "extended_access_expires_at",
+        "payment_obligation_id",
+        "settled_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_attendance",
+      "columns": [
+        "participant_id",
+        "session_id",
+        "status",
+        "recorded_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "recorded_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_b2b_discount_audits",
+      "columns": [
+        "version",
+        "actor_user_id",
+        "tiers_snapshot"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_b2b_discount_settings",
+      "columns": [
+        "id",
+        "version",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "43fafe8e4d7dd7118b60ac6de2205d7bc1b32b79fa60d9c65cdb8fcc684a762f"
+    },
+    {
+      "table": "public.education_b2b_discount_tiers",
+      "columns": [
+        "name",
+        "min_spend_rsd",
+        "max_spend_rsd",
+        "discount_percent",
+        "sort_order",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_b2b_order_items",
+      "columns": [
+        "order_id",
+        "product_id",
+        "quantity",
+        "unit_price_rsd",
+        "line_total_rsd"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_b2b_orders",
+      "columns": [
+        "center_id",
+        "purchaser_user_id",
+        "lines_snapshot",
+        "subtotal_rsd",
+        "discount_rsd",
+        "total_rsd",
+        "benefit_snapshot",
+        "payment_status",
+        "fulfillment_status",
+        "completed_at",
+        "refunded_amount_rsd",
+        "settled_by_user_id",
+        "settled_at",
+        "idempotency_key",
+        "idempotency_fingerprint"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bank_transactions",
+      "columns": [
+        "source",
+        "source_item_id",
+        "normalized_reference",
+        "normalized_amount",
+        "result",
+        "rejection_reason",
+        "obligation_id",
+        "received_at",
+        "processed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_booking_groups",
+      "columns": [
+        "center_id",
+        "course_id",
+        "session_id",
+        "purchaser_id",
+        "created_by_user_id",
+        "status",
+        "idempotency_key",
+        "request_fingerprint"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_booking_participants",
+      "columns": [
+        "booking_group_id",
+        "user_id",
+        "full_name",
+        "email",
+        "phone",
+        "status"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundle_courses",
+      "columns": [
+        "bundle_id",
+        "course_id",
+        "sort_order"
+      ],
+      "omittedColumns": [],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundle_purchase_escrows",
+      "columns": [
+        "purchase_id",
+        "center_id",
+        "gross_amount",
+        "platform_fee_amount",
+        "reserve_amount",
+        "net_amount",
+        "status",
+        "release_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundle_purchase_items",
+      "columns": [
+        "purchase_id",
+        "course_id",
+        "course_title",
+        "course_terms",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundle_purchase_ledger_entries",
+      "columns": [
+        "escrow_id",
+        "entry_type",
+        "amount",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundle_purchases",
+      "columns": [
+        "bundle_id",
+        "center_id",
+        "purchaser_id",
+        "target_type",
+        "learner_user_id",
+        "salon_id",
+        "employee_id",
+        "amount",
+        "currency",
+        "status",
+        "payment_method",
+        "payment_reference",
+        "payment_instructions",
+        "idempotency_key",
+        "idempotency_fingerprint",
+        "settled_at",
+        "settled_by_user_id",
+        "cancelled_at",
+        "refunded_at",
+        "audit_data"
+      ],
+      "omittedColumns": [
+        "id",
+        "requested_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_bundles",
+      "columns": [
+        "center_id",
+        "title",
+        "description",
+        "price",
+        "active",
+        "published"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_center_reviews",
+      "columns": [
+        "center_id",
+        "enrollment_id",
+        "user_id",
+        "rating",
+        "comment",
+        "status",
+        "admin_note",
+        "moderated_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_center_staff",
+      "columns": [
+        "center_id",
+        "user_id",
+        "instructor_profile_id",
+        "role",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_center_subscriptions",
+      "columns": [
+        "center_id",
+        "plan_id",
+        "status",
+        "due_amount",
+        "payment_method",
+        "billing_cycle",
+        "payment_reference",
+        "paid_at",
+        "current_period_start",
+        "current_period_end",
+        "trial_started_at",
+        "trial_ends_at",
+        "grace_ends_at",
+        "deactivated_at",
+        "auto_renew",
+        "contract_kind",
+        "contract_ends_at",
+        "course_limit_override",
+        "current_price_snapshot",
+        "current_course_limit_snapshot",
+        "pending_plan_id",
+        "pending_billing_cycle",
+        "pending_plan_effective_at",
+        "pending_keep_course_ids",
+        "grace_extension_note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_centers",
+      "columns": [
+        "owner_id",
+        "name",
+        "city",
+        "description",
+        "image_url",
+        "contact_email",
+        "contact_phone",
+        "contact_address",
+        "pib",
+        "registration_number",
+        "website_url",
+        "instagram_url",
+        "payment_reference_number",
+        "legal_entity_type",
+        "bank_account",
+        "bank_account_environment",
+        "commission_percent_override",
+        "reserve_percent_override",
+        "online_refund_days_override",
+        "live_appeal_days_override",
+        "featured_course_price_override",
+        "verification_status",
+        "verification_note",
+        "verified_at",
+        "verified_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_contact_history",
+      "columns": [
+        "center_id",
+        "learner_user_id",
+        "enrollment_id",
+        "channel",
+        "note",
+        "actor_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_course_metric_events",
+      "columns": [
+        "course_id",
+        "center_id",
+        "actor_user_id",
+        "event_type",
+        "dedupe_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "occurred_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_course_types",
+      "columns": [
+        "subcategory_id",
+        "name",
+        "normalized_name",
+        "status",
+        "proposed_by_center_id",
+        "reviewed_by_user_id",
+        "review_note",
+        "reviewed_at",
+        "sort_order",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_custom_plan_requests",
+      "columns": [
+        "center_id",
+        "requested_by_user_id",
+        "requested_course_limit",
+        "message",
+        "status",
+        "resolved_by_user_id",
+        "resolved_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_disputes",
+      "columns": [
+        "enrollment_id",
+        "opened_by_user_id",
+        "reason",
+        "details",
+        "status",
+        "resolution_note",
+        "resolved_by_user_id",
+        "resolved_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_educator_absences",
+      "columns": [
+        "staff_id",
+        "start_date",
+        "end_date",
+        "start_time",
+        "end_time",
+        "reason"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_educator_weekly_availability",
+      "columns": [
+        "staff_id",
+        "weekday",
+        "start_time",
+        "end_time"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_escrows",
+      "columns": [
+        "enrollment_id",
+        "center_id",
+        "gross_amount",
+        "platform_fee",
+        "reserve_amount",
+        "net_amount",
+        "release_at",
+        "status",
+        "payment_reference",
+        "frozen_at",
+        "released_at",
+        "net_paid_at",
+        "reserve_paid_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_featured_charges",
+      "columns": [
+        "course_id",
+        "center_id",
+        "salon_id",
+        "amount",
+        "status",
+        "payment_method",
+        "payment_reference",
+        "activated_by_user_id",
+        "settled_by_user_id",
+        "note",
+        "settled_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "activated_at",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_financial_audit_log",
+      "columns": [
+        "actor_user_id",
+        "action",
+        "entity_type",
+        "entity_id",
+        "old_value",
+        "new_value",
+        "reason",
+        "time_zone"
+      ],
+      "omittedColumns": [
+        "id",
+        "occurred_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_financial_events",
+      "columns": [
+        "escrow_id",
+        "enrollment_id",
+        "actor_user_id",
+        "event_type",
+        "previous_status",
+        "next_status",
+        "amount",
+        "note",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_gift_vouchers",
+      "columns": [
+        "course_id",
+        "center_id",
+        "purchaser_id",
+        "recipient_user_id",
+        "recipient_email",
+        "recipient_name_snapshot",
+        "gift_message_snapshot",
+        "course_title_snapshot",
+        "course_image_url_snapshot",
+        "amount_snapshot",
+        "currency_snapshot",
+        "code_hash",
+        "code_last4",
+        "status",
+        "payment_reference",
+        "idempotency_key",
+        "settled_by_user_id",
+        "settled_at",
+        "redeemed_by_user_id",
+        "redeemed_enrollment_id",
+        "redeemed_at",
+        "refunded_by_user_id",
+        "refunded_at",
+        "refund_note",
+        "dispute_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_grace_notes",
+      "columns": [
+        "center_id",
+        "author_user_id",
+        "note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_inquiries",
+      "columns": [
+        "course_id",
+        "user_id",
+        "center_id",
+        "status",
+        "message"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_installment_settlement_commands",
+      "columns": [
+        "installment_id",
+        "actor_user_id",
+        "idempotency_key",
+        "request_fingerprint",
+        "response_snapshot"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_installments",
+      "columns": [
+        "price_snapshot_id",
+        "installment_number",
+        "amount",
+        "status",
+        "payment_reference",
+        "payment_instructions_snapshot",
+        "due_at",
+        "settled_by_user_id",
+        "settled_at",
+        "refunded_amount"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_instructors",
+      "columns": [
+        "center_id",
+        "user_id",
+        "full_name",
+        "photo_url",
+        "biography",
+        "industry_years",
+        "experience_years",
+        "specializations",
+        "qualifications",
+        "portfolio_media"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_inventory_items",
+      "columns": [
+        "center_id",
+        "product_id",
+        "name",
+        "quantity_on_hand",
+        "reorder_level",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_inventory_movements",
+      "columns": [
+        "item_id",
+        "center_id",
+        "delta",
+        "course_id",
+        "session_id",
+        "note",
+        "actor_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_ledger_entries",
+      "columns": [
+        "escrow_id",
+        "enrollment_id",
+        "center_id",
+        "type",
+        "amount",
+        "note",
+        "actor_user_id",
+        "idempotency_key",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_media",
+      "columns": [
+        "course_id",
+        "center_id",
+        "object_path",
+        "alt_text",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_media_uploads",
+      "columns": [
+        "id",
+        "course_id",
+        "center_id",
+        "object_path",
+        "content_type",
+        "size",
+        "expires_at",
+        "attached_at",
+        "cleanup_failure_count",
+        "last_cleanup_failure_at"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_messages",
+      "columns": [
+        "thread_id",
+        "sender_id",
+        "body",
+        "read_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_notification_archives",
+      "columns": [
+        "source_id",
+        "payload",
+        "original_created_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "archived_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_notifications",
+      "columns": [
+        "user_id",
+        "enrollment_id",
+        "waitlist_id",
+        "type",
+        "title",
+        "body",
+        "action_url",
+        "event_key",
+        "read_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_outbox",
+      "columns": [
+        "center_id",
+        "session_id",
+        "participant_id",
+        "event_type",
+        "dedupe_key",
+        "payload",
+        "status",
+        "attempts",
+        "leased_at",
+        "sent_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "available_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_payment_obligations",
+      "columns": [
+        "center_id",
+        "salon_id",
+        "enrollment_id",
+        "subscription_id",
+        "plan_id_snapshot",
+        "plan_monthly_price_snapshot",
+        "course_limit_snapshot",
+        "kind",
+        "status",
+        "expected_amount",
+        "confirmed_amount",
+        "calculation_policy_snapshot",
+        "recipient_name_snapshot",
+        "recipient_account_snapshot",
+        "payment_code_snapshot",
+        "purpose_snapshot",
+        "reference_snapshot",
+        "ips_payload_snapshot",
+        "due_at",
+        "billing_cycle_snapshot",
+        "service_period_start",
+        "service_period_end",
+        "confirmed_at",
+        "confirmed_by_user_id",
+        "cancelled_at",
+        "cancelled_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "issued_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_payouts",
+      "columns": [
+        "center_id",
+        "amount",
+        "period_start",
+        "period_end",
+        "status",
+        "reference",
+        "note",
+        "created_by_user_id",
+        "paid_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_placement_settings",
+      "columns": [
+        "kind",
+        "scope",
+        "price",
+        "slot_count",
+        "duration_days",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "f17ff850690765fefd723622d313a7501bfe6bb380e272c385986fec1607549c"
+    },
+    {
+      "table": "public.education_placements",
+      "columns": [
+        "kind",
+        "scope",
+        "scope_category_id",
+        "scope_subcategory_id",
+        "scope_key",
+        "center_id",
+        "salon_id",
+        "course_id",
+        "slot_number",
+        "price_snapshot",
+        "duration_days_snapshot",
+        "status",
+        "payment_reference",
+        "payment_ips_payload_snapshot",
+        "payment_recipient_name_snapshot",
+        "payment_recipient_account_snapshot",
+        "payment_purpose_snapshot",
+        "payment_currency_snapshot",
+        "starts_at",
+        "ends_at",
+        "rotation_seed",
+        "settled_by_user_id",
+        "settled_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_platform_settings",
+      "columns": [
+        "commission_percent",
+        "reserve_percent",
+        "online_refund_days",
+        "live_appeal_days",
+        "featured_course_price",
+        "ips_recipient_name",
+        "ips_recipient_account",
+        "ips_account_environment",
+        "ips_purpose",
+        "bank_reconciliation_enabled",
+        "bank_reconciliation_access_method",
+        "bank_reconciliation_access_confirmed_at",
+        "bank_reconciliation_access_confirmed_by_user_id",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_price_snapshots",
+      "columns": [
+        "booking_group_id",
+        "course_id",
+        "gross_amount",
+        "platform_fee",
+        "reserve_amount",
+        "net_amount",
+        "early_bird_applied",
+        "discount_reason",
+        "early_bird_cutoff_snapshot",
+        "installment_count",
+        "deposit_disposition",
+        "cancellation_deadline_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_recurrence_commands",
+      "columns": [
+        "center_id",
+        "actor_user_id",
+        "idempotency_key",
+        "request_fingerprint",
+        "response_snapshot"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_resources",
+      "columns": [
+        "center_id",
+        "kind",
+        "name",
+        "capacity",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_salon_cleanup_reports",
+      "columns": [
+        "version",
+        "candidates",
+        "detached_users",
+        "deleted_salons",
+        "retired_salons"
+      ],
+      "omittedColumns": [
+        "completed_at"
+      ],
+      "count": 1,
+      "hash": "c9ce76a1a207c92740bdc3cd16673886b05afe354772609e56fdc98d8cf7e327"
+    },
+    {
+      "table": "public.education_sections",
+      "columns": [
+        "name",
+        "slug",
+        "sort_order",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_session_educators",
+      "columns": [
+        "session_id",
+        "staff_id",
+        "assigned_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "assigned_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_session_resources",
+      "columns": [
+        "resource_id",
+        "session_id",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_subcategories",
+      "columns": [
+        "category_id",
+        "name",
+        "slug",
+        "sort_order",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_threads",
+      "columns": [
+        "enrollment_id",
+        "purchaser_id",
+        "center_id",
+        "status"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_trial_claims",
+      "columns": [
+        "normalized_email_hash",
+        "normalized_phone_hash",
+        "normalized_pib_hash",
+        "normalized_registration_number_hash",
+        "normalized_bank_account_hash",
+        "user_id",
+        "center_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "claimed_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_waitlist",
+      "columns": [
+        "session_id",
+        "course_id",
+        "user_id",
+        "purchaser_id",
+        "employee_id",
+        "position",
+        "status",
+        "offered_at",
+        "expires_at",
+        "notified_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.education_wishlists",
+      "columns": [
+        "user_id",
+        "course_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.email_campaigns",
+      "columns": [
+        "created_by_user_id",
+        "audience",
+        "loyalty_tier_id",
+        "title",
+        "subject",
+        "html_content",
+        "scheduled_at",
+        "status",
+        "brevo_campaign_id",
+        "recipient_count",
+        "error_message",
+        "sent_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.email_deliveries",
+      "columns": [
+        "event_key",
+        "email_type",
+        "salon_id",
+        "appointment_id",
+        "recipient_email",
+        "recipient_name",
+        "subject",
+        "html_content",
+        "status",
+        "provider_message_id",
+        "error_message",
+        "scheduled_at",
+        "sent_at",
+        "retry_count",
+        "retryable_failure",
+        "next_retry_at",
+        "processing_token",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_clock_entries",
+      "columns": [
+        "salon_id",
+        "employee_id",
+        "clock_in_at",
+        "clock_out_at",
+        "edited_by_owner",
+        "note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_commission_settings",
+      "columns": [
+        "salon_id",
+        "employee_id",
+        "commission_type",
+        "commission_percent",
+        "fixed_amount_in_dinars",
+        "per_service_overrides",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_leave_requests",
+      "columns": [
+        "employee_id",
+        "start_date",
+        "end_date",
+        "reason",
+        "status",
+        "reviewed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_location_assignments",
+      "columns": [
+        "employee_id",
+        "salon_id",
+        "active",
+        "is_default"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_location_schedules",
+      "columns": [
+        "employee_id",
+        "salon_id",
+        "weekday",
+        "start_time",
+        "end_time",
+        "break_start",
+        "break_end"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_ratings",
+      "columns": [
+        "salon_id",
+        "employee_id",
+        "average_rating",
+        "review_count"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_schedules",
+      "columns": [
+        "employee_id",
+        "weekday",
+        "start_time",
+        "end_time",
+        "break_start",
+        "break_end"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_services",
+      "columns": [
+        "employee_id",
+        "service_id"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employee_time_off",
+      "columns": [
+        "employee_id",
+        "salon_id",
+        "start_date",
+        "end_date",
+        "start_time",
+        "end_time",
+        "reason"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.employees",
+      "columns": [
+        "salon_id",
+        "user_id",
+        "name",
+        "role",
+        "bio",
+        "avatar_url",
+        "email",
+        "specialties",
+        "can_order_independently",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.favorite_employees",
+      "columns": [
+        "user_id",
+        "salon_id",
+        "employee_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.favorites",
+      "columns": [
+        "user_id",
+        "salon_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.image_assets",
+      "columns": [
+        "uploaded_by_user_id",
+        "original_filename",
+        "source_content_type",
+        "source_size",
+        "staging_object_path",
+        "original_object_path",
+        "original_width",
+        "original_height",
+        "variants",
+        "status",
+        "alt_text",
+        "failure_reason",
+        "expires_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.inspiration_items",
+      "columns": [
+        "salon_id",
+        "service_id",
+        "title",
+        "tags",
+        "image_url"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.integration_settings",
+      "columns": [
+        "integration",
+        "setting_key",
+        "encrypted_value",
+        "enabled",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.jobseeker_profiles",
+      "columns": [
+        "user_id",
+        "bio",
+        "portfolio_media",
+        "skill_tags",
+        "category_tags"
+      ],
+      "omittedColumns": [
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.jobseeker_salon_interests",
+      "columns": [
+        "user_id",
+        "salon_id"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.legal_entities",
+      "columns": [
+        "normalized_pib",
+        "legal_name"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.legal_entity_businesses",
+      "columns": [
+        "legal_entity_id",
+        "owner_user_id",
+        "salon_id",
+        "education_center_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.lesson_progress",
+      "columns": [
+        "enrollment_id",
+        "lesson_id",
+        "completed_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "completed_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.loyalty_point_ledger",
+      "columns": [
+        "audience",
+        "salon_id",
+        "user_id",
+        "order_id",
+        "retail_order_id",
+        "type",
+        "points",
+        "idempotency_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.loyalty_pricing_tier_product_exclusions",
+      "columns": [
+        "tier_id",
+        "product_id"
+      ],
+      "omittedColumns": [],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.loyalty_pricing_tiers",
+      "columns": [
+        "name",
+        "market",
+        "spend_threshold_rsd",
+        "discount_percent",
+        "active",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.loyalty_tiers",
+      "columns": [
+        "name",
+        "sort_order",
+        "spend_threshold",
+        "period",
+        "subscription_discount_percent",
+        "product_discount_percent",
+        "free_subscription",
+        "premium_listing",
+        "free_shipping",
+        "benefits",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.media_assets",
+      "columns": [
+        "id",
+        "owner_user_id",
+        "scope",
+        "resource_id",
+        "visibility",
+        "original_file_name",
+        "original_content_type",
+        "width",
+        "height",
+        "content_hash",
+        "alt_text",
+        "cleanup_reserved_at",
+        "test_cleanup_key"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.media_upload_tickets",
+      "columns": [
+        "id",
+        "owner_user_id",
+        "scope",
+        "resource_id",
+        "staging_object_path",
+        "original_file_name",
+        "content_type",
+        "byte_size",
+        "expires_at",
+        "finalized_asset_id",
+        "finalized_at",
+        "cleanup_failure_count",
+        "last_cleanup_failure_at",
+        "test_cleanup_key",
+        "promotion_cleanup_paths"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.media_variants",
+      "columns": [
+        "asset_id",
+        "size_name",
+        "format",
+        "object_path",
+        "content_type",
+        "width",
+        "height",
+        "byte_size",
+        "etag"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.oauth_identities",
+      "columns": [
+        "user_id",
+        "provider",
+        "provider_account_id",
+        "provider_email"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.oauth_login_states",
+      "columns": [
+        "state",
+        "provider",
+        "flow",
+        "user_id",
+        "code_verifier",
+        "referral_code",
+        "expires_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.order_approval_request_lines",
+      "columns": [
+        "request_id",
+        "product_id",
+        "bundle_id",
+        "product_name",
+        "product_sku_snapshot",
+        "quantity",
+        "catalog_snapshot"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.order_approval_requests",
+      "columns": [
+        "salon_id",
+        "employee_id",
+        "submitted_by_user_id",
+        "cart_id",
+        "status",
+        "idempotency_key",
+        "quote_version",
+        "quote_snapshot",
+        "coupon_code",
+        "referral_credit_intent_rsd",
+        "reviewer_user_id",
+        "reviewer_reason",
+        "decided_at",
+        "finalized_order_id",
+        "expires_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.order_bundle_components",
+      "columns": [
+        "order_item_id",
+        "product_id",
+        "product_name",
+        "product_catalog_reference",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.order_items",
+      "columns": [
+        "order_id",
+        "product_id",
+        "product_name",
+        "variant_value",
+        "variant_label",
+        "product_sku",
+        "quantity",
+        "price",
+        "supplier_id",
+        "supplier_name",
+        "supplier_slug",
+        "product_catalog_reference",
+        "product_sku_snapshot",
+        "category_id_snapshot",
+        "category_name_snapshot",
+        "brand_snapshot",
+        "market",
+        "currency",
+        "unit_price",
+        "discount_snapshot",
+        "line_subtotal",
+        "line_total",
+        "unit_cost_price_rsd",
+        "line_cogs_rsd",
+        "referral_discount_rsd",
+        "realized_revenue_rsd",
+        "bundle_id",
+        "base_unit_price",
+        "effective_unit_price",
+        "price_source",
+        "line_discount",
+        "coupon_discount_rsd",
+        "automatic_promotion_discount_rsd",
+        "threshold_reward_discount_rsd",
+        "is_reward_gift",
+        "reward_snapshot",
+        "bundle_name_snapshot",
+        "bundle_components_snapshot",
+        "estimated_delivery_date"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.order_status_history",
+      "columns": [
+        "order_id",
+        "actor_user_id",
+        "actor_name",
+        "field",
+        "previous_value",
+        "next_value",
+        "note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.orders",
+      "columns": [
+        "salon_id",
+        "status",
+        "fulfillment_status",
+        "total",
+        "shipping_cost",
+        "shipping_name",
+        "shipping_address",
+        "shipping_phone",
+        "shipping_email",
+        "shipping_city",
+        "shipping_postal_code",
+        "shipping_note",
+        "shipping_is_salon_address",
+        "billing_company_name",
+        "billing_tax_id",
+        "billing_registration_number",
+        "billing_address",
+        "billing_city",
+        "billing_postal_code",
+        "subtotal",
+        "referral_credit_merchandise_subtotal_rsd",
+        "referral_credit_pre_credit_payable_total_rsd",
+        "referral_credit_applied_rsd",
+        "coupon_code_snapshot",
+        "coupon_discount_rsd",
+        "coupon_free_shipping",
+        "promotion_snapshot",
+        "referral_credit_restored_at",
+        "total_weight_grams",
+        "payment_method",
+        "payment_status",
+        "delivery_method",
+        "courier_service_id",
+        "courier_service",
+        "tracking_number",
+        "tracking_url",
+        "admin_note",
+        "estimated_delivery_date",
+        "invoice_number",
+        "invoice_issued_at",
+        "seller_snapshot",
+        "loyalty_points_awarded",
+        "loyalty_points_reversed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.package_purchase_service_links",
+      "columns": [
+        "purchase_id",
+        "service_id",
+        "total_quota",
+        "remaining_quota"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.package_redemptions",
+      "columns": [
+        "purchase_id",
+        "salon_id",
+        "appointment_id",
+        "salon_customer_id",
+        "purchase_service_link_id",
+        "service_id",
+        "status",
+        "original_appointment_price",
+        "reversed_at",
+        "reversed_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "redeemed_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.package_service_links",
+      "columns": [
+        "package_id",
+        "service_id",
+        "quota"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.phone_verification_codes",
+      "columns": [
+        "phone_normalized",
+        "code_hash",
+        "expires_at",
+        "attempts",
+        "request_count",
+        "last_request_ip"
+      ],
+      "omittedColumns": [
+        "id",
+        "last_requested_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.phone_verification_proofs",
+      "columns": [
+        "user_id",
+        "phone_normalized",
+        "verification_method",
+        "revoked_at",
+        "revocation_reason",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "verified_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.platform_retention_settings",
+      "columns": [
+        "version",
+        "new_customer_window_days",
+        "default_interval_days",
+        "at_risk_interval_percent",
+        "lost_interval_percent",
+        "lost_minimum_days",
+        "vip_min_completed_visits",
+        "vip_spend_percent_of_median",
+        "changed_by_user_id",
+        "change_source",
+        "restored_from_version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.price_inquiries",
+      "columns": [
+        "supplier_id",
+        "product_id",
+        "name",
+        "email",
+        "phone",
+        "message",
+        "status",
+        "internal_note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_brands",
+      "columns": [
+        "name",
+        "slug",
+        "description",
+        "logo_url",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_bundle_components",
+      "columns": [
+        "bundle_id",
+        "product_id",
+        "quantity",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_bundles",
+      "columns": [
+        "supplier_id",
+        "name",
+        "description",
+        "image_url",
+        "market",
+        "b2b_price",
+        "b2c_price",
+        "linked_treatment_id",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_categories",
+      "columns": [
+        "supplier_id",
+        "name",
+        "slug",
+        "parent_id",
+        "sort_order",
+        "icon",
+        "image_url",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_documents",
+      "columns": [
+        "product_id",
+        "media_asset_id",
+        "display_name",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_reviews",
+      "columns": [
+        "product_id",
+        "salon_id",
+        "rating",
+        "comment"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_treatment_mappings",
+      "columns": [
+        "product_id",
+        "treatment_id"
+      ],
+      "omittedColumns": [
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_upsell_links",
+      "columns": [
+        "product_id",
+        "alternative_product_id",
+        "sort_order"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_waitlist",
+      "columns": [
+        "product_id",
+        "audience",
+        "salon_id",
+        "user_id",
+        "status",
+        "notified_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_waitlist_notification_outbox",
+      "columns": [
+        "waitlist_id",
+        "audience",
+        "salon_id",
+        "user_id",
+        "product_id",
+        "processed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.product_wishlists",
+      "columns": [
+        "user_id",
+        "product_id",
+        "variant_value"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.products",
+      "columns": [
+        "supplier_id",
+        "category_id",
+        "category_name",
+        "subcategory_name",
+        "name",
+        "brand",
+        "description",
+        "short_description",
+        "image_url",
+        "cover_image_description",
+        "images",
+        "price",
+        "cost_price_rsd",
+        "average_duration_days",
+        "discount_price",
+        "discount_price_ends_at",
+        "retail_enabled",
+        "public_description",
+        "public_price",
+        "public_discount_price",
+        "public_discount_price_ends_at",
+        "product_type_id",
+        "ingredients",
+        "usage_instructions",
+        "characteristics",
+        "search_synonyms",
+        "professional_enabled",
+        "stock",
+        "sku",
+        "unit",
+        "weight_grams",
+        "is_new",
+        "is_bestseller",
+        "variant_type",
+        "variants",
+        "similar_products_mode",
+        "similar_product_ids",
+        "cross_sell_product_ids",
+        "quantity_pricing_tiers",
+        "minimum_order_quantity",
+        "delivery_business_days_override",
+        "subscription_allowed",
+        "subscription_discount_percent",
+        "loyalty_pricing_excluded",
+        "price_on_request",
+        "bulk_matrix_enabled",
+        "average_rating",
+        "review_count",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "catalog_reference",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.provider_webhook_receipts",
+      "columns": [
+        "provider",
+        "last_event_at",
+        "rejected_payload_count",
+        "rejected_payload_times",
+        "last_rejected_at"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.push_subscriptions",
+      "columns": [
+        "user_id",
+        "endpoint",
+        "p256dh",
+        "auth",
+        "user_agent",
+        "enabled",
+        "disabled_at",
+        "disabled_reason"
+      ],
+      "omittedColumns": [
+        "id",
+        "last_seen_at",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_attributions",
+      "columns": [
+        "referral_code_id",
+        "channel",
+        "referrer_user_id",
+        "referred_user_id",
+        "referred_salon_id",
+        "referred_education_center_id",
+        "status",
+        "locked_until",
+        "rejection_reason",
+        "idempotency_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "captured_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_codes",
+      "columns": [
+        "code",
+        "channel",
+        "referrer_user_id",
+        "referrer_salon_id",
+        "referrer_education_center_id",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_credit_ledger",
+      "columns": [
+        "wallet_kind",
+        "owner_user_id",
+        "salon_id",
+        "education_center_id",
+        "referral_attribution_id",
+        "type",
+        "amount_rsd",
+        "expires_at",
+        "actor_user_id",
+        "reason",
+        "idempotency_key",
+        "metadata"
+      ],
+      "omittedColumns": [
+        "id",
+        "effective_at",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_credit_redemptions",
+      "columns": [
+        "ledger_entry_id",
+        "order_id",
+        "retail_order_id",
+        "amount_rsd",
+        "idempotency_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_milestone_benefits",
+      "columns": [
+        "referrer_user_id",
+        "channel",
+        "benefit_salon_id",
+        "benefit_education_center_id",
+        "qualifying_count",
+        "kind",
+        "billing_cycle_start",
+        "billing_cycle_end",
+        "discount_percent",
+        "applied_at",
+        "neutralized_at",
+        "neutralized_by_user_id",
+        "neutralization_reason",
+        "idempotency_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_qualification_evidence",
+      "columns": [
+        "qualification_id",
+        "appointment_id",
+        "enrollment_id",
+        "eligible_at",
+        "invalidated_at",
+        "invalidation_reason",
+        "idempotency_key"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_qualifications",
+      "columns": [
+        "attribution_id",
+        "referred_salon_id",
+        "referred_education_center_id",
+        "status",
+        "required_evidence_count",
+        "tracking_started_at",
+        "qualified_at",
+        "hold_until",
+        "available_at",
+        "reversed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.referral_reviews",
+      "columns": [
+        "attribution_id",
+        "qualification_id",
+        "status",
+        "reason_code",
+        "detail",
+        "score",
+        "reviewed_by_user_id",
+        "resolved_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.reorder_actions",
+      "columns": [
+        "audience",
+        "salon_id",
+        "user_id",
+        "idempotency_key",
+        "result"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_cart_items",
+      "columns": [
+        "cart_id",
+        "product_id",
+        "bundle_id",
+        "variant_value",
+        "product_name",
+        "product_image_url",
+        "product_catalog_reference",
+        "unit_price",
+        "quantity",
+        "weight_grams"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_carts",
+      "columns": [
+        "token_hash",
+        "user_id",
+        "contact_email",
+        "activity_version",
+        "reminder_enqueued_activity_version",
+        "completed_activity_version"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_order_items",
+      "columns": [
+        "order_id",
+        "product_id",
+        "product_name",
+        "product_image_url",
+        "product_catalog_reference",
+        "variant_value",
+        "variant_label",
+        "unit_price",
+        "quantity",
+        "supplier_id",
+        "supplier_name",
+        "supplier_slug",
+        "product_sku_snapshot",
+        "category_id_snapshot",
+        "category_name_snapshot",
+        "brand_snapshot",
+        "market",
+        "currency",
+        "discount_snapshot",
+        "line_subtotal",
+        "line_total",
+        "unit_cost_price_rsd",
+        "line_cogs_rsd",
+        "referral_discount_rsd",
+        "realized_revenue_rsd",
+        "bundle_id",
+        "base_unit_price",
+        "effective_unit_price",
+        "price_source",
+        "line_discount",
+        "coupon_discount_rsd",
+        "personalized_treatment_bundle_discount_rsd",
+        "post_treatment_recommendation_discount_rsd",
+        "aftercare_recommendation_id",
+        "automatic_promotion_discount_rsd",
+        "threshold_reward_discount_rsd",
+        "is_reward_gift",
+        "reward_snapshot",
+        "bundle_name_snapshot",
+        "bundle_components_snapshot",
+        "estimated_delivery_date"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_order_status_history",
+      "columns": [
+        "retail_order_id",
+        "actor_user_id",
+        "actor_name",
+        "field",
+        "previous_value",
+        "next_value",
+        "note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_orders",
+      "columns": [
+        "order_number",
+        "cart_id",
+        "user_id",
+        "tracking_token_hash",
+        "tracking_token_rotated_at",
+        "tracking_token_revoked_at",
+        "idempotency_key",
+        "status",
+        "fulfillment_status",
+        "payment_method",
+        "payment_status",
+        "delivery_method",
+        "subtotal",
+        "referral_credit_merchandise_subtotal_rsd",
+        "referral_credit_pre_credit_payable_total_rsd",
+        "referral_credit_applied_rsd",
+        "coupon_code_snapshot",
+        "coupon_discount_rsd",
+        "coupon_free_shipping",
+        "promotion_snapshot",
+        "referral_credit_restored_at",
+        "shipping_cost",
+        "total",
+        "shipping_name",
+        "shipping_address",
+        "shipping_city",
+        "shipping_postal_code",
+        "shipping_phone",
+        "shipping_email",
+        "shipping_note",
+        "tracking_number",
+        "tracking_url",
+        "estimated_delivery_date",
+        "loyalty_points_awarded",
+        "loyalty_points_reversed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "tracking_token_expires_at",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_review_attachments",
+      "columns": [
+        "review_id",
+        "media_asset_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_review_moderation_audits",
+      "columns": [
+        "review_id",
+        "moderator_user_id",
+        "action",
+        "previous_status",
+        "next_status",
+        "reason",
+        "internal_note"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_review_reports",
+      "columns": [
+        "review_id",
+        "reporter_user_id",
+        "reason",
+        "explanation"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_reviews",
+      "columns": [
+        "product_id",
+        "order_item_id",
+        "user_id",
+        "rating",
+        "comment",
+        "moderation_status",
+        "moderation_reason",
+        "removed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_subscription_attempts",
+      "columns": [
+        "subscription_id",
+        "due_at",
+        "status",
+        "retry_count",
+        "claim_token",
+        "order_id",
+        "failure_reason"
+      ],
+      "omittedColumns": [
+        "id",
+        "claimed_at",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_product_subscriptions",
+      "columns": [
+        "user_id",
+        "product_id",
+        "quantity",
+        "frequency",
+        "status",
+        "discount_percent_snapshot",
+        "payment_method",
+        "delivery_method",
+        "contact_snapshot",
+        "delivery_snapshot",
+        "anchor_day",
+        "next_due_at",
+        "blocked_until",
+        "paused_at",
+        "cancelled_at",
+        "last_attempt_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.retail_tracking_rate_limits",
+      "columns": [
+        "client_key_hash",
+        "window_started_at",
+        "request_count"
+      ],
+      "omittedColumns": [
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.review_invitations",
+      "columns": [
+        "event_key",
+        "appointment_id",
+        "customer_id",
+        "notification_id",
+        "reviewed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "invited_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.review_reward_issuances",
+      "columns": [
+        "order_id",
+        "review_id",
+        "coupon_id",
+        "percent_snapshot",
+        "expires_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.reviews",
+      "columns": [
+        "salon_id",
+        "customer_id",
+        "employee_id",
+        "service_name",
+        "rating",
+        "text",
+        "visible",
+        "show_profile_photo"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.rma_attachments",
+      "columns": [
+        "rma_id",
+        "media_asset_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.rma_status_history",
+      "columns": [
+        "rma_id",
+        "actor_user_id",
+        "previous_status",
+        "next_status"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.rmas",
+      "columns": [
+        "rma_number",
+        "order_id",
+        "order_item_id",
+        "retail_order_id",
+        "retail_order_item_id",
+        "requester_user_id",
+        "quantity",
+        "reason",
+        "description",
+        "status"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_booking_settings",
+      "columns": [
+        "salon_id",
+        "slot_granularity_minutes",
+        "minimum_lead_time_minutes",
+        "max_booking_horizon_days",
+        "cancellation_deadline_minutes",
+        "reminder_offsets_minutes",
+        "reminder_channels",
+        "max_visit_gap_minutes",
+        "minimum_useful_late_treatment_minutes",
+        "updated_by_user_id"
+      ],
+      "omittedColumns": [
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_brands",
+      "columns": [
+        "salon_id",
+        "brand_id"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_customers",
+      "columns": [
+        "salon_id",
+        "user_id",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "phone_normalized",
+        "sms_opt_out",
+        "birth_date"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_date_hours",
+      "columns": [
+        "salon_id",
+        "date",
+        "closed",
+        "open_time",
+        "close_time",
+        "reason"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_hours",
+      "columns": [
+        "salon_id",
+        "weekday",
+        "open_time",
+        "close_time",
+        "closed"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_inventory",
+      "columns": [
+        "salon_id",
+        "product_id",
+        "quantity",
+        "unit_content_amount",
+        "usage_unit",
+        "low_stock_threshold",
+        "peak_quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_inventory_movements",
+      "columns": [
+        "salon_id",
+        "inventory_id",
+        "product_id",
+        "type",
+        "quantity_delta",
+        "appointment_id",
+        "service_id",
+        "order_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_location_creation_requests",
+      "columns": [
+        "owner_id",
+        "idempotency_key",
+        "request_hash",
+        "response"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_loyalty_statuses",
+      "columns": [
+        "salon_id",
+        "tier_id",
+        "current_period_spend"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_notification_archives",
+      "columns": [
+        "source_id",
+        "payload",
+        "original_created_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "archived_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_notifications",
+      "columns": [
+        "salon_id",
+        "title",
+        "message",
+        "href",
+        "read_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_resource_downtime",
+      "columns": [
+        "resource_id",
+        "starts_at",
+        "ends_at",
+        "reason",
+        "created_by_user_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salon_resources",
+      "columns": [
+        "salon_id",
+        "name",
+        "type",
+        "capacity",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.salons",
+      "columns": [
+        "owner_id",
+        "name",
+        "slug",
+        "city",
+        "municipality",
+        "address",
+        "postal_code",
+        "phone",
+        "email",
+        "company_name",
+        "company_tax_id",
+        "company_registration_number",
+        "company_address",
+        "company_city",
+        "company_postal_code",
+        "payment_reference_number",
+        "provisioning_source",
+        "short_description",
+        "description",
+        "image_url",
+        "cover_image_description",
+        "gallery",
+        "video_url",
+        "rating",
+        "review_count",
+        "latitude",
+        "longitude",
+        "home_service",
+        "home_service_radius_km",
+        "featured",
+        "is_verified",
+        "top_salon",
+        "accepts_cards",
+        "instant_booking",
+        "serves_men",
+        "serves_men_manually_set",
+        "active",
+        "entrance_directions",
+        "intercom",
+        "floor",
+        "apartment"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.saved_retail_cart_items",
+      "columns": [
+        "cart_id",
+        "product_id",
+        "bundle_id",
+        "variant_value",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.saved_shop_cart_items",
+      "columns": [
+        "cart_id",
+        "product_id",
+        "bundle_id",
+        "variant_value",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_add_on_resource_requirements",
+      "columns": [
+        "add_on_id",
+        "resource_id",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_add_ons",
+      "columns": [
+        "service_id",
+        "name",
+        "duration_minutes",
+        "price",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_categories",
+      "columns": [
+        "name",
+        "slug",
+        "description",
+        "fallback_image_url",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_product_consumptions",
+      "columns": [
+        "salon_id",
+        "service_id",
+        "product_id",
+        "quantity_per_use"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_resource_requirements",
+      "columns": [
+        "service_id",
+        "resource_id",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.service_templates",
+      "columns": [
+        "name",
+        "main_category",
+        "subcategory",
+        "typical_duration_minutes",
+        "price_min",
+        "price_max",
+        "description",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.services",
+      "columns": [
+        "salon_id",
+        "category_id",
+        "category_name",
+        "name",
+        "description",
+        "duration_minutes",
+        "pre_processing_minutes",
+        "processing_minutes",
+        "post_processing_minutes",
+        "seat_capacity",
+        "required_employee_count",
+        "deposit_amount",
+        "buffer_minutes",
+        "price",
+        "promo_price",
+        "tags",
+        "package_treatments",
+        "image_url",
+        "active",
+        "home_service_available",
+        "home_service_fee",
+        "home_service_minimum_order"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.sessions",
+      "columns": [
+        "user_id",
+        "token_hash",
+        "expires_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.shift_swap_requests",
+      "columns": [
+        "salon_id",
+        "requester_employee_id",
+        "target_employee_id",
+        "swap_date",
+        "note",
+        "status",
+        "colleague_responded_at",
+        "owner_reviewed_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.shipping_rules",
+      "columns": [
+        "free_shipping_threshold",
+        "tiers",
+        "personal_delivery_enabled",
+        "personal_delivery_name",
+        "personal_delivery_price",
+        "personal_delivery_description"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.shop_settings",
+      "columns": [
+        "show_loyalty_points",
+        "points_per_100_rsd",
+        "low_stock_threshold",
+        "default_delivery_business_days",
+        "seller_company_name",
+        "seller_tax_id",
+        "seller_registration_number",
+        "seller_address",
+        "seller_city",
+        "seller_postal_code",
+        "seller_bank_account",
+        "seller_contact_email",
+        "seller_contact_phone",
+        "retail_cart_reminder_enabled",
+        "retail_cart_reminder_delay_hours",
+        "retail_cart_reminder_brevo_template_id",
+        "quote_validity_days",
+        "review_rewards_enabled",
+        "review_invitation_delay_days",
+        "review_reward_percent",
+        "review_reward_validity_days",
+        "version"
+      ],
+      "omittedColumns": [
+        "id",
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "15d04b2bbe882de06769a259e28e331f74dc333aa6101e037e00036e7ff9873c"
+    },
+    {
+      "table": "public.shopping_cart_items",
+      "columns": [
+        "cart_id",
+        "product_id",
+        "bundle_id",
+        "variant_value",
+        "product_name",
+        "product_image_url",
+        "variant_label",
+        "product_sku",
+        "unit_price",
+        "quantity"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.shopping_carts",
+      "columns": [
+        "salon_id"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.sms_deliveries",
+      "columns": [
+        "event_key",
+        "salon_id",
+        "appointment_id",
+        "message_type",
+        "recipient_phone",
+        "body",
+        "status",
+        "processing_started_at",
+        "submission_started_at",
+        "claim_expires_at",
+        "provider_message_id",
+        "error_message",
+        "sent_at",
+        "retry_count",
+        "next_retry_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.sms_delivery_archives",
+      "columns": [
+        "source_id",
+        "payload",
+        "original_created_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "archived_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.subscription_plans",
+      "columns": [
+        "name",
+        "price",
+        "trial_days",
+        "features",
+        "limits",
+        "audience",
+        "course_limit",
+        "vat_included",
+        "price_copy",
+        "active"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 3,
+      "hash": "a0f6657a69cadbfe2e89d5ddbc38f8cfcf39bcdbfa1d88f7e02fbb370477965d"
+    },
+    {
+      "table": "public.subscriptions",
+      "columns": [
+        "salon_id",
+        "plan_id",
+        "status",
+        "due_amount",
+        "payment_method",
+        "current_period_end"
+      ],
+      "omittedColumns": [
+        "id"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.suppliers",
+      "columns": [
+        "id",
+        "name",
+        "slug",
+        "scope",
+        "logo_url",
+        "active"
+      ],
+      "omittedColumns": [
+        "created_at",
+        "updated_at"
+      ],
+      "count": 1,
+      "hash": "c20e6ce67b5542bbbdfa80f8cffca105ea340917a8fd7677d3d18137338d396d"
+    },
+    {
+      "table": "public.system_push_deliveries",
+      "columns": [
+        "event_key",
+        "subscription_id",
+        "user_id",
+        "payload",
+        "status",
+        "attempt_count",
+        "expires_at",
+        "claim_token",
+        "claimed_at",
+        "claim_expires_at",
+        "last_attempt_at",
+        "last_http_status",
+        "last_error",
+        "sent_at",
+        "acknowledged_at"
+      ],
+      "omittedColumns": [
+        "id",
+        "next_attempt_at",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.treatment_packages",
+      "columns": [
+        "salon_id",
+        "name",
+        "description",
+        "price_in_dinars",
+        "session_count",
+        "validity_days",
+        "active",
+        "quota_policy"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.treatment_photos",
+      "columns": [
+        "salon_id",
+        "salon_customer_id",
+        "appointment_id",
+        "employee_id",
+        "uploaded_by_user_id",
+        "kind",
+        "media_asset_id",
+        "consent_confirmed"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.treatment_taxonomy",
+      "columns": [
+        "taxonomy_key",
+        "category_name",
+        "treatment_name",
+        "search_terms",
+        "active"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "table": "public.users",
+      "columns": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "phone_normalized",
+        "date_of_birth",
+        "active_salon_id",
+        "password_hash",
+        "password_set_at",
+        "must_change_password",
+        "role",
+        "avatar_url",
+        "active",
+        "marketing_emails_enabled"
+      ],
+      "omittedColumns": [
+        "id",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 0,
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

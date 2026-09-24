@@ -1178,3 +1178,127 @@ exact-rule negative cases and 65 execution negative fixtures. All 13
 documentation regression tests passed with zero failures, cancellations, or
 skips. The independent post-cascade census again found zero mismatches across
 all 158 current entries.
+
+## Phase 7 data transfer — protected-input census
+
+Authority: the owner required a complete protected-input census for the data
+transfer branch, amendments only for branch-changed protected current sources,
+the dependent manifest cascade when applicable, and preservation of both
+historical tiers. The pre-census HEAD and `origin/main` comparison point were
+both merge commit `f13ddcb803425e749dd19425eb3084da550c6007`.
+
+Before any manifest edit, all 73 diagnostic `currentInputs` entries and all 85
+execution-plan `files` entries were independently SHA-256 hashed from current
+file bytes. All 158 matched. None of the 26 branch-changed tracked or untracked
+paths was present in either protected current-source inventory. The two
+database-free validators therefore passed before amendment rather than
+reporting protected drift:
+
+```text
+PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases
+validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.
+```
+
+Consequently this batch contains zero direct current-source hash amendments
+and zero manifest-cascade amendments. Both protected manifests remain
+byte-for-byte unchanged, with SHA-256 values:
+
+```text
+077982b28392b35dfdc42504f19c808b20d5dbc7cca862ece5098fef72f56822  docs/production-diagnostic-design/protected-input-manifest.json
+aa571f342da682d785dfde5ab898f23f025f843a3282ed94c225e75363c6a821  docs/production-evidence-execution-plan/protected-input-manifest.json
+```
+
+Both complete 73-entry historical objects were extracted from the
+working-tree manifests and compared as raw bytes with their corresponding
+`git show origin/main:...` objects. Both are 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`
+and are byte-identical to `origin/main`. All 146 historical values were also
+independently reproduced from the corresponding file bytes at pinned commit
+`b8f30561d658d7a87d06d520002d4136855e85e1`, with zero mismatches.
+
+No historical value, protected inventory, hash, source, SQL, database, secret,
+deployment, or publication is changed by this census. This provenance section
+records the required zero-amendment result; the data-transfer implementation,
+tests, proof reports, CI wiring, and their operational evidence are owned by
+their respective verification records.
+
+## Phase 7 data transfer guard correction — final protected-input census
+
+This section supersedes the preceding data-transfer census because the branch
+subsequently changed `scripts/src/destructive-harness-registry.ts`,
+`scripts/src/run-api-regressions-lifecycle.test.ts`, and unit-command package
+wiring. The earlier zero-amendment evidence remains above as an accurate record
+of the earlier tree, but is not the final branch census.
+
+The diagnostic and execution validators were run before any new manifest edit.
+Both exited zero, so there was no protected-drift failure to quote:
+
+```text
+PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases
+validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.
+```
+
+The complete recomputation independently hashed all 73 diagnostic
+`currentInputs` entries and all 85 execution-plan `files` entries from the
+current file bytes. All 158 matched. None of the 33 branch-changed tracked or
+untracked paths, including the two corrected guard sources and package wiring,
+is present in either protected current-source inventory. The authorized
+amendment count is therefore exactly zero: no direct current-source
+replacement and no nested manifest cascade.
+
+Both protected manifests remain byte-for-byte unchanged:
+
+```text
+077982b28392b35dfdc42504f19c808b20d5dbc7cca862ece5098fef72f56822  docs/production-diagnostic-design/protected-input-manifest.json
+aa571f342da682d785dfde5ab898f23f025f843a3282ed94c225e75363c6a821  docs/production-evidence-execution-plan/protected-input-manifest.json
+```
+
+Both complete historical objects remain raw-byte-identical to `origin/main`.
+Each is 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`.
+All 146 historical values also reproduce from pinned commit
+`b8f30561d658d7a87d06d520002d4136855e85e1`, with zero mismatches. No
+historical value, protected inventory, source, test, workflow, database,
+secret, deployment, or publication is amended by this final census.
+
+## Phase 7 data transfer fix — final protected-input census
+
+This section supersedes the two preceding Phase 7 census conclusions for the
+current pull-request-fix tree. The comparison base is data-transfer commit
+`26fa8b531be040b3cbba56a94649037c6434ace0`.
+
+Before any manifest edit, both database-free validators exited zero. There was
+therefore no protected-drift error to amend:
+
+```text
+PASS: reusable authoritative validator and 114 exact-rule deep-cloned negative cases
+validate.mjs: baseline valid; 65 negative fixtures rejected with exact errors; every mutation observed.
+```
+
+The complete final-source census independently hashed all 73 diagnostic
+`currentInputs` entries and all 85 execution-plan `files` entries. All 158
+matched, with zero mismatches. None of the 34 branch-changed tracked or
+untracked paths was present in either current protected inventory. The final
+path set includes the final PostgreSQL infrastructure guards: the destructive
+test runner, backend-standards database test, booking-load runner client,
+business-growth cleanup-reports test, isolated admin fixture, destructive
+harness registry, and trigger-policy test. The complete set contains 34 paths
+and is recorded in `.local/data-transfer-fix/hashes/final-paths.txt`. The
+authorized amendment count is consequently exactly zero: zero direct
+current-source amendments and zero manifest-cascade amendments. Both protected
+manifest files remain byte-for-byte unchanged.
+
+Both complete 73-entry historical objects were extracted directly from the
+working-tree manifest text and compared as raw bytes with the corresponding
+objects in `origin/main`. Each object is 8,940 bytes with SHA-256
+`3c4a2766d5d728e4bfb35cda5cfdeea563be9218169979abcd61e95d6205b31d`;
+both comparisons are byte-identical.
+
+All 146 historical hash values were reproduced from the corresponding Git
+object bytes at recorded historical boundary
+`b8f30561d658d7a87d06d520002d4136855e85e1`, with zero mismatches. Large
+objects were read with an explicit 32 MiB buffer rather than the process
+API's 1 MiB default, so their successful reproduction is not confused with a
+missing Git object. No historical object or manifest value is changed by this
+census. No database, secret, workflow, application source, migration, commit,
+deployment, or publication operation is performed by this census.

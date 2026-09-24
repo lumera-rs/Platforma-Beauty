@@ -268,7 +268,9 @@ function runCommand(
     let output = "";
     const captureOutput = Boolean(options?.failOnOutput)
       || Object.keys(environment).some((key) => /(?:^|_)DATABASE_URL$/.test(key));
-    const child = spawn(command, args, {
+    const executable = environment.LUMERA_POSTGRES_16_BIN && ["createdb", "dropdb", "psql"].includes(command)
+      ? path.join(environment.LUMERA_POSTGRES_16_BIN, command) : command;
+    const child = spawn(executable, args, {
       cwd: workspaceRoot,
       detached: process.platform !== "win32",
       env: environment,

@@ -14,9 +14,11 @@ if (isDeploymentRuntime(process.env)) throw new Error("Deployment runtime refuse
 const dir = await mkdtemp(path.join(os.tmpdir(), "job-publication-http-"));
 let started = false;
 let pool: pg.Pool | undefined;
+const postgresProgram = (name: string) => process.env.LUMERA_POSTGRES_16_BIN
+  ? path.join(process.env.LUMERA_POSTGRES_16_BIN, name) : name;
 try {
-  execFileSync("initdb", ["-D", dir, "--auth=trust", "--username=job_publication", "--encoding=UTF8", "--locale=C"], { stdio: "ignore" });
-  execFileSync("pg_ctl", ["-D", dir, "-l", path.join(dir, "server.log"), "-o", `-h '' -k ${dir} -p 55441`, "-w", "start"], { stdio: "ignore" });
+  execFileSync(postgresProgram("initdb"), ["-D", dir, "--auth=trust", "--username=job_publication", "--encoding=UTF8", "--locale=C"], { stdio: "ignore" });
+  execFileSync(postgresProgram("pg_ctl"), ["-D", dir, "-l", path.join(dir, "server.log"), "-o", `-h '' -k ${dir} -p 55441`, "-w", "start"], { stdio: "ignore" });
   started = true;
   pool = new pg.Pool({ host: dir, port: 55441, user: "job_publication", database: "postgres" });
   const expectedTargetIdentity = await (async () => {
@@ -77,6 +79,6 @@ try {
   });
 } finally {
   if (pool) await pool.end();
-  if (started) execFileSync("pg_ctl", ["-D", dir, "-m", "fast", "-w", "stop"], { stdio: "ignore" });
+  if (started) execFileSync(postgresProgram("pg_ctl"), ["-D", dir, "-m", "fast", "-w", "stop"], { stdio: "ignore" });
   await rm(dir, { recursive: true, force: true });
 }
