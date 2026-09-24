@@ -25,6 +25,7 @@ import {
   redactDatabaseCommandOutput,
 } from "./safe-child-process-output.js";
 import { findUnsafeDatabaseChildProcessUses } from "./test-backend-static-checks.js";
+import { selectDatabaseUrl } from "@workspace/db/pool-runtime";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -353,12 +354,18 @@ async function runDatabaseCommand(
 function requireDisposableDevelopmentDatabaseUrl(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  assertDestructiveTestRuntimeAllowed(environment, "Backend standards process tests");
+  const selectedDatabase = selectDatabaseUrl(environment);
+  assertDestructiveTestRuntimeAllowed(
+    { ...environment, DATABASE_URL: selectedDatabase.connectionString },
+    "Backend standards process tests",
+  );
 
-  const databaseUrl = environment.DATABASE_URL;
-  assert.ok(databaseUrl, "DATABASE_URL is required for the backend standards process test.");
+  const databaseUrl = selectedDatabase.connectionString;
   const parsed = new URL(databaseUrl);
-  assert.ok(parsed.pathname && parsed.pathname !== "/", "DATABASE_URL must include a database name.");
+  assert.ok(
+    parsed.pathname && parsed.pathname !== "/",
+    `${selectedDatabase.variable} must include a database name.`,
+  );
   return databaseUrl;
 }
 
@@ -373,6 +380,7 @@ test("refuses destructive database fixtures before commands in production and de
     name,
     environment: {
       DATABASE_URL: "postgresql://localhost/development",
+      LUMERA_DATABASE_URL: "postgresql://localhost/development",
       ...values,
     },
   }));
@@ -397,12 +405,34 @@ test("refuses destructive database fixtures before commands in production and de
   }
 
   const developmentDatabaseUrl = requireDisposableDevelopmentDatabaseUrl({
-    DATABASE_URL: "postgresql://localhost/development",
+    DATABASE_URL: "postgresql://localhost/lumera_ci_database",
     NODE_ENV: "test",
     REPLIT_DEPLOYMENT: "0",
     REPL_DEPLOYMENT: "0",
   });
-  assert.equal(developmentDatabaseUrl, "postgresql://localhost/development");
+  assert.equal(
+    developmentDatabaseUrl,
+    "postgresql://localhost/lumera_ci_database",
+  );
+});
+
+test("backend standards guards the same target selected by the application pool", () => {
+  const disposable = "postgresql://localhost/lumera_ci_database";
+  assert.equal(
+    requireDisposableDevelopmentDatabaseUrl({
+      NODE_ENV: "test",
+      DATABASE_URL: disposable,
+    }),
+    disposable,
+  );
+  assert.throws(
+    () => requireDisposableDevelopmentDatabaseUrl({
+      NODE_ENV: "test",
+      DATABASE_URL: "postgresql://localhost/development",
+      LUMERA_DATABASE_URL: disposable,
+    }),
+    /refuse non-disposable database targets/u,
+  );
 });
 
 test("database command failures redact connection strings but retain useful diagnostics", () => {

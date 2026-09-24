@@ -35,6 +35,7 @@ if (command.length === 0) {
 // without reading their values before importing or invoking database code.
 for (const key of [
   "DATABASE_URL",
+  "LUMERA_DATABASE_URL",
   "LUMERA_DISPOSABLE_DATABASE",
   "LUMERA_TEST_DATABASE_URL",
   "REPLIT_DEPLOYMENT",
@@ -88,6 +89,7 @@ function childEnvironment(
   const environment: NodeJS.ProcessEnv = {};
   const excluded = new Set([
     "DATABASE_URL",
+    "LUMERA_DATABASE_URL",
     "LUMERA_DISPOSABLE_DATABASE",
     "LUMERA_TEST_DATABASE_URL",
     "REPLIT_DEPLOYMENT",

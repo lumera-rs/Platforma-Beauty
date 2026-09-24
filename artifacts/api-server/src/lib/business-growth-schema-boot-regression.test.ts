@@ -76,6 +76,7 @@ async function expectReadonlyRefusal(
       HOME: process.env.HOME ?? "/tmp",
       NODE_ENV: "test",
       DATABASE_URL: databaseUrl,
+      LUMERA_DATABASE_URL: databaseUrl,
       PORT: String(port),
       BASE_PATH: "/api",
       SESSION_SECRET: "lumera-disposable-regression-session-secret",

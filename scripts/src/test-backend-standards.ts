@@ -24,6 +24,7 @@ import {
   checkUnboundedSelects,
 } from "./test-backend-static-checks.js";
 import { assertDestructiveTestRuntimeAllowed } from "./destructive-test-runtime";
+import { selectDatabaseUrl } from "@workspace/db/pool-runtime";
 import {
   auditInvalidIndexes,
   auditUnvalidatedConstraints,
@@ -400,9 +401,7 @@ const EXPLAIN_CHECKS: ExplainCheck[] = [
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 async function runDatabaseChecks(): Promise<void> {
-  if (!process.env["DATABASE_URL"]) {
-    throw new Error("DATABASE_URL is not set.");
-  }
+  selectDatabaseUrl(process.env);
 
   const { pool } = await import("@workspace/db");
   let client: DbClient | null = null;
@@ -594,7 +593,11 @@ async function main(): Promise<void> {
   const mode = parseMode(process.argv.slice(2));
 
   if (mode !== "static-only") {
-    assertDestructiveTestRuntimeAllowed(process.env, "Backend standards database checks");
+    const selectedDatabase = selectDatabaseUrl(process.env);
+    assertDestructiveTestRuntimeAllowed(
+      { ...process.env, DATABASE_URL: selectedDatabase.connectionString },
+      "Backend standards database checks",
+    );
     await runDatabaseChecks();
   }
   if (mode !== "database-only") {

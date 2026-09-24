@@ -18,3 +18,15 @@ A runner that creates disposable child databases still accesses its administrati
 **Why:** Replacing the source guard with a process-mode check allowed isolated browser checks to access the development cluster while creating their child databases, violating a no-development-access constraint.
 
 **How to apply:** Supply a separately owned local PostgreSQL cluster as the administration/source target. Preserve the full source guard, and propagate the disposable marker only to newly created, owned child targets. Never clear the URL in a guard argument when the runner subsequently uses that same ambient URL.
+
+Destructive-test authorization must be enforced by the shared guard used by all
+entry points, not by a private fixture-only marker that production code cannot
+recognize.
+
+**Why:** A test can make its own fixture look safe while bypassing the guard
+actually used by sibling runners or application imports. That proves only the
+fixture convention, not the repository-wide destructive boundary.
+
+**How to apply:** Put owned-target recognition and refusal in the shared runtime
+guard, route every destructive harness through it, and test both acceptance of a
+runner-owned target and refusal when the shared marker/identity is absent.

@@ -24,7 +24,8 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import app from "../app";
+import { assertDestructiveTestRuntimeAllowed } from "@workspace/db/destructive-test-runtime";
+import { createRedactedDatabaseOutputWriter } from "@workspace/db/safe-child-process-output";
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const tsxBin = path.resolve(thisDir, "../../../../scripts/node_modules/.bin/tsx");
@@ -67,6 +68,15 @@ function assertBaselineSecurityHeaders(response: HttpResponse, label: string) {
 
 async function run(): Promise<void> {
   const previousNodeEnv = process.env["NODE_ENV"];
+  assertDestructiveTestRuntimeAllowed(process.env, "HTTP security hardening tests");
+  const disposableDatabaseUrl = process.env["DATABASE_URL"];
+  assert.ok(
+    disposableDatabaseUrl,
+    "HTTP security hardening requires an owned disposable database fixture.",
+  );
+  // Keep application/database module evaluation behind the synchronous guard:
+  // an unsafe target must be rejected before any client can attempt a connection.
+  const { default: app } = await import("../app");
 
   // --- Production-topology assertion (HSTS gating). app.ts reads
   // process.env.NODE_ENV once, at module import time (same pattern as the
@@ -75,10 +85,18 @@ async function run(): Promise<void> {
   // `app` above. A genuinely separate child process, started with
   // NODE_ENV=production from before Node loads app.ts at all, is the only
   // way to observe that code path honestly.
+  const hstsEnvironment = {
+    ...process.env,
+    NODE_ENV: "production",
+    LUMERA_DATABASE_URL: disposableDatabaseUrl,
+  };
   const hstsChild = spawn(tsxBin, [hstsChildScript], {
-    env: { ...process.env, NODE_ENV: "production" },
-    stdio: ["ignore", "pipe", "inherit"],
+    env: hstsEnvironment,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  const hstsStderr = createRedactedDatabaseOutputWriter(hstsEnvironment, process.stderr);
+  hstsChild.stderr?.on("data", (chunk: Buffer) => hstsStderr.write(chunk));
+  hstsChild.once("close", () => hstsStderr.flush());
   try {
     const prodPort = await new Promise<number>((resolve, reject) => {
       let buffered = "";

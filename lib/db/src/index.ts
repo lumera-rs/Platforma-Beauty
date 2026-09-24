@@ -5,6 +5,12 @@ import {
   assertDestructiveTestRuntimeAllowed,
   isProductionOrDeploymentRuntime,
 } from "./destructive-test-runtime";
+import {
+  assertSupportedDatabaseUrl,
+  createNewClientInitializer,
+  safeIdleClientErrorMessage,
+  selectDatabaseUrl,
+} from "./pool-runtime";
 export { databaseQueryObservationHeader } from "./query-observation";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
@@ -21,7 +27,11 @@ type PoolConnectCallback = (
 function assertDirectDatabaseTestRuntimeAllowed(): void {
   const entryPoint = process.argv[1] ?? "";
   if (!/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entryPoint)) return;
-  assertDestructiveTestRuntimeAllowed(process.env, "Direct database tests");
+  const selected = selectDatabaseUrl(process.env);
+  assertDestructiveTestRuntimeAllowed(
+    { ...process.env, DATABASE_URL: selected.connectionString },
+    "Direct database tests",
+  );
 }
 
 assertDirectDatabaseTestRuntimeAllowed();
@@ -44,15 +54,18 @@ function parseEnvInt(
   return n;
 }
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
+const selectedDatabaseUrl = selectDatabaseUrl(process.env);
+assertSupportedDatabaseUrl(selectedDatabaseUrl);
 
 const poolMax = parseEnvInt("DB_POOL_MAX", 10, 4, 50);
 const configuredPoolMin = parseEnvInt("DB_POOL_MIN", 0, 0, 10);
 const poolMin = Math.min(configuredPoolMin, poolMax);
+const statementTimeoutMs = parseEnvInt(
+  "DB_STMT_TIMEOUT_MS",
+  30_000,
+  1_000,
+  300_000,
+);
 const schedulerDatabaseWorkload = new AsyncLocalStorage<boolean>();
 const schedulerConnectionLimit = Math.max(1, poolMax - 2);
 type SchedulerConnectionWaiter = {
@@ -70,7 +83,7 @@ function poolClosingError(): Error {
 }
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: selectedDatabaseUrl.connectionString,
   max: poolMax,
   min: poolMin,
   idleTimeoutMillis: parseEnvInt("DB_IDLE_TIMEOUT_MS", 10_000, 1_000, 300_000),
@@ -79,7 +92,9 @@ export const pool = new Pool({
   // booking burst while the fixed-size pools had long acquisition queues.
   connectionTimeoutMillis: parseEnvInt("DB_CONN_TIMEOUT_MS", 15_000, 500, 60_000),
   query_timeout: parseEnvInt("DB_QUERY_TIMEOUT_MS", 30_000, 1_000, 300_000),
-  statement_timeout: parseEnvInt("DB_STMT_TIMEOUT_MS", 30_000, 1_000, 300_000),
+  // pg-pool awaits onConnect before its first acquire callback. This therefore
+  // covers connect() and pool.query() in both callback and promise forms.
+  onConnect: createNewClientInitializer(statementTimeoutMs),
   keepAlive: true,
   keepAliveInitialDelayMillis: 10_000,
 });
@@ -194,11 +209,10 @@ function workloadAwareConnect(
 pool.connect = workloadAwareConnect as typeof pool.connect;
 
 pool.on("error", (err: Error) => {
-  const safeMessage = err.message.replace(
-    /postgres(?:ql)?:\/\/[^@]*@[^\s"']*/gi,
-    "postgres://<redacted>",
+  void err;
+  process.stderr.write(
+    `[db-pool] idle client error: ${safeIdleClientErrorMessage()}\n`,
   );
-  process.stderr.write(`[db-pool] idle client error: ${safeMessage}\n`);
 });
 
 export function databasePoolStats() {

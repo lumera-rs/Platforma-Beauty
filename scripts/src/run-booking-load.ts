@@ -38,6 +38,7 @@ const targetIdentity = (raw: string) => {
 const testUrl = (base: string, database: string) => { const url = new URL(base); url.pathname = `/${database}`; return url.toString(); };
 function isolatedEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: "test", DATABASE_URL: databaseUrl, LUMERA_TEST_DATABASE_URL: databaseUrl, LUMERA_BOOKING_LOAD: "1" };
+  delete environment.LUMERA_DATABASE_URL;
   const loadConnectionTimeout = process.env.LUMERA_BOOKING_LOAD_DB_CONN_TIMEOUT_MS ?? "15000";
   if (!/^\d+$/.test(loadConnectionTimeout) || Number(loadConnectionTimeout) < 500 || Number(loadConnectionTimeout) > 60_000) {
     throw new Error("LUMERA_BOOKING_LOAD_DB_CONN_TIMEOUT_MS must be an integer from 500 to 60000.");

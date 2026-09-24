@@ -719,6 +719,7 @@ void db.insert({} as never);
         ...process.env,
         NODE_ENV: "production",
         DATABASE_URL: databaseUrl,
+        LUMERA_DATABASE_URL: databaseUrl,
       },
     }).then(
       () => assert.fail("An unregistered db.insert test accepted NODE_ENV=production."),
@@ -757,6 +758,7 @@ void db.insert({} as never);
             REPL_DEPLOYMENT: "0",
             ...guardedEnvironment.values,
             DATABASE_URL: loopbackSentinel.databaseUrl,
+            LUMERA_DATABASE_URL: loopbackSentinel.databaseUrl,
             LUMERA_BOOKING_LOAD: "1",
             LUMERA_DATABASE_COMMAND_LOG: commandLogPath,
             LUMERA_GUARD_HARNESS: harness.mode,

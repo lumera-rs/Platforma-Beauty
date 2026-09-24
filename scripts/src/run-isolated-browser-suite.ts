@@ -610,6 +610,7 @@ export async function runIsolatedBrowserSuite(
     [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",
   };
+  delete testEnvironment.LUMERA_DATABASE_URL;
   let databaseMayExist = false;
   let apiProcess: ChildProcess | undefined;
   let webProcess: ChildProcess | undefined;
@@ -783,7 +784,7 @@ export async function runIsolatedApiSuite(
     processMarker,
   });
   const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
-  const testEnvironment = {
+  const testEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
@@ -792,6 +793,7 @@ export async function runIsolatedApiSuite(
     [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",
   };
+  delete testEnvironment.LUMERA_DATABASE_URL;
   let databaseMayExist = false;
 
   try {
@@ -852,7 +854,7 @@ export async function runIsolatedApiRegressionSuite(
   const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
   const apiPort = await findAvailablePort();
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
-  const apiEnvironment = {
+  const apiEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
@@ -863,6 +865,7 @@ export async function runIsolatedApiRegressionSuite(
     NODE_ENV: "test",
     PORT: String(apiPort),
   };
+  delete apiEnvironment.LUMERA_DATABASE_URL;
   const scriptEnvironment = {
     ...apiEnvironment,
     LUMERA_API_BASE_URL: `${apiBaseUrl}/api`,

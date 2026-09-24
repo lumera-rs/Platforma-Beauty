@@ -7,6 +7,7 @@ import {
   assertSafeRuntime,
   parsePhase5IntegrationOptions,
   runPhase5Integration,
+  safeEnvironment,
   serialLogWriter,
   validatedOutputDirectory,
 } from "./run-phase5-integration";
@@ -113,6 +114,29 @@ test("Phase 5 runner selects every suite by default and accepts pnpm's separator
   assert.deepEqual(
     parsePhase5IntegrationOptions(["--", "--suite=supported-state"]).suites.map((suite) => suite.id),
     ["supported-state"],
+  );
+  assert.deepEqual(
+    safeEnvironment(
+      {
+        DATABASE_URL: "postgres://extra.invalid/extra",
+        LUMERA_DATABASE_URL: "postgres://extra.invalid/override",
+      },
+      {
+        PATH: "/safe/bin",
+        HOME: "/safe/home",
+        DATABASE_URL: "postgres://ambient.invalid/ambient",
+        LUMERA_DATABASE_URL: "postgres://ambient.invalid/override",
+      },
+    ),
+    {
+      PATH: "/safe/bin",
+      HOME: "/safe/home",
+      LANG: "C.UTF-8",
+      NODE_ENV: "test",
+      REPLIT_ENVIRONMENT: undefined,
+      CI: "true",
+    },
+    "Phase 5 children must not inherit either runtime database target, even through extra environment.",
   );
 });
 
